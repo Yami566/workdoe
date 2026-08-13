@@ -149,6 +149,7 @@ npm run github:deploy
 npm run launch:handoff
 npm run launch:handoff:shareable
 npm run launch:handoff:write
+npm run launch:handoff:shareable:write
 npm run launch:dns
 npm run launch:dns:strict
 npm run launch:smoke
@@ -194,14 +195,16 @@ Generate a redacted launch handoff checklist from the same live gates:
 npm run launch:handoff
 npm run launch:handoff:shareable
 npm run launch:handoff:write
+npm run launch:handoff:shareable:write
 ```
 
-The default handoff is a private local operator checklist. The write command
-saves `docs/workdoe-launch-handoff.local.md`, which is ignored because it
-contains live local status and machine paths. The shareable command redacts the
-local workspace path as `<workdoe-repo>`. Both versions group blockers and
-remaining actions into GitHub secrets, Cloudflare resources, Worker
-secrets/Clerk, DNS activation, and final deploy/smoke checks.
+The default handoff is a private local operator checklist. The private write
+command saves `docs/workdoe-launch-handoff.local.md`, which is ignored because
+it contains live local status and machine paths. The shareable write command
+saves `docs/workdoe-launch-handoff.shareable.local.md` and redacts the local
+workspace path as `<workdoe-repo>`. Both versions group blockers and remaining
+actions into GitHub secrets, Cloudflare resources, Worker secrets/Clerk, DNS
+activation, and final deploy/smoke checks.
 
 Diagnose DNS delegation, apex/www resolution, and checked-in Worker custom
 domains before deployment:

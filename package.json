@@ -22,6 +22,7 @@
     "launch:handoff": "python scripts/workdoe_launch_handoff.py",
     "launch:handoff:shareable": "python scripts/workdoe_launch_handoff.py --shareable",
     "launch:handoff:write": "python scripts/workdoe_launch_handoff.py --write",
+    "launch:handoff:shareable:write": "python scripts/workdoe_launch_handoff.py --shareable --write",
     "launch:dns": "python scripts/workdoe_dns_diagnostic.py",
     "launch:dns:strict": "python scripts/workdoe_dns_diagnostic.py --fail-when-not-ready",
     "launch:smoke": "python scripts/workdoe_production_smoke.py",

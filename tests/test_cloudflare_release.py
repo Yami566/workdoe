@@ -4235,6 +4235,74 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertNotIn(str(ROOT), shareable_markdown)
         self.assertIn("This handoff is generated from local and live release gates", shareable_markdown)
 
+    def test_workdoe_launch_handoff_write_uses_private_or_shareable_default_output(self):
+        module = load_workdoe_launch_handoff_script()
+        original_doctor = module.build_doctor
+        original_dispatch = module.build_dispatch_plan
+        original_default_output = module.DEFAULT_OUTPUT
+        original_shareable_output = module.DEFAULT_SHAREABLE_OUTPUT
+        original_argv = sys.argv
+        try:
+            doctor_payload = {
+                "ready": False,
+                "blockers": [
+                    f"Clerk proxy proof JSON is missing or invalid: {ROOT}\\clerk-proxy-proof.local.json"
+                ],
+                "next_actions": [],
+                "phases": [
+                    {
+                        "name": "clerk-proxy",
+                        "status": "pending",
+                        "summary": "Clerk proxy proof is still pending.",
+                        "next_command": "npm run cf:clerk:proof",
+                    },
+                ],
+            }
+            dispatch_payload = {
+                "ready_to_dispatch": False,
+                "repository": "Yami566/workdoe",
+                "workflow": "cloudflare-deploy.yml",
+                "ref": "main",
+                "command_text": "gh workflow run cloudflare-deploy.yml --repo Yami566/workdoe",
+                "git": {
+                    "branch": "main",
+                    "clean": True,
+                    "synced_with_upstream": True,
+                },
+                "blockers": [],
+            }
+            module.build_doctor = lambda *args, **kwargs: doctor_payload
+            module.build_dispatch_plan = lambda *args, **kwargs: dispatch_payload
+            with tempfile.TemporaryDirectory() as tempdir:
+                temp_path = Path(tempdir)
+                private_output = temp_path / "workdoe-launch-handoff.local.md"
+                shareable_output = temp_path / "workdoe-launch-handoff.shareable.local.md"
+                module.DEFAULT_OUTPUT = private_output
+                module.DEFAULT_SHAREABLE_OUTPUT = shareable_output
+
+                sys.argv = ["workdoe_launch_handoff.py", "--write"]
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(module.main(), 0)
+
+                self.assertTrue(private_output.exists())
+                self.assertFalse(shareable_output.exists())
+                self.assertIn(str(ROOT), private_output.read_text(encoding="utf-8"))
+
+                sys.argv = ["workdoe_launch_handoff.py", "--shareable", "--write"]
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(module.main(), 0)
+
+                self.assertTrue(shareable_output.exists())
+                shareable_markdown = shareable_output.read_text(encoding="utf-8")
+                self.assertIn(module.LOCAL_WORKSPACE_PLACEHOLDER, shareable_markdown)
+                self.assertNotIn(str(ROOT), shareable_markdown)
+        finally:
+            module.build_doctor = original_doctor
+            module.build_dispatch_plan = original_dispatch
+            module.DEFAULT_OUTPUT = original_default_output
+            module.DEFAULT_SHAREABLE_OUTPUT = original_shareable_output
+            sys.argv = original_argv
+
     def test_workdoe_dns_diagnostic_accepts_cloudflare_delegation_and_routes(self):
         module = load_workdoe_dns_diagnostic_script()
         original_nslookup = module.run_nslookup

@@ -10,6 +10,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 DEFAULT_OUTPUT = REPO_ROOT / "docs" / "workdoe-launch-handoff.local.md"
+DEFAULT_SHAREABLE_OUTPUT = REPO_ROOT / "docs" / "workdoe-launch-handoff.shareable.local.md"
 LOCAL_WORKSPACE_PLACEHOLDER = "<workdoe-repo>"
 
 if str(SCRIPT_DIR) not in sys.path:
@@ -382,7 +383,12 @@ def main() -> int:
         help="Local prototype URL checked by the launch doctor.",
     )
     parser.add_argument("--write", action="store_true", help="Write the Markdown handoff file.")
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="Markdown output path.")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Markdown output path. Defaults to the private or shareable local handoff path.",
+    )
     parser.add_argument(
         "--shareable",
         action="store_true",
@@ -402,8 +408,11 @@ def main() -> int:
     )
     markdown = render_markdown(payload)
     if args.write:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(markdown, encoding="utf-8")
+        output = args.output or (
+            DEFAULT_SHAREABLE_OUTPUT if args.shareable else DEFAULT_OUTPUT
+        )
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(markdown, encoding="utf-8")
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
