@@ -146,6 +146,8 @@ npm run github:deploy:plan
 npm run github:deploy
 npm run launch:handoff
 npm run launch:handoff:write
+npm run launch:dns
+npm run launch:dns:strict
 npm run launch:smoke
 npm run launch:smoke:strict
 ```
@@ -192,6 +194,14 @@ npm run launch:handoff:write
 
 The write command saves `docs/workdoe-launch-handoff.local.md`, which is ignored
 because it contains live local status and machine paths.
+
+Diagnose DNS delegation, apex/www resolution, and checked-in Worker custom
+domains before deployment:
+
+```powershell
+npm run launch:dns
+npm run launch:dns:strict
+```
 
 After DNS and deployment, run production smoke checks for `workdoe.com`:
 

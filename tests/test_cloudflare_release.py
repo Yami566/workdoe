@@ -30,6 +30,7 @@ GITHUB_RELEASE_STATUS_SCRIPT_PATH = ROOT / "scripts" / "github_release_status.py
 GITHUB_DEPLOY_DISPATCH_SCRIPT_PATH = ROOT / "scripts" / "github_deploy_dispatch.py"
 WORKDOE_LAUNCH_DOCTOR_SCRIPT_PATH = ROOT / "scripts" / "workdoe_launch_doctor.py"
 WORKDOE_LAUNCH_HANDOFF_SCRIPT_PATH = ROOT / "scripts" / "workdoe_launch_handoff.py"
+WORKDOE_DNS_DIAGNOSTIC_SCRIPT_PATH = ROOT / "scripts" / "workdoe_dns_diagnostic.py"
 WORKDOE_PRODUCTION_SMOKE_SCRIPT_PATH = ROOT / "scripts" / "workdoe_production_smoke.py"
 APP_SHELL_PATH = ROOT / "cloudflare" / "worker" / "app_shell.py"
 CLERK_ONBOARDING_PATH = ROOT / "cloudflare" / "worker" / "clerk_onboarding.py"
@@ -228,6 +229,18 @@ def load_workdoe_launch_handoff_script():
     spec = importlib.util.spec_from_file_location(
         "workdoe_launch_handoff",
         WORKDOE_LAUNCH_HANDOFF_SCRIPT_PATH,
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_workdoe_dns_diagnostic_script():
+    spec = importlib.util.spec_from_file_location(
+        "workdoe_dns_diagnostic",
+        WORKDOE_DNS_DIAGNOSTIC_SCRIPT_PATH,
     )
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -3500,6 +3513,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Cloudflare production deploy helper compiles", result.checks)
         self.assertIn("GitHub deploy dispatch helper compiles", result.checks)
         self.assertIn("Workdoe launch handoff helper compiles", result.checks)
+        self.assertIn("Workdoe DNS diagnostic helper compiles", result.checks)
         self.assertIn("Workdoe production smoke helper compiles", result.checks)
         self.assertIn(
             "Cloudflare Worker sends and audits queued transactional emails",
@@ -4171,11 +4185,89 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Status: Blocked before production dispatch", markdown)
         self.assertIn("GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.", markdown)
         self.assertIn("gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe", markdown)
+        self.assertIn("npm run launch:dns", markdown)
         self.assertIn("npm run github:deploy:plan", markdown)
         self.assertIn("npm run launch:smoke:strict", markdown)
         self.assertIn("cloudflare-secret-list.local.json", markdown)
         self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", markdown)
         self.assertIn("CLOUDFLARE_API_TOKEN=<redacted>", markdown)
+
+    def test_workdoe_dns_diagnostic_accepts_cloudflare_delegation_and_routes(self):
+        module = load_workdoe_dns_diagnostic_script()
+        original_nslookup = module.run_nslookup
+        original_resolve = module.resolve_addresses
+        original_routes = module.wrangler_custom_domains
+        try:
+            module.run_nslookup = lambda domain, resolver="1.1.1.1": (
+                True,
+                "workdoe.com nameserver = ada.ns.cloudflare.com\n"
+                "workdoe.com nameserver = bob.ns.cloudflare.com\n",
+            )
+            module.resolve_addresses = lambda hostname: (
+                True,
+                ["203.0.113.10"] if hostname == "workdoe.com" else ["203.0.113.11"],
+                "",
+            )
+            module.wrangler_custom_domains = lambda path=module.WRANGLER_CONFIG_PATH: (
+                True,
+                ["workdoe.com", "www.workdoe.com"],
+                "",
+            )
+            payload = module.build_dns_diagnostic()
+        finally:
+            module.run_nslookup = original_nslookup
+            module.resolve_addresses = original_resolve
+            module.wrangler_custom_domains = original_routes
+
+        self.assertTrue(payload["ready"])
+        self.assertEqual(payload["blockers"], [])
+        checks = {check["name"]: check for check in payload["checks"]}
+        self.assertEqual(checks["nameserver-delegation"]["status"], "ready")
+        self.assertEqual(checks["apex-resolution"]["status"], "ready")
+        self.assertEqual(checks["www-resolution"]["status"], "ready")
+        self.assertEqual(checks["wrangler-custom-domains"]["status"], "ready")
+        self.assertIn("npm run launch:smoke:strict", payload["next_actions"])
+
+    def test_workdoe_dns_diagnostic_reports_pending_dns(self):
+        module = load_workdoe_dns_diagnostic_script()
+        original_nslookup = module.run_nslookup
+        original_resolve = module.resolve_addresses
+        original_routes = module.wrangler_custom_domains
+        try:
+            module.run_nslookup = lambda domain, resolver="1.1.1.1": (
+                True,
+                "workdoe.com nameserver = ns1.example.net\n",
+            )
+            module.resolve_addresses = lambda hostname: (
+                False,
+                [],
+                "mock resolution failure",
+            )
+            module.wrangler_custom_domains = lambda path=module.WRANGLER_CONFIG_PATH: (
+                False,
+                ["workdoe.com"],
+                "",
+            )
+            payload = module.build_dns_diagnostic()
+        finally:
+            module.run_nslookup = original_nslookup
+            module.resolve_addresses = original_resolve
+            module.wrangler_custom_domains = original_routes
+
+        self.assertFalse(payload["ready"])
+        self.assertIn(
+            "workdoe.com nameservers are not fully Cloudflare: ns1.example.net.",
+            payload["blockers"],
+        )
+        self.assertIn("workdoe.com does not resolve: mock resolution failure", payload["blockers"])
+        self.assertIn(
+            "www.workdoe.com does not resolve: mock resolution failure",
+            payload["blockers"],
+        )
+        self.assertIn(
+            "Confirm the exact Cloudflare-assigned nameservers",
+            module.render_text(payload),
+        )
 
     def test_workdoe_production_smoke_accepts_ready_public_contract(self):
         module = load_workdoe_production_smoke_script()

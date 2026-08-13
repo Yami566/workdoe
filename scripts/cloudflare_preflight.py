@@ -194,6 +194,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     github_deploy_dispatch_path = repo_root / "scripts" / "github_deploy_dispatch.py"
     workdoe_launch_doctor_path = repo_root / "scripts" / "workdoe_launch_doctor.py"
     workdoe_launch_handoff_path = repo_root / "scripts" / "workdoe_launch_handoff.py"
+    workdoe_dns_diagnostic_path = repo_root / "scripts" / "workdoe_dns_diagnostic.py"
     workdoe_production_smoke_path = repo_root / "scripts" / "workdoe_production_smoke.py"
     static_path = repo_root / "workdoe" / "static"
     worker_actions_path = static_path / "worker-actions.js"
@@ -470,6 +471,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     compile_python(github_deploy_dispatch_path, errors, checks, "GitHub deploy dispatch helper compiles")
     compile_python(workdoe_launch_doctor_path, errors, checks, "Workdoe launch doctor helper compiles")
     compile_python(workdoe_launch_handoff_path, errors, checks, "Workdoe launch handoff helper compiles")
+    compile_python(workdoe_dns_diagnostic_path, errors, checks, "Workdoe DNS diagnostic helper compiles")
     compile_python(workdoe_production_smoke_path, errors, checks, "Workdoe production smoke helper compiles")
 
     worker_source = read_text(worker_path, errors)

@@ -150,6 +150,7 @@ def next_actions(
     if "Clerk proxy proof JSON is missing or invalid" in blockers:
         actions.append("npm run cf:clerk:proof")
     if live and not dns_ready:
+        actions.append("npm run launch:dns")
         actions.append("confirm workdoe.com DNS in Cloudflare")
 
     if cloudflare["ready_to_deploy"] and (not live or (github and github.ready and dns_ready)):

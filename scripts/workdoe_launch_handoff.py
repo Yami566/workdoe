@@ -68,6 +68,7 @@ def build_handoff_payload(
     blockers = sorted(set(list(doctor["blockers"]) + list(dispatch["blockers"])))
     next_actions = []
     for action in list(doctor["next_actions"]) + [
+        "npm run launch:dns",
         "npm run github:deploy:plan",
         "npm run github:deploy",
         "npm run launch:smoke",
