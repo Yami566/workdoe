@@ -7,53 +7,73 @@
   <p>Your profile is visible to clients when they review your mini bid.</p>
 </section>
 
-<form class="form-grid" method="post" enctype="multipart/form-data">
+{% set field_errors = error_feedback.fields %}
+<form class="form-grid" method="post" enctype="multipart/form-data" aria-label="Contractor profile" {% if error_feedback.summary %}aria-describedby="profile-form-errors"{% endif %}>
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-  <label class="wide">
+  {% if error_feedback.summary %}
+    <section id="profile-form-errors" class="form-error-summary wide" role="alert" aria-labelledby="profile-form-errors-title">
+      <h2 id="profile-form-errors-title">Fix {{ error_feedback.summary|length }} item{{ "" if error_feedback.summary|length == 1 else "s" }}</h2>
+      <ul>
+        {% for item in error_feedback.summary %}
+          <li>{% if item.field_id %}<a href="#{{ item.field_id }}">{{ item.message }}</a>{% else %}{{ item.message }}{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+  <label class="wide" for="profile-business-name">
     Business name
-    <input name="business_name" value="{{ form.business_name }}" maxlength="{{ limits.business_max }}" autocomplete="organization" required>
+    <input id="profile-business-name" name="business_name" value="{{ form.business_name }}" maxlength="{{ limits.business_max }}" autocomplete="organization" autocapitalize="words" spellcheck="false" enterkeyhint="next" required {% if field_errors.business_name %}aria-invalid="true" aria-describedby="profile-business-name-error"{% endif %}>
+    {% if field_errors.business_name %}<span id="profile-business-name-error" class="field-error">{{ field_errors.business_name[0] }}</span>{% endif %}
   </label>
-  <fieldset class="wide checkbox-grid">
+  <fieldset class="wide checkbox-grid" id="profile-trades" {% if field_errors.trades %}aria-invalid="true" aria-describedby="profile-trades-error"{% endif %}>
     <legend>Trades</legend>
     {% for category in job_categories %}
-      <label>
-        <input type="checkbox" name="trades" value="{{ category }}" {% if category in selected_trades %}checked{% endif %}>
+      <label for="profile-trade-{{ loop.index }}">
+        <input id="profile-trade-{{ loop.index }}" type="checkbox" name="trades" value="{{ category }}" {% if category in selected_trades %}checked{% endif %}>
         {{ category }}
       </label>
     {% endfor %}
+    {% if field_errors.trades %}<span id="profile-trades-error" class="field-error">{{ field_errors.trades[0] }}</span>{% endif %}
   </fieldset>
-  <label>
+  <label for="profile-service-area">
     Service area
-    <input name="service_area" value="{{ form.service_area }}" maxlength="{{ limits.service_area_max }}" autocomplete="address-level2" placeholder="DC, Montgomery County, Northern Virginia" required>
+    <input id="profile-service-area" name="service_area" value="{{ form.service_area }}" maxlength="{{ limits.service_area_max }}" autocomplete="address-level2" autocapitalize="words" spellcheck="false" enterkeyhint="next" placeholder="DC, Montgomery County, Northern Virginia" required {% if field_errors.service_area %}aria-invalid="true" aria-describedby="profile-service-area-error"{% endif %}>
+    {% if field_errors.service_area %}<span id="profile-service-area-error" class="field-error">{{ field_errors.service_area[0] }}</span>{% endif %}
   </label>
-  <label>
+  <label for="profile-years-in-business">
     Years in business
-    <input name="years_in_business" type="number" min="0" max="{{ limits.years_max }}" value="{{ form.years_in_business }}">
+    <input id="profile-years-in-business" name="years_in_business" type="number" min="0" max="{{ limits.years_max }}" value="{{ form.years_in_business }}" inputmode="numeric" enterkeyhint="next" {% if field_errors.years_in_business %}aria-invalid="true" aria-describedby="profile-years-in-business-error"{% endif %}>
+    {% if field_errors.years_in_business %}<span id="profile-years-in-business-error" class="field-error">{{ field_errors.years_in_business[0] }}</span>{% endif %}
   </label>
-  <label>
+  <label for="profile-insurance-status">
     Insurance status
-    <input name="insurance_status" value="{{ form.insurance_status }}" maxlength="{{ limits.insurance_max }}" placeholder="Available on request">
+    <input id="profile-insurance-status" name="insurance_status" value="{{ form.insurance_status }}" maxlength="{{ limits.insurance_max }}" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Available on request" {% if field_errors.insurance_status %}aria-invalid="true" aria-describedby="profile-insurance-status-error"{% endif %}>
+    {% if field_errors.insurance_status %}<span id="profile-insurance-status-error" class="field-error">{{ field_errors.insurance_status[0] }}</span>{% endif %}
   </label>
-  <label>
+  <label for="profile-license-number">
     License number
-    <input name="license_number" value="{{ form.license_number }}" maxlength="{{ limits.license_max }}" placeholder="Optional for the local beta">
+    <input id="profile-license-number" name="license_number" value="{{ form.license_number }}" maxlength="{{ limits.license_max }}" autocapitalize="characters" spellcheck="false" enterkeyhint="next" placeholder="Optional for the local beta" {% if field_errors.license_number %}aria-invalid="true" aria-describedby="profile-license-number-error"{% endif %}>
+    {% if field_errors.license_number %}<span id="profile-license-number-error" class="field-error">{{ field_errors.license_number[0] }}</span>{% endif %}
   </label>
-  <label>
+  <label for="profile-website">
     Website
-    <input name="website" type="url" value="{{ form.website }}" maxlength="{{ limits.website_max }}" placeholder="https://example.com">
+    <input id="profile-website" name="website" type="url" value="{{ form.website }}" maxlength="{{ limits.website_max }}" autocomplete="url" autocapitalize="off" spellcheck="false" enterkeyhint="next" placeholder="https://example.com" {% if field_errors.website %}aria-invalid="true" aria-describedby="profile-website-error"{% endif %}>
+    {% if field_errors.website %}<span id="profile-website-error" class="field-error">{{ field_errors.website[0] }}</span>{% endif %}
   </label>
-  <label>
+  <label for="profile-phone">
     Phone
-    <input name="phone" type="tel" value="{{ form.phone }}" maxlength="{{ limits.phone_max }}" autocomplete="tel" placeholder="Optional">
+    <input id="profile-phone" name="phone" type="tel" value="{{ form.phone }}" maxlength="{{ limits.phone_max }}" autocomplete="tel" inputmode="tel" enterkeyhint="next" placeholder="Optional" {% if field_errors.phone %}aria-invalid="true" aria-describedby="profile-phone-error"{% endif %}>
+    {% if field_errors.phone %}<span id="profile-phone-error" class="field-error">{{ field_errors.phone[0] }}</span>{% endif %}
   </label>
-  <label class="wide">
+  <label class="wide" for="profile-intro">
     Intro
-    <textarea name="intro" rows="5" minlength="{{ limits.intro_min }}" maxlength="{{ limits.intro_max }}" placeholder="Describe your crew, service style, and ideal jobs." required>{{ form.intro }}</textarea>
+    <textarea id="profile-intro" name="intro" rows="5" minlength="{{ limits.intro_min }}" maxlength="{{ limits.intro_max }}" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe your crew, service style, and ideal jobs." required {% if field_errors.intro %}aria-invalid="true" aria-describedby="profile-intro-error"{% endif %}>{{ form.intro }}</textarea>
+    {% if field_errors.intro %}<span id="profile-intro-error" class="field-error">{{ field_errors.intro[0] }}</span>{% endif %}
   </label>
-  <label class="wide">
+  <label class="wide" for="profile-photos">
     Portfolio photos
-    <input name="portfolio_photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
-    <span class="help-text">Private uploads. PNG, JPG, GIF, or WebP.</span>
+    <input id="profile-photos" name="portfolio_photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-describedby="profile-photos-help">
+    <span id="profile-photos-help" class="help-text">Private uploads. PNG, JPG, GIF, or WebP.</span>
   </label>
   <div class="form-actions wide">
     <button class="button" type="submit">Save profile</button>

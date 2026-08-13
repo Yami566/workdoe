@@ -1455,9 +1455,7 @@ def register_routes(app: Flask) -> None:
             form = cleaned_contractor_profile_form(request.form)
             errors = validate_contractor_profile_form(form)
             if errors:
-                for error in errors:
-                    flash(error, "error")
-                return render_contractor_profile_form(form, photos)
+                return render_contractor_profile_form(form, photos, errors=errors)
 
             db.execute(
                 """
@@ -2566,13 +2564,14 @@ def contractor_profile_to_form(profile) -> dict[str, str]:
     }
 
 
-def render_contractor_profile_form(form: dict[str, str], photos):
+def render_contractor_profile_form(form: dict[str, str], photos, errors: list[str] | None = None):
     return render_template(
         "contractor_profile.html",
         form=form,
         photos=photos,
         selected_trades=parse_trades(form["trades"]),
         limits=contractor_profile_limits(),
+        error_feedback=profile_error_feedback(errors or []),
     )
 
 
@@ -2632,6 +2631,46 @@ def validate_contractor_profile_form(form: dict[str, str]) -> list[str]:
     if len(form["phone"]) > PROFILE_PHONE_MAX_LENGTH:
         errors.append(f"Keep the phone under {PROFILE_PHONE_MAX_LENGTH} characters.")
     return errors
+
+
+def profile_error_feedback(errors: list[str]) -> dict:
+    return build_error_feedback(
+        errors,
+        profile_error_field,
+        [
+            "business_name",
+            "trades",
+            "service_area",
+            "intro",
+            "insurance_status",
+            "license_number",
+            "years_in_business",
+            "website",
+            "phone",
+        ],
+    )
+
+
+def profile_error_field(message: str) -> str:
+    if "business name" in message:
+        return "business_name"
+    if "trade" in message:
+        return "trades"
+    if "service area" in message:
+        return "service_area"
+    if "years in business" in message:
+        return "years_in_business"
+    if "business" in message or "intro" in message:
+        return "intro"
+    if "insurance" in message:
+        return "insurance_status"
+    if "license" in message:
+        return "license_number"
+    if "website" in message or "URL" in message:
+        return "website"
+    if "phone" in message:
+        return "phone"
+    return ""
 
 
 def profile_years_value(value: str):
