@@ -11,6 +11,7 @@ uploads/
 .env
 *.local.json
 *.local.txt
+*.local.md
 cloudflare/.dev.vars
 .wrangler/
 .wrangler-config/

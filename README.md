@@ -144,6 +144,8 @@ npm run cf:deploy:plan
 npm run cf:deploy
 npm run github:deploy:plan
 npm run github:deploy
+npm run launch:handoff
+npm run launch:handoff:write
 ```
 
 GitHub Actions is wired through `.github/workflows/cloudflare-deploy.yml`.
@@ -178,6 +180,16 @@ only after the live launch doctor is ready:
 npm run github:deploy:plan
 npm run github:deploy
 ```
+
+Generate a redacted launch handoff checklist from the same live gates:
+
+```powershell
+npm run launch:handoff
+npm run launch:handoff:write
+```
+
+The write command saves `docs/workdoe-launch-handoff.local.md`, which is ignored
+because it contains live local status and machine paths.
 
 Set each required Worker secret in Cloudflare with Wrangler's secure prompt:
 

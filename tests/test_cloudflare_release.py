@@ -29,6 +29,7 @@ PRODUCTION_DEPLOY_SCRIPT_PATH = ROOT / "scripts" / "cloudflare_production_deploy
 GITHUB_RELEASE_STATUS_SCRIPT_PATH = ROOT / "scripts" / "github_release_status.py"
 GITHUB_DEPLOY_DISPATCH_SCRIPT_PATH = ROOT / "scripts" / "github_deploy_dispatch.py"
 WORKDOE_LAUNCH_DOCTOR_SCRIPT_PATH = ROOT / "scripts" / "workdoe_launch_doctor.py"
+WORKDOE_LAUNCH_HANDOFF_SCRIPT_PATH = ROOT / "scripts" / "workdoe_launch_handoff.py"
 APP_SHELL_PATH = ROOT / "cloudflare" / "worker" / "app_shell.py"
 CLERK_ONBOARDING_PATH = ROOT / "cloudflare" / "worker" / "clerk_onboarding.py"
 CLERK_SESSIONS_PATH = ROOT / "cloudflare" / "worker" / "clerk_sessions.py"
@@ -213,6 +214,19 @@ def load_workdoe_launch_doctor_script():
     spec = importlib.util.spec_from_file_location(
         "workdoe_launch_doctor",
         WORKDOE_LAUNCH_DOCTOR_SCRIPT_PATH,
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_workdoe_launch_handoff_script():
+    load_github_deploy_dispatch_script()
+    spec = importlib.util.spec_from_file_location(
+        "workdoe_launch_handoff",
+        WORKDOE_LAUNCH_HANDOFF_SCRIPT_PATH,
     )
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -3472,6 +3486,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Cloudflare resource bootstrap helper compiles", result.checks)
         self.assertIn("Cloudflare production deploy helper compiles", result.checks)
         self.assertIn("GitHub deploy dispatch helper compiles", result.checks)
+        self.assertIn("Workdoe launch handoff helper compiles", result.checks)
         self.assertIn(
             "Cloudflare Worker sends and audits queued transactional emails",
             result.checks,
@@ -4078,6 +4093,74 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertFalse(payload["ready_to_dispatch"])
         self.assertTrue(payload["executes_commands"])
         self.assertIn("Dispatch requires --execute and --yes.", payload["blockers"])
+
+    def test_workdoe_launch_handoff_renders_redacted_operator_checklist(self):
+        module = load_workdoe_launch_handoff_script()
+        original_doctor = module.build_doctor
+        original_dispatch = module.build_dispatch_plan
+        try:
+            doctor_payload = {
+                "ready": False,
+                "blockers": [
+                    "GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.",
+                    "CLOUDFLARE_API_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz123456",
+                ],
+                "next_actions": [
+                    "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
+                    "npm run cf:resources:apply",
+                ],
+                "phases": [
+                    {
+                        "name": "github-release",
+                        "status": "pending",
+                        "summary": "GitHub release setup still has blockers.",
+                        "next_command": "npm run github:release:status",
+                    },
+                    {
+                        "name": "dns",
+                        "status": "pending",
+                        "summary": "workdoe.com does not resolve.",
+                        "next_command": "confirm workdoe.com DNS in Cloudflare",
+                    },
+                ],
+            }
+            dispatch_payload = {
+                "ready_to_dispatch": False,
+                "repository": "Yami566/workdoe",
+                "workflow": "cloudflare-deploy.yml",
+                "ref": "main",
+                "command_text": (
+                    "gh workflow run cloudflare-deploy.yml --repo Yami566/workdoe "
+                    "--ref main -f deploy=DEPLOY -f clerk_proxy_url=https://workdoe.com/__clerk"
+                ),
+                "git": {
+                    "branch": "main",
+                    "clean": True,
+                    "synced_with_upstream": True,
+                },
+                "blockers": [
+                    "Launch doctor is not ready; resolve blockers before dispatching production deployment."
+                ],
+            }
+            module.build_doctor = lambda repo_root=ROOT, live=True, local_url=module.DEFAULT_LOCAL_URL: doctor_payload
+            module.build_dispatch_plan = lambda repo_root=ROOT, local_url=module.DEFAULT_LOCAL_URL: dispatch_payload
+            payload = module.build_handoff_payload(ROOT)
+            markdown = module.render_markdown(payload)
+        finally:
+            module.build_doctor = original_doctor
+            module.build_dispatch_plan = original_dispatch
+
+        self.assertFalse(payload["ready"])
+        self.assertFalse(payload["contains_secret_values"])
+        self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", json.dumps(payload))
+        self.assertIn("# Workdoe Launch Handoff", markdown)
+        self.assertIn("Status: Blocked before production dispatch", markdown)
+        self.assertIn("GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.", markdown)
+        self.assertIn("gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe", markdown)
+        self.assertIn("npm run github:deploy:plan", markdown)
+        self.assertIn("cloudflare-secret-list.local.json", markdown)
+        self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", markdown)
+        self.assertIn("CLOUDFLARE_API_TOKEN=<redacted>", markdown)
 
     def test_workdoe_launch_doctor_combines_release_blockers(self):
         module = load_workdoe_launch_doctor_script()

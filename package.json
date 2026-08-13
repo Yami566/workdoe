@@ -19,6 +19,8 @@
     "github:release:status": "python scripts/github_release_status.py --live",
     "github:deploy:plan": "python scripts/github_deploy_dispatch.py",
     "github:deploy": "python scripts/github_deploy_dispatch.py --execute --yes",
+    "launch:handoff": "python scripts/workdoe_launch_handoff.py",
+    "launch:handoff:write": "python scripts/workdoe_launch_handoff.py --write",
     "launch:doctor": "python scripts/workdoe_launch_doctor.py",
     "launch:doctor:live": "python scripts/workdoe_launch_doctor.py --live"
   },
