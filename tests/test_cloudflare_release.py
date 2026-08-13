@@ -798,6 +798,53 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         finally:
             sys.argv = original_argv
 
+    def test_cloudflare_wrangler_helpers_decode_cli_output_as_utf8(self):
+        captured_kwargs = []
+
+        class WranglerResult:
+            returncode = 1
+            stdout = ""
+            stderr = "Cloudflare error"
+
+        def fake_run(*args, **kwargs):
+            captured_kwargs.append(kwargs)
+            return WranglerResult()
+
+        bootstrap_module = load_resource_bootstrap_script()
+        deploy_module = load_production_deploy_script()
+        secret_module = load_secret_evidence_script()
+        original_bootstrap_run = bootstrap_module.subprocess.run
+        original_deploy_run = deploy_module.subprocess.run
+        original_secret_run = secret_module.subprocess.run
+        try:
+            bootstrap_module.subprocess.run = fake_run
+            deploy_module.subprocess.run = fake_run
+            secret_module.subprocess.run = fake_run
+            bootstrap_module.run_external(
+                bootstrap_module.BootstrapStep(
+                    name="create-d1-production",
+                    command=["wrangler", "d1", "create", "workdoe"],
+                    cwd=str(ROOT / "cloudflare"),
+                )
+            )
+            deploy_module.run_external(
+                deploy_module.DeployStep(
+                    name="deploy-worker",
+                    command=["wrangler", "deploy"],
+                    cwd=str(ROOT / "cloudflare"),
+                )
+            )
+            secret_module.run_external()
+        finally:
+            bootstrap_module.subprocess.run = original_bootstrap_run
+            deploy_module.subprocess.run = original_deploy_run
+            secret_module.subprocess.run = original_secret_run
+
+        self.assertEqual(len(captured_kwargs), 3)
+        for kwargs in captured_kwargs:
+            self.assertEqual(kwargs["encoding"], "utf-8")
+            self.assertEqual(kwargs["errors"], "replace")
+
     def test_cloudflare_resource_bootstrap_treats_existing_r2_and_queues_as_done(self):
         module = load_resource_bootstrap_script()
         steps = [
@@ -2102,8 +2149,23 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn('data-json-action="/api/contractor/profile"', profile_html)
         self.assertIn('data-file-action="/api/media/contractors/7/upload"', profile_html)
+        self.assertIn('aria-label="Contractor profile"', profile_html)
+        self.assertIn('for="profile-business-name"', profile_html)
+        self.assertIn('id="profile-business-name"', profile_html)
+        self.assertIn('id="profile-trades"', profile_html)
+        self.assertIn('for="profile-trade-1"', profile_html)
+        self.assertIn('id="profile-service-area"', profile_html)
+        self.assertIn('id="profile-years-in-business"', profile_html)
+        self.assertIn('inputmode="numeric"', profile_html)
+        self.assertIn('id="profile-website"', profile_html)
+        self.assertIn('autocomplete="url"', profile_html)
+        self.assertIn('id="profile-intro"', profile_html)
+        self.assertIn('enterkeyhint="done"', profile_html)
         self.assertIn('name="trades" value="Power washing" checked', profile_html)
         self.assertIn('name="portfolio_photo"', profile_html)
+        self.assertIn('id="profile-photos"', profile_html)
+        self.assertIn('aria-describedby="profile-photos-help"', profile_html)
+        self.assertIn('id="profile-photos-help"', profile_html)
         self.assertIn('href="/contractors/7"', profile_html)
         self.assertIn('src="/static/worker-actions.js"', profile_html)
         self.assertNotIn("contractor@example.com", profile_html)

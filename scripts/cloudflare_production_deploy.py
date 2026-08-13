@@ -122,6 +122,8 @@ def run_external(step: DeployStep) -> subprocess.CompletedProcess:
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
 
 

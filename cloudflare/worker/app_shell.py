@@ -460,11 +460,11 @@ def contractor_profile_html(user, profile: dict, photos: list[dict] | None = Non
     }
     trade_options = "\n".join(
         f"""
-      <label>
-        <input type="checkbox" name="trades" value="{escape(category)}"{" checked" if category in selected_trades else ""}>
+      <label for="profile-trade-{index}">
+        <input id="profile-trade-{index}" type="checkbox" name="trades" value="{escape(category)}"{" checked" if category in selected_trades else ""}>
         {escape(category)}
       </label>"""
-        for category in sorted(JOB_CATEGORIES)
+        for index, category in enumerate(sorted(JOB_CATEGORIES), start=1)
     )
     years = profile.get("years_in_business")
     years_value = "" if years is None else str(years)
@@ -488,19 +488,19 @@ def contractor_profile_html(user, profile: dict, photos: list[dict] | None = Non
       </div>
       <a class="button secondary" href="/contractors/{contractor_id}">Preview</a>
     </section>
-    <form class="form-grid" data-json-action="/api/contractor/profile" data-success-url-template="/contractor/profile" aria-describedby="profile-form-status">
-      <label class="wide">Business name <input name="business_name" value="{escape(profile.get('business_name', ''))}" maxlength="120" autocomplete="organization" required></label>
-      <fieldset class="wide checkbox-grid">
+    <form class="form-grid" data-json-action="/api/contractor/profile" data-success-url-template="/contractor/profile" aria-label="Contractor profile" aria-describedby="profile-form-status">
+      <label class="wide" for="profile-business-name">Business name <input id="profile-business-name" name="business_name" value="{escape(profile.get('business_name', ''))}" maxlength="120" autocomplete="organization" autocapitalize="words" spellcheck="false" enterkeyhint="next" required></label>
+      <fieldset class="wide checkbox-grid" id="profile-trades">
         <legend>Trades</legend>
 {trade_options}
       </fieldset>
-      <label>Service area <input name="service_area" value="{escape(profile.get('service_area', ''))}" maxlength="160" autocomplete="address-level2" placeholder="DC, Montgomery County, Northern Virginia" required></label>
-      <label>Years in business <input name="years_in_business" type="number" min="0" max="100" value="{escape(years_value)}"></label>
-      <label>Insurance status <input name="insurance_status" value="{escape(profile.get('insurance_status', ''))}" maxlength="120" placeholder="Available on request"></label>
-      <label>License number <input name="license_number" value="{escape(profile.get('license_number', ''))}" maxlength="80" placeholder="Optional for the local beta"></label>
-      <label>Website <input name="website" type="url" value="{escape(profile.get('website', ''))}" maxlength="200" placeholder="https://example.com"></label>
-      <label>Phone <input name="phone" type="tel" value="{escape(profile.get('phone', ''))}" maxlength="40" autocomplete="tel" placeholder="Optional"></label>
-      <label class="wide">Intro <textarea name="intro" rows="5" minlength="20" maxlength="900" placeholder="Describe your crew, service style, and ideal jobs." required>{escape(profile.get('intro', ''))}</textarea></label>
+      <label for="profile-service-area">Service area <input id="profile-service-area" name="service_area" value="{escape(profile.get('service_area', ''))}" maxlength="160" autocomplete="address-level2" autocapitalize="words" spellcheck="false" enterkeyhint="next" placeholder="DC, Montgomery County, Northern Virginia" required></label>
+      <label for="profile-years-in-business">Years in business <input id="profile-years-in-business" name="years_in_business" type="number" min="0" max="100" value="{escape(years_value)}" inputmode="numeric" enterkeyhint="next"></label>
+      <label for="profile-insurance-status">Insurance status <input id="profile-insurance-status" name="insurance_status" value="{escape(profile.get('insurance_status', ''))}" maxlength="120" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Available on request"></label>
+      <label for="profile-license-number">License number <input id="profile-license-number" name="license_number" value="{escape(profile.get('license_number', ''))}" maxlength="80" autocapitalize="characters" spellcheck="false" enterkeyhint="next" placeholder="Optional for the local beta"></label>
+      <label for="profile-website">Website <input id="profile-website" name="website" type="url" value="{escape(profile.get('website', ''))}" maxlength="200" autocomplete="url" autocapitalize="off" spellcheck="false" enterkeyhint="next" placeholder="https://example.com"></label>
+      <label for="profile-phone">Phone <input id="profile-phone" name="phone" type="tel" value="{escape(profile.get('phone', ''))}" maxlength="40" autocomplete="tel" inputmode="tel" enterkeyhint="next" placeholder="Optional"></label>
+      <label class="wide" for="profile-intro">Intro <textarea id="profile-intro" name="intro" rows="5" minlength="20" maxlength="900" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe your crew, service style, and ideal jobs." required>{escape(profile.get('intro', ''))}</textarea></label>
       <div class="form-actions wide">
         <button class="button" type="submit">Save profile</button>
         <p id="profile-form-status" class="help-text" data-form-status aria-live="polite"></p>
@@ -509,7 +509,8 @@ def contractor_profile_html(user, profile: dict, photos: list[dict] | None = Non
     <section class="detail-grid">
       <form class="panel stack-form" data-file-action="/api/media/contractors/{contractor_id}/upload" data-success-url-template="/contractor/profile" enctype="multipart/form-data" aria-describedby="profile-upload-status">
         <h2>Portfolio photo</h2>
-        <label>Image <input name="portfolio_photo" type="file" accept="image/png,image/jpeg,image/gif,image/webp" required></label>
+        <label for="profile-photos">Image <input id="profile-photos" name="portfolio_photo" type="file" accept="image/png,image/jpeg,image/gif,image/webp" aria-describedby="profile-photos-help" required></label>
+        <p id="profile-photos-help" class="help-text">Private uploads. PNG, JPG, GIF, or WebP.</p>
         <button class="button secondary" type="submit">Upload photo</button>
         <p id="profile-upload-status" class="help-text" data-form-status aria-live="polite"></p>
       </form>
