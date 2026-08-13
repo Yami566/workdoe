@@ -23,6 +23,8 @@ WORKER_SECRET_NAMES = [
     "WORKDOE_TURNSTILE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SITE_KEY",
 ]
+CLOUDFLARE_TOKEN_ACTION = "set CLOUDFLARE_API_TOKEN in this shell without committing it"
+GITHUB_CLOUDFLARE_TOKEN_ACTION = "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe"
 
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
@@ -117,6 +119,14 @@ def dedupe(values: list[str]) -> list[str]:
     return output
 
 
+def cloudflare_token_missing(cloudflare: dict) -> bool:
+    blockers = "\n".join(cloudflare.get("blockers") or [])
+    return (
+        cloudflare.get("current_phase") == "cloudflare-token"
+        or "CLOUDFLARE_API_TOKEN is not set" in blockers
+    )
+
+
 def next_actions(
     *,
     local_ok: bool,
@@ -128,6 +138,8 @@ def next_actions(
     dns_next_actions: list[str] | None = None,
 ) -> list[str]:
     actions: list[str] = []
+    token_missing = cloudflare_token_missing(cloudflare)
+    blockers = "\n".join(cloudflare["blockers"])
     if not local_ok:
         actions.append("python run.py")
 
@@ -144,8 +156,13 @@ def next_actions(
     if live and wrangler_authenticated is False:
         actions.append(".\\node_modules\\.bin\\wrangler.cmd login")
 
-    blockers = "\n".join(cloudflare["blockers"])
-    if "Wrangler D1" in blockers or cloudflare["current_phase"] == "cloudflare-resources":
+    if token_missing:
+        actions.append(cloudflare.get("next_command") or CLOUDFLARE_TOKEN_ACTION)
+        if live:
+            actions.append(GITHUB_CLOUDFLARE_TOKEN_ACTION)
+    if not token_missing and (
+        "Wrangler D1" in blockers or cloudflare["current_phase"] == "cloudflare-resources"
+    ):
         actions.extend(
             [
                 ".\\node_modules\\.bin\\wrangler.cmd login"
@@ -155,7 +172,7 @@ def next_actions(
                 "npm run cf:resources:apply",
             ]
         )
-    if "Cloudflare is missing required secret bindings" in blockers:
+    if not token_missing and "Cloudflare is missing required secret bindings" in blockers:
         actions.extend(
             [
                 f".\\node_modules\\.bin\\wrangler.cmd secret put {name} --config cloudflare\\wrangler.jsonc"

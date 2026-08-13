@@ -4393,10 +4393,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "blockers": [
                     "GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.",
                     "CLOUDFLARE_API_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz123456",
+                    "CLOUDFLARE_API_TOKEN is not set; local Cloudflare resource bootstrap, secret evidence, and deploy execute commands cannot run.",
                     f"Clerk proxy proof JSON is missing or invalid: {ROOT}\\clerk-proxy-proof.local.json",
                 ],
                 "next_actions": [
                     "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
+                    "set CLOUDFLARE_API_TOKEN in this shell without committing it",
                     "npm run cf:resources:apply",
                 ],
                 "phases": [
@@ -4453,6 +4455,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             for group in payload["blocker_groups"]
         }
         self.assertIn("GitHub Deployment Secrets", blocker_groups)
+        self.assertIn("Cloudflare Account And Resources", blocker_groups)
         self.assertIn("Final Deployment Gate", blocker_groups)
         self.assertIn(
             "GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.",
@@ -4462,13 +4465,22 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "Launch doctor is not ready; resolve blockers before dispatching production deployment.",
             blocker_groups["Final Deployment Gate"],
         )
+        self.assertIn(
+            "CLOUDFLARE_API_TOKEN is not set; local Cloudflare resource bootstrap, secret evidence, and deploy execute commands cannot run.",
+            blocker_groups["Cloudflare Account And Resources"],
+        )
         groups = {group["name"]: group["actions"] for group in payload["action_groups"]}
         self.assertIn("GitHub Deployment Secrets", groups)
+        self.assertIn("Cloudflare Account And Resources", groups)
         self.assertIn("DNS And Domain Activation", groups)
         self.assertIn("Final Deployment And Smoke", groups)
         self.assertIn(
             "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
             groups["GitHub Deployment Secrets"],
+        )
+        self.assertIn(
+            "set CLOUDFLARE_API_TOKEN in this shell without committing it",
+            groups["Cloudflare Account And Resources"],
         )
         self.assertIn("npm run launch:dns", groups["DNS And Domain Activation"])
         self.assertIn("npm run launch:smoke:strict", groups["Final Deployment And Smoke"])
@@ -4476,6 +4488,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Status: Blocked before production dispatch", markdown)
         self.assertIn("This private local handoff", markdown)
         self.assertIn("### GitHub Deployment Secrets", markdown)
+        self.assertIn("### Cloudflare Account And Resources", markdown)
         self.assertIn("### Final Deployment Gate", markdown)
         self.assertIn("### DNS And Domain Activation", markdown)
         self.assertIn("### Final Deployment And Smoke", markdown)
@@ -4859,6 +4872,38 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             live_payload["next_actions"],
         )
         self.assertIn("confirm workdoe.com DNS in Cloudflare", live_payload["next_actions"])
+
+    def test_workdoe_launch_doctor_prioritizes_cloudflare_token_phase(self):
+        module = load_workdoe_launch_doctor_script()
+        original_head_ok = module.http_head_ok
+        original_cloudflare = module.build_launch_status
+        try:
+            module.http_head_ok = lambda url: (True, "HTTP 200")
+            module.build_launch_status = lambda repo_root=ROOT: {
+                "ready_to_deploy": False,
+                "current_phase": "cloudflare-token",
+                "next_command": "set CLOUDFLARE_API_TOKEN in this shell without committing it",
+                "blockers": [
+                    "CLOUDFLARE_API_TOKEN is not set; local Cloudflare resource bootstrap, secret evidence, and deploy execute commands cannot run.",
+                    "Cloudflare is missing required secret bindings: CLERK_SECRET_KEY",
+                    "Wrangler D1 database_id is still the placeholder UUID.",
+                ],
+                "warnings": [],
+            }
+            payload = module.build_doctor(ROOT)
+        finally:
+            module.http_head_ok = original_head_ok
+            module.build_launch_status = original_cloudflare
+
+        self.assertFalse(payload["ready"])
+        self.assertIn(
+            "set CLOUDFLARE_API_TOKEN in this shell without committing it",
+            payload["next_actions"],
+        )
+        self.assertNotIn("npm run cf:resources:apply", payload["next_actions"])
+        self.assertFalse(
+            any("wrangler.cmd secret put" in action for action in payload["next_actions"])
+        )
 
     def test_cloudflare_wrangler_resolver_accepts_env_or_local_binary(self):
         module = load_wrangler_helper_script()

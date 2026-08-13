@@ -17,7 +17,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from github_deploy_dispatch import build_dispatch_plan  # noqa: E402
-from workdoe_launch_doctor import DEFAULT_LOCAL_URL, build_doctor  # noqa: E402
+from workdoe_launch_doctor import CLOUDFLARE_TOKEN_ACTION, DEFAULT_LOCAL_URL, build_doctor  # noqa: E402
 
 
 SECRET_VALUE_PATTERNS = [
@@ -113,6 +113,7 @@ ACTION_GROUPS = [
     (
         "Cloudflare Account And Resources",
         lambda action: action.endswith("wrangler.cmd login")
+        or action == CLOUDFLARE_TOKEN_ACTION
         or action in {"npm run cf:resources:plan", "npm run cf:resources:apply"},
     ),
     (
@@ -157,6 +158,7 @@ BLOCKER_GROUPS = [
     (
         "Cloudflare Account And Resources",
         lambda blocker: "Wrangler is not authenticated" in blocker
+        or "CLOUDFLARE_API_TOKEN is not set" in blocker
         or "D1 database_id" in blocker
         or "D1 preview_database_id" in blocker
         or "Cloudflare launch gate" in blocker,
