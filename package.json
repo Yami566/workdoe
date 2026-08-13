@@ -17,6 +17,8 @@
     "cf:deploy": "python scripts/cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
     "github:release:plan": "python scripts/github_release_status.py",
     "github:release:status": "python scripts/github_release_status.py --live",
+    "github:deploy:plan": "python scripts/github_deploy_dispatch.py",
+    "github:deploy": "python scripts/github_deploy_dispatch.py --execute --yes",
     "launch:doctor": "python scripts/workdoe_launch_doctor.py",
     "launch:doctor:live": "python scripts/workdoe_launch_doctor.py --live"
   },

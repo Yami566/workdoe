@@ -156,7 +156,8 @@ def next_actions(
         actions.extend(
             [
                 "npm run cf:deploy:plan",
-                "gh workflow run cloudflare-deploy.yml --repo Yami566/workdoe --ref main -f deploy=DEPLOY -f clerk_proxy_url=https://workdoe.com/__clerk",
+                "npm run github:deploy:plan",
+                "npm run github:deploy",
             ]
         )
     else:

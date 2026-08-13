@@ -27,6 +27,7 @@ D1_ID_APPLY_SCRIPT_PATH = ROOT / "scripts" / "apply_cloudflare_d1_ids.py"
 RESOURCE_BOOTSTRAP_SCRIPT_PATH = ROOT / "scripts" / "cloudflare_resource_bootstrap.py"
 PRODUCTION_DEPLOY_SCRIPT_PATH = ROOT / "scripts" / "cloudflare_production_deploy.py"
 GITHUB_RELEASE_STATUS_SCRIPT_PATH = ROOT / "scripts" / "github_release_status.py"
+GITHUB_DEPLOY_DISPATCH_SCRIPT_PATH = ROOT / "scripts" / "github_deploy_dispatch.py"
 WORKDOE_LAUNCH_DOCTOR_SCRIPT_PATH = ROOT / "scripts" / "workdoe_launch_doctor.py"
 APP_SHELL_PATH = ROOT / "cloudflare" / "worker" / "app_shell.py"
 CLERK_ONBOARDING_PATH = ROOT / "cloudflare" / "worker" / "clerk_onboarding.py"
@@ -187,6 +188,19 @@ def load_github_release_status_script():
     spec = importlib.util.spec_from_file_location(
         "github_release_status",
         GITHUB_RELEASE_STATUS_SCRIPT_PATH,
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_github_deploy_dispatch_script():
+    load_workdoe_launch_doctor_script()
+    spec = importlib.util.spec_from_file_location(
+        "github_deploy_dispatch",
+        GITHUB_DEPLOY_DISPATCH_SCRIPT_PATH,
     )
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -3457,6 +3471,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Cloudflare D1 ID apply helper compiles", result.checks)
         self.assertIn("Cloudflare resource bootstrap helper compiles", result.checks)
         self.assertIn("Cloudflare production deploy helper compiles", result.checks)
+        self.assertIn("GitHub deploy dispatch helper compiles", result.checks)
         self.assertIn(
             "Cloudflare Worker sends and audits queued transactional emails",
             result.checks,
@@ -3970,6 +3985,99 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "GitHub production environment must allow only the main branch.",
             too_broad.blockers,
         )
+
+    def test_github_deploy_dispatch_requires_ready_doctor_and_synced_main(self):
+        module = load_github_deploy_dispatch_script()
+        original_doctor = module.build_doctor
+        original_git_state = module.build_git_state
+        try:
+            module.build_doctor = lambda repo_root=ROOT, live=True, local_url=module.DEFAULT_LOCAL_URL: {
+                "ready": False,
+                "blockers": ["D1 database_id must be replaced with the real Cloudflare UUID."],
+            }
+            module.build_git_state = lambda repo_root=ROOT, expected_branch="main": module.GitState(
+                branch="main",
+                clean=True,
+                head_sha="abc123",
+                upstream_sha="abc123",
+                synced_with_upstream=True,
+            )
+            plan = module.build_dispatch_plan(ROOT)
+
+            module.build_doctor = lambda repo_root=ROOT, live=True, local_url=module.DEFAULT_LOCAL_URL: {
+                "ready": True,
+                "blockers": [],
+            }
+            module.build_git_state = lambda repo_root=ROOT, expected_branch="main": module.GitState(
+                branch="feature/workdoe",
+                clean=False,
+                head_sha="abc123",
+                upstream_sha="def456",
+                synced_with_upstream=False,
+                blockers=[
+                    "Local branch must be main before dispatch.",
+                    "Local worktree must be clean before dispatch.",
+                    "Local HEAD must match the upstream branch before dispatch.",
+                ],
+            )
+            git_blocked_plan = module.build_dispatch_plan(ROOT)
+        finally:
+            module.build_doctor = original_doctor
+            module.build_git_state = original_git_state
+
+        self.assertFalse(plan["ready_to_dispatch"])
+        self.assertIn(
+            "Launch doctor is not ready; resolve blockers before dispatching production deployment.",
+            plan["blockers"],
+        )
+        self.assertIn(
+            "D1 database_id must be replaced with the real Cloudflare UUID.",
+            plan["blockers"],
+        )
+        self.assertEqual(plan["command"][0:4], ["gh", "workflow", "run", "cloudflare-deploy.yml"])
+        self.assertIn("--ref", plan["command"])
+        self.assertIn("deploy=DEPLOY", plan["command"])
+        self.assertIn("clerk_proxy_url=https://workdoe.com/__clerk", plan["command"])
+        self.assertFalse(git_blocked_plan["ready_to_dispatch"])
+        self.assertIn("Local branch must be main before dispatch.", git_blocked_plan["blockers"])
+        self.assertIn("Local worktree must be clean before dispatch.", git_blocked_plan["blockers"])
+        self.assertIn(
+            "Local HEAD must match the upstream branch before dispatch.",
+            git_blocked_plan["blockers"],
+        )
+
+    def test_github_deploy_dispatch_execute_requires_yes(self):
+        module = load_github_deploy_dispatch_script()
+        original_plan = module.build_dispatch_plan
+        original_argv = sys.argv
+        try:
+            module.build_dispatch_plan = lambda *args, **kwargs: {
+                "service": "workdoe",
+                "domain": "workdoe.com",
+                "safe_by_default": True,
+                "executes_commands": False,
+                "ready_to_dispatch": True,
+                "repository": "Yami566/workdoe",
+                "workflow": "cloudflare-deploy.yml",
+                "ref": "main",
+                "clerk_proxy_url": "https://workdoe.com/__clerk",
+                "command": ["gh", "workflow", "run", "cloudflare-deploy.yml"],
+                "command_text": "gh workflow run cloudflare-deploy.yml",
+                "git": {},
+                "doctor": {},
+                "blockers": [],
+            }
+            sys.argv = ["github_deploy_dispatch.py", "--execute", "--json"]
+            with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                self.assertEqual(module.main(), 1)
+            payload = json.loads(stdout.getvalue())
+        finally:
+            module.build_dispatch_plan = original_plan
+            sys.argv = original_argv
+
+        self.assertFalse(payload["ready_to_dispatch"])
+        self.assertTrue(payload["executes_commands"])
+        self.assertIn("Dispatch requires --execute and --yes.", payload["blockers"])
 
     def test_workdoe_launch_doctor_combines_release_blockers(self):
         module = load_workdoe_launch_doctor_script()

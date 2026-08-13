@@ -142,6 +142,8 @@ npm run cf:secrets:evidence
 npm run cf:clerk:proof
 npm run cf:deploy:plan
 npm run cf:deploy
+npm run github:deploy:plan
+npm run github:deploy
 ```
 
 GitHub Actions is wired through `.github/workflows/cloudflare-deploy.yml`.
@@ -167,6 +169,14 @@ secret values:
 
 ```powershell
 npm run github:release:status
+```
+
+Preview the final GitHub workflow dispatch without launching, then dispatch it
+only after the live launch doctor is ready:
+
+```powershell
+npm run github:deploy:plan
+npm run github:deploy
 ```
 
 Set each required Worker secret in Cloudflare with Wrangler's secure prompt:
@@ -196,5 +206,6 @@ python scripts\cloudflare_clerk_proxy_proof.py --confirm
 python scripts\cloudflare_release_evidence.py --json
 python scripts\cloudflare_readiness.py --strict-production --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
 python scripts\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
-python scripts\cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
+python scripts\github_deploy_dispatch.py
+python scripts\github_deploy_dispatch.py --execute --yes
 ```
