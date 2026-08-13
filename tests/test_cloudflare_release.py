@@ -26,6 +26,7 @@ RELEASE_EVIDENCE_SCRIPT_PATH = ROOT / "scripts" / "cloudflare_release_evidence.p
 D1_ID_APPLY_SCRIPT_PATH = ROOT / "scripts" / "apply_cloudflare_d1_ids.py"
 RESOURCE_BOOTSTRAP_SCRIPT_PATH = ROOT / "scripts" / "cloudflare_resource_bootstrap.py"
 PRODUCTION_DEPLOY_SCRIPT_PATH = ROOT / "scripts" / "cloudflare_production_deploy.py"
+GITHUB_RELEASE_STATUS_SCRIPT_PATH = ROOT / "scripts" / "github_release_status.py"
 APP_SHELL_PATH = ROOT / "cloudflare" / "worker" / "app_shell.py"
 CLERK_ONBOARDING_PATH = ROOT / "cloudflare" / "worker" / "clerk_onboarding.py"
 CLERK_SESSIONS_PATH = ROOT / "cloudflare" / "worker" / "clerk_sessions.py"
@@ -173,6 +174,18 @@ def load_production_deploy_script():
     spec = importlib.util.spec_from_file_location(
         "cloudflare_production_deploy",
         PRODUCTION_DEPLOY_SCRIPT_PATH,
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_github_release_status_script():
+    spec = importlib.util.spec_from_file_location(
+        "github_release_status",
+        GITHUB_RELEASE_STATUS_SCRIPT_PATH,
     )
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -3893,6 +3906,57 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Check Cloudflare credentials are configured", workflow)
         self.assertIn('test -n "$CLOUDFLARE_API_TOKEN"', workflow)
         self.assertIn("Print guarded deploy plan", workflow)
+
+    def test_github_release_status_validates_environment_policy_and_secret_names(self):
+        module = load_github_release_status_script()
+        environment = {
+            "name": "production",
+            "can_admins_bypass": True,
+            "deployment_branch_policy": {
+                "protected_branches": False,
+                "custom_branch_policies": True,
+            },
+        }
+        branch_policies = {
+            "branch_policies": [{"name": "main", "type": "branch"}],
+        }
+        status = module.build_status(
+            environment=environment,
+            branch_policies=branch_policies,
+            secret_names={"CLOUDFLARE_API_TOKEN"},
+        )
+        self.assertFalse(status.ready)
+        self.assertTrue(status.environment_ready)
+        self.assertFalse(status.secrets_ready)
+        self.assertIn(
+            "GitHub repository is missing deployment secret CLOUDFLARE_ACCOUNT_ID.",
+            status.blockers,
+        )
+        self.assertIn("GitHub production environment currently allows admin bypass.", status.warnings)
+
+        ready = module.build_status(
+            environment=environment,
+            branch_policies=branch_policies,
+            secret_names=set(module.REQUIRED_DEPLOY_SECRETS),
+        )
+        self.assertTrue(ready.ready)
+
+        too_broad = module.build_status(
+            environment={
+                "name": "production",
+                "deployment_branch_policy": {
+                    "protected_branches": True,
+                    "custom_branch_policies": False,
+                },
+            },
+            branch_policies={"branch_policies": [{"name": "develop", "type": "branch"}]},
+            secret_names=set(module.REQUIRED_DEPLOY_SECRETS),
+        )
+        self.assertFalse(too_broad.environment_ready)
+        self.assertIn(
+            "GitHub production environment must allow only the main branch.",
+            too_broad.blockers,
+        )
 
     def test_cloudflare_wrangler_resolver_accepts_env_or_local_binary(self):
         module = load_wrangler_helper_script()

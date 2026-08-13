@@ -190,6 +190,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     d1_id_apply_path = repo_root / "scripts" / "apply_cloudflare_d1_ids.py"
     resource_bootstrap_path = repo_root / "scripts" / "cloudflare_resource_bootstrap.py"
     production_deploy_path = repo_root / "scripts" / "cloudflare_production_deploy.py"
+    github_release_status_path = repo_root / "scripts" / "github_release_status.py"
     static_path = repo_root / "workdoe" / "static"
     worker_actions_path = static_path / "worker-actions.js"
     clerk_entry_path = static_path / "clerk-entry.js"
@@ -461,6 +462,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     compile_python(d1_id_apply_path, errors, checks, "Cloudflare D1 ID apply helper compiles")
     compile_python(resource_bootstrap_path, errors, checks, "Cloudflare resource bootstrap helper compiles")
     compile_python(production_deploy_path, errors, checks, "Cloudflare production deploy helper compiles")
+    compile_python(github_release_status_path, errors, checks, "GitHub release status helper compiles")
 
     worker_source = read_text(worker_path, errors)
     app_shell_source = read_text(app_shell_path, errors)

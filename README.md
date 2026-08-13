@@ -149,6 +149,13 @@ gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe
 gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe
 ```
 
+Check the GitHub production environment and deploy-secret names without reading
+secret values:
+
+```powershell
+npm run github:release:status
+```
+
 Set each required Worker secret in Cloudflare with Wrangler's secure prompt:
 
 ```powershell
