@@ -2107,6 +2107,58 @@ class WorkdoeFlowTests(unittest.TestCase):
         user = self.one("SELECT * FROM users WHERE email = ?", ("new-client@example.com",))
         self.assertEqual(user["role"], "client")
 
+    def test_legacy_signup_post_uses_one_time_code_instead_of_password_account(self):
+        signup_get = self.client.get("/signup")
+        self.assertEqual(signup_get.status_code, 302)
+        self.assertEqual(signup_get.headers["Location"], "/start")
+        signup_head = self.client.head("/signup")
+        self.assertEqual(signup_head.status_code, 302)
+        self.assertEqual(signup_head.headers["Location"], "/start")
+
+        signup = self.client.post(
+            "/signup",
+            data={
+                "role": "contractor",
+                "email": "legacy-contractor@example.com",
+                "display_name": "Legacy Contractor",
+                "company_name": "Legacy Crew",
+                "password": "legacy-password",
+            },
+            follow_redirects=True,
+        )
+        html = signup.data.decode("utf-8")
+        match = re.search(r"<strong>([0-9]{6})</strong>", html)
+        self.assertIsNotNone(match)
+        self.assertIn("Use the one-time email code to finish starting.", html)
+        self.assertIn("One-time code", html)
+        self.assertNotIn("Create a Workdoe account", html)
+        self.assertIsNone(
+            self.one(
+                "SELECT * FROM users WHERE email = ?",
+                ("legacy-contractor@example.com",),
+            )
+        )
+
+        verified = self.client.post(
+            "/start/verify",
+            data={"code": match.group(1)},
+            follow_redirects=True,
+        )
+        self.assertIn(b"Open DMV jobs", verified.data)
+        user = self.one(
+            "SELECT * FROM users WHERE email = ?",
+            ("legacy-contractor@example.com",),
+        )
+        self.assertEqual(user["role"], "contractor")
+
+        self.logout()
+        password_login = self.login(
+            "legacy-contractor@example.com",
+            "legacy-password",
+        )
+        self.assertIn(b"Email or password did not match.", password_login.data)
+        self.assertNotIn(b"Open DMV jobs", password_login.data)
+
     def test_local_one_time_code_display_can_be_hidden(self):
         self.app.config["SHOW_LOCAL_LOGIN_CODE"] = False
         try:

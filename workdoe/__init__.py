@@ -951,72 +951,37 @@ def register_routes(app: Flask) -> None:
 
     @app.route("/signup", methods=("GET", "POST"))
     def signup():
-        if request.method == "GET":
+        if request.method != "POST":
             return redirect(url_for("start"))
-        if request.method == "POST":
-            role = request.form.get("role", "")
-            email = (request.form.get("email") or "").strip().lower()
-            password = request.form.get("password") or ""
-            display_name = (request.form.get("display_name") or "").strip()
-            company_name = (request.form.get("company_name") or "").strip()
 
-            if role not in {"client", "contractor"}:
-                flash("Choose whether this account is for a client or contractor.", "error")
-            elif not email or "@" not in email:
-                flash("Enter a valid email address.", "error")
-            elif len(password) < 8:
-                flash("Use at least 8 characters for the local prototype password.", "error")
-            elif not display_name:
-                flash("Add your name so the dashboard feels personal.", "error")
-            else:
-                db = get_db()
-                try:
-                    cur = db.execute(
-                        """
-                        INSERT INTO users
-                            (email, password_hash, role, display_name, company_name,
-                             status, email_verified, created_at)
-                        VALUES (?, ?, ?, ?, ?, 'active', 1, ?)
-                        """,
-                        (
-                            email,
-                            generate_password_hash(password),
-                            role,
-                            display_name,
-                            company_name,
-                            now_iso(),
-                        ),
-                    )
-                    user_id = int(cur.lastrowid)
-                    if role == "client":
-                        db.execute(
-                            """
-                            INSERT INTO client_profiles (user_id, organization_name, phone)
-                            VALUES (?, ?, '')
-                            """,
-                            (user_id, company_name or display_name),
-                        )
-                    else:
-                        db.execute(
-                            """
-                            INSERT INTO contractor_profiles
-                                (user_id, business_name, trades, service_area, intro,
-                                 insurance_status, license_number, years_in_business,
-                                 website, phone, updated_at)
-                            VALUES (?, ?, '', 'DMV area', '', '', '', NULL, '', '', ?)
-                            """,
-                            (user_id, company_name or display_name, now_iso()),
-                        )
-                    db.commit()
-                except sqlite3.IntegrityError:
-                    flash("That email already has a Workdoe account.", "error")
-                else:
-                    session.clear()
-                    session["user_id"] = user_id
-                    csrf_token()
-                    flash("Welcome to Workdoe. Your local account is ready.", "success")
-                    return redirect(url_for("dashboard"))
-        return render_template("signup.html")
+        role = request.form.get("role", "")
+        intent = "find-work" if role == "contractor" else "post-job"
+        email = (request.form.get("email") or "").strip().lower()
+        display_name = (request.form.get("display_name") or "").strip()
+        company_name = (request.form.get("company_name") or "").strip()
+        existing_user = None
+        if email and "@" in email:
+            existing_user = get_db().execute(
+                "SELECT * FROM users WHERE email = ?",
+                (email,),
+            ).fetchone()
+            if existing_user:
+                role = existing_user["role"]
+                intent = "find-work" if role == "contractor" else "post-job"
+                display_name = display_name or existing_user["display_name"]
+                company_name = company_name or existing_user["company_name"] or ""
+
+        if role not in {"client", "contractor"}:
+            flash("Choose whether this account is for a client or contractor.", "error")
+        elif not email or "@" not in email:
+            flash("Enter a valid email address.", "error")
+        elif not existing_user and not display_name:
+            flash("Add your name to create a Workdoe workspace.", "error")
+        else:
+            issue_login_code(email, role, display_name, company_name, intent, None)
+            flash("Use the one-time email code to finish starting.", "success")
+            return redirect(url_for("verify_start"))
+        return redirect(url_for("start", intent=intent))
 
     @app.route("/login", methods=("GET", "POST"))
     def login():
