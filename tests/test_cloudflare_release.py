@@ -4382,7 +4382,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         original_cloudflare = module.build_launch_status
         original_github_live = module.build_github_live_status
         original_wrangler_auth = module.wrangler_auth_status
-        original_dns_lookup = module.dns_lookup
+        original_dns_diagnostic = module.build_dns_diagnostic
         try:
             module.http_head_ok = lambda url: (True, "HTTP 200")
             module.build_launch_status = lambda repo_root=ROOT: {
@@ -4396,7 +4396,39 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 False,
                 "Wrangler is not authenticated. Run `.\\node_modules\\.bin\\wrangler.cmd login`.",
             )
-            module.dns_lookup = lambda: (False, [], "mock dns failure")
+            module.build_dns_diagnostic = lambda: {
+                "ready": False,
+                "checks": [
+                    {
+                        "name": "nameserver-delegation",
+                        "status": "ready",
+                        "summary": "workdoe.com is delegated to Cloudflare nameservers: ada.ns.cloudflare.com, bob.ns.cloudflare.com.",
+                        "values": ["ada.ns.cloudflare.com", "bob.ns.cloudflare.com"],
+                    },
+                    {
+                        "name": "apex-resolution",
+                        "status": "pending",
+                        "summary": "workdoe.com does not resolve: mock dns failure",
+                        "values": [],
+                        "next_action": "Deploy the Worker custom domain route and wait for DNS/certificate activation.",
+                    },
+                    {
+                        "name": "www-resolution",
+                        "status": "pending",
+                        "summary": "www.workdoe.com does not resolve: mock dns failure",
+                        "values": [],
+                        "next_action": "Deploy the Worker custom domain route for www.workdoe.com or add the intended redirect record.",
+                    },
+                ],
+                "blockers": [
+                    "workdoe.com does not resolve: mock dns failure",
+                    "www.workdoe.com does not resolve: mock dns failure",
+                ],
+                "next_actions": [
+                    "Deploy the Worker custom domain route and wait for DNS/certificate activation.",
+                    "Deploy the Worker custom domain route for www.workdoe.com or add the intended redirect record.",
+                ],
+            }
             payload = module.build_doctor(ROOT)
             module.build_github_live_status = lambda: github_status
             live_payload = module.build_doctor(ROOT, live=True)
@@ -4405,7 +4437,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             module.build_launch_status = original_cloudflare
             module.build_github_live_status = original_github_live
             module.wrangler_auth_status = original_wrangler_auth
-            module.dns_lookup = original_dns_lookup
+            module.build_dns_diagnostic = original_dns_diagnostic
 
         self.assertFalse(payload["ready"])
         self.assertEqual(payload["phases"][0]["name"], "local-prototype")
@@ -4441,7 +4473,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         live_phases = {phase["name"]: phase for phase in live_payload["phases"]}
         self.assertEqual(live_phases["wrangler-auth"]["status"], "pending")
-        self.assertIn("workdoe.com DNS is not resolving: mock dns failure", live_payload["blockers"])
+        self.assertIn(
+            "DNS: workdoe.com does not resolve: mock dns failure",
+            live_payload["blockers"],
+        )
+        self.assertIn(
+            "apex-resolution: workdoe.com does not resolve: mock dns failure",
+            live_phases["dns"]["summary"],
+        )
+        self.assertFalse(live_payload["dns"]["ready"])
+        self.assertIn(
+            "Deploy the Worker custom domain route and wait for DNS/certificate activation.",
+            live_payload["next_actions"],
+        )
         self.assertIn("confirm workdoe.com DNS in Cloudflare", live_payload["next_actions"])
 
     def test_cloudflare_wrangler_resolver_accepts_env_or_local_binary(self):

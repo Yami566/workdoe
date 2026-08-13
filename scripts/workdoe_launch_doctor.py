@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import socket
 import subprocess
 import sys
 import urllib.error
@@ -33,6 +32,7 @@ from github_release_status import (  # noqa: E402
     build_live_status as build_github_live_status,
 )
 from cloudflare_wrangler import wrangler_command, wrangler_env  # noqa: E402
+from workdoe_dns_diagnostic import build_dns_diagnostic  # noqa: E402
 
 
 @dataclass
@@ -53,13 +53,28 @@ def http_head_ok(url: str, timeout: float = 3.0) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def dns_lookup(domain: str = WORKDOE_DOMAIN) -> tuple[bool, list[str], str]:
-    try:
-        records = socket.getaddrinfo(domain, 443, proto=socket.IPPROTO_TCP)
-    except OSError as exc:
-        return False, [], str(exc)
-    addresses = sorted({record[4][0] for record in records if record[4]})
-    return bool(addresses), addresses, ""
+def dns_check_values(diagnostic: dict, check_name: str) -> list[str]:
+    for check in diagnostic.get("checks", []):
+        if check.get("name") == check_name:
+            return list(check.get("values") or [])
+    return []
+
+
+def render_dns_summary(diagnostic: dict) -> str:
+    if diagnostic.get("ready"):
+        nameservers = ", ".join(dns_check_values(diagnostic, "nameserver-delegation"))
+        apex_addresses = ", ".join(dns_check_values(diagnostic, "apex-resolution"))
+        www_addresses = ", ".join(dns_check_values(diagnostic, "www-resolution"))
+        return (
+            "DNS delegation, apex, www, and checked-in Worker custom-domain routes "
+            f"are ready. Nameservers: {nameservers}; apex: {apex_addresses}; www: {www_addresses}."
+        )
+    pending = [
+        f"{check['name']}: {check['summary']}"
+        for check in diagnostic.get("checks", [])
+        if check.get("status") != "ready"
+    ]
+    return "; ".join(pending) if pending else "DNS diagnostic did not return ready checks."
 
 
 def wrangler_auth_status(repo_root: Path = REPO_ROOT, timeout: float = 20.0) -> tuple[bool, str]:
@@ -110,6 +125,7 @@ def next_actions(
     dns_ready: bool,
     live: bool,
     wrangler_authenticated: bool | None,
+    dns_next_actions: list[str] | None = None,
 ) -> list[str]:
     actions: list[str] = []
     if not local_ok:
@@ -151,6 +167,7 @@ def next_actions(
         actions.append("npm run cf:clerk:proof")
     if live and not dns_ready:
         actions.append("npm run launch:dns")
+        actions.extend(dns_next_actions or [])
         actions.append("confirm workdoe.com DNS in Cloudflare")
 
     if cloudflare["ready_to_deploy"] and (not live or (github and github.ready and dns_ready)):
@@ -180,16 +197,23 @@ def build_doctor(
     if live:
         wrangler_authenticated, wrangler_summary = wrangler_auth_status(repo_root)
     dns_ready = False
-    dns_summary = "DNS was not checked. Run with --live to resolve workdoe.com."
+    dns_phase_summary = "DNS was not checked. Run with --live to resolve workdoe.com."
     dns_addresses: list[str] = []
-    dns_error = ""
+    dns_diagnostic: dict | None = None
+    dns_blockers: list[str] = []
+    dns_next_actions: list[str] = []
     if live:
-        dns_ready, dns_addresses, dns_error = dns_lookup()
-        dns_summary = (
-            f"workdoe.com resolves to {', '.join(dns_addresses)}."
-            if dns_ready
-            else f"workdoe.com does not resolve: {dns_error}"
+        dns_diagnostic = build_dns_diagnostic()
+        dns_ready = bool(dns_diagnostic["ready"])
+        dns_phase_summary = render_dns_summary(dns_diagnostic)
+        dns_addresses = sorted(
+            set(
+                dns_check_values(dns_diagnostic, "apex-resolution")
+                + dns_check_values(dns_diagnostic, "www-resolution")
+            )
         )
+        dns_blockers = list(dns_diagnostic.get("blockers") or [])
+        dns_next_actions = list(dns_diagnostic.get("next_actions") or [])
 
     phases = [
         DoctorPhase(
@@ -239,7 +263,7 @@ def build_doctor(
         DoctorPhase(
             name="dns",
             status="ready" if dns_ready else ("pending" if live else "not-checked"),
-            summary=dns_summary,
+            summary=dns_phase_summary,
             next_command="confirm workdoe.com DNS in Cloudflare" if live and not dns_ready else "",
         ),
     ]
@@ -250,7 +274,7 @@ def build_doctor(
     if live and wrangler_authenticated is False:
         blockers.append("Wrangler is not authenticated for live Cloudflare operations.")
     if live and not dns_ready:
-        blockers.append(f"workdoe.com DNS is not resolving: {dns_error}")
+        blockers.extend(f"DNS: {blocker}" for blocker in dns_blockers)
     if not local_ok:
         blockers.append(f"Local prototype is not reachable at {local_url}.")
 
@@ -272,6 +296,7 @@ def build_doctor(
             set(cloudflare["warnings"] + (list(github.warnings) if github else []))
         ),
         "dns_addresses": dns_addresses,
+        "dns": dns_diagnostic,
         "next_actions": next_actions(
             local_ok=local_ok,
             cloudflare=cloudflare,
@@ -279,6 +304,7 @@ def build_doctor(
             dns_ready=dns_ready,
             live=live,
             wrangler_authenticated=wrangler_authenticated,
+            dns_next_actions=dns_next_actions,
         ),
     }
 
