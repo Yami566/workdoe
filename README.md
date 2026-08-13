@@ -117,6 +117,10 @@ npm run launch:doctor
 npm run launch:doctor:live
 ```
 
+Both doctor commands print a `Next Actions` section. The live version adds
+GitHub deployment-secret and DNS checks; all secret-setting commands use secure
+interactive prompts and do not print secret values.
+
 Live Cloudflare steps require the Wrangler CLI on PATH and an authenticated
 Cloudflare session. Use a global install, a local `node_modules/.bin` install, or
 set `WORKDOE_WRANGLER_BIN` to the Wrangler executable path:

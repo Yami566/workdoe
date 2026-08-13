@@ -4018,11 +4018,22 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertEqual(payload["phases"][1]["status"], "not-checked")
         self.assertEqual(payload["phases"][-1]["status"], "not-checked")
+        self.assertIn("npm run launch:doctor:live", payload["next_actions"])
+        self.assertIn("npm run cf:resources:plan", payload["next_actions"])
         self.assertIn(
             "GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.",
             live_payload["blockers"],
         )
+        self.assertIn(
+            "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
+            live_payload["next_actions"],
+        )
+        self.assertIn(
+            ".\\node_modules\\.bin\\wrangler.cmd login",
+            live_payload["next_actions"],
+        )
         self.assertIn("workdoe.com DNS is not resolving: mock dns failure", live_payload["blockers"])
+        self.assertIn("confirm workdoe.com DNS in Cloudflare", live_payload["next_actions"])
 
     def test_cloudflare_wrangler_resolver_accepts_env_or_local_binary(self):
         module = load_wrangler_helper_script()

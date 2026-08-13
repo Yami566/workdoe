@@ -14,6 +14,15 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 DEFAULT_LOCAL_URL = "http://127.0.0.1:5000/start"
 WORKDOE_DOMAIN = "workdoe.com"
+WORKER_SECRET_NAMES = [
+    "CLERK_JWT_KEY",
+    "CLERK_PUBLISHABLE_KEY",
+    "CLERK_SECRET_KEY",
+    "CLERK_WEBHOOK_SECRET",
+    "WORKDOE_SECRET_KEY",
+    "WORKDOE_TURNSTILE_SECRET_KEY",
+    "WORKDOE_TURNSTILE_SITE_KEY",
+]
 
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
@@ -49,6 +58,73 @@ def dns_lookup(domain: str = WORKDOE_DOMAIN) -> tuple[bool, list[str], str]:
         return False, [], str(exc)
     addresses = sorted({record[4][0] for record in records if record[4]})
     return bool(addresses), addresses, ""
+
+
+def dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            output.append(value)
+    return output
+
+
+def next_actions(
+    *,
+    local_ok: bool,
+    cloudflare: dict,
+    github,
+    dns_ready: bool,
+    live: bool,
+) -> list[str]:
+    actions: list[str] = []
+    if not local_ok:
+        actions.append("python run.py")
+
+    if not live:
+        actions.append("npm run launch:doctor:live")
+    elif github and not github.secrets_ready:
+        actions.extend(
+            [
+                "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
+                "gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe",
+                "npm run github:release:status",
+            ]
+        )
+
+    blockers = "\n".join(cloudflare["blockers"])
+    if "Wrangler D1" in blockers or cloudflare["current_phase"] == "cloudflare-resources":
+        actions.extend(
+            [
+                ".\\node_modules\\.bin\\wrangler.cmd login",
+                "npm run cf:resources:plan",
+                "npm run cf:resources:apply",
+            ]
+        )
+    if "Cloudflare is missing required secret bindings" in blockers:
+        actions.extend(
+            [
+                f".\\node_modules\\.bin\\wrangler.cmd secret put {name} --config cloudflare\\wrangler.jsonc"
+                for name in WORKER_SECRET_NAMES
+            ]
+        )
+        actions.append("npm run cf:secrets:evidence")
+    if "Clerk proxy proof JSON is missing or invalid" in blockers:
+        actions.append("npm run cf:clerk:proof")
+    if live and not dns_ready:
+        actions.append("confirm workdoe.com DNS in Cloudflare")
+
+    if cloudflare["ready_to_deploy"] and (not live or (github and github.ready and dns_ready)):
+        actions.extend(
+            [
+                "npm run cf:deploy:plan",
+                "gh workflow run cloudflare-deploy.yml --repo Yami566/workdoe --ref main -f deploy=DEPLOY -f clerk_proxy_url=https://workdoe.com/__clerk",
+            ]
+        )
+    else:
+        actions.extend(["npm run cf:deploy:plan", "npm run launch:doctor:live"])
+    return dedupe(actions)
 
 
 def build_doctor(
@@ -136,6 +212,13 @@ def build_doctor(
             set(cloudflare["warnings"] + (list(github.warnings) if github else []))
         ),
         "dns_addresses": dns_addresses,
+        "next_actions": next_actions(
+            local_ok=local_ok,
+            cloudflare=cloudflare,
+            github=github,
+            dns_ready=dns_ready,
+            live=live,
+        ),
     }
 
 
@@ -155,6 +238,9 @@ def render_text(payload: dict) -> str:
     if payload["blockers"]:
         lines.extend(["", "Blockers:"])
         lines.extend(f"- {blocker}" for blocker in payload["blockers"])
+    if payload["next_actions"]:
+        lines.extend(["", "Next Actions:"])
+        lines.extend(f"- {action}" for action in payload["next_actions"])
     if payload["warnings"]:
         lines.extend(["", "Warnings:"])
         lines.extend(f"- {warning}" for warning in payload["warnings"])
