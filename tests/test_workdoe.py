@@ -1225,6 +1225,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
         self.assertIn(".entry-shortcuts", styles)
         self.assertIn(".entry-shortcut", styles)
+        self.assertRegex(
+            styles,
+            r'\.main-nav \.button\[aria-current="page"\]\s*\{[^}]*color: #fff;[^}]*text-decoration: none;',
+        )
         self.assertRegex(styles, r"\.entry-shortcuts a,\s*\.entry-shortcut\s*\{[^}]*min-height: 30px;")
         mobile_rules = re.search(r"@media \(max-width: 900px\) \{(?P<body>.*)\n\}", styles, re.S)
         self.assertIsNotNone(mobile_rules)
