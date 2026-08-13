@@ -16,7 +16,12 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from cloudflare_readiness import REQUIRED_SECRETS, secret_names_from_json  # noqa: E402
-from cloudflare_wrangler import wrangler_command, wrangler_env  # noqa: E402
+from cloudflare_wrangler import (  # noqa: E402
+    cloudflare_api_token_error,
+    cloudflare_api_token_present,
+    wrangler_command,
+    wrangler_env,
+)
 
 
 class SecretEvidenceError(ValueError):
@@ -165,6 +170,19 @@ def main() -> int:
         }
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 2
+
+    if not cloudflare_api_token_present():
+        payload = {
+            "ok": False,
+            "dry_run": False,
+            "executes_commands": False,
+            "writes": "",
+            "error": cloudflare_api_token_error(
+                "capture sanitized Workdoe Cloudflare secret-name evidence"
+            ),
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 1
 
     payload = capture_secret_evidence(args.output, allow_missing=args.allow_missing)
     print(json.dumps(payload, indent=2, sort_keys=True))

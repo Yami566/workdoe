@@ -19,7 +19,12 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from apply_cloudflare_d1_ids import apply_d1_ids  # noqa: E402
-from cloudflare_wrangler import wrangler_command, wrangler_env  # noqa: E402
+from cloudflare_wrangler import (  # noqa: E402
+    cloudflare_api_token_error,
+    cloudflare_api_token_present,
+    wrangler_command,
+    wrangler_env,
+)
 from prepare_cloudflare_release import ZERO_UUID, existing_d1_ids  # noqa: E402
 
 
@@ -291,6 +296,24 @@ def main() -> int:
             )
         )
         return 2
+
+    if not cloudflare_api_token_present():
+        payload = {
+            "ok": False,
+            "dry_run": False,
+            "executes_commands": False,
+            "errors": [
+                cloudflare_api_token_error(
+                    "create Workdoe Cloudflare D1, R2, and Queue resources"
+                )
+            ],
+            "steps": [
+                asdict(step)
+                for step in build_bootstrap_steps(include_secret_probe=include_secret_probe)
+            ],
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 1
 
     steps = build_bootstrap_steps(include_secret_probe=include_secret_probe)
     executed_steps, errors = execute_steps(steps, continue_on_failure=args.continue_on_failure)

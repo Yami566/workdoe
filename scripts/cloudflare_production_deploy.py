@@ -18,7 +18,12 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from cloudflare_readiness import run_readiness  # noqa: E402
-from cloudflare_wrangler import wrangler_command, wrangler_env  # noqa: E402
+from cloudflare_wrangler import (  # noqa: E402
+    cloudflare_api_token_error,
+    cloudflare_api_token_present,
+    wrangler_command,
+    wrangler_env,
+)
 
 
 SMOKE_OUTPUT_MAX = 1200
@@ -266,6 +271,24 @@ def main() -> int:
                     "ok": False,
                     "error": "Strict production readiness failed; deploy was not run.",
                     "blockers": readiness["blockers"],
+                    "warnings": readiness["warnings"],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 1
+
+    if not cloudflare_api_token_present():
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "dry_run": False,
+                    "executes_commands": False,
+                    "error": cloudflare_api_token_error(
+                        "apply Workdoe D1 migrations and deploy the Cloudflare Worker"
+                    ),
                     "warnings": readiness["warnings"],
                 },
                 indent=2,

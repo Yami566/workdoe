@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
 
 
@@ -9,6 +10,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 WRANGLER_ENV_VAR = "WORKDOE_WRANGLER_BIN"
 WRANGLER_CONFIG_DIR = ".wrangler-config"
+CLOUDFLARE_API_TOKEN_ENV_VAR = "CLOUDFLARE_API_TOKEN"
 
 
 def local_wrangler_candidates(repo_root: Path = REPO_ROOT) -> list[Path]:
@@ -36,6 +38,19 @@ def wrangler_available(repo_root: Path = REPO_ROOT) -> bool:
 
 def wrangler_command(args: list[str], repo_root: Path = REPO_ROOT) -> list[str]:
     return [resolved_wrangler_bin(repo_root) or "wrangler", *args]
+
+
+def cloudflare_api_token_present(env: Mapping[str, str] | None = None) -> bool:
+    values = env if env is not None else os.environ
+    return bool((values.get(CLOUDFLARE_API_TOKEN_ENV_VAR) or "").strip())
+
+
+def cloudflare_api_token_error(action: str) -> str:
+    return (
+        f"{CLOUDFLARE_API_TOKEN_ENV_VAR} is required to {action} in this "
+        "non-interactive environment. Set it locally without committing it, "
+        "or add it as the GitHub production secret before dispatching deploy."
+    )
 
 
 def wrangler_env(repo_root: Path = REPO_ROOT) -> dict[str, str]:

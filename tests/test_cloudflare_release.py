@@ -798,6 +798,35 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         finally:
             sys.argv = original_argv
 
+    def test_cloudflare_resource_bootstrap_requires_api_token_before_execute(self):
+        module = load_resource_bootstrap_script()
+        original_argv = sys.argv
+        original_token = os.environ.pop("CLOUDFLARE_API_TOKEN", None)
+        original_execute_steps = module.execute_steps
+        try:
+            module.execute_steps = lambda *args, **kwargs: self.fail("execute_steps should not run")
+            sys.argv = [
+                "cloudflare_resource_bootstrap.py",
+                "--execute",
+                "--yes",
+                "--json",
+                "--no-secret-probe",
+            ]
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(module.main(), 1)
+            payload = json.loads(output.getvalue())
+        finally:
+            module.execute_steps = original_execute_steps
+            sys.argv = original_argv
+            if original_token is not None:
+                os.environ["CLOUDFLARE_API_TOKEN"] = original_token
+
+        self.assertFalse(payload["ok"])
+        self.assertFalse(payload["executes_commands"])
+        self.assertIn("CLOUDFLARE_API_TOKEN is required", payload["errors"][0])
+        self.assertIn("D1, R2, and Queue resources", payload["errors"][0])
+
     def test_cloudflare_wrangler_helpers_decode_cli_output_as_utf8(self):
         captured_kwargs = []
 
@@ -1021,6 +1050,29 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         finally:
             sys.argv = original_argv
 
+    def test_cloudflare_secret_evidence_requires_api_token_before_execute(self):
+        module = load_secret_evidence_script()
+        original_argv = sys.argv
+        original_token = os.environ.pop("CLOUDFLARE_API_TOKEN", None)
+        original_run_external = module.run_external
+        try:
+            module.run_external = lambda: self.fail("run_external should not run")
+            sys.argv = ["cloudflare_secret_evidence.py", "--execute", "--yes", "--json"]
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(module.main(), 1)
+            payload = json.loads(output.getvalue())
+        finally:
+            module.run_external = original_run_external
+            sys.argv = original_argv
+            if original_token is not None:
+                os.environ["CLOUDFLARE_API_TOKEN"] = original_token
+
+        self.assertFalse(payload["ok"])
+        self.assertFalse(payload["executes_commands"])
+        self.assertIn("CLOUDFLARE_API_TOKEN is required", payload["error"])
+        self.assertIn("secret-name evidence", payload["error"])
+
     def test_cloudflare_release_evidence_validates_secret_and_clerk_proofs_together(self):
         module = load_release_evidence_script()
         readiness = load_readiness_script()
@@ -1205,6 +1257,36 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             {"returncode": 0, "stdout": "x" * (module.SMOKE_OUTPUT_MAX + 20), "stderr": ""},
         )()
         self.assertTrue(module.smoke_output_excerpt(long_result).endswith("[truncated]"))
+
+    def test_cloudflare_production_deploy_requires_api_token_after_readiness(self):
+        module = load_production_deploy_script()
+        original_argv = sys.argv
+        original_token = os.environ.pop("CLOUDFLARE_API_TOKEN", None)
+        original_readiness_payload = module.readiness_payload
+        original_execute_steps = module.execute_steps
+        try:
+            module.readiness_payload = lambda *args, **kwargs: {
+                "ready": True,
+                "blockers": [],
+                "warnings": ["Confirm admin@workdoe.com is monitored."],
+            }
+            module.execute_steps = lambda *args, **kwargs: self.fail("execute_steps should not run")
+            sys.argv = ["cloudflare_production_deploy.py", "--execute", "--yes", "--json"]
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(module.main(), 1)
+            payload = json.loads(output.getvalue())
+        finally:
+            module.execute_steps = original_execute_steps
+            module.readiness_payload = original_readiness_payload
+            sys.argv = original_argv
+            if original_token is not None:
+                os.environ["CLOUDFLARE_API_TOKEN"] = original_token
+
+        self.assertFalse(payload["ok"])
+        self.assertFalse(payload["executes_commands"])
+        self.assertIn("CLOUDFLARE_API_TOKEN is required", payload["error"])
+        self.assertIn("deploy the Cloudflare Worker", payload["error"])
 
     def test_cloudflare_clerk_proxy_proof_helper_is_confirm_gated(self):
         module = load_clerk_proxy_proof_script()
@@ -4783,6 +4865,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertTrue(module.wrangler_available(repo_root))
             env = module.wrangler_env(repo_root)
             self.assertEqual(env["XDG_CONFIG_HOME"], str(repo_root / ".wrangler-config"))
+            self.assertFalse(module.cloudflare_api_token_present({}))
+            self.assertTrue(module.cloudflare_api_token_present({"CLOUDFLARE_API_TOKEN": "token"}))
+            self.assertIn(
+                "CLOUDFLARE_API_TOKEN is required",
+                module.cloudflare_api_token_error("run Workdoe launch automation"),
+            )
 
     def test_cloudflare_launch_status_summarizes_next_safe_action(self):
         module = load_launch_status_script()
