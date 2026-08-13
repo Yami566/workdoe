@@ -4181,8 +4181,21 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertFalse(payload["ready"])
         self.assertFalse(payload["contains_secret_values"])
         self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", json.dumps(payload))
+        groups = {group["name"]: group["actions"] for group in payload["action_groups"]}
+        self.assertIn("GitHub Deployment Secrets", groups)
+        self.assertIn("DNS And Domain Activation", groups)
+        self.assertIn("Final Deployment And Smoke", groups)
+        self.assertIn(
+            "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
+            groups["GitHub Deployment Secrets"],
+        )
+        self.assertIn("npm run launch:dns", groups["DNS And Domain Activation"])
+        self.assertIn("npm run launch:smoke:strict", groups["Final Deployment And Smoke"])
         self.assertIn("# Workdoe Launch Handoff", markdown)
         self.assertIn("Status: Blocked before production dispatch", markdown)
+        self.assertIn("### GitHub Deployment Secrets", markdown)
+        self.assertIn("### DNS And Domain Activation", markdown)
+        self.assertIn("### Final Deployment And Smoke", markdown)
         self.assertIn("GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.", markdown)
         self.assertIn("gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe", markdown)
         self.assertIn("npm run launch:dns", markdown)

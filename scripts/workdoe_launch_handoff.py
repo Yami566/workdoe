@@ -58,6 +58,62 @@ def checkbox(done: bool) -> str:
     return "[x]" if done else "[ ]"
 
 
+ACTION_GROUPS = [
+    (
+        "GitHub Deployment Secrets",
+        lambda action: action.startswith("gh secret set")
+        or action == "npm run github:release:status",
+    ),
+    (
+        "Cloudflare Account And Resources",
+        lambda action: action.endswith("wrangler.cmd login")
+        or action in {"npm run cf:resources:plan", "npm run cf:resources:apply"},
+    ),
+    (
+        "Worker Secrets And Clerk",
+        lambda action: "wrangler.cmd secret put" in action
+        or action in {"npm run cf:secrets:evidence", "npm run cf:clerk:proof"},
+    ),
+    (
+        "DNS And Domain Activation",
+        lambda action: action == "npm run launch:dns"
+        or action.startswith("Deploy the Worker custom domain route")
+        or action == "confirm workdoe.com DNS in Cloudflare",
+    ),
+    (
+        "Final Deployment And Smoke",
+        lambda action: action
+        in {
+            "npm run cf:deploy:plan",
+            "npm run github:deploy:plan",
+            "npm run github:deploy",
+            "npm run launch:smoke",
+            "npm run launch:smoke:strict",
+            "npm run launch:doctor:live",
+        },
+    ),
+]
+
+
+def action_group_name(action: str) -> str:
+    for name, predicate in ACTION_GROUPS:
+        if predicate(action):
+            return name
+    return "Other"
+
+
+def group_actions(actions: list[str]) -> list[dict]:
+    groups: dict[str, list[str]] = {name: [] for name, _ in ACTION_GROUPS}
+    groups["Other"] = []
+    for action in actions:
+        groups[action_group_name(action)].append(action)
+    return [
+        {"name": name, "actions": values}
+        for name, values in groups.items()
+        if values
+    ]
+
+
 def build_handoff_payload(
     repo_root: Path = REPO_ROOT,
     *,
@@ -94,6 +150,7 @@ def build_handoff_payload(
         },
         "blockers": blockers,
         "next_actions": next_actions,
+        "action_groups": group_actions(next_actions),
         "private_local_files": [
             ".env",
             "cloudflare/.dev.vars",
@@ -151,8 +208,11 @@ def render_markdown(payload: dict) -> str:
         lines.append("- None.")
 
     lines.extend(["", "## Operator Checklist", ""])
-    for action in payload["next_actions"]:
-        lines.append(f"- {checkbox(action in payload['doctor']['next_actions'] and payload['ready'])} `{md_escape(action)}`")
+    for group in payload["action_groups"]:
+        lines.extend(["", f"### {md_escape(group['name'])}", ""])
+        for action in group["actions"]:
+            done = action in payload["doctor"]["next_actions"] and payload["ready"]
+            lines.append(f"- {checkbox(done)} `{md_escape(action)}`")
 
     lines.extend(
         [
