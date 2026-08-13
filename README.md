@@ -160,7 +160,7 @@ GitHub Actions is wired through `.github/workflows/cloudflare-deploy.yml`.
 Pushes to `main` or `master` run tests and preflight only. Production deployment
 is manual-only through the `Workdoe Cloudflare Release` workflow and requires:
 
-- repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`;
+- production environment secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`;
 - workflow dispatch from the `main` branch;
 - dispatch input `DEPLOY`;
 - Clerk proxy confirmation `https://workdoe.com/__clerk`;
@@ -170,12 +170,13 @@ is manual-only through the `Workdoe Cloudflare Release` workflow and requires:
 Set the two GitHub deployment secrets with interactive prompts:
 
 ```powershell
-gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe
-gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe
+gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe --env production
+gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe --env production
 ```
 
 Check the GitHub production environment and deploy-secret names without reading
-secret values:
+secret values. The checker accepts repository secrets too, but the guarded
+launch path prefers production environment secrets:
 
 ```powershell
 npm run github:release:status

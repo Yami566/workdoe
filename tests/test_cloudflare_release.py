@@ -4996,6 +4996,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "CLOUDFLARE_API_TOKEN is required",
                 module.cloudflare_api_token_error("run Workdoe launch automation"),
             )
+            self.assertIn(
+                "GitHub production environment secret",
+                module.cloudflare_api_token_error("run Workdoe launch automation"),
+            )
 
     def test_cloudflare_launch_status_summarizes_next_safe_action(self):
         module = load_launch_status_script()
@@ -5184,6 +5188,27 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 self.assertEqual(module.main(), 1)
         finally:
             sys.argv = original_argv
+
+    def test_launch_docs_prefer_github_production_environment_secrets(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "production environment secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`",
+            readme,
+        )
+        self.assertIn(
+            "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe --env production",
+            readme,
+        )
+        self.assertIn(
+            "gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe --env production",
+            readme,
+        )
+        self.assertNotIn(
+            "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe\n",
+            readme,
+        )
+        helper = (ROOT / "scripts" / "cloudflare_wrangler.py").read_text(encoding="utf-8")
+        self.assertIn("GitHub production environment secret", helper)
 
 
 if __name__ == "__main__":

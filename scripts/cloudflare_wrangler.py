@@ -49,7 +49,7 @@ def cloudflare_api_token_error(action: str) -> str:
     return (
         f"{CLOUDFLARE_API_TOKEN_ENV_VAR} is required to {action} in this "
         "non-interactive environment. Set it locally without committing it, "
-        "or add it as the GitHub production secret before dispatching deploy."
+        "or add it as the GitHub production environment secret before dispatching deploy."
     )
 
 
