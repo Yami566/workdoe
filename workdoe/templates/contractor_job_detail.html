@@ -129,12 +129,12 @@
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="target_type" value="job">
         <input type="hidden" name="target_id" value="{{ job.id }}">
-        <label>
+        <label for="lead-report-reason">
           Report this lead
-          <input name="reason" maxlength="{{ report_reason_max }}" placeholder="Why should moderation review it?" required>
+          <input id="lead-report-reason" name="reason" maxlength="{{ report_reason_max }}" placeholder="Why should moderation review it?" autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required>
         </label>
         {% with action='report' %}{% include "_turnstile.html" %}{% endwith %}
-        <button class="button secondary compact" type="submit">Report</button>
+        <button class="button secondary compact" type="submit" aria-label="Report lead">Report</button>
       </form>
     {% endif %}
   </aside>

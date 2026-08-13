@@ -29,12 +29,12 @@
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="target_type" value="profile">
         <input type="hidden" name="target_id" value="{{ contractor.id }}">
-        <label>
+        <label for="profile-report-reason">
           Report this profile
-          <input name="reason" maxlength="{{ report_reason_max }}" placeholder="Why should moderation review it?" required>
+          <input id="profile-report-reason" name="reason" maxlength="{{ report_reason_max }}" placeholder="Why should moderation review it?" autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required>
         </label>
         {% with action='report' %}{% include "_turnstile.html" %}{% endwith %}
-        <button class="button secondary compact" type="submit">Report</button>
+        <button class="button secondary compact" type="submit" aria-label="Report profile">Report</button>
       </form>
     {% endif %}
   </aside>

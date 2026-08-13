@@ -38,12 +38,12 @@
               <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="target_type" value="message">
               <input type="hidden" name="target_id" value="{{ message.id }}">
-              <label>
+              <label for="message-report-reason-{{ message.id }}">
                 <span class="sr-only">Report message reason</span>
-                <input name="reason" maxlength="{{ report_reason_max }}" placeholder="Report reason" required>
+                <input id="message-report-reason-{{ message.id }}" name="reason" maxlength="{{ report_reason_max }}" placeholder="Report reason" autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required>
               </label>
               {% with action='report' %}{% include "_turnstile.html" %}{% endwith %}
-              <button class="button secondary compact" type="submit">Report</button>
+              <button class="button secondary compact" type="submit" aria-label="Report message from {{ message.display_name }}">Report</button>
             </form>
           </details>
         {% endif %}

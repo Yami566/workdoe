@@ -742,7 +742,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'<details class="message-report">', detail.data)
         self.assertIn(b"<summary>Report message</summary>", detail.data)
         self.assertIn(b"Report message reason", detail.data)
-        self.assertIn(b'maxlength="500"', detail.data)
+        self.assertIn(b'for="message-report-reason-', detail.data)
+        self.assertIn(
+            b'name="reason" maxlength="500" placeholder="Report reason" autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required',
+            detail.data,
+        )
+        self.assertIn(b'aria-label="Report message from ', detail.data)
         self.assertIn(b'class="message-form" method="post" aria-label="New message"', detail.data)
         self.assertIn(b'for="message-body"', detail.data)
         self.assertIn(b'id="message-body"', detail.data)
@@ -784,6 +789,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'maxlength="120"', detail.data)
         self.assertIn(b'maxlength="500"', detail.data)
         self.assertIn(b"Report this lead", detail.data)
+        self.assertIn(b'for="lead-report-reason"', detail.data)
+        self.assertIn(
+            b'id="lead-report-reason" name="reason" maxlength="500" placeholder="Why should moderation review it?" autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required',
+            detail.data,
+        )
+        self.assertIn(b'aria-label="Report lead"', detail.data)
         self.assertIn(b'class="lead-action-bar" aria-label="Lead actions"', detail.data)
         self.assertIn(b'href="#mini-bid">Send mini bid</a>', detail.data)
         self.assertIn(b'href="#job-details">Review details</a>', detail.data)
@@ -968,6 +979,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Report this profile", client_profile.data)
         self.assertIn(b'value="profile"', client_profile.data)
         self.assertIn(f'value="{contractor["id"]}"'.encode("ascii"), client_profile.data)
+        self.assertIn(b'for="profile-report-reason"', client_profile.data)
+        self.assertIn(
+            b'id="profile-report-reason" name="reason" maxlength="500" placeholder="Why should moderation review it?" autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required',
+            client_profile.data,
+        )
+        self.assertIn(b'aria-label="Report profile"', client_profile.data)
 
         sent = self.client.post(
             "/report",
