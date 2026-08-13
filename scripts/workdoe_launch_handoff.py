@@ -95,6 +95,44 @@ ACTION_GROUPS = [
 ]
 
 
+BLOCKER_GROUPS = [
+    (
+        "Local And Repository Gate",
+        lambda blocker: blocker.startswith("Local ")
+        or blocker.startswith("Could not read local ")
+        or "worktree" in blocker
+        or "upstream branch" in blocker,
+    ),
+    (
+        "GitHub Deployment Secrets",
+        lambda blocker: blocker.startswith("GitHub ")
+        or blocker.startswith("Could not read GitHub "),
+    ),
+    (
+        "Cloudflare Account And Resources",
+        lambda blocker: "Wrangler is not authenticated" in blocker
+        or "D1 database_id" in blocker
+        or "D1 preview_database_id" in blocker
+        or "Cloudflare launch gate" in blocker,
+    ),
+    (
+        "Worker Secrets And Clerk",
+        lambda blocker: "Cloudflare is missing required secret bindings" in blocker
+        or "Cloudflare secret evidence" in blocker
+        or "Clerk proxy proof" in blocker,
+    ),
+    (
+        "DNS And Domain Activation",
+        lambda blocker: blocker.startswith("DNS:"),
+    ),
+    (
+        "Final Deployment Gate",
+        lambda blocker: blocker.startswith("Launch doctor is not ready")
+        or "Strict production readiness" in blocker,
+    ),
+]
+
+
 def action_group_name(action: str) -> str:
     for name, predicate in ACTION_GROUPS:
         if predicate(action):
@@ -109,6 +147,25 @@ def group_actions(actions: list[str]) -> list[dict]:
         groups[action_group_name(action)].append(action)
     return [
         {"name": name, "actions": values}
+        for name, values in groups.items()
+        if values
+    ]
+
+
+def blocker_group_name(blocker: str) -> str:
+    for name, predicate in BLOCKER_GROUPS:
+        if predicate(blocker):
+            return name
+    return "Other"
+
+
+def group_blockers(blockers: list[str]) -> list[dict]:
+    groups: dict[str, list[str]] = {name: [] for name, _ in BLOCKER_GROUPS}
+    groups["Other"] = []
+    for blocker in blockers:
+        groups[blocker_group_name(blocker)].append(blocker)
+    return [
+        {"name": name, "blockers": values}
         for name, values in groups.items()
         if values
     ]
@@ -149,6 +206,7 @@ def build_handoff_payload(
             "git": dispatch["git"],
         },
         "blockers": blockers,
+        "blocker_groups": group_blockers(blockers),
         "next_actions": next_actions,
         "action_groups": group_actions(next_actions),
         "private_local_files": [
@@ -203,7 +261,9 @@ def render_markdown(payload: dict) -> str:
         ]
     )
     if payload["blockers"]:
-        lines.extend(f"- {md_escape(blocker)}" for blocker in payload["blockers"])
+        for group in payload["blocker_groups"]:
+            lines.extend(["", f"### {md_escape(group['name'])}", ""])
+            lines.extend(f"- {md_escape(blocker)}" for blocker in group["blockers"])
     else:
         lines.append("- None.")
 

@@ -196,8 +196,8 @@ npm run launch:handoff:write
 
 The write command saves `docs/workdoe-launch-handoff.local.md`, which is ignored
 because it contains live local status and machine paths. The generated checklist
-groups remaining actions into GitHub secrets, Cloudflare resources, Worker
-secrets/Clerk, DNS activation, and final deploy/smoke checks.
+groups both blockers and remaining actions into GitHub secrets, Cloudflare
+resources, Worker secrets/Clerk, DNS activation, and final deploy/smoke checks.
 
 Diagnose DNS delegation, apex/www resolution, and checked-in Worker custom
 domains before deployment:

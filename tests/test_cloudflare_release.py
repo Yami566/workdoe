@@ -4181,6 +4181,20 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertFalse(payload["ready"])
         self.assertFalse(payload["contains_secret_values"])
         self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", json.dumps(payload))
+        blocker_groups = {
+            group["name"]: group["blockers"]
+            for group in payload["blocker_groups"]
+        }
+        self.assertIn("GitHub Deployment Secrets", blocker_groups)
+        self.assertIn("Final Deployment Gate", blocker_groups)
+        self.assertIn(
+            "GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.",
+            blocker_groups["GitHub Deployment Secrets"],
+        )
+        self.assertIn(
+            "Launch doctor is not ready; resolve blockers before dispatching production deployment.",
+            blocker_groups["Final Deployment Gate"],
+        )
         groups = {group["name"]: group["actions"] for group in payload["action_groups"]}
         self.assertIn("GitHub Deployment Secrets", groups)
         self.assertIn("DNS And Domain Activation", groups)
@@ -4194,6 +4208,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("# Workdoe Launch Handoff", markdown)
         self.assertIn("Status: Blocked before production dispatch", markdown)
         self.assertIn("### GitHub Deployment Secrets", markdown)
+        self.assertIn("### Final Deployment Gate", markdown)
         self.assertIn("### DNS And Domain Activation", markdown)
         self.assertIn("### Final Deployment And Smoke", markdown)
         self.assertIn("GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.", markdown)
