@@ -215,6 +215,8 @@ button.button {
   min-height: 42px;
   text-decoration: none;
   font: inherit;
+  line-height: 1.15;
+  text-align: center;
 }
 
 .button:hover,
@@ -1886,7 +1888,8 @@ textarea:focus {
     position: static;
   }
 
-  .start-form-panel {
+  .login-live-panel,
+  .start-live-panel {
     order: -1;
   }
 

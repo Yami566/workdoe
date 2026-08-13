@@ -1179,7 +1179,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(leads.status_code, 200)
         self.assertIn(b'href="/leads" aria-current="page">Leads</a>', leads.data)
 
-    def test_mobile_css_keeps_entry_header_compact_and_start_form_first(self):
+    def test_mobile_css_keeps_entry_header_compact_and_live_jobs_first(self):
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
         self.assertIn(".entry-shortcuts", styles)
         self.assertIn(".entry-shortcut", styles)
@@ -1188,7 +1188,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIsNotNone(mobile_rules)
         body = mobile_rules.group("body")
         self.assertRegex(body, r"\.brand,\s*\.main-nav\s*\{[^}]*flex: 0 1 auto;[^}]*width: 100%;")
-        self.assertRegex(body, r"\.start-form-panel\s*\{[^}]*order: -1;")
+        self.assertRegex(body, r"\.login-live-panel,\s*\.start-live-panel\s*\{[^}]*order: -1;")
         self.assertRegex(body, r"\.lead-metrics\s*\{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);")
         self.assertRegex(body, r"\.lead-filter\s*\{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);")
         self.assertRegex(body, r"\.lead-filter \.search-field\s*\{[^}]*grid-column: 1 / -1;[^}]*order: -1;")
@@ -1211,7 +1211,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(login.status_code, 200)
         self.assertIn(b'name="next" value="/jobs/new"', login.data)
         self.assertIn(b'name="auth_action" value="code"', login.data)
-        self.assertIn(b"Email me a code", login.data)
+        self.assertIn(b"Email code", login.data)
         self.assertIn(b"Admin/demo password", login.data)
 
         returned = self.client.post(
@@ -1241,7 +1241,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Selected", lead_login.data)
         self.assertIn(b'aria-current="true"', lead_login.data)
         self.assertIn(b"is-selected", lead_login.data)
-        self.assertIn(b"One-time code, same Workdoe page flow.", lead_login.data)
+        self.assertIn(b"No password needed.", lead_login.data)
 
         new_lead_start = self.client.post(
             f"/login?next=/jobs/{job['id']}",
@@ -1781,8 +1781,8 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'data-job-id="', login.data)
         self.assertIn(b'aria-label="Sign in lead Power wash townhouse front steps"', login.data)
         self.assertIn(b'href="/login?next=/jobs/', login.data)
-        self.assertIn(b"Email me a code", login.data)
-        self.assertIn(b"One-time code, same Workdoe page flow.", login.data)
+        self.assertIn(b"Email code", login.data)
+        self.assertIn(b"No password needed.", login.data)
         self.assertIn(b"Admin/demo password", login.data)
         self.assertIn(b'name="auth_action" value="password"', login.data)
         self.assertNotIn(b"Email one-time code", login.data)
@@ -1866,7 +1866,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'aria-describedby="start-name-help"', start.data)
         self.assertIn(b"New accounts only.", start.data)
         self.assertNotIn(b'name="display_name" autocomplete="name" required', start.data)
-        self.assertIn(b"Email me a code", start.data)
+        self.assertIn(b"Email code", start.data)
         self.assertNotIn(b"Use password instead", start.data)
         self.assertNotIn(b"Use demo password", start.data)
         self.assertIn(b"open leads", start.data)
