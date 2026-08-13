@@ -27,6 +27,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Validate manual deploy confirmation
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          test "${{ inputs.deploy }}" = "DEPLOY"
+          test "${{ inputs.clerk_proxy_url }}" = "https://workdoe.com/__clerk"
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -86,6 +92,11 @@ jobs:
       - name: Install Wrangler
         run: npm ci
 
+      - name: Check Cloudflare credentials are configured
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
       - name: Capture sanitized Worker secret names
         run: npm run cf:secrets:evidence
 
@@ -94,6 +105,9 @@ jobs:
 
       - name: Validate release evidence
         run: npm run cf:release:evidence
+
+      - name: Print guarded deploy plan
+        run: npm run cf:deploy:plan
 
       - name: Deploy guarded production release
         run: npm run cf:deploy

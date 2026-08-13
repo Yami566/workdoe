@@ -141,6 +141,25 @@ is manual-only through the `Workdoe Cloudflare Release` workflow and requires:
 - real D1 IDs committed in `cloudflare/wrangler.jsonc`;
 - required Worker secrets already set in Cloudflare.
 
+Set the two GitHub deployment secrets with interactive prompts:
+
+```powershell
+gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe
+gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe
+```
+
+Set each required Worker secret in Cloudflare with Wrangler's secure prompt:
+
+```powershell
+.\\node_modules\\.bin\\wrangler.cmd secret put CLERK_JWT_KEY --config cloudflare\\wrangler.jsonc
+.\\node_modules\\.bin\\wrangler.cmd secret put CLERK_PUBLISHABLE_KEY --config cloudflare\\wrangler.jsonc
+.\\node_modules\\.bin\\wrangler.cmd secret put CLERK_SECRET_KEY --config cloudflare\\wrangler.jsonc
+.\\node_modules\\.bin\\wrangler.cmd secret put CLERK_WEBHOOK_SECRET --config cloudflare\\wrangler.jsonc
+.\\node_modules\\.bin\\wrangler.cmd secret put WORKDOE_SECRET_KEY --config cloudflare\\wrangler.jsonc
+.\\node_modules\\.bin\\wrangler.cmd secret put WORKDOE_TURNSTILE_SECRET_KEY --config cloudflare\\wrangler.jsonc
+.\\node_modules\\.bin\\wrangler.cmd secret put WORKDOE_TURNSTILE_SITE_KEY --config cloudflare\\wrangler.jsonc
+```
+
 Before a real `workdoe.com` launch, run strict mode after replacing placeholder
 Cloudflare resource IDs, exporting the non-secret Cloudflare secret-name list,
 and confirming Clerk's Domains page uses the Workdoe same-domain proxy:

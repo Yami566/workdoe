@@ -3878,6 +3878,20 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             plan["strict_blockers"],
         )
 
+    def test_github_cloudflare_workflow_is_manual_deploy_guarded(self):
+        workflow = (ROOT / ".github" / "workflows" / "cloudflare-deploy.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Validate manual deploy confirmation", workflow)
+        self.assertIn('test "${{ inputs.deploy }}" = "DEPLOY"', workflow)
+        self.assertIn(
+            'test "${{ inputs.clerk_proxy_url }}" = "https://workdoe.com/__clerk"',
+            workflow,
+        )
+        self.assertIn("Check Cloudflare credentials are configured", workflow)
+        self.assertIn('test -n "$CLOUDFLARE_API_TOKEN"', workflow)
+        self.assertIn("Print guarded deploy plan", workflow)
+
     def test_cloudflare_wrangler_resolver_accepts_env_or_local_binary(self):
         module = load_wrangler_helper_script()
         original_env = os.environ.get(module.WRANGLER_ENV_VAR)
