@@ -30,6 +30,7 @@ GITHUB_RELEASE_STATUS_SCRIPT_PATH = ROOT / "scripts" / "github_release_status.py
 GITHUB_DEPLOY_DISPATCH_SCRIPT_PATH = ROOT / "scripts" / "github_deploy_dispatch.py"
 WORKDOE_LAUNCH_DOCTOR_SCRIPT_PATH = ROOT / "scripts" / "workdoe_launch_doctor.py"
 WORKDOE_LAUNCH_HANDOFF_SCRIPT_PATH = ROOT / "scripts" / "workdoe_launch_handoff.py"
+WORKDOE_PRODUCTION_SMOKE_SCRIPT_PATH = ROOT / "scripts" / "workdoe_production_smoke.py"
 APP_SHELL_PATH = ROOT / "cloudflare" / "worker" / "app_shell.py"
 CLERK_ONBOARDING_PATH = ROOT / "cloudflare" / "worker" / "clerk_onboarding.py"
 CLERK_SESSIONS_PATH = ROOT / "cloudflare" / "worker" / "clerk_sessions.py"
@@ -227,6 +228,18 @@ def load_workdoe_launch_handoff_script():
     spec = importlib.util.spec_from_file_location(
         "workdoe_launch_handoff",
         WORKDOE_LAUNCH_HANDOFF_SCRIPT_PATH,
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_workdoe_production_smoke_script():
+    spec = importlib.util.spec_from_file_location(
+        "workdoe_production_smoke",
+        WORKDOE_PRODUCTION_SMOKE_SCRIPT_PATH,
     )
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -3487,6 +3500,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Cloudflare production deploy helper compiles", result.checks)
         self.assertIn("GitHub deploy dispatch helper compiles", result.checks)
         self.assertIn("Workdoe launch handoff helper compiles", result.checks)
+        self.assertIn("Workdoe production smoke helper compiles", result.checks)
         self.assertIn(
             "Cloudflare Worker sends and audits queued transactional emails",
             result.checks,
@@ -4158,9 +4172,107 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.", markdown)
         self.assertIn("gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe", markdown)
         self.assertIn("npm run github:deploy:plan", markdown)
+        self.assertIn("npm run launch:smoke:strict", markdown)
         self.assertIn("cloudflare-secret-list.local.json", markdown)
         self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", markdown)
         self.assertIn("CLOUDFLARE_API_TOKEN=<redacted>", markdown)
+
+    def test_workdoe_production_smoke_accepts_ready_public_contract(self):
+        module = load_workdoe_production_smoke_script()
+        original_dns_lookup = module.dns_lookup
+        original_fetch_url = module.fetch_url
+        try:
+            module.dns_lookup = lambda domain="workdoe.com": (
+                True,
+                ["203.0.113.10"],
+                "",
+            )
+
+            def fake_fetch(url, *, method="GET", timeout=module.DEFAULT_TIMEOUT, body_limit=20000):
+                headers = {}
+                body = ""
+                status_code = 200
+                if url.endswith("/start"):
+                    headers = {
+                        "Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'",
+                        "X-Content-Type-Options": "nosniff",
+                        "X-Frame-Options": "DENY",
+                        "Referrer-Policy": "strict-origin-when-cross-origin",
+                        "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+                    }
+                elif url.endswith("/health"):
+                    body = json.dumps(
+                        {
+                            "ok": True,
+                            "service": "workdoe-cloudflare-worker",
+                            "bindings": {"d1": True},
+                        }
+                    )
+                    headers = {"Content-Type": "application/json; charset=utf-8"}
+                elif url.endswith("/api/jobs/open?limit=3"):
+                    body = json.dumps(
+                        {
+                            "count": 1,
+                            "jobs": [{"id": 1, "title": "Window cleaning"}],
+                            "filters": {},
+                            "location_privacy": "Approximate city or ZIP-level pins only.",
+                        }
+                    )
+                    headers = {"Content-Type": "application/json; charset=utf-8"}
+                return module.FetchResult(
+                    ok=True,
+                    status_code=status_code,
+                    headers=headers,
+                    body=body,
+                    elapsed_ms=12,
+                )
+
+            module.fetch_url = fake_fetch
+            payload = module.build_smoke_payload()
+        finally:
+            module.dns_lookup = original_dns_lookup
+            module.fetch_url = original_fetch_url
+
+        self.assertTrue(payload["ready"])
+        self.assertEqual(payload["failures"], [])
+        checks = {check["name"]: check for check in payload["checks"]}
+        self.assertEqual(checks["dns"]["status"], "ready")
+        self.assertEqual(checks["https-entry"]["status"], "ready")
+        self.assertEqual(checks["health-json"]["status"], "ready")
+        self.assertEqual(checks["public-jobs-api"]["status"], "ready")
+        self.assertEqual(checks["entry-security-headers"]["status"], "ready")
+
+    def test_workdoe_production_smoke_reports_dns_and_header_failures(self):
+        module = load_workdoe_production_smoke_script()
+        original_dns_lookup = module.dns_lookup
+        original_fetch_url = module.fetch_url
+        try:
+            module.dns_lookup = lambda domain="workdoe.com": (
+                False,
+                [],
+                "mock dns failure",
+            )
+            module.fetch_url = lambda *args, **kwargs: module.FetchResult(
+                ok=True,
+                status_code=200,
+                headers={},
+                body=json.dumps({"ok": True, "service": "workdoe-cloudflare-worker"}),
+                elapsed_ms=7,
+            )
+            payload = module.build_smoke_payload()
+        finally:
+            module.dns_lookup = original_dns_lookup
+            module.fetch_url = original_fetch_url
+
+        self.assertFalse(payload["ready"])
+        self.assertIn("workdoe.com does not resolve: mock dns failure", payload["failures"])
+        self.assertIn(
+            "Entry shell is missing required security headers:",
+            "\n".join(payload["failures"]),
+        )
+        rendered = module.render_text(payload)
+        self.assertIn("Workdoe production smoke", rendered)
+        self.assertIn("Ready: False", rendered)
 
     def test_workdoe_launch_doctor_combines_release_blockers(self):
         module = load_workdoe_launch_doctor_script()

@@ -146,6 +146,8 @@ npm run github:deploy:plan
 npm run github:deploy
 npm run launch:handoff
 npm run launch:handoff:write
+npm run launch:smoke
+npm run launch:smoke:strict
 ```
 
 GitHub Actions is wired through `.github/workflows/cloudflare-deploy.yml`.
@@ -190,6 +192,13 @@ npm run launch:handoff:write
 
 The write command saves `docs/workdoe-launch-handoff.local.md`, which is ignored
 because it contains live local status and machine paths.
+
+After DNS and deployment, run production smoke checks for `workdoe.com`:
+
+```powershell
+npm run launch:smoke
+npm run launch:smoke:strict
+```
 
 Set each required Worker secret in Cloudflare with Wrangler's secure prompt:
 

@@ -21,6 +21,8 @@
     "github:deploy": "python scripts/github_deploy_dispatch.py --execute --yes",
     "launch:handoff": "python scripts/workdoe_launch_handoff.py",
     "launch:handoff:write": "python scripts/workdoe_launch_handoff.py --write",
+    "launch:smoke": "python scripts/workdoe_production_smoke.py",
+    "launch:smoke:strict": "python scripts/workdoe_production_smoke.py --fail-when-not-ready",
     "launch:doctor": "python scripts/workdoe_launch_doctor.py",
     "launch:doctor:live": "python scripts/workdoe_launch_doctor.py --live"
   },

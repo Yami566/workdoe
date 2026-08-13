@@ -70,6 +70,8 @@ def build_handoff_payload(
     for action in list(doctor["next_actions"]) + [
         "npm run github:deploy:plan",
         "npm run github:deploy",
+        "npm run launch:smoke",
+        "npm run launch:smoke:strict",
     ]:
         if action and action not in next_actions:
             next_actions.append(action)
