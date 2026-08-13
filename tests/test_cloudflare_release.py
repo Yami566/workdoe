@@ -4534,9 +4534,21 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             groups["GitHub Deployment Secrets"],
         )
         self.assertIn(
+            "gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe --env production",
+            groups["GitHub Deployment Secrets"],
+        )
+        self.assertIn(
             "set CLOUDFLARE_API_TOKEN in this shell without committing it",
             groups["Cloudflare Account And Resources"],
         )
+        self.assertIn("npm run cf:resources:plan", groups["Cloudflare Account And Resources"])
+        self.assertIn("npm run cf:resources:apply", groups["Cloudflare Account And Resources"])
+        self.assertIn(
+            ".\\node_modules\\.bin\\wrangler.cmd secret put CLERK_SECRET_KEY --config cloudflare\\wrangler.jsonc",
+            groups["Worker Secrets And Clerk"],
+        )
+        self.assertIn("npm run cf:secrets:evidence", groups["Worker Secrets And Clerk"])
+        self.assertIn("npm run cf:clerk:proof", groups["Worker Secrets And Clerk"])
         self.assertIn("npm run launch:dns", groups["DNS And Domain Activation"])
         self.assertIn("npm run launch:smoke:strict", groups["Final Deployment And Smoke"])
         self.assertIn("# Workdoe Launch Handoff", markdown)
@@ -4552,6 +4564,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             markdown,
         )
         self.assertIn("gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe --env production", markdown)
+        self.assertIn("gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe --env production", markdown)
+        self.assertIn("npm run cf:resources:plan", markdown)
+        self.assertIn("npm run cf:secrets:evidence", markdown)
         self.assertIn("npm run launch:dns", markdown)
         self.assertIn("npm run github:deploy:plan", markdown)
         self.assertIn("npm run launch:smoke:strict", markdown)

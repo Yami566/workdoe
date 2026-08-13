@@ -141,6 +141,35 @@ ACTION_GROUPS = [
     ),
 ]
 
+CANONICAL_OPERATOR_ACTIONS = [
+    "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe --env production",
+    "gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe --env production",
+    "npm run github:release:status",
+    ".\\node_modules\\.bin\\wrangler.cmd login",
+    CLOUDFLARE_TOKEN_ACTION,
+    "npm run cf:resources:plan",
+    "npm run cf:resources:apply",
+    ".\\node_modules\\.bin\\wrangler.cmd secret put CLERK_JWT_KEY --config cloudflare\\wrangler.jsonc",
+    ".\\node_modules\\.bin\\wrangler.cmd secret put CLERK_PUBLISHABLE_KEY --config cloudflare\\wrangler.jsonc",
+    ".\\node_modules\\.bin\\wrangler.cmd secret put CLERK_SECRET_KEY --config cloudflare\\wrangler.jsonc",
+    ".\\node_modules\\.bin\\wrangler.cmd secret put CLERK_WEBHOOK_SECRET --config cloudflare\\wrangler.jsonc",
+    ".\\node_modules\\.bin\\wrangler.cmd secret put WORKDOE_SECRET_KEY --config cloudflare\\wrangler.jsonc",
+    ".\\node_modules\\.bin\\wrangler.cmd secret put WORKDOE_TURNSTILE_SECRET_KEY --config cloudflare\\wrangler.jsonc",
+    ".\\node_modules\\.bin\\wrangler.cmd secret put WORKDOE_TURNSTILE_SITE_KEY --config cloudflare\\wrangler.jsonc",
+    "npm run cf:secrets:evidence",
+    "npm run cf:clerk:proof",
+    "npm run launch:dns",
+    "Deploy the Worker custom domain route and wait for DNS/certificate activation.",
+    "Deploy the Worker custom domain route for www.workdoe.com or add the intended redirect record.",
+    "confirm workdoe.com DNS in Cloudflare",
+    "npm run cf:deploy:plan",
+    "npm run launch:doctor:live",
+    "npm run github:deploy:plan",
+    "npm run github:deploy",
+    "npm run launch:smoke",
+    "npm run launch:smoke:strict",
+]
+
 
 BLOCKER_GROUPS = [
     (
@@ -229,13 +258,7 @@ def build_handoff_payload(
     dispatch = build_dispatch_plan(repo_root, local_url=local_url)
     blockers = sorted(set(list(doctor["blockers"]) + list(dispatch["blockers"])))
     next_actions = []
-    for action in list(doctor["next_actions"]) + [
-        "npm run launch:dns",
-        "npm run github:deploy:plan",
-        "npm run github:deploy",
-        "npm run launch:smoke",
-        "npm run launch:smoke:strict",
-    ]:
+    for action in CANONICAL_OPERATOR_ACTIONS + list(doctor["next_actions"]):
         if action and action not in next_actions:
             next_actions.append(action)
 
