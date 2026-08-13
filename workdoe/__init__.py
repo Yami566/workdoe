@@ -1493,6 +1493,7 @@ def register_routes(app: Flask) -> None:
             "new_jobs": sum(1 for job in all_jobs if not job["request_status"]),
             "sent_bids": sum(1 for job in all_jobs if job["request_status"]),
         }
+        has_query_filters = public_filters_active(filters)
         return render_template(
             "leads.html",
             jobs=jobs,
@@ -1503,7 +1504,8 @@ def register_routes(app: Flask) -> None:
                 limit=LEAD_BOARD_JOB_LIMIT,
                 view=lead_view,
             ),
-            has_filters=public_filters_active(filters) or lead_view != "all",
+            has_filters=has_query_filters or lead_view != "all",
+            has_query_filters=has_query_filters,
             lead_view=lead_view,
             lead_view_links=lead_view_links(filters),
             stats=stats,

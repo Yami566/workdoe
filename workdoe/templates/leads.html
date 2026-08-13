@@ -41,22 +41,22 @@
   {% if lead_view != "all" %}
     <input type="hidden" name="view" value="{{ lead_view }}">
   {% endif %}
-  <label class="category-field">
+  <label class="category-field" for="lead-category">
     Category
-    <select name="category">
+    <select id="lead-category" name="category">
       <option value="">All categories</option>
       {% for category in job_categories %}
         <option value="{{ category }}" {% if filters.category == category %}selected{% endif %}>{{ category }}</option>
       {% endfor %}
     </select>
   </label>
-  <label class="search-field">
+  <label class="search-field" for="lead-search">
     Search DMV area
-    <input name="q" type="search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, state, ZIP, or title" maxlength="{{ filter_query_max }}">
+    <input id="lead-search" name="q" type="search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, state, ZIP, or title" maxlength="{{ filter_query_max }}">
   </label>
-  <label class="sort-field">
+  <label class="sort-field" for="lead-sort">
     Sort
-    <select name="sort">
+    <select id="lead-sort" name="sort">
       {% for value, label in job_sort_options %}
         <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
@@ -92,7 +92,7 @@
     {% else %}
       <div class="empty-state">
         <h2>{% if lead_view == "sent" %}No bids sent yet{% elif lead_view == "new" %}No new leads{% else %}No leads match this search{% endif %}</h2>
-        <a class="button secondary" href="{{ url_for('leads') }}">Clear filters</a>
+        <a class="button secondary" href="{{ url_for('leads') }}">{% if lead_view != "all" and not has_query_filters %}Show all leads{% else %}Clear filters{% endif %}</a>
       </div>
     {% endfor %}
   </div>
