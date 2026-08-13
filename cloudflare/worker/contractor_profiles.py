@@ -40,6 +40,7 @@ JOB_CATEGORIES = (
 class ContractorProfileError(ValueError):
     def __init__(self, errors: list[str]):
         self.errors = errors
+        self.field_errors = profile_field_errors(errors)
         super().__init__("; ".join(errors))
 
 
@@ -119,6 +120,37 @@ def validate_contractor_profile_payload(form: dict[str, str]) -> list[str]:
     if len(form["phone"]) > PROFILE_PHONE_MAX_LENGTH:
         errors.append(f"Keep the phone under {PROFILE_PHONE_MAX_LENGTH} characters.")
     return errors
+
+
+def profile_field_for_error(message: str) -> str:
+    if "business name" in message:
+        return "business_name"
+    if "trade" in message:
+        return "trades"
+    if "service area" in message:
+        return "service_area"
+    if "years in business" in message:
+        return "years_in_business"
+    if "business" in message or "intro" in message:
+        return "intro"
+    if "insurance" in message:
+        return "insurance_status"
+    if "license" in message:
+        return "license_number"
+    if "website" in message or "URL" in message:
+        return "website"
+    if "phone" in message:
+        return "phone"
+    return ""
+
+
+def profile_field_errors(errors: list[str]) -> dict[str, list[str]]:
+    field_errors: dict[str, list[str]] = {}
+    for message in errors:
+        field = profile_field_for_error(message)
+        if field:
+            field_errors.setdefault(field, []).append(message)
+    return field_errors
 
 
 def contractor_profile_payload(payload: dict) -> dict:

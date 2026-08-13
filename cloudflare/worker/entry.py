@@ -943,7 +943,7 @@ class Default(WorkerEntrypoint):
             )
         except JobPostError as exc:
             return json_response(
-                {"ok": False, "errors": exc.errors},
+                {"ok": False, "errors": exc.errors, "field_errors": exc.field_errors},
                 status=400,
                 headers={"Cache-Control": "no-store"},
             )
@@ -1084,7 +1084,7 @@ class Default(WorkerEntrypoint):
             )
         except MatchRequestError as exc:
             return json_response(
-                {"ok": False, "errors": exc.errors},
+                {"ok": False, "errors": exc.errors, "field_errors": exc.field_errors},
                 status=400,
                 headers={"Cache-Control": "no-store"},
             )
@@ -1183,7 +1183,7 @@ class Default(WorkerEntrypoint):
             )
         except ContractorProfileError as exc:
             return json_response(
-                {"ok": False, "errors": exc.errors},
+                {"ok": False, "errors": exc.errors, "field_errors": exc.field_errors},
                 status=400,
                 headers={"Cache-Control": "no-store"},
             )

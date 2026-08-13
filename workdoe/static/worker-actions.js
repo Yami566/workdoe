@@ -8,6 +8,116 @@
     }
   }
 
+  function fieldIdForName(name) {
+    return String(name || "").replace(/_/g, "-");
+  }
+
+  function errorIdForField(field) {
+    return "worker-error-" + fieldIdForName(field);
+  }
+
+  function fieldControl(form, field) {
+    var controls = Array.prototype.filter.call(
+      form.querySelectorAll("input, select, textarea"),
+      function (control) {
+        return control.name === field;
+      }
+    );
+    if (!controls.length) {
+      return null;
+    }
+    for (var index = 0; index < controls.length; index += 1) {
+      if (controls[index].matches("input, select, textarea")) {
+        return controls[index];
+      }
+    }
+    return controls[0];
+  }
+
+  function fieldErrorTarget(form, field) {
+    var control = fieldControl(form, field);
+    if (!control) {
+      return null;
+    }
+    if (control.type === "checkbox" || control.type === "radio") {
+      return control.closest("fieldset") || control;
+    }
+    return control;
+  }
+
+  function fieldErrorContainer(target) {
+    if (!target) {
+      return null;
+    }
+    if (target.matches("fieldset")) {
+      return target;
+    }
+    return target.closest("label") || target.parentElement;
+  }
+
+  function describedByValues(element) {
+    return (element.dataset.originalDescribedby || element.getAttribute("aria-describedby") || "")
+      .split(/\s+/)
+      .filter(Boolean);
+  }
+
+  function clearFieldErrors(form) {
+    form.querySelectorAll("[data-worker-field-error]").forEach(function (node) {
+      node.remove();
+    });
+    form.querySelectorAll("[data-worker-invalid]").forEach(function (node) {
+      var original = node.dataset.originalDescribedby || "";
+      node.removeAttribute("aria-invalid");
+      if (original) {
+        node.setAttribute("aria-describedby", original);
+      } else {
+        node.removeAttribute("aria-describedby");
+      }
+      delete node.dataset.workerInvalid;
+    });
+  }
+
+  function showFieldErrors(form, fieldErrors) {
+    var firstControl = null;
+    Object.keys(fieldErrors || {}).forEach(function (field) {
+      var messages = fieldErrors[field] || [];
+      var target = fieldErrorTarget(form, field);
+      var control = fieldControl(form, field);
+      var container = fieldErrorContainer(target);
+      if (!target || !control || !container || !messages.length) {
+        return;
+      }
+      var error = document.createElement("span");
+      error.id = errorIdForField(field);
+      error.className = "field-error";
+      error.dataset.workerFieldError = "true";
+      error.textContent = messages[0];
+      container.appendChild(error);
+      var details = control.closest("details");
+      if (details) {
+        details.open = true;
+      }
+
+      if (!target.dataset.workerInvalid) {
+        target.dataset.originalDescribedby = target.getAttribute("aria-describedby") || "";
+      }
+      var describedBy = describedByValues(target);
+      if (describedBy.indexOf(error.id) === -1) {
+        describedBy.push(error.id);
+      }
+      target.setAttribute("aria-invalid", "true");
+      target.setAttribute("aria-describedby", describedBy.join(" "));
+      target.dataset.workerInvalid = "true";
+      if (!firstControl) {
+        firstControl = control;
+      }
+    });
+    if (firstControl && typeof firstControl.focus === "function") {
+      firstControl.focus({ preventScroll: true });
+      firstControl.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+
   function isFileValue(value) {
     return typeof File !== "undefined" && value instanceof File;
   }
@@ -109,6 +219,7 @@
     if (button) {
       button.disabled = true;
     }
+    clearFieldErrors(form);
     setStatus(form, "Saving...");
     try {
       var response = await fetch(form.dataset.jsonAction, {
@@ -124,6 +235,7 @@
         return {};
       });
       if (!response.ok) {
+        showFieldErrors(form, payload.field_errors);
         throw new Error((payload.errors || [payload.error || "Workdoe could not save this yet."]).join(" "));
       }
       try {
@@ -153,6 +265,7 @@
     if (button) {
       button.disabled = true;
     }
+    clearFieldErrors(form);
     setStatus(form, "Uploading...");
     try {
       var response = await fetch(form.dataset.fileAction, {
@@ -167,6 +280,7 @@
         return {};
       });
       if (!response.ok) {
+        showFieldErrors(form, payload.field_errors);
         throw new Error((payload.errors || [payload.error || "Workdoe could not upload this yet."]).join(" "));
       }
       setStatus(form, "Uploaded.");

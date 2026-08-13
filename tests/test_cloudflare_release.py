@@ -2473,6 +2473,17 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Array.isArray(data[key])", script)
         self.assertIn("\"Content-Type\": \"application/json\"", script)
         self.assertIn("[data-form-status]", script)
+        self.assertIn("payload.field_errors", script)
+        self.assertIn("showFieldErrors", script)
+        self.assertIn("clearFieldErrors", script)
+        self.assertIn("data-worker-field-error", script)
+        self.assertIn("aria-invalid", script)
+        self.assertIn("scrollIntoView", script)
+        self.assertIn("details.open = true", script)
+        self.assertIn("control.name === field", script)
+        self.assertNotIn("CSS.escape", script)
+        entrypoint = (ROOT / "cloudflare" / "worker" / "entry.py").read_text(encoding="utf-8")
+        self.assertIn('"field_errors": exc.field_errors', entrypoint)
 
         clerk_script = (ROOT / "workdoe" / "static" / "clerk-entry.js").read_text(encoding="utf-8")
         self.assertIn("finishSignIn", clerk_script)
@@ -2963,6 +2974,24 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Add at least 20 characters about your business.", invalid.exception.errors)
         self.assertIn("Use 0 to 100 for years in business.", invalid.exception.errors)
         self.assertIn("Use a full website URL that starts with http:// or https://.", invalid.exception.errors)
+        self.assertEqual(
+            invalid.exception.field_errors["business_name"],
+            ["Add a business name."],
+        )
+        self.assertEqual(invalid.exception.field_errors["trades"], ["Choose at least one trade."])
+        self.assertEqual(invalid.exception.field_errors["service_area"], ["Add a service area."])
+        self.assertEqual(
+            invalid.exception.field_errors["intro"],
+            ["Add at least 20 characters about your business."],
+        )
+        self.assertEqual(
+            invalid.exception.field_errors["years_in_business"],
+            ["Use 0 to 100 for years in business."],
+        )
+        self.assertEqual(
+            invalid.exception.field_errors["website"],
+            ["Use a full website URL that starts with http:// or https://."],
+        )
 
     def test_cloudflare_public_contractor_profile_helper_keeps_contact_private(self):
         module = load_contractor_public_profiles_module()
@@ -3060,6 +3089,28 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Use DC, MD, or VA for the first DMV beta.", invalid.exception.errors)
         self.assertIn("Use a 5-digit DMV ZIP code.", invalid.exception.errors)
         self.assertIn("Choose today or a future desired date.", invalid.exception.errors)
+        self.assertEqual(invalid.exception.field_errors["title"], ["Add a job title."])
+        self.assertEqual(invalid.exception.field_errors["category"], ["Choose a curated category."])
+        self.assertEqual(
+            invalid.exception.field_errors["state"],
+            ["Use DC, MD, or VA for the first DMV beta."],
+        )
+        self.assertEqual(
+            invalid.exception.field_errors["city"],
+            ["Add the city so the lead can be mapped approximately."],
+        )
+        self.assertEqual(
+            invalid.exception.field_errors["zip_code"],
+            ["Use a 5-digit DMV ZIP code."],
+        )
+        self.assertEqual(
+            invalid.exception.field_errors["desired_date"],
+            ["Choose today or a future desired date."],
+        )
+        self.assertEqual(
+            invalid.exception.field_errors["description"],
+            ["Add at least 20 characters about the work."],
+        )
 
     def test_cloudflare_turnstile_helper_builds_safe_siteverify_payloads(self):
         module = load_turnstile_module()
@@ -3135,6 +3186,21 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn("Keep questions under 500 characters.", invalid.exception.errors)
         self.assertIn("Add availability.", invalid.exception.errors)
+        self.assertEqual(
+            invalid.exception.field_errors["scope_note"],
+            ["Add at least 20 characters about the scope."],
+        )
+        self.assertEqual(invalid.exception.field_errors["price_range"], ["Add a price or range."])
+        self.assertEqual(invalid.exception.field_errors["timeline"], ["Add a timeline."])
+        self.assertEqual(
+            invalid.exception.field_errors["experience"],
+            ["Add at least 20 characters about relevant experience."],
+        )
+        self.assertEqual(
+            invalid.exception.field_errors["questions"],
+            ["Keep questions under 500 characters."],
+        )
+        self.assertEqual(invalid.exception.field_errors["availability"], ["Add availability."])
         with self.assertRaisesRegex(module.MatchRequestError, "Unsupported"):
             module.parse_match_request_job_id("/api/jobs/0/request")
 

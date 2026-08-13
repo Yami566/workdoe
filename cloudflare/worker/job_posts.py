@@ -70,6 +70,7 @@ CITY_COORDS = {
 class JobPostError(ValueError):
     def __init__(self, errors: list[str]):
         self.errors = errors
+        self.field_errors = job_field_errors(errors)
         super().__init__("; ".join(errors))
 
 
@@ -127,6 +128,33 @@ def validate_job_payload(form: dict[str, str], today: date | None = None) -> lis
             if parsed_date < today:
                 errors.append("Choose today or a future desired date.")
     return errors
+
+
+def job_field_for_error(message: str) -> str:
+    if "job title" in message:
+        return "title"
+    if "category" in message:
+        return "category"
+    if "desired date" in message:
+        return "desired_date"
+    if "city" in message:
+        return "city"
+    if "DC, MD, or VA" in message:
+        return "state"
+    if "ZIP code" in message:
+        return "zip_code"
+    if "work" in message or "description" in message:
+        return "description"
+    return ""
+
+
+def job_field_errors(errors: list[str]) -> dict[str, list[str]]:
+    field_errors: dict[str, list[str]] = {}
+    for message in errors:
+        field = job_field_for_error(message)
+        if field:
+            field_errors.setdefault(field, []).append(message)
+    return field_errors
 
 
 def approximate_location(city: str, state: str, zip_code: str) -> tuple[float, float]:

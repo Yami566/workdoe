@@ -15,6 +15,7 @@ MAX_MATCH_REQUEST_BODY_BYTES = 8192
 class MatchRequestError(ValueError):
     def __init__(self, errors: list[str]):
         self.errors = errors
+        self.field_errors = match_request_field_errors(errors)
         super().__init__("; ".join(errors))
 
 
@@ -69,6 +70,31 @@ def validate_match_request_payload(form: dict[str, str]) -> list[str]:
     elif len(form["availability"]) > BID_AVAILABILITY_MAX_LENGTH:
         errors.append(f"Keep availability under {BID_AVAILABILITY_MAX_LENGTH} characters.")
     return errors
+
+
+def match_request_field_for_error(message: str) -> str:
+    if "scope" in message:
+        return "scope_note"
+    if "price" in message:
+        return "price_range"
+    if "timeline" in message:
+        return "timeline"
+    if "experience" in message:
+        return "experience"
+    if "questions" in message:
+        return "questions"
+    if "availability" in message:
+        return "availability"
+    return ""
+
+
+def match_request_field_errors(errors: list[str]) -> dict[str, list[str]]:
+    field_errors: dict[str, list[str]] = {}
+    for message in errors:
+        field = match_request_field_for_error(message)
+        if field:
+            field_errors.setdefault(field, []).append(message)
+    return field_errors
 
 
 def match_request_payload(payload: dict) -> dict[str, str]:
