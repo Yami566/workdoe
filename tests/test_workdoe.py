@@ -1476,6 +1476,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'data-session-url="/api/auth/session"', login.data)
         self.assertIn(b'data-dashboard-url="/dashboard"', login.data)
         self.assertIn(b"Email code sign-in stays on workdoe.com.", login.data)
+        self.assertIn(
+            b'class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message',
+            login.data,
+        )
         self.assertIn(b"https://clerk.workdoe.com/npm/@clerk/clerk-js@6", login.data)
         self.assertIn(b"/static/clerk-entry.js", login.data)
         self.assertNotIn(b'name="auth_action" value="code"', login.data)
@@ -1490,6 +1494,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'data-session-url="/api/auth/session"', start.data)
         self.assertIn(b'data-onboard-url="/api/auth/onboard"', start.data)
         self.assertIn(b'data-leads-url="/leads"', start.data)
+        self.assertIn(
+            b'class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message',
+            start.data,
+        )
 
         csp = login.headers["Content-Security-Policy"]
         self.assertIn("script-src 'self' https://clerk.workdoe.com", csp)

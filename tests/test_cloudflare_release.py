@@ -1973,6 +1973,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('data-session-url="/api/auth/session"', html)
         self.assertIn('data-onboard-url="/api/auth/onboard"', html)
         self.assertIn('data-selected-job-id="9"', html)
+        self.assertIn(
+            'class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message',
+            html,
+        )
         self.assertIn('data-clerk-publishable-key="pk_test_workdoe"', html)
         self.assertIn("Email code sign-in stays on workdoe.com.", html)
         self.assertIn('id="live-jobs" class="login-live-panel start-live-panel" tabindex="-1"', html)
@@ -2024,6 +2028,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertNotIn("1 photos", login_html)
         self.assertIn("Welcome back", login_html)
         self.assertIn("Selected", login_html)
+        self.assertIn(
+            'class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message',
+            login_html,
+        )
         self.assertNotIn("data-clerk-display-name", login_html)
 
         headers = module.shell_headers("https://clerk.workdoe.com")
@@ -2601,6 +2609,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("node.dataset.signUpUrl", clerk_script)
         self.assertIn("clerkUserEmail", clerk_script)
         self.assertIn("onboardPayload.email = email", clerk_script)
+        styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn(".clerk-entry-status", styles)
 
     def test_cloudflare_contractor_leads_helper_matches_lead_board_contract(self):
         module = load_contractor_leads_module()

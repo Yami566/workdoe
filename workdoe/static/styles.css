@@ -1155,6 +1155,10 @@ button.compact {
   padding: 10px 12px;
 }
 
+.clerk-entry-status {
+  min-height: 1.5em;
+}
+
 .verify-checklist {
   margin: 10px 0 0;
 }

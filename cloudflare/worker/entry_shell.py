@@ -404,7 +404,7 @@ def build_entry_shell_html(
         <div class="auth-switch clerk-entry-note">
           <span>Email code sign-in stays on workdoe.com.</span>
         </div>
-        <p class="help-text" data-clerk-onboarding-message></p>
+        <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>
       </section>
     </section>
   </main>
