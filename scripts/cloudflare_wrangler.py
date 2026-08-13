@@ -40,5 +40,5 @@ def wrangler_command(args: list[str], repo_root: Path = REPO_ROOT) -> list[str]:
 
 def wrangler_env(repo_root: Path = REPO_ROOT) -> dict[str, str]:
     env = os.environ.copy()
-    env.setdefault("XDG_CONFIG_HOME", str(repo_root / WRANGLER_CONFIG_DIR))
+    env["XDG_CONFIG_HOME"] = str(repo_root / WRANGLER_CONFIG_DIR)
     return env

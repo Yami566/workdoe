@@ -1624,13 +1624,14 @@ class WorkdoeFlowTests(unittest.TestCase):
 
     def test_vendored_leaflet_assets_are_pinned(self):
         expected_hashes = {
-            "leaflet.css": "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=",
+            "leaflet.css": "sha256-M3v8pcq9A7OYFbJwD+vis7ft9VkhxZzUn4jssyghIwM=",
             "leaflet.js": "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=",
         }
         vendor_dir = ROOT / "workdoe" / "static" / "vendor" / "leaflet"
 
         for filename, expected in expected_hashes.items():
-            digest = base64.b64encode(hashlib.sha256((vendor_dir / filename).read_bytes()).digest())
+            canonical_bytes = (vendor_dir / filename).read_bytes().replace(b"\r\n", b"\n")
+            digest = base64.b64encode(hashlib.sha256(canonical_bytes).digest())
             self.assertEqual("sha256-" + digest.decode("ascii"), expected)
 
         for filename in [
