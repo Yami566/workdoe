@@ -30,6 +30,7 @@ jobs:
       - name: Validate manual deploy confirmation
         if: github.event_name == 'workflow_dispatch'
         run: |
+          test "${{ github.ref }}" = "refs/heads/main"
           test "${{ inputs.deploy }}" = "DEPLOY"
           test "${{ inputs.clerk_proxy_url }}" = "https://workdoe.com/__clerk"
 
@@ -66,6 +67,7 @@ jobs:
     environment: production
     if: >-
       github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
       inputs.deploy == 'DEPLOY' &&
       inputs.clerk_proxy_url == 'https://workdoe.com/__clerk'
     env:

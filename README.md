@@ -136,6 +136,7 @@ Pushes to `main` or `master` run tests and preflight only. Production deployment
 is manual-only through the `Workdoe Cloudflare Release` workflow and requires:
 
 - repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`;
+- workflow dispatch from the `main` branch;
 - dispatch input `DEPLOY`;
 - Clerk proxy confirmation `https://workdoe.com/__clerk`;
 - real D1 IDs committed in `cloudflare/wrangler.jsonc`;

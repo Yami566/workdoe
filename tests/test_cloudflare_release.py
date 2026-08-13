@@ -3883,6 +3883,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("Validate manual deploy confirmation", workflow)
+        self.assertIn('test "${{ github.ref }}" = "refs/heads/main"', workflow)
+        self.assertIn("github.ref == 'refs/heads/main'", workflow)
         self.assertIn('test "${{ inputs.deploy }}" = "DEPLOY"', workflow)
         self.assertIn(
             'test "${{ inputs.clerk_proxy_url }}" = "https://workdoe.com/__clerk"',
