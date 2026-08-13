@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Safety - Workdoe{% endblock %}
+{% block content %}
+<section class="page-header">
+  <p class="eyebrow">Trust model</p>
+  <h1>Privacy and moderation are part of the MVP, not a later patch.</h1>
+  <p>Workdoe is designed around compartmentalized records, private media routes, and controlled match approvals.</p>
+</section>
+
+<section class="content-grid two">
+  <article class="panel">
+    <h2>Location privacy</h2>
+    <p>Jobs collect city, state, and ZIP for the DMV beta. Contractors see approximate pins and never receive an exact address through the lead board.</p>
+  </article>
+  <article class="panel">
+    <h2>Photo privacy</h2>
+    <p>Job photos are stored outside the public static folder. The app checks the viewer before serving each file.</p>
+  </article>
+  <article class="panel">
+    <h2>Account separation</h2>
+    <p>Clients, contractors, and admins have separate role-based dashboards. Password hashes stay in auth records, separate from jobs and media metadata.</p>
+  </article>
+  <article class="panel">
+    <h2>Cloudflare path</h2>
+    <p>When this moves to Cloudflare, D1 stores structured records, R2 stores photos, Email Service handles transactional email, and Turnstile protects forms.</p>
+  </article>
+</section>
+{% endblock %}

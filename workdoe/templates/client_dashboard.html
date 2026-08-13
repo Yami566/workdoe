@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Client Dashboard - Workdoe{% endblock %}
+{% block content %}
+<section class="dashboard-header">
+  <div>
+    <p class="eyebrow">Client dashboard</p>
+    <h1>Your jobs and match requests</h1>
+  </div>
+  <a class="button" href="{{ url_for('new_job') }}">Post a job</a>
+</section>
+
+<section class="dashboard-metrics" aria-label="Client work queue">
+  <a class="metric-card" href="{{ url_for('new_job') }}">
+    <span>Post</span>
+    <strong>New job</strong>
+  </a>
+  <div class="metric-card">
+    <span>Open</span>
+    <strong>{{ stats.open_jobs }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>Pending bids</span>
+    <strong>{{ stats.pending_requests }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>Total jobs</span>
+    <strong>{{ stats.total_jobs }}</strong>
+  </div>
+</section>
+
+<nav class="work-view-tabs" aria-label="Client job status">
+  {% for item in job_view_links %}
+    {% set count = stats.total_jobs if item.value == "all" else (stats.review_jobs if item.value == "review" else (stats.open_jobs if item.value == "open" else stats.closed_jobs)) %}
+    <a class="work-view-tab{% if job_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if job_view == item.value %}aria-current="page"{% endif %}>
+      <span>{{ item.label }}</span>
+      <strong>{{ count }}</strong>
+    </a>
+  {% endfor %}
+</nav>
+
+<section id="jobs-list" class="job-list">
+  {% for job in jobs %}
+    {% set needs_review = (job.pending_count or 0) > 0 %}
+    {% set row_href = url_for('client_job_detail', job_id=job.id, bids='pending') ~ '#mini-bids' if needs_review else url_for('client_job_detail', job_id=job.id) %}
+    <a class="job-row link-row{% if needs_review %} needs-review{% endif %}" href="{{ row_href }}" aria-label="{{ 'Review pending bids for ' if needs_review else 'Review ' }}{{ job.title }}">
+      <div>
+        <div class="row-meta">
+          <span class="status {{ job.status }}">{{ job.status }}</span>
+          <span>{{ job.category }}</span>
+          <span>{{ job.city }}, {{ job.state }}</span>
+          {% if job.desired_date %}<span>Target <time datetime="{{ job.desired_date }}">{{ job.desired_date|date_label }}</time></span>{% endif %}
+        </div>
+        <h2>{{ job.title }}</h2>
+        <p class="job-summary">{{ job.description }}</p>
+      </div>
+      <div class="row-actions">
+        {% if needs_review %}
+          <span class="count-pill attention">{{ job.pending_count }} pending</span>
+        {% endif %}
+        <span class="row-cue">{{ "Review bids" if needs_review else "Review" }}</span>
+      </div>
+    </a>
+  {% else %}
+    <div class="empty-state">
+      <h2>{% if job_view == "review" %}No bids to review{% elif job_view == "open" %}No open jobs{% elif job_view == "closed" %}No closed jobs{% else %}No jobs yet{% endif %}</h2>
+      {% if job_view == "all" %}
+        <a class="button" href="{{ url_for('new_job') }}">Post a job</a>
+      {% else %}
+        <a class="button secondary" href="{{ url_for('client_dashboard') }}">All jobs</a>
+      {% endif %}
+    </div>
+  {% endfor %}
+</section>
+{% endblock %}

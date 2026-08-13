@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Verify Email - Workdoe{% endblock %}
+{% block content %}
+<section class="auth-layout start-layout verify-layout">
+  <div>
+    <p class="eyebrow">Verify email</p>
+    <h1>Enter the one-time code.</h1>
+    <p>Workdoe will {{ "sign in" if login_next_url else "create or open" }} the account for {{ login_code.email }} after verification.</p>
+    <ul class="form-checklist auth-checklist verify-checklist" aria-label="Code safeguards">
+      <li>6 digits</li>
+      <li>10 min</li>
+      <li>Same site</li>
+    </ul>
+    {% if selected_job %}
+      <div class="selected-lead-pill" aria-label="Selected lead">
+        <span>Selected</span>
+        <strong>{{ selected_job.title }}</strong>
+        <small>{{ selected_job.city }}, {{ selected_job.state }}</small>
+      </div>
+    {% endif %}
+  </div>
+
+  <form class="form-panel otp-form" method="post" {% if code_error %}aria-describedby="verify-code-error"{% endif %}>
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <label for="verify-code">
+      One-time code
+      <input id="verify-code" name="code" inputmode="numeric" enterkeyhint="done" autocomplete="one-time-code" autocapitalize="off" autocorrect="off" spellcheck="false" pattern="[0-9 -]{6,12}" maxlength="12" placeholder="123456" required autofocus {% if code_error %}aria-invalid="true" aria-describedby="verify-code-error"{% endif %}>
+      {% if code_error %}<span id="verify-code-error" class="field-error">{{ code_error }}</span>{% endif %}
+    </label>
+    {% if local_code %}
+      <div class="local-code" aria-label="Local prototype one-time code">
+        <span>Local prototype code</span>
+        <strong>{{ local_code }}</strong>
+      </div>
+    {% endif %}
+    <button class="button" type="submit">Continue to Workdoe</button>
+    <a class="button secondary" href="{{ url_for('login', next=login_next_url) if login_next_url else (url_for('start', intent=login_code.intent, job_id=selected_job.id) if selected_job else url_for('start', intent=login_code.intent)) }}">{{ "Back to sign in" if login_next_url else "Start over" }}</a>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} - Workdoe Lead{% endblock %}
+{% block content %}
+<section class="dashboard-header">
+  <div>
+    <p class="eyebrow">Contractor lead</p>
+    <h1>{{ job.title }}</h1>
+    <p>{{ job.category }} in {{ job.city }}, {{ job.state }} {{ job.zip_code[:3] }}xx</p>
+  </div>
+  <span class="status {{ job.status }}">{{ job.status }}</span>
+</section>
+
+{% if g.user.role == 'contractor' %}
+  <nav class="lead-action-bar" aria-label="Lead actions">
+    {% if existing_request %}
+      <a class="button secondary" href="{{ url_for('leads') }}">Back to leads</a>
+      <a class="button" href="#mini-bid">View bid status</a>
+    {% else %}
+      <a class="button" href="#mini-bid">Send mini bid</a>
+      <a class="button secondary" href="#job-details">Review details</a>
+    {% endif %}
+  </nav>
+{% endif %}
+
+<section class="detail-grid">
+  <article id="job-details" class="panel job-detail-panel" tabindex="-1">
+    <h2>Job details</h2>
+    <dl class="job-facts">
+      <div><dt>Trade</dt><dd>{{ job.category }}</dd></div>
+      <div><dt>Area</dt><dd>{{ job.city }}, {{ job.state }} {{ job.zip_code[:3] }}xx</dd></div>
+      <div><dt>Target</dt><dd>{{ job.desired_date|date_label if job.desired_date else "Flexible" }}</dd></div>
+      <div><dt>Photos</dt><dd>{{ photos|length }}</dd></div>
+    </dl>
+    <p class="preline">{{ job.description }}</p>
+    <p class="help-text">Approximate location only. Workdoe does not reveal exact addresses in the lead board.</p>
+    <div class="photo-grid">
+      {% for photo in photos %}
+        <figure>
+          <img src="{{ url_for('job_photo', photo_id=photo.id) }}" alt="Job photo {{ loop.index }}">
+          <figcaption>{{ photo.original_filename }}</figcaption>
+        </figure>
+      {% endfor %}
+    </div>
+  </article>
+
+  <aside id="mini-bid" class="panel bid-panel" tabindex="-1">
+    {% if g.user.role == 'admin' %}
+      <h2>Admin review</h2>
+      <a class="button secondary full" href="{{ url_for('admin_dashboard') }}">Back to admin</a>
+    {% elif existing_request %}
+      <h2>Mini bid sent</h2>
+      <p>Your request is currently <strong>{{ existing_request.status }}</strong>.</p>
+      <dl class="profile-facts compact-facts">
+        <div><dt>Price</dt><dd>{{ existing_request.price_range }}</dd></div>
+        <div><dt>Timeline</dt><dd>{{ existing_request.timeline }}</dd></div>
+        <div><dt>Availability</dt><dd>{{ existing_request.availability }}</dd></div>
+      </dl>
+      <p class="preline">{{ existing_request.scope_note }}</p>
+      <a class="button secondary full" href="{{ url_for('leads') }}">Back to leads</a>
+    {% elif g.user.role == 'contractor' %}
+      <h2>Send mini bid</h2>
+      {% set bid_field_errors = bid_error_feedback.fields %}
+      <form class="stack-form bid-form" method="post" action="{{ url_for('request_match', job_id=job.id) }}" aria-label="Send mini bid" {% if bid_error_feedback.summary %}aria-describedby="bid-form-errors"{% endif %}>
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        {% if bid_error_feedback.summary %}
+          <section id="bid-form-errors" class="form-error-summary" role="alert" aria-labelledby="bid-form-errors-title">
+            <h3 id="bid-form-errors-title">Fix {{ bid_error_feedback.summary|length }} item{{ "" if bid_error_feedback.summary|length == 1 else "s" }}</h3>
+            <ul>
+              {% for item in bid_error_feedback.summary %}
+                <li>{% if item.field_id %}<a href="#{{ item.field_id }}">{{ item.message }}</a>{% else %}{{ item.message }}{% endif %}</li>
+              {% endfor %}
+            </ul>
+          </section>
+        {% endif %}
+        <label for="bid-scope-note">
+          Scope note
+          <textarea id="bid-scope-note" name="scope_note" rows="4" minlength="{{ bid_limits.scope_min }}" maxlength="{{ bid_limits.scope_max }}" placeholder="Work included, assumptions, access needs." autocapitalize="sentences" spellcheck="true" enterkeyhint="next" required {% if bid_field_errors.scope_note %}aria-invalid="true" aria-describedby="bid-scope-note-error"{% endif %}>{{ bid_form.scope_note }}</textarea>
+          {% if bid_field_errors.scope_note %}<span id="bid-scope-note-error" class="field-error">{{ bid_field_errors.scope_note[0] }}</span>{% endif %}
+        </label>
+        <div class="bid-quick-grid">
+          <label for="bid-price-range">
+            Price range
+            <input id="bid-price-range" name="price_range" value="{{ bid_form.price_range }}" maxlength="{{ bid_limits.price_max }}" inputmode="text" placeholder="$450-$650" list="bid-price-options" enterkeyhint="next" required {% if bid_field_errors.price_range %}aria-invalid="true" aria-describedby="bid-price-range-error"{% endif %}>
+            {% if bid_field_errors.price_range %}<span id="bid-price-range-error" class="field-error">{{ bid_field_errors.price_range[0] }}</span>{% endif %}
+          </label>
+          <label for="bid-timeline">
+            Timeline
+            <input id="bid-timeline" name="timeline" value="{{ bid_form.timeline }}" maxlength="{{ bid_limits.timeline_max }}" placeholder="Next week" list="bid-timeline-options" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" required {% if bid_field_errors.timeline %}aria-invalid="true" aria-describedby="bid-timeline-error"{% endif %}>
+            {% if bid_field_errors.timeline %}<span id="bid-timeline-error" class="field-error">{{ bid_field_errors.timeline[0] }}</span>{% endif %}
+          </label>
+          <label for="bid-availability">
+            Availability
+            <input id="bid-availability" name="availability" value="{{ bid_form.availability }}" maxlength="{{ bid_limits.availability_max }}" placeholder="Tue/Thu PM" list="bid-availability-options" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" required {% if bid_field_errors.availability %}aria-invalid="true" aria-describedby="bid-availability-error"{% endif %}>
+            {% if bid_field_errors.availability %}<span id="bid-availability-error" class="field-error">{{ bid_field_errors.availability[0] }}</span>{% endif %}
+          </label>
+        </div>
+        <label for="bid-experience">
+          Relevant experience
+          <textarea id="bid-experience" name="experience" rows="3" minlength="{{ bid_limits.experience_min }}" maxlength="{{ bid_limits.experience_max }}" placeholder="Similar work or crew capability." autocapitalize="sentences" spellcheck="true" enterkeyhint="next" required {% if bid_field_errors.experience %}aria-invalid="true" aria-describedby="bid-experience-error"{% endif %}>{{ bid_form.experience }}</textarea>
+          {% if bid_field_errors.experience %}<span id="bid-experience-error" class="field-error">{{ bid_field_errors.experience[0] }}</span>{% endif %}
+        </label>
+        <datalist id="bid-price-options">
+          <option value="$250-$500"></option>
+          <option value="$500-$1,000"></option>
+          <option value="On-site estimate needed"></option>
+        </datalist>
+        <datalist id="bid-timeline-options">
+          <option value="Same week"></option>
+          <option value="Next week"></option>
+          <option value="Two business days after approval"></option>
+        </datalist>
+        <datalist id="bid-availability-options">
+          <option value="Weekday mornings"></option>
+          <option value="Weekday afternoons"></option>
+          <option value="Weekend available"></option>
+        </datalist>
+        <details class="optional-field" {% if bid_field_errors.questions %}open{% endif %}>
+          <summary>Questions (optional)</summary>
+          <label class="sr-only" for="bid-questions">Questions</label>
+          <textarea id="bid-questions" name="questions" rows="2" maxlength="{{ bid_limits.questions_max }}" placeholder="Optional" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" {% if bid_field_errors.questions %}aria-invalid="true" aria-describedby="bid-questions-error"{% endif %}>{{ bid_form.questions }}</textarea>
+          {% if bid_field_errors.questions %}<span id="bid-questions-error" class="field-error">{{ bid_field_errors.questions[0] }}</span>{% endif %}
+        </details>
+        {% with action='match-request' %}{% include "_turnstile.html" %}{% endwith %}
+        <button class="button full" type="submit" aria-label="Send mini bid">Send bid</button>
+      </form>
+    {% endif %}
+    {% if g.user.role != 'admin' %}
+      <form class="report-form" method="post" action="{{ url_for('report_content') }}">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="target_type" value="job">
+        <input type="hidden" name="target_id" value="{{ job.id }}">
+        <label>
+          Report this lead
+          <input name="reason" maxlength="{{ report_reason_max }}" placeholder="Why should moderation review it?" required>
+        </label>
+        {% with action='report' %}{% include "_turnstile.html" %}{% endwith %}
+        <button class="button secondary compact" type="submit">Report</button>
+      </form>
+    {% endif %}
+  </aside>
+</section>
+{% endblock %}

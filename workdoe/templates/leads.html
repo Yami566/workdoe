@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Lead Board - Workdoe{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+{% endblock %}
+{% block content %}
+<section class="dashboard-header">
+  <div>
+    <p class="eyebrow">Lead board</p>
+    <h1>Open DMV jobs</h1>
+    <p>Approximate pins until matched.</p>
+  </div>
+</section>
+
+<section class="dashboard-metrics lead-metrics" aria-label="Lead board summary">
+  <div class="metric-card">
+    <span>Showing</span>
+    <strong>{{ stats.visible_jobs }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>New</span>
+    <strong>{{ stats.new_jobs }}</strong>
+  </div>
+  <a class="metric-card" href="{{ url_for('contractor_dashboard') }}">
+    <span>Bids sent</span>
+    <strong>{{ stats.sent_bids }}</strong>
+  </a>
+</section>
+
+<nav class="lead-view-tabs" aria-label="Lead status">
+  {% for item in lead_view_links %}
+    {% set count = stats.all_jobs if item.value == "all" else (stats.new_jobs if item.value == "new" else stats.sent_bids) %}
+    <a class="lead-view-tab{% if lead_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if lead_view == item.value %}aria-current="page"{% endif %}>
+      <span>{{ item.label }}</span>
+      <strong>{{ count }}</strong>
+    </a>
+  {% endfor %}
+</nav>
+
+<form class="filter-bar lead-filter" method="get" role="search" aria-label="Filter contractor leads" aria-controls="lead-results lead-map">
+  {% if lead_view != "all" %}
+    <input type="hidden" name="view" value="{{ lead_view }}">
+  {% endif %}
+  <label class="category-field">
+    Category
+    <select name="category">
+      <option value="">All categories</option>
+      {% for category in job_categories %}
+        <option value="{{ category }}" {% if filters.category == category %}selected{% endif %}>{{ category }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="search-field">
+    Search DMV area
+    <input name="q" type="search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, state, ZIP, or title" maxlength="{{ filter_query_max }}">
+  </label>
+  <label class="sort-field">
+    Sort
+    <select name="sort">
+      {% for value, label in job_sort_options %}
+        <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="filter-actions">
+    <button class="button" type="submit">Filter</button>
+    {% if has_filters %}
+      <a class="button secondary" href="{{ url_for('leads') }}">Clear</a>
+    {% endif %}
+  </div>
+</form>
+
+<section class="lead-layout">
+  <div id="lead-results" class="job-list lead-job-list" aria-label="Open leads" {% if jobs %}role="list"{% endif %}>
+    {% for job in jobs %}
+      {% set row_cue = "Sent" if job.request_status else "View" %}
+      {% set row_label = "Open sent bid for " ~ job.title if job.request_status else "View " ~ job.title %}
+      <a class="job-row link-row" role="listitem" data-job-id="{{ job.id }}" href="{{ url_for('contractor_job_detail', job_id=job.id) }}" aria-label="{{ row_label }}">
+        <div>
+          <div class="row-meta">
+            <span>{{ job.category }}</span>
+            <span>{{ job.city }}, {{ job.state }}</span>
+            {% if job.desired_date %}<span>Target <time datetime="{{ job.desired_date }}">{{ job.desired_date|date_label }}</time></span>{% endif %}
+            <span>{{ job.photo_count|photo_count_label }}</span>
+            {% if job.request_status %}<span class="status {{ job.request_status }}">bid {{ job.request_status }}</span>{% endif %}
+          </div>
+          <h2>{{ job.title }}</h2>
+          <p class="job-summary">{{ job.description }}</p>
+        </div>
+        <span class="row-cue">{{ row_cue }}</span>
+      </a>
+    {% else %}
+      <div class="empty-state">
+        <h2>{% if lead_view == "sent" %}No bids sent yet{% elif lead_view == "new" %}No new leads{% else %}No leads match this search{% endif %}</h2>
+        <a class="button secondary" href="{{ url_for('leads') }}">Clear filters</a>
+      </div>
+    {% endfor %}
+  </div>
+  <div class="map-panel lead-map-panel">
+    {% with map_label="Approximate DMV job map" %}
+      {% include "_lead_map.html" %}
+    {% endwith %}
+  </div>
+</section>
+
+<script id="map-jobs-data" type="application/json">{{ map_jobs|tojson }}</script>
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script src="{{ url_for('static', filename='map.js') }}"></script>
+{% endblock %}

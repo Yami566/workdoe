@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} - Client Job{% endblock %}
+{% block content %}
+<section class="dashboard-header">
+  <div>
+    <p class="eyebrow">Client job</p>
+    <h1>{{ job.title }}</h1>
+    <p>{{ job.category }} in {{ job.city }}, {{ job.state }} {{ job.zip_code }}</p>
+  </div>
+  <span class="status {{ job.status }}">{{ job.status }}</span>
+</section>
+
+<nav class="lead-action-bar client-review-bar" aria-label="Client job shortcuts">
+  {% if request_stats.pending %}
+    <a class="button" href="{{ url_for('client_job_detail', job_id=job.id, bids='pending') }}#mini-bids">Review {{ request_stats.pending }} pending</a>
+  {% endif %}
+  <a class="button secondary" href="{{ url_for('client_job_detail', job_id=job.id) }}#mini-bids">All mini bids</a>
+  <a class="button secondary" href="{{ url_for('client_dashboard') }}">Dashboard</a>
+</nav>
+
+<section class="detail-grid">
+  <article class="panel">
+    <h2>Scope</h2>
+    <dl class="job-facts">
+      <div><dt>Trade</dt><dd>{{ job.category }}</dd></div>
+      <div><dt>Area</dt><dd>{{ job.city }}, {{ job.state }} {{ job.zip_code }}</dd></div>
+      <div><dt>Target</dt><dd>{{ job.desired_date|date_label if job.desired_date else "Flexible" }}</dd></div>
+      <div><dt>Photos</dt><dd>{{ photos|length }}</dd></div>
+    </dl>
+    <p class="preline">{{ job.description }}</p>
+    <div class="photo-grid">
+      {% for photo in photos %}
+        <figure>
+          <img src="{{ url_for('job_photo', photo_id=photo.id) }}" alt="Job photo {{ loop.index }}">
+          <figcaption>{{ photo.original_filename }}{% if photo.is_hidden %} - hidden{% endif %}</figcaption>
+        </figure>
+      {% endfor %}
+    </div>
+  </article>
+
+  <aside class="panel">
+    <h2>Job controls</h2>
+    <a class="button full" href="{{ url_for('edit_job', job_id=job.id) }}">Edit job</a>
+    {% if job.status == 'open' %}
+      <form method="post" action="{{ url_for('client_job_status', job_id=job.id, action='close') }}">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <button class="button secondary full" type="submit">Close job</button>
+      </form>
+    {% elif job.status == 'closed' %}
+      <form method="post" action="{{ url_for('client_job_status', job_id=job.id, action='reopen') }}">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <button class="button secondary full" type="submit">Reopen job</button>
+      </form>
+    {% else %}
+      <p class="help-text">This job is hidden by moderation.</p>
+    {% endif %}
+  </aside>
+</section>
+
+<section id="mini-bids" class="band subtle bid-review-section" tabindex="-1" aria-labelledby="mini-bids-title">
+  <div class="section-heading">
+    <p class="eyebrow">Mini bids</p>
+    <h2 id="mini-bids-title">Review contractor requests</h2>
+  </div>
+  <div class="dashboard-metrics compact-metrics" aria-label="Mini bid summary">
+    <div class="metric-card">
+      <span>Total</span>
+      <strong>{{ request_stats.total }}</strong>
+    </div>
+    <div class="metric-card">
+      <span>Pending</span>
+      <strong>{{ request_stats.pending }}</strong>
+    </div>
+    <div class="metric-card">
+      <span>Approved</span>
+      <strong>{{ request_stats.approved }}</strong>
+    </div>
+    <div class="metric-card">
+      <span>Rejected</span>
+      <strong>{{ request_stats.rejected }}</strong>
+    </div>
+  </div>
+  <nav class="work-view-tabs bid-view-tabs" aria-label="Mini bid status">
+    {% for item in bid_view_links %}
+      {% set count = request_stats.total if item.value == "all" else (request_stats.pending if item.value == "pending" else (request_stats.approved if item.value == "approved" else request_stats.rejected)) %}
+      <a class="work-view-tab{% if bid_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if bid_view == item.value %}aria-current="page"{% endif %}>
+        <span>{{ item.label }}</span>
+        <strong>{{ count }}</strong>
+      </a>
+    {% endfor %}
+  </nav>
+  <div class="job-list bid-review-list" aria-live="polite">
+    {% for item in requests %}
+      {% set contractor_name = item.business_name or item.company_name or item.display_name %}
+      <article class="job-row bid-row bid-review-row{% if item.status == 'pending' %} needs-review{% endif %}" aria-labelledby="bid-title-{{ item.id }}">
+        <div class="bid-card-main">
+          <div class="bid-row-top">
+            <div class="bid-row-title">
+              <div class="row-meta">
+                <span class="status {{ item.status }}">{{ item.status }}</span>
+                <span>{{ contractor_name }}</span>
+                <span>{{ item.trades or "Contractor profile" }}</span>
+              </div>
+              <h3 id="bid-title-{{ item.id }}">{{ contractor_name }}</h3>
+            </div>
+            <div class="row-actions bid-actions" aria-label="Actions for {{ contractor_name }}">
+              <a class="button secondary compact" href="{{ url_for('contractor_public_profile', contractor_id=item.contractor_id) }}">Profile</a>
+              {% if item.status == 'approved' and item.thread_id %}
+                <a class="button compact" href="{{ url_for('thread_detail', thread_id=item.thread_id) }}">Message</a>
+              {% endif %}
+              {% if item.status == 'pending' %}
+                <form method="post" action="{{ url_for('decide_request', request_id=item.id, action='approve') }}">
+                  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                  <button class="button compact" type="submit">Approve</button>
+                </form>
+                <form method="post" action="{{ url_for('decide_request', request_id=item.id, action='reject') }}">
+                  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                  <button class="button secondary compact" type="submit">Reject</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+          <dl class="profile-facts compact-facts bid-facts">
+            <div><dt>Price</dt><dd>{{ item.price_range }}</dd></div>
+            <div><dt>Timeline</dt><dd>{{ item.timeline }}</dd></div>
+            <div><dt>Availability</dt><dd>{{ item.availability }}</dd></div>
+          </dl>
+          <div class="bid-copy-grid">
+            <p class="preline bid-scope">{{ item.scope_note }}</p>
+            <div class="bid-notes">
+              <p><strong>Experience:</strong> {{ item.experience }}</p>
+              {% if item.questions %}<p><strong>Questions:</strong> {{ item.questions }}</p>{% endif %}
+            </div>
+          </div>
+        </div>
+      </article>
+    {% else %}
+      <p class="empty">{% if bid_view == "pending" %}No pending bids.{% elif bid_view == "approved" %}No approved bids.{% elif bid_view == "rejected" %}No rejected bids.{% else %}No contractor mini bids yet.{% endif %}</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

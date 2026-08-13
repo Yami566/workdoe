@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Workdoe helps DMV clients post contractor jobs and review trusted mini bids.">
+    <title>{% block title %}Workdoe{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=workdoe-mvp">
+    {% if turnstile_enabled() %}
+      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    {% endif %}
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="{{ url_for('home') }}" aria-label="Workdoe home" title="Workdoe home">
+        <span class="brand-mark brand-home-button" aria-hidden="true">
+          <img class="brand-icon" src="{{ url_for('static', filename='deer.svg') }}" alt="">
+        </span>
+        <span>
+          <strong>Workdoe</strong>
+          <small>DMV contractor leads</small>
+        </span>
+      </a>
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="{{ url_for('safety') }}" {% if request.endpoint == 'safety' %}aria-current="page"{% endif %}>Safety</a>
+        {% if g.user %}
+          {% if g.user.role == 'contractor' %}
+            <a href="{{ url_for('leads') }}" {% if request.endpoint in ['leads', 'contractor_job_detail'] %}aria-current="page"{% endif %}>Leads</a>
+            <a href="{{ url_for('contractor_profile') }}" {% if request.endpoint in ['contractor_profile', 'contractor_public_profile'] %}aria-current="page"{% endif %}>Profile</a>
+            <a href="{{ url_for('message_threads') }}" {% if request.endpoint in ['message_threads', 'thread_detail'] %}aria-current="page"{% endif %}>Messages</a>
+          {% elif g.user.role == 'client' %}
+            <a href="{{ url_for('client_dashboard') }}" {% if request.endpoint in ['client_dashboard', 'client_job_detail', 'edit_job'] %}aria-current="page"{% endif %}>Dashboard</a>
+            <a href="{{ url_for('new_job') }}" {% if request.endpoint == 'new_job' %}aria-current="page"{% endif %}>Post Job</a>
+            <a href="{{ url_for('message_threads') }}" {% if request.endpoint in ['message_threads', 'thread_detail'] %}aria-current="page"{% endif %}>Messages</a>
+          {% elif g.user.role == 'admin' %}
+            <a href="{{ url_for('admin_dashboard') }}" {% if request.endpoint == 'admin_dashboard' %}aria-current="page"{% endif %}>Admin</a>
+          {% endif %}
+          <a href="{{ url_for('logout') }}">Sign out</a>
+        {% else %}
+          <a href="{{ url_for('login') }}" {% if request.endpoint == 'login' %}aria-current="page"{% endif %}>Sign in</a>
+          <a class="button compact" href="{{ url_for('start') }}" {% if request.endpoint in ['start', 'verify_start'] %}aria-current="page"{% endif %}>Start</a>
+        {% endif %}
+      </nav>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <section class="flash-stack" aria-label="Status messages" role="status" aria-live="polite">
+          {% for category, message in messages %}
+            <p class="flash {{ category }}">{{ message }}</p>
+          {% endfor %}
+        </section>
+      {% endif %}
+    {% endwith %}
+
+    <main id="main-content" tabindex="-1">
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+      <span>workdoe.com local prototype</span>
+      <span>DMV beta: DC, Maryland, Virginia</span>
+    </footer>
+  </body>
+</html>

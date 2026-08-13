@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}Admin - Workdoe{% endblock %}
+{% block content %}
+<section class="page-header">
+  <p class="eyebrow">Admin</p>
+  <h1>Moderation console</h1>
+</section>
+
+<section class="dashboard-metrics compact-metrics" aria-label="Moderation summary">
+  <div class="metric-card">
+    <span>Open reports</span>
+    <strong>{{ stats.open_reports }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>Suspended</span>
+    <strong>{{ stats.suspended_users }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>Hidden</span>
+    <strong>{{ stats.hidden_content }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>Audit</span>
+    <strong>{{ stats.audit_actions }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>Automation</span>
+    <strong>{{ stats.automation_events }}</strong>
+  </div>
+</section>
+
+<section class="admin-grid">
+  <article class="panel admin-panel">
+    <h2>Open reports</h2>
+    {% for report in reports %}
+      <div class="admin-row">
+        {% set review_url = none %}
+        {% set target_label = report.target_type ~ " #" ~ report.target_id %}
+        {% if report.target_type == "job" and report.job_title %}
+          {% set review_url = url_for("contractor_job_detail", job_id=report.target_id) %}
+          {% set target_label = "Job: " ~ report.job_title %}
+        {% elif report.target_type == "message" and report.message_thread_id %}
+          {% set review_url = url_for("thread_detail", thread_id=report.message_thread_id) %}
+          {% set target_label = "Message: " ~ report.message_job_title %}
+        {% elif report.target_type == "profile" and report.profile_business_name %}
+          {% set review_url = url_for("contractor_public_profile", contractor_id=report.target_id) %}
+          {% set target_label = "Profile: " ~ report.profile_business_name %}
+        {% endif %}
+        <span><strong>{{ target_label }}</strong><small>{{ report.reason }} - {{ report.reporter_email }}</small></span>
+        <div class="row-actions">
+          {% if review_url %}
+            <a class="button secondary compact" href="{{ review_url }}">Review</a>
+          {% endif %}
+          <form method="post" action="{{ url_for('admin_resolve_report', report_id=report.id) }}">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <button class="button secondary compact" type="submit">Resolve</button>
+          </form>
+        </div>
+      </div>
+    {% else %}
+      <p class="empty">No open reports.</p>
+    {% endfor %}
+  </article>
+
+  <article class="panel admin-panel">
+    <h2>Users</h2>
+    {% for user in users %}
+      <div class="admin-row">
+        <span><strong>{{ user.display_name }}</strong><small>{{ user.email }} - {{ user.role }} - {{ user.status }}</small></span>
+        {% if user.role != 'admin' %}
+          <form method="post" action="{{ url_for('admin_user_action', user_id=user.id, action='suspend' if user.status == 'active' else 'activate') }}">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <button class="button secondary compact" type="submit">{{ 'Suspend' if user.status == 'active' else 'Activate' }}</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </article>
+
+  <article class="panel admin-panel">
+    <h2>Jobs</h2>
+    {% for job in jobs %}
+      <div class="admin-row">
+        <span><strong>{{ job.title }}</strong><small>{{ job.category }} - {{ job.city }}, {{ job.state }} - {{ job.status }}</small></span>
+        <form method="post" action="{{ url_for('admin_job_action', job_id=job.id, action='hide' if job.status != 'hidden' else 'restore') }}">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          <button class="button secondary compact" type="submit">{{ 'Hide' if job.status != 'hidden' else 'Restore' }}</button>
+        </form>
+      </div>
+    {% endfor %}
+  </article>
+
+  <article class="panel admin-panel">
+    <h2>Job photos</h2>
+    {% for photo in photos %}
+      <div class="admin-row">
+        <span><strong>{{ photo.original_filename }}</strong><small>{{ photo.title }} - {{ 'hidden' if photo.is_hidden else 'visible' }}</small></span>
+        <form method="post" action="{{ url_for('admin_job_photo_action', photo_id=photo.id, action='hide' if not photo.is_hidden else 'restore') }}">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          <button class="button secondary compact" type="submit">{{ 'Hide' if not photo.is_hidden else 'Restore' }}</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="empty">No uploaded job photos yet.</p>
+    {% endfor %}
+  </article>
+
+  <article class="panel admin-panel">
+    <h2>Portfolio photos</h2>
+    {% for photo in contractor_photos %}
+      <div class="admin-row">
+        <span><strong>{{ photo.original_filename }}</strong><small>{{ photo.business_name }} - {{ 'hidden' if photo.is_hidden else 'visible' }}</small></span>
+        <form method="post" action="{{ url_for('admin_contractor_photo_action', photo_id=photo.id, action='hide' if not photo.is_hidden else 'restore') }}">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          <button class="button secondary compact" type="submit">{{ 'Hide' if not photo.is_hidden else 'Restore' }}</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="empty">No portfolio photos yet.</p>
+    {% endfor %}
+  </article>
+
+  <article class="panel admin-panel">
+    <h2>Recent messages</h2>
+    {% for message in messages %}
+      <div class="admin-row">
+        <span><strong>{{ message.sender_email }}</strong><small>{{ message.job_title }} - {{ message.body[:90] }}</small></span>
+        {% if not message.is_hidden %}
+          <form method="post" action="{{ url_for('admin_hide_message', message_id=message.id) }}">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <button class="button secondary compact" type="submit">Hide</button>
+          </form>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="empty">No messages yet.</p>
+    {% endfor %}
+  </article>
+
+  <article class="panel admin-panel">
+    <h2>Audit trail</h2>
+    {% for action in actions %}
+      <div class="admin-row">
+        <span><strong>{{ action.action_type }} {{ action.target_type }} #{{ action.target_id }}</strong><small>{{ action.notes }} - {{ action.created_at }}</small></span>
+      </div>
+    {% else %}
+      <p class="empty">No moderation actions yet.</p>
+    {% endfor %}
+  </article>
+
+  <article class="panel admin-panel">
+    <h2>Automation</h2>
+    {% for event in automation_events %}
+      <div class="admin-row">
+        <span><strong>{{ event.event_type }}</strong><small>{{ event.status }} - {{ event.target_type or 'system' }}{% if event.target_id is not none %} #{{ event.target_id }}{% endif %} - {{ event.created_at }}</small></span>
+      </div>
+    {% else %}
+      <p class="empty">No automation events yet.</p>
+    {% endfor %}
+  </article>
+</section>
+{% endblock %}

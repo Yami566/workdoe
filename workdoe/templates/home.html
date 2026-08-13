@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Workdoe - DMV contractor lead board{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+{% endblock %}
+{% block content %}
+<section class="market-entry">
+  <div>
+    <p class="eyebrow">Live DMV lead board</p>
+    <h1>Open jobs near you.</h1>
+    <p class="hero-text">Map first. Sign in when a lead fits.</p>
+  </div>
+  <div class="hero-actions market-actions">
+    {% if g.user %}
+      <a class="button" href="{{ url_for('dashboard') }}">Dashboard</a>
+      {% if g.user.role == 'contractor' %}
+        <a class="button secondary" href="{{ url_for('leads') }}">Lead board</a>
+      {% elif g.user.role == 'client' %}
+        <a class="button secondary" href="{{ url_for('new_job') }}">Post job</a>
+      {% endif %}
+    {% else %}
+      <a class="button" href="{{ url_for('login') }}">Sign in</a>
+      <a class="button secondary" href="{{ url_for('start', intent='find-work') }}">Find work</a>
+      <a class="button secondary" href="{{ url_for('start', intent='post-job') }}">Post job</a>
+    {% endif %}
+  </div>
+</section>
+
+<section class="home-board priority-board">
+  <div class="map-panel home-map">
+    {% with map_jobs_api_url=map_jobs_api_url(filters, home_job_limit, target='login'), map_label="Approximate DMV job map" %}
+      {% include "_lead_map.html" %}
+    {% endwith %}
+  </div>
+  <div id="home-open-jobs" class="job-list">
+    <form class="filter-bar compact-filter" method="get" role="search" aria-label="Filter open jobs" aria-controls="home-open-job-results lead-map">
+      <label>
+        Category
+        <select name="category">
+          <option value="">All</option>
+          {% for category in job_categories %}
+            <option value="{{ category }}" {% if filters.category == category %}selected{% endif %}>{{ category }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Search
+        <input name="q" type="search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}">
+      </label>
+      <label>
+        Sort
+        <select name="sort">
+          {% for value, label in job_sort_options %}
+            <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="filter-actions">
+        <button class="button compact" type="submit">Filter</button>
+        {% if has_filters %}
+          <a class="button secondary compact" href="{{ url_for('home') }}">Clear</a>
+        {% endif %}
+      </div>
+    </form>
+    <div class="section-heading compact-heading">
+      <p class="eyebrow">Open jobs</p>
+      <h2>{{ open_jobs|length }} leads near DC, Maryland, and Virginia</h2>
+    </div>
+    <div id="home-open-job-results" class="job-result-list" aria-label="Open job results" {% if open_jobs %}role="list"{% endif %}>
+      {% for job in open_jobs %}
+        {% set job_href = url_for('contractor_job_detail', job_id=job.id) if g.user and g.user.role in ['contractor', 'admin'] else (url_for('dashboard') if g.user else url_for('login', next=url_for('contractor_job_detail', job_id=job.id))) %}
+        {% set row_cue = "View" if g.user and g.user.role in ['contractor', 'admin'] else ("Dashboard" if g.user else "Sign in") %}
+        <a class="job-row link-row compact-lead-row" role="listitem" data-job-id="{{ job.id }}" href="{{ job_href }}" aria-label="{{ row_cue }} for {{ job.title }}">
+          <div>
+            <div class="row-meta">
+              <span>{{ job.category }}</span>
+              <span>{{ job.city }}, {{ job.state }}</span>
+              {% if job.desired_date %}<span>Target <time datetime="{{ job.desired_date }}">{{ job.desired_date|date_label }}</time></span>{% endif %}
+              <span>{{ job.photo_count|photo_count_label }}</span>
+            </div>
+            <h3>{{ job.title }}</h3>
+          </div>
+          <span class="row-cue">{{ row_cue }}</span>
+        </a>
+      {% else %}
+        <div class="empty-state">
+          {% if has_filters %}
+            <h2>No matches</h2>
+            <a class="button secondary" href="{{ url_for('home') }}">Clear filters</a>
+          {% else %}
+            <h2>No open jobs yet</h2>
+            <a class="button" href="{{ url_for('start', intent='post-job') }}">Post a job</a>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<script id="map-jobs-data" type="application/json">{{ map_jobs|tojson }}</script>
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script src="{{ url_for('static', filename='map.js') }}"></script>
+{% endblock %}

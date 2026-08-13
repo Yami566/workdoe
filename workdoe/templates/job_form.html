@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}{{ page_title }} - Workdoe{% endblock %}
+{% block content %}
+<section class="page-header">
+  <p class="eyebrow">{{ page_eyebrow }}</p>
+  <h1>{{ page_title }}</h1>
+  <p>{{ page_intro }}</p>
+</section>
+
+<ul class="form-checklist" aria-label="Posting safeguards">
+  <li>City/ZIP pin</li>
+  <li>Private photos</li>
+  <li>Approve before chat</li>
+</ul>
+
+{% set field_errors = error_feedback.fields %}
+<form class="form-grid" method="post" enctype="multipart/form-data" aria-label="{{ page_title }}" {% if error_feedback.summary %}aria-describedby="job-form-errors"{% endif %}>
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  {% if error_feedback.summary %}
+    <section id="job-form-errors" class="form-error-summary wide" role="alert" aria-labelledby="job-form-errors-title">
+      <h2 id="job-form-errors-title">Fix {{ error_feedback.summary|length }} item{{ "" if error_feedback.summary|length == 1 else "s" }}</h2>
+      <ul>
+        {% for item in error_feedback.summary %}
+          <li>{% if item.field_id %}<a href="#{{ item.field_id }}">{{ item.message }}</a>{% else %}{{ item.message }}{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+  <label class="wide" for="job-title">
+    Job title
+    <input id="job-title" name="title" value="{{ form.title }}" maxlength="{{ title_max }}" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Power wash front steps and patio" required {% if field_errors.title %}aria-invalid="true" aria-describedby="job-title-error"{% endif %}>
+    {% if field_errors.title %}<span id="job-title-error" class="field-error">{{ field_errors.title[0] }}</span>{% endif %}
+  </label>
+  <label for="job-category">
+    Category
+    <select id="job-category" name="category" required {% if field_errors.category %}aria-invalid="true" aria-describedby="job-category-error"{% endif %}>
+      {% for category in job_categories %}
+        <option value="{{ category }}" {% if form.category == category %}selected{% endif %}>{{ category }}</option>
+      {% endfor %}
+    </select>
+    {% if field_errors.category %}<span id="job-category-error" class="field-error">{{ field_errors.category[0] }}</span>{% endif %}
+  </label>
+  <label for="job-desired-date">
+    Desired date
+    <input id="job-desired-date" name="desired_date" type="date" value="{{ form.desired_date }}" min="{{ today }}" {% if field_errors.desired_date %}aria-invalid="true" aria-describedby="job-desired-date-error"{% endif %}>
+    {% if field_errors.desired_date %}<span id="job-desired-date-error" class="field-error">{{ field_errors.desired_date[0] }}</span>{% endif %}
+  </label>
+  <label for="job-city">
+    City
+    <input id="job-city" name="city" value="{{ form.city }}" maxlength="{{ city_max }}" autocomplete="address-level2" autocapitalize="words" spellcheck="false" list="job-city-options" enterkeyhint="next" placeholder="Washington" required {% if field_errors.city %}aria-invalid="true" aria-describedby="job-city-error"{% endif %}>
+    {% if field_errors.city %}<span id="job-city-error" class="field-error">{{ field_errors.city[0] }}</span>{% endif %}
+  </label>
+  <label for="job-state">
+    State
+    <select id="job-state" name="state" autocomplete="address-level1" required {% if field_errors.state %}aria-invalid="true" aria-describedby="job-state-error"{% endif %}>
+      <option value="DC" {% if form.state == 'DC' %}selected{% endif %}>DC</option>
+      <option value="MD" {% if form.state == 'MD' %}selected{% endif %}>MD</option>
+      <option value="VA" {% if form.state == 'VA' %}selected{% endif %}>VA</option>
+    </select>
+    {% if field_errors.state %}<span id="job-state-error" class="field-error">{{ field_errors.state[0] }}</span>{% endif %}
+  </label>
+  <label for="job-zip-code">
+    ZIP
+    <input id="job-zip-code" name="zip_code" value="{{ form.zip_code }}" inputmode="numeric" autocomplete="postal-code" pattern="[0-9]{5}" maxlength="5" list="job-zip-options" enterkeyhint="next" placeholder="20003" required {% if field_errors.zip_code %}aria-invalid="true" aria-describedby="job-zip-code-error"{% endif %}>
+    {% if field_errors.zip_code %}<span id="job-zip-code-error" class="field-error">{{ field_errors.zip_code[0] }}</span>{% endif %}
+  </label>
+  <datalist id="job-city-options">
+    {% for option in dmv_city_options %}
+      <option value="{{ option.city }}" label="{{ option.label }}"></option>
+    {% endfor %}
+  </datalist>
+  <datalist id="job-zip-options">
+    {% for option in dmv_zip_options %}
+      <option value="{{ option.zip }}" label="{{ option.label }}"></option>
+    {% endfor %}
+  </datalist>
+  <label class="wide" for="job-description">
+    Description
+    <textarea id="job-description" name="description" rows="5" minlength="{{ description_min }}" maxlength="{{ description_max }}" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Scope, access, timing, and desired outcome." required {% if field_errors.description %}aria-invalid="true" aria-describedby="job-description-error"{% endif %}>{{ form.description }}</textarea>
+    {% if field_errors.description %}<span id="job-description-error" class="field-error">{{ field_errors.description[0] }}</span>{% endif %}
+  </label>
+  <label class="wide" for="job-photos">
+    Photos
+    <input id="job-photos" name="photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-describedby="job-photos-help">
+    <span id="job-photos-help" class="help-text">{{ "Add more private photos. PNG, JPG, GIF, or WebP." if mode == "edit" else "Private uploads. PNG, JPG, GIF, or WebP." }}</span>
+  </label>
+  {% if mode == "new" %}
+    <div class="wide">{% with action='job-post' %}{% include "_turnstile.html" %}{% endwith %}</div>
+  {% endif %}
+  <div class="form-actions wide">
+    <button class="button" type="submit" aria-label="{{ submit_label }}">{{ submit_label }}</button>
+    <a class="button secondary" href="{{ cancel_url }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

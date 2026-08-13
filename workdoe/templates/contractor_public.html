@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ contractor.business_name }} - Workdoe{% endblock %}
+{% block content %}
+<section class="page-header">
+  <p class="eyebrow">Contractor profile</p>
+  <h1>{{ contractor.business_name }}</h1>
+  <p>{{ contractor.trades or "DMV contractor" }}</p>
+</section>
+
+<section class="detail-grid">
+  <article class="panel">
+    <h2>About</h2>
+    {% if g.user and g.user.role == 'admin' %}
+      <p><span class="status {{ contractor.status }}">{{ contractor.status }}</span></p>
+    {% endif %}
+    <p class="preline">{{ contractor.intro or "This contractor is still completing their profile." }}</p>
+    <dl class="profile-facts">
+      <div><dt>Service area</dt><dd>{{ contractor.service_area or "DMV area" }}</dd></div>
+      <div><dt>Insurance</dt><dd>{{ contractor.insurance_status or "Available on request" }}</dd></div>
+      <div><dt>License</dt><dd>{{ contractor.license_number or "Not listed" }}</dd></div>
+      <div><dt>Years in business</dt><dd>{{ contractor.years_in_business or "Not listed" }}</dd></div>
+    </dl>
+  </article>
+  <aside class="panel">
+    <h2>Contact policy</h2>
+    <p>Clients approve a contractor's mini bid before a private Workdoe message thread opens.</p>
+    {% if g.user and g.user.role != 'admin' and g.user.id != contractor.id %}
+      <form class="report-form" method="post" action="{{ url_for('report_content') }}">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="target_type" value="profile">
+        <input type="hidden" name="target_id" value="{{ contractor.id }}">
+        <label>
+          Report this profile
+          <input name="reason" maxlength="{{ report_reason_max }}" placeholder="Why should moderation review it?" required>
+        </label>
+        {% with action='report' %}{% include "_turnstile.html" %}{% endwith %}
+        <button class="button secondary compact" type="submit">Report</button>
+      </form>
+    {% endif %}
+  </aside>
+</section>
+
+<section class="photo-grid profile-photos">
+  {% for photo in photos %}
+    <figure>
+      <img src="{{ url_for('contractor_photo', photo_id=photo.id) }}" alt="Portfolio photo {{ loop.index }}">
+      <figcaption>{{ photo.original_filename }}</figcaption>
+    </figure>
+  {% endfor %}
+</section>
+{% endblock %}

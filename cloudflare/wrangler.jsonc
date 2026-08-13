@@ -1,0 +1,109 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "../workdoe/static"
+  },
+  "compatibility_date": "2026-08-03",
+  "compatibility_flags": [
+    "python_workers"
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_name": "workdoe",
+      "migrations_dir": "d1/migrations",
+      "preview_database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "main": "worker/entry.py",
+  "name": "workdoe",
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
+  },
+  "queues": {
+    "consumers": [
+      {
+        "max_batch_size": 10,
+        "max_batch_timeout": 30,
+        "max_retries": 5,
+        "queue": "workdoe-email"
+      },
+      {
+        "max_batch_size": 10,
+        "max_batch_timeout": 30,
+        "max_retries": 5,
+        "queue": "workdoe-media-review"
+      }
+    ],
+    "producers": [
+      {
+        "binding": "EMAIL_QUEUE",
+        "queue": "workdoe-email"
+      },
+      {
+        "binding": "MEDIA_QUEUE",
+        "queue": "workdoe-media-review"
+      }
+    ]
+  },
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "workdoe-media"
+    }
+  ],
+  "routes": [
+    {
+      "custom_domain": true,
+      "pattern": "workdoe.com"
+    },
+    {
+      "custom_domain": true,
+      "pattern": "www.workdoe.com"
+    }
+  ],
+  "secrets": {
+    "required": [
+      "CLERK_JWT_KEY",
+      "CLERK_PUBLISHABLE_KEY",
+      "CLERK_SECRET_KEY",
+      "CLERK_WEBHOOK_SECRET",
+      "WORKDOE_SECRET_KEY",
+      "WORKDOE_TURNSTILE_SECRET_KEY",
+      "WORKDOE_TURNSTILE_SITE_KEY"
+    ]
+  },
+  "send_email": [
+    {
+      "allowed_sender_addresses": [
+        "no-reply@workdoe.com"
+      ],
+      "name": "EMAIL"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "*/15 * * * *",
+      "0 14 * * *",
+      "0 13 * * 1-5"
+    ]
+  },
+  "vars": {
+    "CLERK_FAPI": "https://frontend-api.clerk.dev",
+    "CLERK_FRONTEND_API_URL": "https://workdoe.com/__clerk",
+    "CLERK_PROXY_URL": "https://workdoe.com/__clerk",
+    "WORKDOE_ADMIN_EMAIL": "admin@workdoe.com",
+    "WORKDOE_AUTH_PROVIDER": "clerk",
+    "WORKDOE_CLERK_LOGIN_MODE": "same_domain_email_code",
+    "WORKDOE_DOMAIN": "workdoe.com",
+    "WORKDOE_EMAIL_FROM": "no-reply@workdoe.com",
+    "WORKDOE_ENV": "production",
+    "WORKDOE_PUBLIC_URL": "https://workdoe.com"
+  },
+  "workers_dev": false
+}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Contractor Profile - Workdoe{% endblock %}
+{% block content %}
+<section class="page-header">
+  <p class="eyebrow">Contractor profile</p>
+  <h1>Help clients approve the right match.</h1>
+  <p>Your profile is visible to clients when they review your mini bid.</p>
+</section>
+
+<form class="form-grid" method="post" enctype="multipart/form-data">
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  <label class="wide">
+    Business name
+    <input name="business_name" value="{{ form.business_name }}" maxlength="{{ limits.business_max }}" autocomplete="organization" required>
+  </label>
+  <fieldset class="wide checkbox-grid">
+    <legend>Trades</legend>
+    {% for category in job_categories %}
+      <label>
+        <input type="checkbox" name="trades" value="{{ category }}" {% if category in selected_trades %}checked{% endif %}>
+        {{ category }}
+      </label>
+    {% endfor %}
+  </fieldset>
+  <label>
+    Service area
+    <input name="service_area" value="{{ form.service_area }}" maxlength="{{ limits.service_area_max }}" autocomplete="address-level2" placeholder="DC, Montgomery County, Northern Virginia" required>
+  </label>
+  <label>
+    Years in business
+    <input name="years_in_business" type="number" min="0" max="{{ limits.years_max }}" value="{{ form.years_in_business }}">
+  </label>
+  <label>
+    Insurance status
+    <input name="insurance_status" value="{{ form.insurance_status }}" maxlength="{{ limits.insurance_max }}" placeholder="Available on request">
+  </label>
+  <label>
+    License number
+    <input name="license_number" value="{{ form.license_number }}" maxlength="{{ limits.license_max }}" placeholder="Optional for the local beta">
+  </label>
+  <label>
+    Website
+    <input name="website" type="url" value="{{ form.website }}" maxlength="{{ limits.website_max }}" placeholder="https://example.com">
+  </label>
+  <label>
+    Phone
+    <input name="phone" type="tel" value="{{ form.phone }}" maxlength="{{ limits.phone_max }}" autocomplete="tel" placeholder="Optional">
+  </label>
+  <label class="wide">
+    Intro
+    <textarea name="intro" rows="5" minlength="{{ limits.intro_min }}" maxlength="{{ limits.intro_max }}" placeholder="Describe your crew, service style, and ideal jobs." required>{{ form.intro }}</textarea>
+  </label>
+  <label class="wide">
+    Portfolio photos
+    <input name="portfolio_photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
+    <span class="help-text">Private uploads. PNG, JPG, GIF, or WebP.</span>
+  </label>
+  <div class="form-actions wide">
+    <button class="button" type="submit">Save profile</button>
+    <a class="button secondary" href="{{ url_for('contractor_public_profile', contractor_id=g.user.id) }}">Preview public profile</a>
+  </div>
+</form>
+
+<section class="photo-grid profile-photos">
+  {% for photo in photos %}
+    <figure>
+      <img src="{{ url_for('contractor_photo', photo_id=photo.id) }}" alt="Portfolio photo {{ loop.index }}">
+      <figcaption>{{ photo.original_filename }}{% if photo.is_hidden %} - hidden{% endif %}</figcaption>
+    </figure>
+  {% endfor %}
+</section>
+{% endblock %}

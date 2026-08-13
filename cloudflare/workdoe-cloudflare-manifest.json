@@ -1,0 +1,137 @@
+{
+  "cloudflare_targets": {
+    "app_runtime": {
+      "required_env": {
+        "WORKDOE_ENV": "production",
+        "WORKDOE_SECRET_KEY": "set as a secret"
+      },
+      "route": "workdoe.com/*",
+      "service": "Cloudflare Workers Python"
+    },
+    "automation": {
+      "queues": [
+        {
+          "binding": "EMAIL_QUEUE",
+          "queue": "workdoe-email",
+          "uses": [
+            "match reminders",
+            "admin moderation digests",
+            "local fallback OTP and reset mail"
+          ]
+        },
+        {
+          "binding": "MEDIA_QUEUE",
+          "queue": "workdoe-media-review",
+          "uses": [
+            "photo metadata checks",
+            "moderation review tasks"
+          ]
+        }
+      ],
+      "scheduled_jobs": [
+        {
+          "cron_utc": "*/15 * * * *",
+          "name": "expire-login-codes",
+          "purpose": "mark stale local fallback login codes and reset tokens unusable"
+        },
+        {
+          "cron_utc": "0 14 * * *",
+          "name": "stale-match-reminders",
+          "purpose": "queue client reminders for pending mini bids older than 24 hours"
+        },
+        {
+          "cron_utc": "0 13 * * 1-5",
+          "name": "moderation-digest",
+          "purpose": "email admins a weekday report queue summary"
+        }
+      ]
+    },
+    "bot_protection": {
+      "forms": [
+        "start",
+        "login",
+        "job posting",
+        "match request",
+        "report"
+      ],
+      "secret_key_env": "WORKDOE_TURNSTILE_SECRET_KEY",
+      "server_side_validation_required": true,
+      "service": "Turnstile",
+      "site_key_env": "WORKDOE_TURNSTILE_SITE_KEY"
+    },
+    "database": {
+      "binding": "DB",
+      "migration": "cloudflare/d1/migrations/0001_initial.sql",
+      "migration_sha256": "db6cae05b6d1aa551c22d7eb815bf3edd362a50dbb05a0728bcdb0e3dd4bd07e",
+      "service": "D1"
+    },
+    "email": {
+      "admin_digest_to": "admin@workdoe.com",
+      "binding": "EMAIL",
+      "from": "no-reply@workdoe.com",
+      "service": "Cloudflare Email Service",
+      "uses": [
+        "one-time start codes",
+        "password reset links",
+        "stale match reminders",
+        "moderation digests"
+      ]
+    },
+    "identity": {
+      "domain_rules": [
+        "Mount Clerk sign-in on /login and /start; do not redirect users to hosted Clerk pages.",
+        "Proxy Clerk Frontend API traffic through https://workdoe.com/__clerk when using the Workdoe Worker.",
+        "Store Clerk user IDs in users.external_subject with users.auth_provider = 'clerk'.",
+        "Use Clerk webhooks to sync email, suspension, and deletion state into D1."
+      ],
+      "experience": "same-domain in-page sign-in on workdoe.com",
+      "fallback_strategy": "local_email_code",
+      "primary_strategy": "email_code_otp",
+      "required_env": {
+        "CLERK_FAPI": "https://frontend-api.clerk.dev",
+        "CLERK_FRONTEND_API_URL": "https://workdoe.com/__clerk",
+        "CLERK_JWT_KEY": "set as a secret for networkless verification",
+        "CLERK_PROXY_URL": "https://workdoe.com/__clerk",
+        "CLERK_PUBLISHABLE_KEY": "set as a secret or public deployment env",
+        "CLERK_SECRET_KEY": "set as a secret",
+        "CLERK_WEBHOOK_SECRET": "set as a secret",
+        "WORKDOE_AUTH_PROVIDER": "clerk"
+      },
+      "service": "Clerk"
+    },
+    "media": {
+      "binding": "MEDIA",
+      "bucket": "workdoe-media",
+      "key_prefixes": [
+        "jobs/{job_id}/",
+        "contractors/{contractor_id}/"
+      ],
+      "private": true,
+      "service": "R2"
+    },
+    "worker": {
+      "compatibility_date": "2026-08-03",
+      "compatibility_flags": [
+        "python_workers"
+      ],
+      "config": "cloudflare/wrangler.jsonc",
+      "dev_vars_example": "cloudflare/.dev.vars.example",
+      "main": "cloudflare/worker/entry.py"
+    }
+  },
+  "domain": "workdoe.com",
+  "name": "workdoe",
+  "privacy_invariants": [
+    "Only approximate city/ZIP map pins are public before a match is approved.",
+    "Job and contractor photos stay private behind role and match checks.",
+    "Exact client contact details are not exposed on the public lead board.",
+    "Client, contractor, and admin role data stays compartmentalized.",
+    "Authentication can be delegated to Clerk, but Workdoe remains the source of truth for roles, job permissions, moderation, and match visibility."
+  ],
+  "source_stack": [
+    "Python",
+    "server-rendered HTML",
+    "SQLite-compatible SQL",
+    "Leaflet/OpenStreetMap embed"
+  ]
+}

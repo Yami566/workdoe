@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Message Thread - Workdoe{% endblock %}
+{% block content %}
+<section class="dashboard-header">
+  <div>
+    <p class="eyebrow">Private thread</p>
+    <h1>{{ thread.title }}</h1>
+    <div class="row-meta thread-meta">
+      <span>{{ thread.client_name }} and {{ thread.contractor_name }}</span>
+      <span>{{ thread.category }}</span>
+      <span>{{ thread.city }}, {{ thread.state }}</span>
+      <span>{{ messages|length|message_count_label }}</span>
+    </div>
+  </div>
+  {% if can_reply %}
+    <a class="button secondary" href="{{ url_for('message_threads') }}">All messages</a>
+  {% else %}
+    <a class="button secondary" href="{{ url_for('admin_dashboard') }}">Admin</a>
+  {% endif %}
+</section>
+
+<section class="message-shell">
+  <div class="message-list">
+    {% for message in messages %}
+      <article class="message {% if message.sender_id == g.user.id %}mine{% endif %}{% if message.is_hidden %} is-hidden{% endif %}">
+        <div class="message-meta">
+          <strong>{{ message.display_name }}</strong>
+          <span>
+            {% if message.is_hidden %}<span class="status hidden">hidden</span>{% endif %}
+            <time datetime="{{ message.created_at }}">{{ message.created_at|datetime_label }}</time>
+          </span>
+        </div>
+        <p class="preline">{{ message.body }}</p>
+        {% if can_reply %}
+          <details class="message-report">
+            <summary>Report message</summary>
+            <form class="inline-report" method="post" action="{{ url_for('report_content') }}">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="target_type" value="message">
+              <input type="hidden" name="target_id" value="{{ message.id }}">
+              <label>
+                <span class="sr-only">Report message reason</span>
+                <input name="reason" maxlength="{{ report_reason_max }}" placeholder="Report reason" required>
+              </label>
+              {% with action='report' %}{% include "_turnstile.html" %}{% endwith %}
+              <button class="button secondary compact" type="submit">Report</button>
+            </form>
+          </details>
+        {% endif %}
+      </article>
+    {% else %}
+      <p class="empty">No messages yet.</p>
+    {% endfor %}
+  </div>
+  {% if can_reply %}
+    <form class="message-form" method="post" aria-label="New message">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <label>
+        New message
+        <textarea name="body" rows="4" maxlength="{{ message_max }}" placeholder="Share timing, access, or next steps." autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required>{{ draft_body }}</textarea>
+      </label>
+      <button class="button full" type="submit" aria-label="Send message">Send</button>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}

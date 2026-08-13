@@ -1,0 +1,22 @@
+{
+  "name": "workdoe",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Workdoe Cloudflare launch automation and local prototype checks.",
+  "scripts": {
+    "test": "python -m unittest discover -s tests",
+    "cf:preflight": "python scripts/cloudflare_preflight.py",
+    "cf:status": "python scripts/cloudflare_launch_status.py",
+    "cf:status:json": "python scripts/cloudflare_launch_status.py --json",
+    "cf:resources:plan": "python scripts/cloudflare_resource_bootstrap.py --json --no-secret-probe",
+    "cf:resources:apply": "python scripts/cloudflare_resource_bootstrap.py --execute --yes --no-secret-probe",
+    "cf:secrets:evidence": "python scripts/cloudflare_secret_evidence.py --execute --yes --output cloudflare-secret-list.local.json",
+    "cf:clerk:proof": "python scripts/cloudflare_clerk_proxy_proof.py --confirm --output clerk-proxy-proof.local.json",
+    "cf:release:evidence": "python scripts/cloudflare_release_evidence.py --json",
+    "cf:deploy:plan": "python scripts/cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
+    "cf:deploy": "python scripts/cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json"
+  },
+  "devDependencies": {
+    "wrangler": "4.122.0"
+  }
+}

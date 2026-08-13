@@ -1,0 +1,99 @@
+name: Workdoe Cloudflare Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Type DEPLOY to run the production Cloudflare deployment.
+        required: true
+        type: string
+      clerk_proxy_url:
+        description: Confirm the Clerk Domains proxy URL.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify Workdoe Release Gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Install Wrangler
+        run: npm ci
+
+      - name: Run local tests
+        run: npm test
+
+      - name: Run Cloudflare preflight
+        run: npm run cf:preflight
+
+      - name: Print launch status
+        run: npm run cf:status
+
+  deploy:
+    name: Deploy Workdoe To Cloudflare
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.deploy == 'DEPLOY' &&
+      inputs.clerk_proxy_url == 'https://workdoe.com/__clerk'
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Install Wrangler
+        run: npm ci
+
+      - name: Capture sanitized Worker secret names
+        run: npm run cf:secrets:evidence
+
+      - name: Confirm Clerk same-domain proxy
+        run: python scripts/cloudflare_clerk_proxy_proof.py --confirm --output clerk-proxy-proof.local.json --proxy-url "${{ inputs.clerk_proxy_url }}" --checked-by github-actions --json
+
+      - name: Validate release evidence
+        run: npm run cf:release:evidence
+
+      - name: Deploy guarded production release
+        run: npm run cf:deploy
