@@ -1146,6 +1146,29 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(response.headers["Referrer-Policy"], "strict-origin-when-cross-origin")
         self.assertIn(b'class="skip-link" href="#main-content">Skip to content</a>', response.data)
         self.assertIn(b'<main id="main-content" tabindex="-1">', response.data)
+        self.assertIn(
+            b'<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
+            response.data,
+        )
+        self.assertIn(b'<meta name="theme-color" content="#1b5e20">', response.data)
+        self.assertIn(b'<link rel="canonical" href="https://workdoe.com/">', response.data)
+        self.assertIn(
+            b'<link rel="icon" href="/static/deer.svg" type="image/svg+xml">',
+            response.data,
+        )
+        self.assertIn(
+            b'<link rel="manifest" href="/static/site.webmanifest">',
+            response.data,
+        )
+
+        manifest = self.client.get("/static/site.webmanifest")
+        self.assertEqual(manifest.status_code, 200)
+        manifest_payload = json.loads(manifest.get_data(as_text=True))
+        manifest.close()
+        self.assertEqual(manifest_payload["name"], "Workdoe")
+        self.assertEqual(manifest_payload["start_url"], "/")
+        self.assertEqual(manifest_payload["theme_color"], "#1b5e20")
+        self.assertEqual(manifest_payload["icons"][0]["src"], "/static/deer.svg")
 
     def test_error_pages_are_branded_private_and_navigable(self):
         missing = self.client.get("/missing-workdoe-page")

@@ -1963,6 +1963,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "https://clerk.workdoe.com",
         )
         self.assertIn("<title>Start - Workdoe</title>", html)
+        self.assertIn(
+            '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
+            html,
+        )
+        self.assertIn('<meta name="theme-color" content="#1b5e20">', html)
+        self.assertIn('<link rel="canonical" href="https://workdoe.com/">', html)
+        self.assertIn('<link rel="icon" href="/static/deer.svg" type="image/svg+xml">', html)
+        self.assertIn('<link rel="manifest" href="/static/site.webmanifest">', html)
         self.assertIn('href="/static/styles.css"', html)
         self.assertIn('href="/static/vendor/leaflet/leaflet.css"', html)
         self.assertIn('src="/static/vendor/leaflet/leaflet.js"', html)
@@ -2547,6 +2555,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             },
         )
         self.assertIn("Power wash steps - Workdoe", client_job_html)
+        self.assertIn(
+            '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
+            client_job_html,
+        )
+        self.assertIn('<meta name="theme-color" content="#1b5e20">', client_job_html)
+        self.assertIn('<link rel="canonical" href="https://workdoe.com/">', client_job_html)
+        self.assertIn('<link rel="icon" href="/static/deer.svg" type="image/svg+xml">', client_job_html)
+        self.assertIn('<link rel="manifest" href="/static/site.webmanifest">', client_job_html)
         self.assertIn("Job controls", client_job_html)
         self.assertIn('data-json-action="/api/jobs/12/close"', client_job_html)
         self.assertIn('aria-label="Close Power wash steps"', client_job_html)

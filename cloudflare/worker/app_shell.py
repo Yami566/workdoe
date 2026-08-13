@@ -222,9 +222,20 @@ def layout(
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="Workdoe helps DMV clients post contractor jobs and review trusted mini bids.">
+  <meta name="theme-color" content="#1b5e20">
+  <meta name="application-name" content="Workdoe">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://workdoe.com/">
+  <meta property="og:title" content="Workdoe">
+  <meta property="og:description" content="DMV contractor leads with same-site email-code sign-in.">
+  <meta name="twitter:card" content="summary">
   <title>{escape(title)} - Workdoe</title>
+  <link rel="canonical" href="https://workdoe.com/">
+  <link rel="icon" href="/static/deer.svg" type="image/svg+xml">
+  <link rel="manifest" href="/static/site.webmanifest">
   <link rel="stylesheet" href="/static/styles.css">
   {"<link rel=\"stylesheet\" href=\"/static/vendor/leaflet/leaflet.css\">" if include_map else ""}
   {script_html}

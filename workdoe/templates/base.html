@@ -2,9 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="description" content="Workdoe helps DMV clients post contractor jobs and review trusted mini bids.">
+    <meta name="theme-color" content="#1b5e20">
+    <meta name="application-name" content="Workdoe">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://workdoe.com/">
+    <meta property="og:title" content="Workdoe">
+    <meta property="og:description" content="DMV contractor leads with same-site email-code sign-in.">
+    <meta name="twitter:card" content="summary">
     <title>{% block title %}Workdoe{% endblock %}</title>
+    <link rel="canonical" href="https://workdoe.com/">
+    <link rel="icon" href="{{ url_for('static', filename='deer.svg') }}" type="image/svg+xml">
+    <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=workdoe-entry-auth-first">
     {% if turnstile_enabled() %}
       <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
