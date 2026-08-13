@@ -21,6 +21,7 @@ from cloudflare_readiness import (  # noqa: E402
     run_readiness,
 )
 from cloudflare_release_evidence import secret_evidence_error  # noqa: E402
+from cloudflare_wrangler import CLOUDFLARE_API_TOKEN_ENV_VAR, cloudflare_api_token_present  # noqa: E402
 
 
 @dataclass
@@ -95,6 +96,7 @@ def build_launch_plan(
     secrets_ready = not secret_error
     proof_error = clerk_proxy_proof_error(clerk_proxy_proof_json)
     clerk_proxy_ready = bool(clerk_proxy_proof_json) and not proof_error
+    token_ready = cloudflare_api_token_present()
     strict_args = ["--strict-production"]
     strict_secret_list_path = str(secret_list_json) if secret_list_json else "cloudflare-secret-list.local.json"
     strict_proof_path = str(clerk_proxy_proof_json) if clerk_proxy_proof_json else "clerk-proxy-proof.local.json"
@@ -134,13 +136,33 @@ def build_launch_plan(
             ),
         ),
         LaunchStep(
+            phase="cloudflare-token",
+            title="Set non-interactive Cloudflare API token",
+            status="ready" if token_ready else "pending",
+            why=(
+                f"{CLOUDFLARE_API_TOKEN_ENV_VAR} is available for local Wrangler automation."
+                if token_ready
+                else f"{CLOUDFLARE_API_TOKEN_ENV_VAR} is required before local resource bootstrap, secret evidence capture, or production deploy can execute."
+            ),
+            commands=command_block(
+                [
+                    "set CLOUDFLARE_API_TOKEN in this shell without committing it",
+                    "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
+                ]
+            ),
+        ),
+        LaunchStep(
             phase="cloudflare-resources",
             title="Create Cloudflare storage and queue resources",
-            status="ready" if d1_ready else "pending",
+            status="ready" if d1_ready else ("pending" if token_ready else "blocked"),
             why=(
                 "D1 production and preview IDs are present in cloudflare/wrangler.jsonc."
                 if d1_ready
-                else "D1 IDs are still placeholders; create the resources and apply the returned IDs with the helper before deploy."
+                else (
+                    "D1 IDs are still placeholders; set the Cloudflare API token first, then create the resources and apply the returned IDs with the helper before deploy."
+                    if not token_ready
+                    else "D1 IDs are still placeholders; create the resources and apply the returned IDs with the helper before deploy."
+                )
             ),
             commands=command_block(
                 [
@@ -152,11 +174,15 @@ def build_launch_plan(
         LaunchStep(
             phase="identity-and-secrets",
             title="Configure Clerk, Turnstile, and Workdoe secrets",
-            status="ready" if secrets_ready else "pending",
+            status="ready" if secrets_ready else ("pending" if token_ready else "blocked"),
             why=(
                 "The supplied sanitized Wrangler secret-name evidence includes every required secret name."
                 if secrets_ready
-                else "Secret names are not yet proven with sanitized Cloudflare evidence; add them with Wrangler and export the secret-name list."
+                else (
+                    "Set the Cloudflare API token first; then add the Worker secrets with Wrangler and export the sanitized secret-name list."
+                    if not token_ready
+                    else "Secret names are not yet proven with sanitized Cloudflare evidence; add them with Wrangler and export the secret-name list."
+                )
             ),
             commands=command_block(
                 [
@@ -230,6 +256,9 @@ def build_launch_plan(
         ),
     ]
     overall_status = "ready" if strict.ready else ("blocked" if not local.ready else "pending")
+    token_blockers = [] if token_ready else [
+        f"{CLOUDFLARE_API_TOKEN_ENV_VAR} is not set; local Cloudflare resource bootstrap, secret evidence, and deploy execute commands cannot run."
+    ]
     return {
         "service": "workdoe",
         "domain": "workdoe.com",
@@ -237,7 +266,7 @@ def build_launch_plan(
         "safe_by_default": True,
         "executes_commands": False,
         "missing_secrets": missing_secrets,
-        "strict_blockers": strict.blockers,
+        "strict_blockers": token_blockers + strict.blockers,
         "strict_warnings": strict.warnings,
         "steps": [asdict(step) for step in steps],
     }

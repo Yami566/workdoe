@@ -4068,7 +4068,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
     def test_cloudflare_launch_plan_prints_safe_operator_sequence(self):
         module = load_launch_plan_script()
-        plan = module.build_launch_plan(ROOT)
+        original_token_present = module.cloudflare_api_token_present
+        try:
+            module.cloudflare_api_token_present = lambda: False
+            plan = module.build_launch_plan(ROOT)
+        finally:
+            module.cloudflare_api_token_present = original_token_present
         self.assertEqual(plan["service"], "workdoe")
         self.assertEqual(plan["domain"], "workdoe.com")
         self.assertEqual(plan["overall_status"], "pending")
@@ -4076,11 +4081,20 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertFalse(plan["executes_commands"])
         phases = {step["phase"]: step for step in plan["steps"]}
         self.assertEqual(phases["local-artifacts"]["status"], "ready")
-        self.assertEqual(phases["cloudflare-resources"]["status"], "pending")
-        self.assertEqual(phases["identity-and-secrets"]["status"], "pending")
+        self.assertEqual(phases["cloudflare-token"]["status"], "pending")
+        self.assertEqual(phases["cloudflare-resources"]["status"], "blocked")
+        self.assertEqual(phases["identity-and-secrets"]["status"], "blocked")
         self.assertEqual(phases["clerk-domain-proof"]["status"], "pending")
         self.assertEqual(phases["deploy-gate"]["status"], "pending")
         self.assertEqual(phases["migrate-and-deploy"]["status"], "blocked")
+        self.assertIn(
+            "set CLOUDFLARE_API_TOKEN in this shell without committing it",
+            phases["cloudflare-token"]["commands"],
+        )
+        self.assertIn(
+            "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
+            phases["cloudflare-token"]["commands"],
+        )
         self.assertIn(
             "python scripts\\cloudflare_resource_bootstrap.py --json --no-secret-probe",
             phases["cloudflare-resources"]["commands"],
@@ -4123,6 +4137,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("This plan is safe by default.", rendered)
         self.assertIn("cloudflare_secret_evidence.py --execute --yes", rendered)
         self.assertIn("cloudflare_release_evidence.py --json", rendered)
+        self.assertIn("Set non-interactive Cloudflare API token", rendered)
         self.assertIn("Confirm Clerk same-domain proxy", rendered)
         self.assertIn("https://workdoe.com/__clerk", rendered)
         self.assertIn("curl.exe -fS -I https://workdoe.com/health", rendered)
@@ -4190,11 +4205,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            plan = module.build_launch_plan(
-                ROOT,
-                secret_list_json=raw_secret_list_path,
-                clerk_proxy_proof_json=proxy_proof_path,
-            )
+            original_token_present = module.cloudflare_api_token_present
+            try:
+                module.cloudflare_api_token_present = lambda: True
+                plan = module.build_launch_plan(
+                    ROOT,
+                    secret_list_json=raw_secret_list_path,
+                    clerk_proxy_proof_json=proxy_proof_path,
+                )
+            finally:
+                module.cloudflare_api_token_present = original_token_present
         phases = {step["phase"]: step for step in plan["steps"]}
         self.assertEqual(phases["identity-and-secrets"]["status"], "pending")
         self.assertEqual(plan["missing_secrets"], [])
@@ -4876,50 +4896,61 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         module = load_launch_status_script()
         original_wrangler_available = module.wrangler_available
         original_resolved_wrangler_bin = module.resolved_wrangler_bin
+        original_token_present = module.cloudflare_api_token_present
         try:
             module.wrangler_available = lambda repo_root=ROOT: True
             module.resolved_wrangler_bin = lambda repo_root=ROOT: "wrangler"
+            module.cloudflare_api_token_present = lambda: False
             status = module.build_launch_status(ROOT)
         finally:
             module.wrangler_available = original_wrangler_available
             module.resolved_wrangler_bin = original_resolved_wrangler_bin
+            module.cloudflare_api_token_present = original_token_present
         self.assertEqual(status["service"], "workdoe")
         self.assertEqual(status["domain"], "workdoe.com")
         self.assertTrue(status["safe_by_default"])
         self.assertFalse(status["executes_commands"])
         self.assertFalse(status["ready_to_deploy"])
-        self.assertEqual(status["current_phase"], "cloudflare-resources")
+        self.assertEqual(status["current_phase"], "cloudflare-token")
         self.assertEqual(
             status["next_command"],
-            "python scripts\\cloudflare_resource_bootstrap.py --json --no-secret-probe",
+            "set CLOUDFLARE_API_TOKEN in this shell without committing it",
         )
         phases = {phase["name"]: phase for phase in status["phases"]}
         self.assertEqual(phases["local-artifacts"]["status"], "ready")
         self.assertEqual(phases["local-tooling"]["status"], "ready")
-        self.assertEqual(phases["cloudflare-resources"]["status"], "pending")
-        self.assertEqual(phases["identity-and-secrets"]["status"], "pending")
+        self.assertEqual(phases["cloudflare-token"]["status"], "pending")
+        self.assertEqual(phases["cloudflare-resources"]["status"], "blocked")
+        self.assertEqual(phases["identity-and-secrets"]["status"], "blocked")
         self.assertEqual(phases["clerk-domain-proof"]["status"], "pending")
         self.assertEqual(phases["release-evidence"]["status"], "pending")
         self.assertIn(
             "D1 database_id must be replaced with the real Cloudflare UUID.",
             status["blockers"],
         )
+        self.assertIn(
+            "CLOUDFLARE_API_TOKEN is not set; local Cloudflare resource bootstrap, secret evidence, and deploy execute commands cannot run.",
+            status["blockers"],
+        )
         rendered = module.render_text(status)
         self.assertIn("Workdoe Cloudflare launch status", rendered)
-        self.assertIn("Current phase: cloudflare-resources", rendered)
-        self.assertIn("Next command: python scripts\\cloudflare_resource_bootstrap.py --json --no-secret-probe", rendered)
+        self.assertIn("Current phase: cloudflare-token", rendered)
+        self.assertIn("Next command: set CLOUDFLARE_API_TOKEN in this shell without committing it", rendered)
 
     def test_cloudflare_launch_status_reports_missing_wrangler(self):
         module = load_launch_status_script()
         original_wrangler_available = module.wrangler_available
         original_resolved_wrangler_bin = module.resolved_wrangler_bin
+        original_token_present = module.cloudflare_api_token_present
         try:
             module.wrangler_available = lambda repo_root=ROOT: False
             module.resolved_wrangler_bin = lambda repo_root=ROOT: ""
+            module.cloudflare_api_token_present = lambda: False
             status = module.build_launch_status(ROOT)
         finally:
             module.wrangler_available = original_wrangler_available
             module.resolved_wrangler_bin = original_resolved_wrangler_bin
+            module.cloudflare_api_token_present = original_token_present
         phases = {phase["name"]: phase for phase in status["phases"]}
         self.assertEqual(status["current_phase"], "local-tooling")
         self.assertEqual(status["next_command"], "npm install")
@@ -4958,9 +4989,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
             original_wrangler_available = module.wrangler_available
             original_resolved_wrangler_bin = module.resolved_wrangler_bin
+            original_token_present = module.cloudflare_api_token_present
             try:
                 module.wrangler_available = lambda repo_root=ROOT: True
                 module.resolved_wrangler_bin = lambda repo_root=ROOT: "wrangler"
+                module.cloudflare_api_token_present = lambda: True
                 status = module.build_launch_status(
                     ROOT,
                     secret_list_json=secret_list_path,
@@ -4969,14 +5002,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             finally:
                 module.wrangler_available = original_wrangler_available
                 module.resolved_wrangler_bin = original_resolved_wrangler_bin
+                module.cloudflare_api_token_present = original_token_present
         phases = {phase["name"]: phase for phase in status["phases"]}
+        self.assertEqual(phases["cloudflare-token"]["status"], "ready")
         self.assertEqual(phases["identity-and-secrets"]["status"], "ready")
         self.assertEqual(phases["clerk-domain-proof"]["status"], "ready")
         self.assertEqual(phases["release-evidence"]["status"], "ready")
         self.assertEqual(status["current_phase"], "cloudflare-resources")
         self.assertFalse(status["ready_to_deploy"])
 
-    def test_cloudflare_launch_status_keeps_raw_secret_evidence_pending(self):
+    def test_cloudflare_launch_status_keeps_raw_secret_evidence_unready(self):
         module = load_launch_status_script()
         readiness = load_readiness_script()
         with tempfile.TemporaryDirectory() as tmp:
@@ -5004,9 +5039,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
             original_wrangler_available = module.wrangler_available
             original_resolved_wrangler_bin = module.resolved_wrangler_bin
+            original_token_present = module.cloudflare_api_token_present
             try:
                 module.wrangler_available = lambda repo_root=ROOT: True
                 module.resolved_wrangler_bin = lambda repo_root=ROOT: "wrangler"
+                module.cloudflare_api_token_present = lambda: True
                 status = module.build_launch_status(
                     ROOT,
                     secret_list_json=raw_secret_list_path,
@@ -5015,8 +5052,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             finally:
                 module.wrangler_available = original_wrangler_available
                 module.resolved_wrangler_bin = original_resolved_wrangler_bin
+                module.cloudflare_api_token_present = original_token_present
         phases = {phase["name"]: phase for phase in status["phases"]}
-        self.assertEqual(phases["identity-and-secrets"]["status"], "pending")
+        self.assertIn(phases["identity-and-secrets"]["status"], {"pending", "blocked"})
         self.assertIn(
             "Required Clerk, Turnstile, and Workdoe secret names are not proven yet.",
             phases["identity-and-secrets"]["summary"],

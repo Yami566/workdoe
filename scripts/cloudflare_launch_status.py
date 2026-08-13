@@ -19,7 +19,13 @@ from cloudflare_launch_plan import build_launch_plan  # noqa: E402
 from cloudflare_preflight import run_preflight  # noqa: E402
 from cloudflare_release_evidence import run_release_evidence  # noqa: E402
 from cloudflare_resource_bootstrap import plan_payload as resource_plan_payload  # noqa: E402
-from cloudflare_wrangler import WRANGLER_ENV_VAR, resolved_wrangler_bin, wrangler_available  # noqa: E402
+from cloudflare_wrangler import (  # noqa: E402
+    CLOUDFLARE_API_TOKEN_ENV_VAR,
+    WRANGLER_ENV_VAR,
+    cloudflare_api_token_present,
+    resolved_wrangler_bin,
+    wrangler_available,
+)
 
 
 @dataclass
@@ -74,6 +80,7 @@ def build_launch_status(
     local_status = "ready" if preflight.ok else "blocked"
     wrangler_bin = resolved_wrangler_bin(repo_root)
     tooling_ready = wrangler_available(repo_root)
+    token_ready = cloudflare_api_token_present()
     resource_status = phase_status(plan_steps["cloudflare-resources"])
     secret_status = phase_status(plan_steps["identity-and-secrets"])
     evidence_status = "ready" if release_evidence["ok"] else "pending"
@@ -99,6 +106,16 @@ def build_launch_status(
                 else "Wrangler CLI is not available on PATH, local node_modules, or WORKDOE_WRANGLER_BIN."
             ),
             next_command="npm install",
+        ),
+        StatusPhase(
+            name="cloudflare-token",
+            status="ready" if token_ready else "pending",
+            summary=(
+                f"{CLOUDFLARE_API_TOKEN_ENV_VAR} is available for local Wrangler automation."
+                if token_ready
+                else f"{CLOUDFLARE_API_TOKEN_ENV_VAR} is not set; execute steps will stop before calling Wrangler."
+            ),
+            next_command="set CLOUDFLARE_API_TOKEN in this shell without committing it",
         ),
         StatusPhase(
             name="cloudflare-resources",
@@ -160,13 +177,17 @@ def build_launch_status(
             "Wrangler CLI is not available; install Wrangler, add it to PATH, or set "
             f"`{WRANGLER_ENV_VAR}` before live Cloudflare steps."
         )
+    if not token_ready:
+        blockers.append(
+            f"{CLOUDFLARE_API_TOKEN_ENV_VAR} is not set; local Cloudflare resource bootstrap, secret evidence, and deploy execute commands cannot run."
+        )
 
     return {
         "service": "workdoe",
         "domain": "workdoe.com",
         "safe_by_default": True,
         "executes_commands": False,
-        "ready_to_deploy": deploy_status == "ready" and release_evidence["ok"],
+        "ready_to_deploy": token_ready and deploy_status == "ready" and release_evidence["ok"],
         "current_phase": current.name if current else "deploy",
         "next_command": current.next_command if current else "python scripts\\cloudflare_production_deploy.py --json",
         "phases": [asdict(phase) for phase in phases],
