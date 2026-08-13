@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Workdoe helps DMV clients post contractor jobs and review trusted mini bids.">
     <title>{% block title %}Workdoe{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=workdoe-entry-flow">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=workdoe-entry-auth-first">
     {% if turnstile_enabled() %}
       <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     {% endif %}

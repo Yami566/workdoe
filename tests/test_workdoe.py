@@ -1204,7 +1204,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(leads.status_code, 200)
         self.assertIn(b'href="/leads" aria-current="page">Leads</a>', leads.data)
 
-    def test_mobile_css_keeps_entry_header_compact_and_live_jobs_first(self):
+    def test_mobile_css_keeps_entry_header_compact_and_auth_first(self):
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
         self.assertIn(".entry-shortcuts", styles)
         self.assertIn(".entry-shortcut", styles)
@@ -1213,7 +1213,8 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIsNotNone(mobile_rules)
         body = mobile_rules.group("body")
         self.assertRegex(body, r"\.brand,\s*\.main-nav\s*\{[^}]*flex: 0 1 auto;[^}]*width: 100%;")
-        self.assertRegex(body, r"\.login-live-panel,\s*\.start-live-panel\s*\{[^}]*order: -1;")
+        self.assertRegex(body, r"\.start-form-panel\s*\{[^}]*order: -1;")
+        self.assertNotRegex(body, r"\.login-live-panel,\s*\.start-live-panel\s*\{[^}]*order: -1;")
         self.assertRegex(body, r"\.lead-metrics\s*\{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);")
         self.assertRegex(body, r"\.lead-filter\s*\{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);")
         self.assertRegex(body, r"\.lead-filter \.search-field\s*\{[^}]*grid-column: 1 / -1;[^}]*order: -1;")

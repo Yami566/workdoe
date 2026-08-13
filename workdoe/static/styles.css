@@ -1888,8 +1888,7 @@ textarea:focus {
     position: static;
   }
 
-  .login-live-panel,
-  .start-live-panel {
+  .start-form-panel {
     order: -1;
   }
 
