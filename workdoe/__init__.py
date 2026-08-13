@@ -1698,14 +1698,15 @@ def register_routes(app: Flask) -> None:
             abort(403)
         db = get_db()
         draft_body = ""
+        message_errors = []
         if request.method == "POST":
             if is_admin:
                 abort(403)
             draft_body = (request.form.get("body") or "").strip()
             if not draft_body:
-                flash("Write a message before sending.", "error")
+                message_errors.append("Write a message before sending.")
             elif len(draft_body) > MESSAGE_BODY_MAX_LENGTH:
-                flash(f"Keep messages under {MESSAGE_BODY_MAX_LENGTH} characters.", "error")
+                message_errors.append(f"Keep messages under {MESSAGE_BODY_MAX_LENGTH} characters.")
             else:
                 db.execute(
                     """
@@ -1734,6 +1735,7 @@ def register_routes(app: Flask) -> None:
             messages=messages,
             draft_body=draft_body,
             message_max=MESSAGE_BODY_MAX_LENGTH,
+            message_error_feedback=message_error_feedback(message_errors),
             can_reply=not is_admin,
         )
 
@@ -2805,6 +2807,16 @@ def bid_error_field(message: str) -> str:
         return "questions"
     if "availability" in message:
         return "availability"
+    return ""
+
+
+def message_error_feedback(errors: list[str]) -> dict:
+    return build_error_feedback(errors, message_error_field, ["body"])
+
+
+def message_error_field(message: str) -> str:
+    if "message" in message or "1000" in message:
+        return "body"
     return ""
 
 

@@ -9,6 +9,7 @@ MESSAGE_BODY_TOO_LONG = "Keep messages under 1000 characters."
 class MessageThreadError(ValueError):
     def __init__(self, errors: list[str]):
         self.errors = errors
+        self.field_errors = message_thread_field_errors(errors)
         super().__init__("; ".join(errors))
 
 
@@ -61,6 +62,16 @@ def message_body_payload(payload: dict) -> str:
     if len(body) > MESSAGE_BODY_MAX_LENGTH:
         raise MessageThreadError([MESSAGE_BODY_TOO_LONG])
     return body
+
+
+def message_thread_field_errors(errors: list[str]) -> dict[str, list[str]]:
+    return {"body": [error for error in errors if message_thread_error_field(error) == "body"]}
+
+
+def message_thread_error_field(message: str) -> str:
+    if "message" in message or "1000" in message:
+        return "body"
+    return ""
 
 
 def message_thread_summary(row) -> dict:

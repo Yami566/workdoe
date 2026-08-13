@@ -3291,10 +3291,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             module.message_body_payload({"body": "  Can you start Tuesday?  "}),
             "Can you start Tuesday?",
         )
-        with self.assertRaisesRegex(module.MessageThreadError, "Write a message"):
+        with self.assertRaisesRegex(module.MessageThreadError, "Write a message") as blank:
             module.message_body_payload({"body": "   "})
-        with self.assertRaisesRegex(module.MessageThreadError, "1000"):
+        self.assertEqual(blank.exception.field_errors["body"], ["Write a message before sending."])
+        with self.assertRaisesRegex(module.MessageThreadError, "1000") as oversized:
             module.message_body_payload({"body": "x" * 1001})
+        self.assertEqual(oversized.exception.field_errors["body"], ["Keep messages under 1000 characters."])
 
         summary = module.message_thread_summary(
             {

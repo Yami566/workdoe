@@ -1694,7 +1694,7 @@ class Default(WorkerEntrypoint):
             thread_id = parse_thread_id(path)
         except MessageThreadError as exc:
             return json_response(
-                {"ok": False, "error": str(exc)},
+                {"ok": False, "error": str(exc), "field_errors": exc.field_errors},
                 status=404,
                 headers={"Cache-Control": "no-store"},
             )
@@ -1735,7 +1735,7 @@ class Default(WorkerEntrypoint):
                 )
             except MessageThreadError as exc:
                 return json_response(
-                    {"ok": False, "errors": exc.errors},
+                    {"ok": False, "errors": exc.errors, "field_errors": exc.field_errors},
                     status=400,
                     headers={"Cache-Control": "no-store"},
                 )
