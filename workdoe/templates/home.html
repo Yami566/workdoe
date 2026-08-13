@@ -34,22 +34,22 @@
   </div>
   <div id="home-open-jobs" class="job-list">
     <form class="filter-bar compact-filter" method="get" role="search" aria-label="Filter open jobs" aria-controls="home-open-job-results lead-map">
-      <label>
+      <label for="home-category">
         Category
-        <select name="category">
+        <select name="category" id="home-category">
           <option value="">All</option>
           {% for category in job_categories %}
             <option value="{{ category }}" {% if filters.category == category %}selected{% endif %}>{{ category }}</option>
           {% endfor %}
         </select>
       </label>
-      <label>
+      <label for="home-search">
         Search
-        <input name="q" type="search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}">
+        <input name="q" type="search" id="home-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}">
       </label>
-      <label>
+      <label for="home-sort">
         Sort
-        <select name="sort">
+        <select name="sort" id="home-sort">
           {% for value, label in job_sort_options %}
             <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}

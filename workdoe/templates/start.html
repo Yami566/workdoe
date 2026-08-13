@@ -15,22 +15,22 @@
     <form class="filter-bar compact-filter entry-filter" method="get" role="search" aria-label="Filter open jobs while starting" aria-controls="start-open-jobs lead-map">
       <input type="hidden" name="intent" value="{{ intent }}">
       {% if selected_job %}<input type="hidden" name="job_id" value="{{ selected_job.id }}">{% endif %}
-      <label>
+      <label for="start-category">
         Category
-        <select name="category">
+        <select name="category" id="start-category">
           <option value="">All</option>
           {% for category in job_categories %}
             <option value="{{ category }}" {% if filters.category == category %}selected{% endif %}>{{ category }}</option>
           {% endfor %}
         </select>
       </label>
-      <label>
+      <label for="start-search">
         Search
-        <input name="q" type="search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}">
+        <input name="q" type="search" id="start-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}">
       </label>
-      <label>
+      <label for="start-sort">
         Sort
-        <select name="sort">
+        <select name="sort" id="start-sort">
           {% for value, label in job_sort_options %}
             <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
@@ -119,14 +119,14 @@
           <span>Find work</span>
         </label>
       </fieldset>
-      <label>
+      <label for="start-display-name">
         Name
-        <input name="display_name" autocomplete="name" aria-describedby="start-name-help" data-clerk-display-name>
+        <input name="display_name" id="start-display-name" autocomplete="name" aria-describedby="start-name-help" data-clerk-display-name>
         <span id="start-name-help" class="help-text">Used after email verification.</span>
       </label>
-      <label>
+      <label for="start-company-name">
         Company or household
-        <input name="company_name" autocomplete="organization" data-clerk-company-name>
+        <input name="company_name" id="start-company-name" autocomplete="organization" data-clerk-company-name>
       </label>
       <div
         id="clerk-start"
@@ -187,18 +187,18 @@
           <span>Find work</span>
         </label>
       </fieldset>
-      <label>
+      <label for="start-email">
         Email
-        <input name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false" value="{{ form_email }}" required>
+        <input name="email" type="email" id="start-email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false" value="{{ form_email }}" required>
       </label>
-      <label>
+      <label for="start-display-name">
         Name
-        <input name="display_name" autocomplete="name" value="{{ form_display_name }}" aria-describedby="start-name-help">
+        <input name="display_name" id="start-display-name" autocomplete="name" value="{{ form_display_name }}" aria-describedby="start-name-help">
         <span id="start-name-help" class="help-text">New accounts only.</span>
       </label>
-      <label>
+      <label for="start-company-name">
         Company or household
-        <input name="company_name" autocomplete="organization" value="{{ form_company_name }}">
+        <input name="company_name" id="start-company-name" autocomplete="organization" value="{{ form_company_name }}">
       </label>
       {% with action='start' %}{% include "_turnstile.html" %}{% endwith %}
       <button class="button" type="submit">Email code</button>

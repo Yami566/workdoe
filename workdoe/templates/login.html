@@ -62,9 +62,9 @@
           </div>
         {% endif %}
       </div>
-      <label>
+      <label for="signin-email">
         Email
-        <input name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false" required>
+        <input name="email" type="email" id="signin-email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false" required>
       </label>
       {% with action='login' %}{% include "_turnstile.html" %}{% endwith %}
       <div class="auth-switch">
@@ -73,9 +73,9 @@
       </div>
       <details class="auth-password">
         <summary>Admin/demo password</summary>
-        <label>
+        <label for="signin-password">
           Password
-          <input name="password" type="password" autocomplete="current-password">
+          <input name="password" type="password" id="signin-password" autocomplete="current-password">
         </label>
         <button class="button secondary full" type="submit" name="auth_action" value="password">Sign in</button>
         <div class="login-links">
@@ -94,22 +94,22 @@
     {% set login_clear_url = url_for('login', next=next_url) if next_url else url_for('login') %}
     <form class="filter-bar compact-filter entry-filter" method="get" role="search" aria-label="Filter open jobs before signing in" aria-controls="login-open-jobs lead-map">
       {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-      <label>
+      <label for="login-category">
         Category
-        <select name="category">
+        <select name="category" id="login-category">
           <option value="">All</option>
           {% for category in job_categories %}
             <option value="{{ category }}" {% if filters.category == category %}selected{% endif %}>{{ category }}</option>
           {% endfor %}
         </select>
       </label>
-      <label>
+      <label for="login-search">
         Search
-        <input name="q" type="search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}">
+        <input name="q" type="search" id="login-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}">
       </label>
-      <label>
+      <label for="login-sort">
         Sort
-        <select name="sort">
+        <select name="sort" id="login-sort">
           {% for value, label in job_sort_options %}
             <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
