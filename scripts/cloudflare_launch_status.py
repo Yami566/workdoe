@@ -98,7 +98,7 @@ def build_launch_status(
                 if tooling_ready
                 else "Wrangler CLI is not available on PATH, local node_modules, or WORKDOE_WRANGLER_BIN."
             ),
-            next_command="npm install -g wrangler",
+            next_command="npm install",
         ),
         StatusPhase(
             name="cloudflare-resources",

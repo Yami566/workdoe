@@ -115,7 +115,7 @@ set `WORKDOE_WRANGLER_BIN` to the Wrangler executable path:
 
 ```powershell
 npm install
-wrangler login
+.\\node_modules\\.bin\\wrangler.cmd login
 ```
 
 Workdoe also includes npm shortcuts for the Cloudflare launch gates, following

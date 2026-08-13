@@ -3954,7 +3954,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             module.resolved_wrangler_bin = original_resolved_wrangler_bin
         phases = {phase["name"]: phase for phase in status["phases"]}
         self.assertEqual(status["current_phase"], "local-tooling")
-        self.assertEqual(status["next_command"], "npm install -g wrangler")
+        self.assertEqual(status["next_command"], "npm install")
         self.assertEqual(phases["local-tooling"]["status"], "blocked")
         self.assertIn(
             "Wrangler CLI is not available; install Wrangler, add it to PATH, or set `WORKDOE_WRANGLER_BIN` before live Cloudflare steps.",
