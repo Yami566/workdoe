@@ -3986,6 +3986,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         original_head_ok = module.http_head_ok
         original_cloudflare = module.build_launch_status
         original_github_live = module.build_github_live_status
+        original_wrangler_auth = module.wrangler_auth_status
         original_dns_lookup = module.dns_lookup
         try:
             module.http_head_ok = lambda url: (True, "HTTP 200")
@@ -3996,6 +3997,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "blockers": ["D1 database_id must be replaced with the real Cloudflare UUID."],
                 "warnings": ["Confirm admin@workdoe.com is a real monitored inbox before launch."],
             }
+            module.wrangler_auth_status = lambda repo_root=ROOT: (
+                False,
+                "Wrangler is not authenticated. Run `.\\node_modules\\.bin\\wrangler.cmd login`.",
+            )
             module.dns_lookup = lambda: (False, [], "mock dns failure")
             payload = module.build_doctor(ROOT)
             module.build_github_live_status = lambda: github_status
@@ -4004,6 +4009,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             module.http_head_ok = original_head_ok
             module.build_launch_status = original_cloudflare
             module.build_github_live_status = original_github_live
+            module.wrangler_auth_status = original_wrangler_auth
             module.dns_lookup = original_dns_lookup
 
         self.assertFalse(payload["ready"])
@@ -4017,6 +4023,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             payload["blockers"],
         )
         self.assertEqual(payload["phases"][1]["status"], "not-checked")
+        self.assertEqual(payload["phases"][2]["name"], "wrangler-auth")
+        self.assertEqual(payload["phases"][2]["status"], "not-checked")
         self.assertEqual(payload["phases"][-1]["status"], "not-checked")
         self.assertIn("npm run launch:doctor:live", payload["next_actions"])
         self.assertIn("npm run cf:resources:plan", payload["next_actions"])
@@ -4032,6 +4040,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             ".\\node_modules\\.bin\\wrangler.cmd login",
             live_payload["next_actions"],
         )
+        self.assertIn(
+            "Wrangler is not authenticated for live Cloudflare operations.",
+            live_payload["blockers"],
+        )
+        live_phases = {phase["name"]: phase for phase in live_payload["phases"]}
+        self.assertEqual(live_phases["wrangler-auth"]["status"], "pending")
         self.assertIn("workdoe.com DNS is not resolving: mock dns failure", live_payload["blockers"])
         self.assertIn("confirm workdoe.com DNS in Cloudflare", live_payload["next_actions"])
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import socket
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -31,6 +32,7 @@ from cloudflare_launch_status import build_launch_status  # noqa: E402
 from github_release_status import (  # noqa: E402
     build_live_status as build_github_live_status,
 )
+from cloudflare_wrangler import wrangler_command, wrangler_env  # noqa: E402
 
 
 @dataclass
@@ -60,6 +62,36 @@ def dns_lookup(domain: str = WORKDOE_DOMAIN) -> tuple[bool, list[str], str]:
     return bool(addresses), addresses, ""
 
 
+def wrangler_auth_status(repo_root: Path = REPO_ROOT, timeout: float = 20.0) -> tuple[bool, str]:
+    try:
+        completed = subprocess.run(
+            wrangler_command(["whoami"], repo_root),
+            cwd=str(repo_root / "cloudflare"),
+            env=wrangler_env(repo_root),
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            text=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError:
+        return False, "Wrangler CLI is not available."
+    except subprocess.TimeoutExpired:
+        return False, "Wrangler auth check timed out."
+
+    output = "\n".join(value for value in (completed.stdout, completed.stderr) if value).strip()
+    output_lower = output.lower()
+    if completed.returncode == 0 and "not authenticated" not in output_lower:
+        return True, "Wrangler is authenticated for live Cloudflare operations."
+    if "not authenticated" in output_lower:
+        return False, "Wrangler is not authenticated. Run `.\\node_modules\\.bin\\wrangler.cmd login`."
+    first_line = next((line.strip() for line in output.splitlines() if line.strip()), "")
+    if first_line:
+        return False, f"Wrangler auth check failed: {first_line}"
+    return False, "Wrangler auth check failed."
+
+
 def dedupe(values: list[str]) -> list[str]:
     seen: set[str] = set()
     output: list[str] = []
@@ -77,6 +109,7 @@ def next_actions(
     github,
     dns_ready: bool,
     live: bool,
+    wrangler_authenticated: bool | None,
 ) -> list[str]:
     actions: list[str] = []
     if not local_ok:
@@ -92,12 +125,16 @@ def next_actions(
                 "npm run github:release:status",
             ]
         )
+    if live and wrangler_authenticated is False:
+        actions.append(".\\node_modules\\.bin\\wrangler.cmd login")
 
     blockers = "\n".join(cloudflare["blockers"])
     if "Wrangler D1" in blockers or cloudflare["current_phase"] == "cloudflare-resources":
         actions.extend(
             [
-                ".\\node_modules\\.bin\\wrangler.cmd login",
+                ".\\node_modules\\.bin\\wrangler.cmd login"
+                if not live or wrangler_authenticated is False
+                else "",
                 "npm run cf:resources:plan",
                 "npm run cf:resources:apply",
             ]
@@ -136,6 +173,10 @@ def build_doctor(
     local_ok, local_detail = http_head_ok(local_url)
     cloudflare = build_launch_status(repo_root)
     github = build_github_live_status() if live else None
+    wrangler_authenticated: bool | None = None
+    wrangler_summary = "Wrangler auth was not checked. Run with --live."
+    if live:
+        wrangler_authenticated, wrangler_summary = wrangler_auth_status(repo_root)
     dns_ready = False
     dns_summary = "DNS was not checked. Run with --live to resolve workdoe.com."
     dns_addresses: list[str] = []
@@ -170,6 +211,20 @@ def build_doctor(
             next_command="npm run github:release:status",
         ),
         DoctorPhase(
+            name="wrangler-auth",
+            status=(
+                "ready"
+                if wrangler_authenticated
+                else ("pending" if live else "not-checked")
+            ),
+            summary=wrangler_summary,
+            next_command=(
+                ".\\node_modules\\.bin\\wrangler.cmd login"
+                if live and wrangler_authenticated is False
+                else ""
+            ),
+        ),
+        DoctorPhase(
             name="cloudflare-release",
             status="ready" if cloudflare["ready_to_deploy"] else "pending",
             summary=(
@@ -190,6 +245,8 @@ def build_doctor(
     blockers = list(cloudflare["blockers"])
     if github:
         blockers.extend(github.blockers)
+    if live and wrangler_authenticated is False:
+        blockers.append("Wrangler is not authenticated for live Cloudflare operations.")
     if live and not dns_ready:
         blockers.append(f"workdoe.com DNS is not resolving: {dns_error}")
     if not local_ok:
@@ -198,6 +255,7 @@ def build_doctor(
     ready = (
         local_ok
         and (github.ready if github else True)
+        and (wrangler_authenticated if live else True)
         and cloudflare["ready_to_deploy"]
         and (dns_ready if live else True)
     )
@@ -218,6 +276,7 @@ def build_doctor(
             github=github,
             dns_ready=dns_ready,
             live=live,
+            wrangler_authenticated=wrangler_authenticated,
         ),
     }
 
