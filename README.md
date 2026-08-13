@@ -109,6 +109,14 @@ Print the current Cloudflare launch status and next command without running Wran
 python scripts\cloudflare_launch_status.py
 ```
 
+Summarize local prototype and Cloudflare launch readiness, or add `--live`
+GitHub/DNS checks in one place:
+
+```powershell
+npm run launch:doctor
+npm run launch:doctor:live
+```
+
 Live Cloudflare steps require the Wrangler CLI on PATH and an authenticated
 Cloudflare session. Use a global install, a local `node_modules/.bin` install, or
 set `WORKDOE_WRANGLER_BIN` to the Wrangler executable path:

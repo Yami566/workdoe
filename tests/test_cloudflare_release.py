@@ -27,6 +27,7 @@ D1_ID_APPLY_SCRIPT_PATH = ROOT / "scripts" / "apply_cloudflare_d1_ids.py"
 RESOURCE_BOOTSTRAP_SCRIPT_PATH = ROOT / "scripts" / "cloudflare_resource_bootstrap.py"
 PRODUCTION_DEPLOY_SCRIPT_PATH = ROOT / "scripts" / "cloudflare_production_deploy.py"
 GITHUB_RELEASE_STATUS_SCRIPT_PATH = ROOT / "scripts" / "github_release_status.py"
+WORKDOE_LAUNCH_DOCTOR_SCRIPT_PATH = ROOT / "scripts" / "workdoe_launch_doctor.py"
 APP_SHELL_PATH = ROOT / "cloudflare" / "worker" / "app_shell.py"
 CLERK_ONBOARDING_PATH = ROOT / "cloudflare" / "worker" / "clerk_onboarding.py"
 CLERK_SESSIONS_PATH = ROOT / "cloudflare" / "worker" / "clerk_sessions.py"
@@ -186,6 +187,18 @@ def load_github_release_status_script():
     spec = importlib.util.spec_from_file_location(
         "github_release_status",
         GITHUB_RELEASE_STATUS_SCRIPT_PATH,
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_workdoe_launch_doctor_script():
+    spec = importlib.util.spec_from_file_location(
+        "workdoe_launch_doctor",
+        WORKDOE_LAUNCH_DOCTOR_SCRIPT_PATH,
     )
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -3957,6 +3970,59 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "GitHub production environment must allow only the main branch.",
             too_broad.blockers,
         )
+
+    def test_workdoe_launch_doctor_combines_release_blockers(self):
+        module = load_workdoe_launch_doctor_script()
+        github_status = load_github_release_status_script().GithubReleaseStatus(
+            repository="Yami566/workdoe",
+            environment="production",
+            live=False,
+            ready=False,
+            environment_ready=True,
+            secrets_ready=False,
+            blockers=["GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN."],
+            warnings=[],
+        )
+        original_head_ok = module.http_head_ok
+        original_cloudflare = module.build_launch_status
+        original_github_live = module.build_github_live_status
+        original_dns_lookup = module.dns_lookup
+        try:
+            module.http_head_ok = lambda url: (True, "HTTP 200")
+            module.build_launch_status = lambda repo_root=ROOT: {
+                "ready_to_deploy": False,
+                "current_phase": "cloudflare-resources",
+                "next_command": "python scripts\\cloudflare_resource_bootstrap.py --json --no-secret-probe",
+                "blockers": ["D1 database_id must be replaced with the real Cloudflare UUID."],
+                "warnings": ["Confirm admin@workdoe.com is a real monitored inbox before launch."],
+            }
+            module.dns_lookup = lambda: (False, [], "mock dns failure")
+            payload = module.build_doctor(ROOT)
+            module.build_github_live_status = lambda: github_status
+            live_payload = module.build_doctor(ROOT, live=True)
+        finally:
+            module.http_head_ok = original_head_ok
+            module.build_launch_status = original_cloudflare
+            module.build_github_live_status = original_github_live
+            module.dns_lookup = original_dns_lookup
+
+        self.assertFalse(payload["ready"])
+        self.assertEqual(payload["phases"][0]["name"], "local-prototype")
+        self.assertIn(
+            "D1 database_id must be replaced with the real Cloudflare UUID.",
+            payload["blockers"],
+        )
+        self.assertNotIn(
+            "GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.",
+            payload["blockers"],
+        )
+        self.assertEqual(payload["phases"][1]["status"], "not-checked")
+        self.assertEqual(payload["phases"][-1]["status"], "not-checked")
+        self.assertIn(
+            "GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.",
+            live_payload["blockers"],
+        )
+        self.assertIn("workdoe.com DNS is not resolving: mock dns failure", live_payload["blockers"])
 
     def test_cloudflare_wrangler_resolver_accepts_env_or_local_binary(self):
         module = load_wrangler_helper_script()

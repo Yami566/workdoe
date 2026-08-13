@@ -16,7 +16,9 @@
     "cf:deploy:plan": "python scripts/cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
     "cf:deploy": "python scripts/cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
     "github:release:plan": "python scripts/github_release_status.py",
-    "github:release:status": "python scripts/github_release_status.py --live"
+    "github:release:status": "python scripts/github_release_status.py --live",
+    "launch:doctor": "python scripts/workdoe_launch_doctor.py",
+    "launch:doctor:live": "python scripts/workdoe_launch_doctor.py --live"
   },
   "devDependencies": {
     "wrangler": "4.122.0"
