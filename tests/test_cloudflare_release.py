@@ -4092,7 +4092,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             phases["cloudflare-token"]["commands"],
         )
         self.assertIn(
-            "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
+            "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe --env production",
+            phases["cloudflare-token"]["commands"],
+        )
+        self.assertIn(
+            "gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe --env production",
             phases["cloudflare-token"]["commands"],
         )
         self.assertIn(
@@ -4261,7 +4265,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertTrue(status.environment_ready)
         self.assertFalse(status.secrets_ready)
         self.assertIn(
-            "GitHub repository is missing deployment secret CLOUDFLARE_ACCOUNT_ID.",
+            "GitHub deployment secret CLOUDFLARE_ACCOUNT_ID is missing from both repository and production environment secrets.",
             status.blockers,
         )
         self.assertIn("GitHub production environment currently allows admin bypass.", status.warnings)
@@ -4272,6 +4276,47 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             secret_names=set(module.REQUIRED_DEPLOY_SECRETS),
         )
         self.assertTrue(ready.ready)
+
+        environment_secret_ready = module.build_status(
+            environment=environment,
+            branch_policies=branch_policies,
+            environment_secret_names=set(module.REQUIRED_DEPLOY_SECRETS),
+        )
+        self.assertTrue(environment_secret_ready.ready)
+        self.assertTrue(environment_secret_ready.secrets_ready)
+        payload = module.status_payload(environment_secret_ready)
+        self.assertEqual(
+            payload["environment_secret_names"],
+            sorted(module.REQUIRED_DEPLOY_SECRETS),
+        )
+        json.dumps(payload)
+
+        calls = []
+        original_run_json = module.run_json
+        original_run_text = module.run_text
+        try:
+            module.run_json = lambda command: (
+                environment
+                if command[-1].endswith("/production")
+                else branch_policies,
+                "",
+            )
+
+            def fake_run_text(command):
+                calls.append(command)
+                if "--env" in command:
+                    return "\n".join(sorted(module.REQUIRED_DEPLOY_SECRETS)), ""
+                return "", ""
+
+            module.run_text = fake_run_text
+            live_ready = module.build_live_status()
+        finally:
+            module.run_json = original_run_json
+            module.run_text = original_run_text
+        self.assertTrue(live_ready.secrets_ready)
+        self.assertTrue(
+            any("--env" in command and "production" in command for command in calls)
+        )
 
         too_broad = module.build_status(
             environment={
@@ -4391,13 +4436,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             doctor_payload = {
                 "ready": False,
                 "blockers": [
-                    "GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.",
+                    "GitHub deployment secret CLOUDFLARE_API_TOKEN is missing from both repository and production environment secrets.",
                     "CLOUDFLARE_API_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz123456",
                     "CLOUDFLARE_API_TOKEN is not set; local Cloudflare resource bootstrap, secret evidence, and deploy execute commands cannot run.",
                     f"Clerk proxy proof JSON is missing or invalid: {ROOT}\\clerk-proxy-proof.local.json",
                 ],
                 "next_actions": [
-                    "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
+                    "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe --env production",
                     "set CLOUDFLARE_API_TOKEN in this shell without committing it",
                     "npm run cf:resources:apply",
                 ],
@@ -4458,7 +4503,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Cloudflare Account And Resources", blocker_groups)
         self.assertIn("Final Deployment Gate", blocker_groups)
         self.assertIn(
-            "GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.",
+            "GitHub deployment secret CLOUDFLARE_API_TOKEN is missing from both repository and production environment secrets.",
             blocker_groups["GitHub Deployment Secrets"],
         )
         self.assertIn(
@@ -4475,7 +4520,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("DNS And Domain Activation", groups)
         self.assertIn("Final Deployment And Smoke", groups)
         self.assertIn(
-            "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
+            "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe --env production",
             groups["GitHub Deployment Secrets"],
         )
         self.assertIn(
@@ -4492,8 +4537,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("### Final Deployment Gate", markdown)
         self.assertIn("### DNS And Domain Activation", markdown)
         self.assertIn("### Final Deployment And Smoke", markdown)
-        self.assertIn("GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.", markdown)
-        self.assertIn("gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe", markdown)
+        self.assertIn(
+            "GitHub deployment secret CLOUDFLARE_API_TOKEN is missing from both repository and production environment secrets.",
+            markdown,
+        )
+        self.assertIn("gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe --env production", markdown)
         self.assertIn("npm run launch:dns", markdown)
         self.assertIn("npm run github:deploy:plan", markdown)
         self.assertIn("npm run launch:smoke:strict", markdown)
@@ -4760,7 +4808,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             ready=False,
             environment_ready=True,
             secrets_ready=False,
-            blockers=["GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN."],
+            blockers=[
+                "GitHub deployment secret CLOUDFLARE_API_TOKEN is missing from both repository and production environment secrets."
+            ],
             warnings=[],
         )
         original_head_ok = module.http_head_ok
@@ -4831,7 +4881,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             payload["blockers"],
         )
         self.assertNotIn(
-            "GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.",
+            "GitHub deployment secret CLOUDFLARE_API_TOKEN is missing from both repository and production environment secrets.",
             payload["blockers"],
         )
         self.assertEqual(payload["phases"][1]["status"], "not-checked")
@@ -4841,11 +4891,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("npm run launch:doctor:live", payload["next_actions"])
         self.assertIn("npm run cf:resources:plan", payload["next_actions"])
         self.assertIn(
-            "GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.",
+            "GitHub deployment secret CLOUDFLARE_API_TOKEN is missing from both repository and production environment secrets.",
             live_payload["blockers"],
         )
         self.assertIn(
-            "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
+            "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe --env production",
             live_payload["next_actions"],
         )
         self.assertIn(

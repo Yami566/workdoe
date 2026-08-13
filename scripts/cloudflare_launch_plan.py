@@ -147,7 +147,8 @@ def build_launch_plan(
             commands=command_block(
                 [
                     "set CLOUDFLARE_API_TOKEN in this shell without committing it",
-                    "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
+                    "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe --env production",
+                    "gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe --env production",
                 ]
             ),
         ),

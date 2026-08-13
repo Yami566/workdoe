@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -27,6 +27,8 @@ class GithubReleaseStatus:
     blockers: list[str]
     warnings: list[str]
     expected_deploy_branch: str = "main"
+    repository_secret_names: set[str] = field(default_factory=set)
+    environment_secret_names: set[str] = field(default_factory=set)
 
 
 def branch_policy_names(branch_policies: dict | None) -> set[str]:
@@ -66,10 +68,17 @@ def validate_environment(
     return not blockers, blockers, warnings
 
 
-def validate_secrets(secret_names: set[str]) -> tuple[bool, list[str]]:
-    missing = sorted(REQUIRED_DEPLOY_SECRETS - secret_names)
+def validate_secrets(
+    repository_secret_names: set[str],
+    environment_secret_names: set[str] | None = None,
+) -> tuple[bool, list[str]]:
+    available = repository_secret_names | (environment_secret_names or set())
+    missing = sorted(REQUIRED_DEPLOY_SECRETS - available)
     blockers = [
-        f"GitHub repository is missing deployment secret {name}."
+        (
+            f"GitHub deployment secret {name} is missing from both repository "
+            f"and {PRODUCTION_ENVIRONMENT} environment secrets."
+        )
         for name in missing
     ]
     return not blockers, blockers
@@ -81,6 +90,7 @@ def build_status(
     environment: dict | None = None,
     branch_policies: dict | None = None,
     secret_names: set[str] | None = None,
+    environment_secret_names: set[str] | None = None,
     live: bool = False,
     extra_blockers: list[str] | None = None,
 ) -> GithubReleaseStatus:
@@ -88,7 +98,12 @@ def build_status(
         environment,
         branch_policies,
     )
-    secrets_ready, secret_blockers = validate_secrets(secret_names or set())
+    repository_secret_names = secret_names or set()
+    production_secret_names = environment_secret_names or set()
+    secrets_ready, secret_blockers = validate_secrets(
+        repository_secret_names,
+        production_secret_names,
+    )
     blockers = environment_blockers + secret_blockers + list(extra_blockers or [])
     return GithubReleaseStatus(
         repository=repository,
@@ -99,6 +114,8 @@ def build_status(
         secrets_ready=secrets_ready,
         blockers=blockers,
         warnings=warnings,
+        repository_secret_names=repository_secret_names,
+        environment_secret_names=production_secret_names,
     )
 
 
@@ -147,12 +164,28 @@ def build_live_status(repository: str = DEFAULT_REPOSITORY) -> GithubReleaseStat
     secrets_output, secrets_error = run_text(["gh", "secret", "list", "--repo", repository])
     if secrets_error:
         blockers.append(f"Could not read GitHub repository secret names: {secrets_error}")
+    environment_secrets_output, environment_secrets_error = run_text(
+        [
+            "gh",
+            "secret",
+            "list",
+            "--repo",
+            repository,
+            "--env",
+            PRODUCTION_ENVIRONMENT,
+        ]
+    )
+    if environment_secrets_error:
+        blockers.append(
+            f"Could not read GitHub {PRODUCTION_ENVIRONMENT} environment secret names: {environment_secrets_error}"
+        )
 
     return build_status(
         repository=repository,
         environment=environment,
         branch_policies=branch_policies,
         secret_names=gh_secret_names(secrets_output),
+        environment_secret_names=gh_secret_names(environment_secrets_output),
         live=True,
         extra_blockers=blockers,
     )
@@ -180,6 +213,13 @@ def render_text(status: GithubReleaseStatus) -> str:
     return "\n".join(lines)
 
 
+def status_payload(status: GithubReleaseStatus) -> dict:
+    payload = status.__dict__.copy()
+    payload["repository_secret_names"] = sorted(status.repository_secret_names)
+    payload["environment_secret_names"] = sorted(status.environment_secret_names)
+    return payload
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Check Workdoe GitHub production deployment environment readiness."
@@ -194,7 +234,7 @@ def main() -> int:
     )
     args = parser.parse_args()
     status = build_live_status(args.repo) if args.live else build_status(repository=args.repo)
-    payload = status.__dict__
+    payload = status_payload(status)
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:

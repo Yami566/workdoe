@@ -24,7 +24,7 @@ WORKER_SECRET_NAMES = [
     "WORKDOE_TURNSTILE_SITE_KEY",
 ]
 CLOUDFLARE_TOKEN_ACTION = "set CLOUDFLARE_API_TOKEN in this shell without committing it"
-GITHUB_CLOUDFLARE_TOKEN_ACTION = "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe"
+GITHUB_CLOUDFLARE_TOKEN_ACTION = "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe --env production"
 
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
@@ -148,8 +148,8 @@ def next_actions(
     elif github and not github.secrets_ready:
         actions.extend(
             [
-                "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
-                "gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe",
+                "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe --env production",
+                "gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe --env production",
                 "npm run github:release:status",
             ]
         )
