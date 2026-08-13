@@ -25,6 +25,14 @@ def row_value(row, key: str, default=None):
     return getattr(row, key, default)
 
 
+def dom_id_fragment(value: str) -> str:
+    normalized = "".join(
+        character.lower() if character.isalnum() else "-"
+        for character in str(value)
+    )
+    return "-".join(part for part in normalized.split("-") if part) or "action"
+
+
 def is_app_shell_route(path: str) -> bool:
     if path in APP_SHELL_ROUTES:
         return True
@@ -507,11 +515,11 @@ def contractor_profile_html(user, profile: dict, photos: list[dict] | None = Non
       </div>
     </form>
     <section class="detail-grid">
-      <form class="panel stack-form" data-file-action="/api/media/contractors/{contractor_id}/upload" data-success-url-template="/contractor/profile" enctype="multipart/form-data" aria-describedby="profile-upload-status">
+      <form class="panel stack-form" data-file-action="/api/media/contractors/{contractor_id}/upload" data-success-url-template="/contractor/profile" enctype="multipart/form-data" aria-label="Upload portfolio photo" aria-describedby="profile-upload-status">
         <h2>Portfolio photo</h2>
         <label for="profile-photos">Image <input id="profile-photos" name="portfolio_photo" type="file" accept="image/png,image/jpeg,image/gif,image/webp" aria-describedby="profile-photos-help" required></label>
         <p id="profile-photos-help" class="help-text">Private uploads. PNG, JPG, GIF, or WebP.</p>
-        <button class="button secondary" type="submit">Upload photo</button>
+        <button class="button secondary" type="submit" aria-label="Upload portfolio photo">Upload photo</button>
         <p id="profile-upload-status" class="help-text" data-form-status aria-live="polite"></p>
       </form>
       <section class="photo-grid profile-photos" aria-label="Portfolio photos">
@@ -637,10 +645,10 @@ def message_thread_detail_html(user, payload: dict, can_reply: bool = True) -> s
     reply_html = ""
     if can_reply:
         reply_html = f"""
-    <form class="message-form" data-json-action="/api/messages/threads/{thread_id}" data-success-url-template="/messages/{thread_id}" aria-label="New message">
-      <label>New message <textarea name="body" rows="4" maxlength="1000" placeholder="Share timing, access, or next steps." autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required></textarea></label>
+    <form class="message-form" data-json-action="/api/messages/threads/{thread_id}" data-success-url-template="/messages/{thread_id}" aria-label="New message" aria-describedby="message-reply-status">
+      <label for="message-body">New message <textarea id="message-body" name="body" rows="4" maxlength="1000" placeholder="Share timing, access, or next steps." autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required></textarea></label>
       <button class="button full" type="submit" aria-label="Send message">Send</button>
-      <p class="help-text" data-form-status aria-live="polite"></p>
+      <p id="message-reply-status" class="help-text" data-form-status aria-live="polite"></p>
     </form>"""
     body = f"""
     <section class="dashboard-header">
@@ -666,10 +674,11 @@ def message_thread_detail_html(user, payload: dict, can_reply: bool = True) -> s
 
 
 def admin_action_form(action_url: str, label: str) -> str:
+    status_id = f"admin-action-{dom_id_fragment(action_url)}-status"
     return f"""
-        <form data-json-action="{escape(action_url)}" data-success-url-template="/admin">
+        <form data-json-action="{escape(action_url)}" data-success-url-template="/admin" aria-label="{escape(label)}" aria-describedby="{status_id}">
           <button class="button secondary compact" type="submit">{escape(label)}</button>
-          <span class="sr-only" data-form-status aria-live="polite"></span>
+          <span id="{status_id}" class="sr-only" data-form-status aria-live="polite"></span>
         </form>"""
 
 
@@ -860,7 +869,7 @@ def contractor_job_detail_html(user, payload: dict, site_key: str = "") -> str:
     elif job.get("can_request_match"):
         side = f"""
         <h2>Send mini bid</h2>
-        <form class="stack-form bid-form" data-json-action="/api/jobs/{int(job.get('id', 0))}/request" data-success-url-template="/jobs/{int(job.get('id', 0))}" aria-label="Send mini bid">
+        <form class="stack-form bid-form" data-json-action="/api/jobs/{int(job.get('id', 0))}/request" data-success-url-template="/jobs/{int(job.get('id', 0))}" aria-label="Send mini bid" aria-describedby="bid-form-status">
           <label for="bid-scope-note">Scope note <textarea id="bid-scope-note" name="scope_note" rows="4" minlength="20" maxlength="800" placeholder="Work included, assumptions, access needs." autocapitalize="sentences" spellcheck="true" enterkeyhint="next" required></textarea></label>
           <div class="bid-quick-grid">
             <label for="bid-price-range">Price range <input id="bid-price-range" name="price_range" maxlength="80" inputmode="text" placeholder="$450-$650" list="bid-price-options" enterkeyhint="next" required></label>
@@ -886,7 +895,7 @@ def contractor_job_detail_html(user, payload: dict, site_key: str = "") -> str:
           <details class="optional-field"><summary>Questions (optional)</summary><label class="sr-only" for="bid-questions">Questions</label><textarea id="bid-questions" name="questions" rows="2" maxlength="500" placeholder="Optional" autocapitalize="sentences" spellcheck="true" enterkeyhint="done"></textarea></details>
           {turnstile_html(site_key, "match-request")}
           <button class="button full" type="submit" aria-label="Send mini bid">Send bid</button>
-          <p class="help-text" data-form-status aria-live="polite"></p>
+          <p id="bid-form-status" class="help-text" data-form-status aria-live="polite"></p>
         </form>"""
     else:
         side = '<h2>Lead unavailable</h2><p class="help-text">This lead is not open for a new mini bid.</p>'
@@ -933,17 +942,18 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
         for link in view_links
     )
     status = job.get("status", "")
+    job_title = job.get("title", "job")
     if status == "open":
         status_form = f"""
-        <form data-json-action="/api/jobs/{job_id}/close" data-success-url-template="/client/jobs/{job_id}">
+        <form data-json-action="/api/jobs/{job_id}/close" data-success-url-template="/client/jobs/{job_id}" aria-label="Close {escape(job_title)}" aria-describedby="job-status-form-status">
           <button class="button secondary full" type="submit">Close job</button>
-          <p class="help-text" data-form-status aria-live="polite"></p>
+          <p id="job-status-form-status" class="help-text" data-form-status aria-live="polite"></p>
         </form>"""
     elif status == "closed":
         status_form = f"""
-        <form data-json-action="/api/jobs/{job_id}/reopen" data-success-url-template="/client/jobs/{job_id}">
+        <form data-json-action="/api/jobs/{job_id}/reopen" data-success-url-template="/client/jobs/{job_id}" aria-label="Reopen {escape(job_title)}" aria-describedby="job-status-form-status">
           <button class="button secondary full" type="submit">Reopen job</button>
-          <p class="help-text" data-form-status aria-live="polite"></p>
+          <p id="job-status-form-status" class="help-text" data-form-status aria-live="polite"></p>
         </form>"""
     else:
         status_form = '<p class="help-text">This job is hidden by moderation.</p>'
@@ -953,15 +963,16 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
         status = request.get("status", "")
         actions = ""
         if request.get("can_approve"):
+            contractor_name = request.get("contractor_name", "contractor")
             actions = f"""
           <div class="bid-actions">
-            <form data-json-action="/api/match-requests/{request_id}/approve" data-success-url-template="/client/jobs/{job_id}">
+            <form data-json-action="/api/match-requests/{request_id}/approve" data-success-url-template="/client/jobs/{job_id}" aria-label="Approve mini bid from {escape(contractor_name)}" aria-describedby="match-request-{request_id}-approve-status">
               <button class="button" type="submit">Approve</button>
-              <p class="help-text" data-form-status aria-live="polite"></p>
+              <p id="match-request-{request_id}-approve-status" class="help-text" data-form-status aria-live="polite"></p>
             </form>
-            <form data-json-action="/api/match-requests/{request_id}/reject" data-success-url-template="/client/jobs/{job_id}">
+            <form data-json-action="/api/match-requests/{request_id}/reject" data-success-url-template="/client/jobs/{job_id}" aria-label="Reject mini bid from {escape(contractor_name)}" aria-describedby="match-request-{request_id}-reject-status">
               <button class="button secondary" type="submit">Reject</button>
-              <p class="help-text" data-form-status aria-live="polite"></p>
+              <p id="match-request-{request_id}-reject-status" class="help-text" data-form-status aria-live="polite"></p>
             </form>
           </div>"""
         elif request.get("thread_url"):
@@ -1015,9 +1026,9 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
       <aside class="panel">
         <h2>Job controls</h2>
         {status_form}
-        <form class="stack-form" data-file-action="/api/media/jobs/{job_id}/upload" data-success-url-template="/client/jobs/{job_id}" enctype="multipart/form-data" aria-describedby="job-photo-upload-status">
-          <label>Job photo <input name="photo" type="file" accept="image/png,image/jpeg,image/gif,image/webp" required></label>
-          <button class="button secondary full" type="submit">Upload photo</button>
+        <form class="stack-form" data-file-action="/api/media/jobs/{job_id}/upload" data-success-url-template="/client/jobs/{job_id}" enctype="multipart/form-data" aria-label="Upload job photo" aria-describedby="job-photo-upload-status">
+          <label for="job-photo-upload">Job photo <input id="job-photo-upload" name="photo" type="file" accept="image/png,image/jpeg,image/gif,image/webp" required></label>
+          <button class="button secondary full" type="submit" aria-label="Upload job photo">Upload photo</button>
           <p id="job-photo-upload-status" class="help-text" data-form-status aria-live="polite"></p>
         </form>
       </aside>
