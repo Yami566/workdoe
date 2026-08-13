@@ -10,6 +10,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 DEFAULT_OUTPUT = REPO_ROOT / "docs" / "workdoe-launch-handoff.local.md"
+LOCAL_WORKSPACE_PLACEHOLDER = "<workdoe-repo>"
 
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
@@ -47,6 +48,50 @@ def redact_payload(value):
         return [redact_payload(item) for item in value]
     if isinstance(value, str):
         return redact_text(value)
+    return value
+
+
+def local_path_candidates(repo_root: Path = REPO_ROOT) -> list[str]:
+    root = str(repo_root)
+    candidates = {
+        root,
+        root.replace("/", "\\"),
+        repo_root.as_posix(),
+    }
+    return sorted(
+        (candidate for candidate in candidates if candidate),
+        key=len,
+        reverse=True,
+    )
+
+
+def redact_local_paths_text(value: str, repo_root: Path = REPO_ROOT) -> str:
+    redacted = value
+    for candidate in local_path_candidates(repo_root):
+        redacted = redacted.replace(candidate, LOCAL_WORKSPACE_PLACEHOLDER)
+    return redacted
+
+
+def local_paths_present(value, repo_root: Path = REPO_ROOT) -> bool:
+    if isinstance(value, dict):
+        return any(local_paths_present(item, repo_root) for item in value.values())
+    if isinstance(value, list):
+        return any(local_paths_present(item, repo_root) for item in value)
+    if isinstance(value, str):
+        return any(candidate in value for candidate in local_path_candidates(repo_root))
+    return False
+
+
+def redact_local_paths_payload(value, repo_root: Path = REPO_ROOT):
+    if isinstance(value, dict):
+        return {
+            key: redact_local_paths_payload(item, repo_root)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_local_paths_payload(item, repo_root) for item in value]
+    if isinstance(value, str):
+        return redact_local_paths_text(value, repo_root)
     return value
 
 
@@ -175,6 +220,7 @@ def build_handoff_payload(
     repo_root: Path = REPO_ROOT,
     *,
     local_url: str = DEFAULT_LOCAL_URL,
+    shareable: bool = False,
 ) -> dict:
     doctor = build_doctor(repo_root, live=True, local_url=local_url)
     dispatch = build_dispatch_plan(repo_root, local_url=local_url)
@@ -190,12 +236,14 @@ def build_handoff_payload(
         if action and action not in next_actions:
             next_actions.append(action)
 
-    return redact_payload({
+    payload = redact_payload({
         "service": "workdoe",
         "domain": "workdoe.com",
         "ready": bool(doctor["ready"] and dispatch["ready_to_dispatch"]),
-        "safe_to_share": True,
+        "shareable": shareable,
+        "safe_to_share": False,
         "contains_secret_values": False,
+        "contains_machine_paths": True,
         "doctor": doctor,
         "dispatch": {
             "ready_to_dispatch": dispatch["ready_to_dispatch"],
@@ -216,16 +264,32 @@ def build_handoff_payload(
             "clerk-proxy-proof.local.json",
         ],
     })
+    payload["contains_machine_paths"] = local_paths_present(payload, repo_root)
+    if shareable:
+        payload = redact_local_paths_payload(payload, repo_root)
+        payload["contains_machine_paths"] = False
+        payload["safe_to_share"] = True
+    return payload
 
 
 def render_markdown(payload: dict) -> str:
     status = "Ready for guarded GitHub dispatch" if payload["ready"] else "Blocked before production dispatch"
+    privacy_note = (
+        "This handoff is generated from local and live release gates. It includes "
+        "secret names and command names, but not secret values."
+        if payload.get("safe_to_share")
+        else (
+            "This private local handoff is generated from live release gates. It "
+            "includes secret names, command names, and local machine paths, but not "
+            "secret values."
+        )
+    )
     lines = [
         "# Workdoe Launch Handoff",
         "",
         f"Status: {status}",
         "",
-        "This handoff is generated from local and live release gates. It includes secret names and command names, but not secret values.",
+        privacy_note,
         "",
         "## Gate Snapshot",
         "",
@@ -320,13 +384,22 @@ def main() -> int:
     parser.add_argument("--write", action="store_true", help="Write the Markdown handoff file.")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="Markdown output path.")
     parser.add_argument(
+        "--shareable",
+        action="store_true",
+        help="Redact local workspace paths and mark the handoff as safe to share.",
+    )
+    parser.add_argument(
         "--fail-when-not-ready",
         action="store_true",
         help="Exit nonzero when production dispatch is not ready.",
     )
     args = parser.parse_args()
 
-    payload = build_handoff_payload(REPO_ROOT, local_url=args.local_url)
+    payload = build_handoff_payload(
+        REPO_ROOT,
+        local_url=args.local_url,
+        shareable=args.shareable,
+    )
     markdown = render_markdown(payload)
     if args.write:
         args.output.parent.mkdir(parents=True, exist_ok=True)

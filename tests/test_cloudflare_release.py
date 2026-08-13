@@ -4132,6 +4132,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "blockers": [
                     "GitHub repository is missing deployment secret CLOUDFLARE_API_TOKEN.",
                     "CLOUDFLARE_API_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz123456",
+                    f"Clerk proxy proof JSON is missing or invalid: {ROOT}\\clerk-proxy-proof.local.json",
                 ],
                 "next_actions": [
                     "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe",
@@ -4174,12 +4175,17 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             module.build_dispatch_plan = lambda repo_root=ROOT, local_url=module.DEFAULT_LOCAL_URL: dispatch_payload
             payload = module.build_handoff_payload(ROOT)
             markdown = module.render_markdown(payload)
+            shareable_payload = module.build_handoff_payload(ROOT, shareable=True)
+            shareable_markdown = module.render_markdown(shareable_payload)
         finally:
             module.build_doctor = original_doctor
             module.build_dispatch_plan = original_dispatch
 
         self.assertFalse(payload["ready"])
+        self.assertFalse(payload["safe_to_share"])
+        self.assertFalse(payload["shareable"])
         self.assertFalse(payload["contains_secret_values"])
+        self.assertTrue(payload["contains_machine_paths"])
         self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", json.dumps(payload))
         blocker_groups = {
             group["name"]: group["blockers"]
@@ -4207,6 +4213,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("npm run launch:smoke:strict", groups["Final Deployment And Smoke"])
         self.assertIn("# Workdoe Launch Handoff", markdown)
         self.assertIn("Status: Blocked before production dispatch", markdown)
+        self.assertIn("This private local handoff", markdown)
         self.assertIn("### GitHub Deployment Secrets", markdown)
         self.assertIn("### Final Deployment Gate", markdown)
         self.assertIn("### DNS And Domain Activation", markdown)
@@ -4219,6 +4226,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("cloudflare-secret-list.local.json", markdown)
         self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", markdown)
         self.assertIn("CLOUDFLARE_API_TOKEN=<redacted>", markdown)
+        self.assertTrue(shareable_payload["safe_to_share"])
+        self.assertTrue(shareable_payload["shareable"])
+        self.assertFalse(shareable_payload["contains_secret_values"])
+        self.assertFalse(shareable_payload["contains_machine_paths"])
+        self.assertIn(module.LOCAL_WORKSPACE_PLACEHOLDER, json.dumps(shareable_payload))
+        self.assertNotIn(str(ROOT), str(shareable_payload))
+        self.assertNotIn(str(ROOT), shareable_markdown)
+        self.assertIn("This handoff is generated from local and live release gates", shareable_markdown)
 
     def test_workdoe_dns_diagnostic_accepts_cloudflare_delegation_and_routes(self):
         module = load_workdoe_dns_diagnostic_script()
