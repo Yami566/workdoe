@@ -74,11 +74,13 @@
         node.removeAttribute("aria-describedby");
       }
       delete node.dataset.workerInvalid;
+      delete node.dataset.originalDescribedby;
     });
   }
 
   function showFieldErrors(form, fieldErrors) {
     var firstControl = null;
+    var hasErrors = false;
     Object.keys(fieldErrors || {}).forEach(function (field) {
       var messages = fieldErrors[field] || [];
       var target = fieldErrorTarget(form, field);
@@ -93,6 +95,7 @@
       error.dataset.workerFieldError = "true";
       error.textContent = messages[0];
       container.appendChild(error);
+      hasErrors = true;
       var details = control.closest("details");
       if (details) {
         details.open = true;
@@ -115,6 +118,21 @@
     if (firstControl && typeof firstControl.focus === "function") {
       firstControl.focus({ preventScroll: true });
       firstControl.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    return hasErrors;
+  }
+
+  function setSubmitting(form, button, isSubmitting) {
+    if (isSubmitting) {
+      form.setAttribute("aria-busy", "true");
+      if (button) {
+        button.disabled = true;
+      }
+      return;
+    }
+    form.removeAttribute("aria-busy");
+    if (button) {
+      button.disabled = false;
     }
   }
 
@@ -216,9 +234,7 @@
     }
     event.preventDefault();
     var button = form.querySelector("button[type='submit']");
-    if (button) {
-      button.disabled = true;
-    }
+    setSubmitting(form, button, true);
     clearFieldErrors(form);
     setStatus(form, "Saving...");
     try {
@@ -235,8 +251,12 @@
         return {};
       });
       if (!response.ok) {
-        showFieldErrors(form, payload.field_errors);
-        throw new Error((payload.errors || [payload.error || "Workdoe could not save this yet."]).join(" "));
+        var hasFieldErrors = showFieldErrors(form, payload.field_errors);
+        throw new Error(
+          hasFieldErrors
+            ? "Fix highlighted fields."
+            : (payload.errors || [payload.error || "Workdoe could not save this yet."]).join(" ")
+        );
       }
       try {
         await uploadFilesAfterJson(form, payload);
@@ -248,9 +268,7 @@
       setStatus(form, "Saved.");
       window.location.assign(successUrl(form, payload));
     } catch (error) {
-      if (button) {
-        button.disabled = false;
-      }
+      setSubmitting(form, button, false);
       setStatus(form, error.message || "Workdoe could not save this yet.");
     }
   }
@@ -262,9 +280,7 @@
     }
     event.preventDefault();
     var button = form.querySelector("button[type='submit']");
-    if (button) {
-      button.disabled = true;
-    }
+    setSubmitting(form, button, true);
     clearFieldErrors(form);
     setStatus(form, "Uploading...");
     try {
@@ -280,15 +296,17 @@
         return {};
       });
       if (!response.ok) {
-        showFieldErrors(form, payload.field_errors);
-        throw new Error((payload.errors || [payload.error || "Workdoe could not upload this yet."]).join(" "));
+        var hasUploadFieldErrors = showFieldErrors(form, payload.field_errors);
+        throw new Error(
+          hasUploadFieldErrors
+            ? "Fix highlighted fields."
+            : (payload.errors || [payload.error || "Workdoe could not upload this yet."]).join(" ")
+        );
       }
       setStatus(form, "Uploaded.");
       window.location.assign(successUrl(form, payload));
     } catch (error) {
-      if (button) {
-        button.disabled = false;
-      }
+      setSubmitting(form, button, false);
       setStatus(form, error.message || "Workdoe could not upload this yet.");
     }
   }
