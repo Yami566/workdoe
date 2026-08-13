@@ -1808,6 +1808,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'aria-label="Sign in lead Power wash townhouse front steps"', login.data)
         self.assertIn(b'href="/login?next=/jobs/', login.data)
         self.assertIn(b"Email code", login.data)
+        self.assertIn(
+            b'name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false" required',
+            login.data,
+        )
         self.assertIn(b"No password needed.", login.data)
         self.assertIn(b"Admin/demo password", login.data)
         self.assertIn(b'name="auth_action" value="password"', login.data)
@@ -1887,6 +1891,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"<h2>Start</h2>", start.data)
         self.assertIn(b'class="form-checklist auth-checklist" aria-label="Email code safeguards"', start.data)
         self.assertIn(b"Email code", start.data)
+        self.assertIn(
+            b'name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false"',
+            start.data,
+        )
         self.assertIn(b"Same site", start.data)
         self.assertIn(b"No password", start.data)
         self.assertIn(b'aria-describedby="start-name-help"', start.data)
@@ -2021,6 +2029,13 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn("No open leads match this view", script)
 
     def test_local_password_reset_token_flow(self):
+        reset_form = self.client.get("/forgot-password")
+        self.assertEqual(reset_form.status_code, 200)
+        self.assertIn(
+            b'name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false" required',
+            reset_form.data,
+        )
+
         response = self.client.post(
             "/forgot-password",
             data={"email": "client@workdoe.local"},

@@ -63,7 +63,7 @@
       </div>
       <label>
         Email
-        <input name="email" type="email" autocomplete="email" required>
+        <input name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false" required>
       </label>
       {% with action='login' %}{% include "_turnstile.html" %}{% endwith %}
       <div class="auth-switch">
