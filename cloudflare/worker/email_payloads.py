@@ -82,7 +82,7 @@ def require_workdoe_url(value: str | None) -> str:
 
 def message_shell(to_email: str, subject: str, text: str, html_body: str, from_email: str) -> dict:
     return {
-        "to": {"email": require_recipient(to_email)},
+        "to": require_recipient(to_email),
         "from": {"email": require_recipient(from_email), "name": DEFAULT_FROM_NAME},
         "subject": clean_subject(subject),
         "text": text,

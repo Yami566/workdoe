@@ -552,30 +552,23 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 manifest["cloudflare_targets"]["worker"]["main"],
                 "cloudflare/worker/entry.py",
             )
-            self.assertEqual(manifest["cloudflare_targets"]["identity"]["service"], "Clerk")
+            self.assertEqual(
+                manifest["cloudflare_targets"]["identity"]["service"],
+                "Cloudflare D1 and Email Service",
+            )
             self.assertEqual(
                 manifest["cloudflare_targets"]["identity"]["primary_strategy"],
                 "email_code_otp",
             )
+            self.assertEqual(
+                manifest["cloudflare_targets"]["identity"]["required_env"][
+                    "WORKDOE_AUTH_PROVIDER"
+                ],
+                "workdoe_email_code",
+            )
             self.assertIn(
-                "CLERK_SECRET_KEY",
+                "WORKDOE_SECRET_KEY",
                 manifest["cloudflare_targets"]["identity"]["required_env"],
-            )
-            self.assertEqual(
-                manifest["cloudflare_targets"]["identity"]["required_env"][
-                    "CLERK_FRONTEND_API_URL"
-                ],
-                "https://workdoe.com/__clerk",
-            )
-            self.assertEqual(
-                manifest["cloudflare_targets"]["identity"]["required_env"][
-                    "CLERK_PROXY_URL"
-                ],
-                "https://workdoe.com/__clerk",
-            )
-            self.assertEqual(
-                manifest["cloudflare_targets"]["identity"]["required_env"]["CLERK_FAPI"],
-                "https://frontend-api.clerk.dev",
             )
             self.assertIn(
                 "expire-login-codes",
@@ -631,17 +624,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 set(wrangler["triggers"]["crons"]),
                 {"*/15 * * * *", "0 14 * * *", "0 13 * * 1-5"},
             )
-            self.assertEqual(wrangler["vars"]["WORKDOE_AUTH_PROVIDER"], "clerk")
             self.assertEqual(
-                wrangler["vars"]["WORKDOE_CLERK_LOGIN_MODE"],
+                wrangler["vars"]["WORKDOE_AUTH_PROVIDER"],
+                "workdoe_email_code",
+            )
+            self.assertEqual(
+                wrangler["vars"]["WORKDOE_LOGIN_MODE"],
                 "same_domain_email_code",
             )
-            self.assertEqual(
-                wrangler["vars"]["CLERK_FRONTEND_API_URL"],
-                "https://workdoe.com/__clerk",
-            )
-            self.assertEqual(wrangler["vars"]["CLERK_PROXY_URL"], "https://workdoe.com/__clerk")
-            self.assertEqual(wrangler["vars"]["CLERK_FAPI"], "https://frontend-api.clerk.dev")
             self.assertEqual(wrangler["vars"]["WORKDOE_EMAIL_FROM"], "no-reply@workdoe.com")
             self.assertEqual(wrangler["vars"]["WORKDOE_ADMIN_EMAIL"], "admin@workdoe.com")
             self.assertEqual(
@@ -654,10 +644,6 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 ],
             )
             required_env_names = {
-                "CLERK_PUBLISHABLE_KEY",
-                "CLERK_SECRET_KEY",
-                "CLERK_WEBHOOK_SECRET",
-                "CLERK_JWT_KEY",
                 "WORKDOE_SECRET_KEY",
                 "WORKDOE_TURNSTILE_SITE_KEY",
                 "WORKDOE_TURNSTILE_SECRET_KEY",
@@ -667,9 +653,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertTrue(wrangler["observability"]["enabled"])
 
             dev_vars_example = dev_vars_example_path.read_text(encoding="utf-8")
-            self.assertIn("CLERK_FRONTEND_API_URL=https://workdoe.com/__clerk", dev_vars_example)
-            self.assertIn("CLERK_PROXY_URL=https://workdoe.com/__clerk", dev_vars_example)
-            self.assertIn("CLERK_FAPI=https://frontend-api.clerk.dev", dev_vars_example)
+            self.assertIn("WORKDOE_AUTH_PROVIDER=workdoe_email_code", dev_vars_example)
+            self.assertIn("WORKDOE_LOGIN_MODE=same_domain_email_code", dev_vars_example)
             for env_name in required_env_names:
                 self.assertIn(f"{env_name}=replace-me", dev_vars_example)
 
@@ -735,10 +720,6 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             preview_database_id,
         )
         self.assertEqual(set(wrangler["secrets"]["required"]), {
-            "CLERK_PUBLISHABLE_KEY",
-            "CLERK_SECRET_KEY",
-            "CLERK_WEBHOOK_SECRET",
-            "CLERK_JWT_KEY",
             "WORKDOE_SECRET_KEY",
             "WORKDOE_TURNSTILE_SITE_KEY",
             "WORKDOE_TURNSTILE_SECRET_KEY",
@@ -754,17 +735,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(payload["service"], "workdoe")
         self.assertEqual(payload["domain"], "workdoe.com")
         names = [step["name"] for step in payload["steps"]]
-        self.assertIn("create-d1-production", names)
-        self.assertIn("create-d1-preview", names)
-        self.assertIn("apply-d1-ids", names)
+        self.assertNotIn("create-d1-production", names)
+        self.assertNotIn("create-d1-preview", names)
+        self.assertNotIn("apply-d1-ids", names)
         self.assertIn("create-r2-media-bucket", names)
         self.assertIn("create-email-queue", names)
         self.assertIn("create-media-review-queue", names)
         self.assertIn("capture-secret-list", names)
-        d1_step = next(step for step in payload["steps"] if step["name"] == "create-d1-production")
-        self.assertIn("wrangler", Path(d1_step["command"][0]).name.lower())
-        self.assertEqual(d1_step["command"][1:], ["d1", "create", "workdoe"])
-        self.assertTrue(d1_step["writes"].endswith("workdoe-d1.local.txt"))
         secret_step = next(step for step in payload["steps"] if step["name"] == "capture-secret-list")
         self.assertIn("cloudflare_secret_evidence.py", " ".join(secret_step["command"]))
         self.assertIn("--execute", secret_step["command"])
@@ -996,6 +973,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertTrue(dry_run["dry_run"])
             self.assertFalse(dry_run["executes_commands"])
             self.assertFalse(output_path.exists())
+            self.assertEqual(
+                dry_run["command"][-4:],
+                ["secret", "list", "--format", "json"],
+            )
 
             complete_payload = {
                 "result": [
@@ -1041,7 +1022,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             finally:
                 module.run_external = original_run_external
             self.assertFalse(missing["ok"])
-            self.assertIn("CLERK_JWT_KEY", missing["missing_secret_names"])
+            self.assertIn("WORKDOE_SECRET_KEY", missing["missing_secret_names"])
 
     def test_cloudflare_secret_evidence_requires_execute_confirmation(self):
         module = load_secret_evidence_script()
@@ -1076,7 +1057,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("CLOUDFLARE_API_TOKEN is required", payload["error"])
         self.assertIn("secret-name evidence", payload["error"])
 
-    def test_cloudflare_release_evidence_validates_secret_and_clerk_proofs_together(self):
+    def test_cloudflare_release_evidence_validates_secret_names_for_native_auth(self):
         module = load_release_evidence_script()
         readiness = load_readiness_script()
         with tempfile.TemporaryDirectory() as tmp:
@@ -1112,7 +1093,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
             self.assertTrue(result["ok"], result)
             self.assertIn("Sanitized Cloudflare secret-name evidence is valid", result["checks"])
-            self.assertIn("Clerk same-domain proxy proof is valid", result["checks"])
+            self.assertIn(
+                "Legacy Clerk proof is present but not required by native email-code auth",
+                result["checks"],
+            )
 
             secret_path.write_text(
                 json.dumps(
@@ -1141,13 +1125,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(payload["service"], "workdoe")
         self.assertEqual(payload["domain"], "workdoe.com")
         self.assertFalse(payload["ready_to_deploy"])
-        self.assertIn(
+        self.assertNotIn(
             "D1 database_id must be replaced with the real Cloudflare UUID.",
-            payload["strict_blockers"],
-        )
-        self.assertIn(
-            "Clerk proxy proof JSON is missing or invalid: "
-            + str(ROOT / "clerk-proxy-proof.local.json"),
             payload["strict_blockers"],
         )
         self.assertIn(
@@ -1211,12 +1190,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertIn("Strict production readiness failed", payload["error"])
         self.assertIn(
-            "D1 database_id must be replaced with the real Cloudflare UUID.",
-            payload["blockers"],
-        )
-        self.assertIn(
-            "Clerk proxy proof JSON is missing or invalid: "
-            + str(ROOT / "clerk-proxy-proof.local.json"),
+            "Cloudflare secret evidence must be sanitized with contains_values=false. Run `python scripts\\cloudflare_secret_evidence.py --execute --yes`.",
             payload["blockers"],
         )
 
@@ -1657,7 +1631,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             },
             from_email="no-reply@workdoe.com",
         )
-        self.assertEqual(reminder["to"]["email"], "client@example.com")
+        self.assertEqual(reminder["to"], "client@example.com")
         self.assertEqual(reminder["from"]["email"], "no-reply@workdoe.com")
         self.assertIn("Mini bid waiting", reminder["subject"])
         self.assertIn("&lt;Paint lobby&gt;", reminder["html"])
@@ -1673,7 +1647,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "expires_minutes": "10",
             }
         )
-        self.assertEqual(login_code["to"]["email"], "contractor@example.com")
+        self.assertEqual(login_code["to"], "contractor@example.com")
         self.assertIn("Workdoe sign-in code", login_code["subject"])
         self.assertIn("123456", login_code["text"])
         self.assertIn("find work", login_code["html"])
@@ -1704,7 +1678,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             },
             admin_email="admin@workdoe.com",
         )
-        self.assertEqual(digest["to"]["email"], "admin@workdoe.com")
+        self.assertEqual(digest["to"], "admin@workdoe.com")
         self.assertIn("Open reports: 2", digest["text"])
         self.assertIn("Hidden messages", digest["html"])
 
@@ -3698,12 +3672,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         result = module.run_preflight(ROOT)
         self.assertTrue(result.ok, result.errors)
         self.assertIn("Wrangler enables Python Workers", result.checks)
-        self.assertIn("Wrangler keeps same-domain Clerk OTP mode", result.checks)
-        self.assertIn("Wrangler configures Workdoe Clerk proxy Frontend API URL", result.checks)
-        self.assertIn("Wrangler configures Clerk proxy URL", result.checks)
-        self.assertIn("Wrangler configures Clerk Frontend API proxy target", result.checks)
+        self.assertIn("Wrangler keeps native same-domain OTP mode", result.checks)
         self.assertIn(
-            "Wrangler requires Clerk, Turnstile, and Workdoe secrets",
+            "Wrangler requires Workdoe and Turnstile secrets",
             result.checks,
         )
         self.assertIn("Wrangler keeps required secret names out of vars", result.checks)
@@ -3851,36 +3822,25 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             result.checks,
         )
         self.assertIn("Clerk webhook signature helper compiles", result.checks)
-        self.assertIn(
+        self.assertNotIn(
             "Wrangler D1 database_id is still the placeholder UUID.",
-            result.warnings,
-        )
-        self.assertIn(
-            "Wrangler D1 preview_database_id is still the placeholder UUID.",
             result.warnings,
         )
 
     def test_cloudflare_preflight_strict_blocks_placeholder_resource_ids(self):
         module = load_preflight_script()
         result = module.run_preflight(ROOT, strict_production=True)
-        self.assertFalse(result.ok)
-        self.assertIn(
-            "Wrangler D1 database_id is still the placeholder UUID.",
-            result.errors,
-        )
+        self.assertTrue(result.ok, result.errors)
 
     def test_cloudflare_readiness_doctor_separates_local_and_production_readiness(self):
         module = load_readiness_script()
         local = module.run_readiness(ROOT)
         self.assertTrue(local.ready, local.blockers)
         self.assertIn("Wrangler config is present", local.checks)
-        self.assertIn("Same-domain Clerk email-code mode is configured", local.checks)
-        self.assertIn("Clerk Frontend API URL uses Workdoe same-origin proxy", local.checks)
-        self.assertIn("Clerk proxy URL matches the Workdoe Frontend API URL", local.checks)
-        self.assertIn("Clerk proxy target is the official Frontend API", local.checks)
-        self.assertIn("Worker has same-domain Clerk entry shell", local.checks)
-        self.assertIn("Worker has Workdoe Clerk Frontend API proxy", local.checks)
-        self.assertIn("Worker sets Clerk proxy headers", local.checks)
+        self.assertIn("Same-domain Workdoe email-code mode is configured", local.checks)
+        self.assertIn("Worker has email-code request endpoint", local.checks)
+        self.assertIn("Worker has email-code verification endpoint", local.checks)
+        self.assertIn("Worker issues protected session cookies", local.checks)
         self.assertIn("Worker has authenticated app page shell", local.checks)
         self.assertIn("Worker has same-domain contractor profile page shell", local.checks)
         self.assertIn("Worker has same-domain message page shell", local.checks)
@@ -3902,19 +3862,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Worker has private R2 upload route", local.checks)
         self.assertIn("Worker has private R2 serving route", local.checks)
         self.assertIn("Cloudflare secret presence was not checked; pass --secret-list-json for deploy proof.", local.warnings)
-        self.assertIn(
-            "Clerk same-domain proxy proof was not checked; pass --clerk-proxy-proof-json for deploy proof.",
-            local.warnings,
-        )
-        self.assertIn("wrangler secret put CLERK_SECRET_KEY", local.next_steps)
-        self.assertIn(
-            "python ..\\scripts\\cloudflare_clerk_proxy_proof.py --confirm --output ..\\clerk-proxy-proof.local.json",
-            local.next_steps,
-        )
-        self.assertIn(
-            "python ..\\scripts\\cloudflare_release_evidence.py --json --secret-list-json ..\\cloudflare-secret-list.local.json --clerk-proxy-proof-json ..\\clerk-proxy-proof.local.json",
-            local.next_steps,
-        )
+        self.assertIn("wrangler secret put WORKDOE_SECRET_KEY", local.next_steps)
 
         strict = module.run_readiness(ROOT, strict_production=True)
         self.assertFalse(strict.ready)
@@ -3922,12 +3870,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "Cloudflare secret presence is unverified. Run `python scripts\\cloudflare_secret_evidence.py --execute --yes` and pass --secret-list-json.",
             strict.blockers,
         )
-        self.assertIn(
+        self.assertNotIn(
             "Wrangler D1 database_id is still the placeholder UUID.",
-            strict.blockers,
-        )
-        self.assertIn(
-            "Clerk same-domain proxy proof is unverified. Confirm Clerk Domains uses https://workdoe.com/__clerk and pass --clerk-proxy-proof-json.",
             strict.blockers,
         )
 
@@ -3949,7 +3893,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 )
                 + "\nCLERK_FRONTEND_API_URL=https://workdoe.com/__clerk"
                 + "\nCLERK_PROXY_URL=https://workdoe.com/__clerk"
-                + "\nCLERK_FAPI=https://frontend-api.clerk.dev",
+                + "\nCLERK_FAPI=https://frontend-api.clerk.dev"
+                + "\nWORKDOE_AUTH_PROVIDER=workdoe_email_code"
+                + "\nWORKDOE_LOGIN_MODE=same_domain_email_code",
                 encoding="utf-8",
             )
             secret_list_path = tmp_path / "secret-list.json"
@@ -3983,12 +3929,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertTrue(result.ready, result.blockers)
             self.assertIn("Provided env file contains all required auth config names", result.checks)
             self.assertIn("Provided env file does not use placeholder auth config values", result.checks)
-            self.assertIn("Provided env file uses Workdoe same-origin Clerk proxy", result.checks)
-            self.assertIn("Provided env file Clerk proxy URL matches Frontend API URL", result.checks)
-            self.assertIn("Provided env file Clerk proxy target is official", result.checks)
             self.assertIn("Cloudflare secret list contains every required secret name", result.checks)
-            self.assertIn("Clerk same-domain proxy is confirmed in Clerk Domains", result.checks)
-            self.assertEqual(module.clerk_proxy_proof_error(proxy_proof_path), "")
+            self.assertIn(
+                "Clerk proxy proof was supplied but native Workdoe email-code auth does not use it.",
+                result.warnings,
+            )
 
             strict_with_sanitized_evidence = module.run_readiness(
                 ROOT,
@@ -4035,10 +3980,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 secret_list_json=secret_list_path,
                 clerk_proxy_proof_json=proxy_proof_path,
             )
-            self.assertFalse(bad_proxy_proof.ready)
+            self.assertTrue(bad_proxy_proof.ready, bad_proxy_proof.blockers)
             self.assertIn(
-                "Clerk proxy proof must use https://workdoe.com/__clerk.",
-                bad_proxy_proof.blockers,
+                "Clerk proxy proof was supplied but native Workdoe email-code auth does not use it.",
+                bad_proxy_proof.warnings,
             )
 
             proxy_proof_path.write_text("{not-json", encoding="utf-8")
@@ -4058,7 +4003,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            env_path.write_text("CLERK_SECRET_KEY=replace-me\n", encoding="utf-8")
+            env_path.write_text("WORKDOE_SECRET_KEY=replace-me\n", encoding="utf-8")
             missing = module.run_readiness(
                 ROOT,
                 env_file=env_path,
@@ -4080,7 +4025,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 )
                 + "\nCLERK_FRONTEND_API_URL=https://evilworkdoe.com"
                 + "\nCLERK_PROXY_URL=https://evilworkdoe.com"
-                + "\nCLERK_FAPI=https://frontend-api.clerk.dev",
+                + "\nCLERK_FAPI=https://frontend-api.clerk.dev"
+                + "\nWORKDOE_AUTH_PROVIDER=workdoe_email_code"
+                + "\nWORKDOE_LOGIN_MODE=same_domain_email_code",
                 encoding="utf-8",
             )
             off_domain = module.run_readiness(
@@ -4089,10 +4036,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 secret_list_json=secret_list_path,
                 clerk_proxy_proof_json=proxy_proof_path,
             )
-            self.assertFalse(off_domain.ready)
+            self.assertTrue(off_domain.ready, off_domain.blockers)
             self.assertIn(
-                "Provided env file CLERK_FRONTEND_API_URL must be an https Workdoe /__clerk proxy URL.",
-                off_domain.blockers,
+                "Clerk proxy proof was supplied but native Workdoe email-code auth does not use it.",
+                off_domain.warnings,
             )
 
     def test_cloudflare_launch_plan_prints_safe_operator_sequence(self):
@@ -4111,7 +4058,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         phases = {step["phase"]: step for step in plan["steps"]}
         self.assertEqual(phases["local-artifacts"]["status"], "ready")
         self.assertEqual(phases["cloudflare-token"]["status"], "pending")
-        self.assertEqual(phases["cloudflare-resources"]["status"], "blocked")
+        self.assertEqual(phases["cloudflare-resources"]["status"], "ready")
         self.assertEqual(phases["identity-and-secrets"]["status"], "blocked")
         self.assertEqual(phases["clerk-domain-proof"]["status"], "pending")
         self.assertEqual(phases["deploy-gate"]["status"], "pending")
@@ -4264,10 +4211,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('test "${{ github.ref }}" = "refs/heads/main"', workflow)
         self.assertIn("github.ref == 'refs/heads/main'", workflow)
         self.assertIn('test "${{ inputs.deploy }}" = "DEPLOY"', workflow)
-        self.assertIn(
-            'test "${{ inputs.clerk_proxy_url }}" = "https://workdoe.com/__clerk"',
-            workflow,
-        )
+        self.assertNotIn("inputs.clerk_proxy_url", workflow)
         self.assertIn("Check Cloudflare credentials are configured", workflow)
         self.assertIn('test -n "$CLOUDFLARE_API_TOKEN"', workflow)
         self.assertIn("Print guarded deploy plan", workflow)
@@ -4436,7 +4380,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(plan["command"][0:4], ["gh", "workflow", "run", "cloudflare-deploy.yml"])
         self.assertIn("--ref", plan["command"])
         self.assertIn("deploy=DEPLOY", plan["command"])
-        self.assertIn("clerk_proxy_url=https://workdoe.com/__clerk", plan["command"])
+        self.assertNotIn("clerk_proxy_url=https://workdoe.com/__clerk", plan["command"])
         self.assertFalse(git_blocked_plan["ready_to_dispatch"])
         self.assertIn("Local branch must be main before dispatch.", git_blocked_plan["blockers"])
         self.assertIn("Local worktree must be clean before dispatch.", git_blocked_plan["blockers"])
@@ -5084,11 +5028,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(phases["local-artifacts"]["status"], "ready")
         self.assertEqual(phases["local-tooling"]["status"], "ready")
         self.assertEqual(phases["cloudflare-token"]["status"], "pending")
-        self.assertEqual(phases["cloudflare-resources"]["status"], "blocked")
+        self.assertEqual(phases["cloudflare-resources"]["status"], "ready")
         self.assertEqual(phases["identity-and-secrets"]["status"], "blocked")
         self.assertEqual(phases["clerk-domain-proof"]["status"], "pending")
         self.assertEqual(phases["release-evidence"]["status"], "pending")
-        self.assertIn(
+        self.assertNotIn(
             "D1 database_id must be replaced with the real Cloudflare UUID.",
             status["blockers"],
         )
@@ -5172,8 +5116,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(phases["identity-and-secrets"]["status"], "ready")
         self.assertEqual(phases["clerk-domain-proof"]["status"], "ready")
         self.assertEqual(phases["release-evidence"]["status"], "ready")
-        self.assertEqual(status["current_phase"], "cloudflare-resources")
-        self.assertFalse(status["ready_to_deploy"])
+        self.assertEqual(status["current_phase"], "deploy")
+        self.assertTrue(status["ready_to_deploy"])
 
     def test_cloudflare_launch_status_keeps_raw_secret_evidence_unready(self):
         module = load_launch_status_script()

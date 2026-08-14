@@ -12,10 +12,10 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "fe8c22a8-1585-46dd-916e-2913c60d139a",
       "database_name": "workdoe",
       "migrations_dir": "d1/migrations",
-      "preview_database_id": "00000000-0000-0000-0000-000000000000"
+      "preview_database_id": "ba816597-68ba-40a9-830e-751f44e4f54b"
     }
   ],
   "main": "worker/entry.py",
@@ -70,10 +70,6 @@
   ],
   "secrets": {
     "required": [
-      "CLERK_JWT_KEY",
-      "CLERK_PUBLISHABLE_KEY",
-      "CLERK_SECRET_KEY",
-      "CLERK_WEBHOOK_SECRET",
       "WORKDOE_SECRET_KEY",
       "WORKDOE_TURNSTILE_SECRET_KEY",
       "WORKDOE_TURNSTILE_SITE_KEY"
@@ -95,15 +91,12 @@
     ]
   },
   "vars": {
-    "CLERK_FAPI": "https://frontend-api.clerk.dev",
-    "CLERK_FRONTEND_API_URL": "https://workdoe.com/__clerk",
-    "CLERK_PROXY_URL": "https://workdoe.com/__clerk",
     "WORKDOE_ADMIN_EMAIL": "admin@workdoe.com",
-    "WORKDOE_AUTH_PROVIDER": "clerk",
-    "WORKDOE_CLERK_LOGIN_MODE": "same_domain_email_code",
+    "WORKDOE_AUTH_PROVIDER": "workdoe_email_code",
     "WORKDOE_DOMAIN": "workdoe.com",
     "WORKDOE_EMAIL_FROM": "no-reply@workdoe.com",
     "WORKDOE_ENV": "production",
+    "WORKDOE_LOGIN_MODE": "same_domain_email_code",
     "WORKDOE_PUBLIC_URL": "https://workdoe.com"
   },
   "workers_dev": false

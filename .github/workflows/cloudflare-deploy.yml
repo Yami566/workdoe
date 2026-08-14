@@ -14,10 +14,6 @@ on:
         description: Type DEPLOY to run the production Cloudflare deployment.
         required: true
         type: string
-      clerk_proxy_url:
-        description: Confirm the Clerk Domains proxy URL.
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -41,7 +37,6 @@ jobs:
         run: |
           test "${{ github.ref }}" = "refs/heads/main"
           test "${{ inputs.deploy }}" = "DEPLOY"
-          test "${{ inputs.clerk_proxy_url }}" = "https://workdoe.com/__clerk"
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -106,8 +101,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main' &&
-      inputs.deploy == 'DEPLOY' &&
-      inputs.clerk_proxy_url == 'https://workdoe.com/__clerk'
+      inputs.deploy == 'DEPLOY'
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -152,9 +146,6 @@ jobs:
 
       - name: Capture sanitized Worker secret names
         run: npm run cf:secrets:evidence
-
-      - name: Confirm Clerk same-domain proxy
-        run: python scripts/cloudflare_clerk_proxy_proof.py --confirm --output clerk-proxy-proof.local.json --proxy-url "${{ inputs.clerk_proxy_url }}" --checked-by github-actions --json
 
       - name: Validate release evidence
         run: npm run cf:release:evidence
