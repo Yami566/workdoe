@@ -252,13 +252,12 @@ def run_readiness(
             else:
                 warnings.append(f"D1 {id_field} is still a placeholder.")
 
-        routes = {route.get("pattern") for route in wrangler.get("routes", []) if route.get("custom_domain")}
         add_requirement(
-            routes == {"workdoe.com", "www.workdoe.com"},
+            not wrangler.get("routes"),
             checks,
             blockers,
-            "Workdoe custom domains are configured",
-            "Wrangler routes must include workdoe.com and www.workdoe.com as custom domains.",
+            "Routine deploys preserve preconfigured Workdoe custom domains",
+            "Wrangler routes must stay unset after the one-time Workdoe custom-domain attachment.",
         )
         add_requirement(
             wrangler.get("workers_dev") is False,

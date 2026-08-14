@@ -58,16 +58,6 @@
       "bucket_name": "workdoe-media"
     }
   ],
-  "routes": [
-    {
-      "custom_domain": true,
-      "pattern": "workdoe.com"
-    },
-    {
-      "custom_domain": true,
-      "pattern": "www.workdoe.com"
-    }
-  ],
   "secrets": {
     "required": [
       "WORKDOE_SECRET_KEY",

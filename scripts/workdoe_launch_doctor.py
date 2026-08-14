@@ -68,7 +68,7 @@ def render_dns_summary(diagnostic: dict) -> str:
         apex_addresses = ", ".join(dns_check_values(diagnostic, "apex-resolution"))
         www_addresses = ", ".join(dns_check_values(diagnostic, "www-resolution"))
         return (
-            "DNS delegation, apex, www, and checked-in Worker custom-domain routes "
+            "DNS delegation, apex, www, and the Worker custom-domain policy "
             f"are ready. Nameservers: {nameservers}; apex: {apex_addresses}; www: {www_addresses}."
         )
     pending = [

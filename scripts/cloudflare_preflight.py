@@ -280,14 +280,12 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             checks,
             "Wrangler uses the bundled Python Workers SDK",
         )
-        routes = wrangler.get("routes", [])
-        route_patterns = {route.get("pattern") for route in routes if route.get("custom_domain")}
         require(
-            route_patterns == {"workdoe.com", "www.workdoe.com"},
+            not wrangler.get("routes"),
             errors,
-            "Wrangler custom domains must include workdoe.com and www.workdoe.com.",
+            "Routine Wrangler deploys must not mutate the preconfigured Workdoe custom domains.",
             checks,
-            "Wrangler routes both Workdoe domains",
+            "Wrangler preserves preconfigured Workdoe custom domains",
         )
         d1_binding = (wrangler.get("d1_databases") or [{}])[0]
         require(
