@@ -273,6 +273,17 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             checks,
             "Wrangler enables Python Workers",
         )
+        require(
+            "disable_python_external_sdk"
+            in set(wrangler.get("compatibility_flags", [])),
+            errors,
+            (
+                "Wrangler config must use the bundled Python Workers SDK until "
+                "Workdoe adopts the pywrangler package toolchain."
+            ),
+            checks,
+            "Wrangler uses the bundled Python Workers SDK",
+        )
         routes = wrangler.get("routes", [])
         route_patterns = {route.get("pattern") for route in routes if route.get("custom_domain")}
         require(

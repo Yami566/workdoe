@@ -112,7 +112,8 @@
     "worker": {
       "compatibility_date": "2026-08-03",
       "compatibility_flags": [
-        "python_workers"
+        "python_workers",
+        "disable_python_external_sdk"
       ],
       "config": "cloudflare/wrangler.jsonc",
       "dev_vars_example": "cloudflare/.dev.vars.example",

@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - master
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       deploy:
@@ -18,14 +21,20 @@ on:
 
 permissions:
   contents: read
+  deployments: write
+
+concurrency:
+  group: workdoe-cloudflare-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
     name: Verify Workdoe Release Gates
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Validate manual deploy confirmation
         if: github.event_name == 'workflow_dispatch'
@@ -35,12 +44,12 @@ jobs:
           test "${{ inputs.clerk_proxy_url }}" = "https://workdoe.com/__clerk"
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
 
       - name: Set up Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
           cache: npm
@@ -57,6 +66,32 @@ jobs:
       - name: Run Cloudflare preflight
         run: npm run cf:preflight
 
+      - name: Validate Cloudflare Worker bundle
+        run: npx wrangler deploy --dry-run --config cloudflare/wrangler.jsonc
+
+      - name: Smoke test Cloudflare Worker runtime
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations apply workdoe --local --config cloudflare/wrangler.jsonc
+          npx wrangler dev --local --port 8787 --config cloudflare/wrangler.jsonc > "$RUNNER_TEMP/workdoe-wrangler.log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8787/health > /dev/null; then
+              break
+            fi
+            if ! kill -0 "$worker_pid" 2>/dev/null; then
+              cat "$RUNNER_TEMP/workdoe-wrangler.log"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          curl --fail --silent http://127.0.0.1:8787/health > /dev/null
+          curl --fail --silent http://127.0.0.1:8787/ > /dev/null
+          curl --fail --silent 'http://127.0.0.1:8787/api/jobs/open?limit=1' > /dev/null
+
       - name: Print launch status
         run: npm run cf:status
 
@@ -64,7 +99,10 @@ jobs:
     name: Deploy Workdoe To Cloudflare
     needs: verify
     runs-on: ubuntu-latest
-    environment: production
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://workdoe.com
     if: >-
       github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main' &&
@@ -75,15 +113,28 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify current main release candidate
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1
+          current_main="$(git rev-parse origin/main)"
+          if [ "$GITHUB_SHA" != "$current_main" ]; then
+            echo "::error title=Stale release candidate::This run targets $GITHUB_SHA, but origin/main is $current_main. Start a new run from current main."
+            exit 1
+          fi
+          echo "Release candidate is current main: $GITHUB_SHA"
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
 
       - name: Set up Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
           cache: npm
