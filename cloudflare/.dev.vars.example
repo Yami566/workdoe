@@ -1,17 +1,10 @@
 # Copy to .dev.vars for local Wrangler previews.
 # Keep real production values in Cloudflare secrets, not this file.
 WORKDOE_ENV=production
-WORKDOE_AUTH_PROVIDER=clerk
+WORKDOE_AUTH_PROVIDER=workdoe_email_code
 WORKDOE_DOMAIN=workdoe.com
 WORKDOE_PUBLIC_URL=https://workdoe.com
-WORKDOE_CLERK_LOGIN_MODE=same_domain_email_code
-CLERK_FRONTEND_API_URL=https://workdoe.com/__clerk
-CLERK_PROXY_URL=https://workdoe.com/__clerk
-CLERK_FAPI=https://frontend-api.clerk.dev
-CLERK_JWT_KEY=replace-me
-CLERK_PUBLISHABLE_KEY=replace-me
-CLERK_SECRET_KEY=replace-me
-CLERK_WEBHOOK_SECRET=replace-me
+WORKDOE_LOGIN_MODE=same_domain_email_code
 WORKDOE_SECRET_KEY=replace-me
 WORKDOE_TURNSTILE_SECRET_KEY=replace-me
 WORKDOE_TURNSTILE_SITE_KEY=replace-me

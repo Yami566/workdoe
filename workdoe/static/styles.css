@@ -1164,6 +1164,21 @@ button.compact {
   min-height: 1.5em;
 }
 
+.email-code-form,
+.email-code-form [data-request-step],
+.email-code-verify {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.email-code-form [hidden] {
+  display: none;
+}
+
+.email-code-form[aria-busy="true"] {
+  opacity: 0.78;
+}
+
 .verify-checklist {
   margin: 10px 0 0;
 }

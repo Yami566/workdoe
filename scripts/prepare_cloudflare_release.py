@@ -12,9 +12,6 @@ D1_MIGRATION_RELATIVE_PATH = Path("cloudflare/d1/migrations/0001_initial.sql")
 MANIFEST_RELATIVE_PATH = Path("cloudflare/workdoe-cloudflare-manifest.json")
 WRANGLER_RELATIVE_PATH = Path("cloudflare/wrangler.jsonc")
 DEV_VARS_EXAMPLE_RELATIVE_PATH = Path("cloudflare/.dev.vars.example")
-DEFAULT_CLERK_FAPI = "https://frontend-api.clerk.dev"
-DEFAULT_CLERK_PROXY_URL = "https://workdoe.com/__clerk"
-DEFAULT_CLERK_FRONTEND_API_URL = DEFAULT_CLERK_PROXY_URL
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 D1_ID_FIELDS = ("database_id", "preview_database_id")
 UUID_RE = re.compile(
@@ -30,10 +27,6 @@ AUTH_SUBJECT_INDEX_SQL = (
     "WHERE external_subject IS NOT NULL;"
 )
 REQUIRED_WORKER_SECRETS = [
-    "CLERK_JWT_KEY",
-    "CLERK_PUBLISHABLE_KEY",
-    "CLERK_SECRET_KEY",
-    "CLERK_WEBHOOK_SECRET",
     "WORKDOE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SITE_KEY",
@@ -103,25 +96,18 @@ def build_manifest(migration_sql: str) -> dict:
                 },
             },
             "identity": {
-                "service": "Clerk",
+                "service": "Cloudflare D1 and Email Service",
                 "experience": "same-domain in-page sign-in on workdoe.com",
                 "primary_strategy": "email_code_otp",
-                "fallback_strategy": "local_email_code",
                 "required_env": {
-                    "WORKDOE_AUTH_PROVIDER": "clerk",
-                    "CLERK_FRONTEND_API_URL": DEFAULT_CLERK_FRONTEND_API_URL,
-                    "CLERK_PROXY_URL": DEFAULT_CLERK_PROXY_URL,
-                    "CLERK_FAPI": DEFAULT_CLERK_FAPI,
-                    "CLERK_PUBLISHABLE_KEY": "set as a secret or public deployment env",
-                    "CLERK_SECRET_KEY": "set as a secret",
-                    "CLERK_WEBHOOK_SECRET": "set as a secret",
-                    "CLERK_JWT_KEY": "set as a secret for networkless verification",
+                    "WORKDOE_AUTH_PROVIDER": "workdoe_email_code",
+                    "WORKDOE_SECRET_KEY": "set as a secret",
                 },
                 "domain_rules": [
-                    "Mount Clerk sign-in on /login and /start; do not redirect users to hosted Clerk pages.",
-                    "Proxy Clerk Frontend API traffic through https://workdoe.com/__clerk when using the Workdoe Worker.",
-                    "Store Clerk user IDs in users.external_subject with users.auth_provider = 'clerk'.",
-                    "Use Clerk webhooks to sync email, suspension, and deletion state into D1.",
+                    "Mount email-code sign-in on /login and /start without redirecting off workdoe.com.",
+                    "Store only HMAC-protected code hashes in D1 and expire each code after ten minutes.",
+                    "Store signed sessions in Secure, HttpOnly, SameSite=Lax cookies.",
+                    "Use Cloudflare Email Service for one-time code delivery.",
                 ],
             },
             "database": {
@@ -209,7 +195,7 @@ def build_manifest(migration_sql: str) -> dict:
             "Job and contractor photos stay private behind role and match checks.",
             "Exact client contact details are not exposed on the public lead board.",
             "Client, contractor, and admin role data stays compartmentalized.",
-            "Authentication can be delegated to Clerk, but Workdoe remains the source of truth for roles, job permissions, moderation, and match visibility.",
+            "Workdoe remains the source of truth for authentication, roles, job permissions, moderation, and match visibility.",
         ],
     }
 
@@ -275,15 +261,10 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
         "triggers": {"crons": crons},
         "vars": {
             "WORKDOE_ENV": "production",
-            "WORKDOE_AUTH_PROVIDER": "clerk",
+            "WORKDOE_AUTH_PROVIDER": "workdoe_email_code",
             "WORKDOE_DOMAIN": manifest["domain"],
             "WORKDOE_PUBLIC_URL": f"https://{manifest['domain']}",
-            "WORKDOE_CLERK_LOGIN_MODE": "same_domain_email_code",
-            "CLERK_FRONTEND_API_URL": targets["identity"]["required_env"][
-                "CLERK_FRONTEND_API_URL"
-            ],
-            "CLERK_PROXY_URL": targets["identity"]["required_env"]["CLERK_PROXY_URL"],
-            "CLERK_FAPI": targets["identity"]["required_env"]["CLERK_FAPI"],
+            "WORKDOE_LOGIN_MODE": "same_domain_email_code",
             "WORKDOE_EMAIL_FROM": targets["email"]["from"],
             "WORKDOE_ADMIN_EMAIL": targets["email"]["admin_digest_to"],
         },
@@ -310,21 +291,16 @@ def build_dev_vars_example(manifest: dict) -> str:
         "# Copy to .dev.vars for local Wrangler previews.",
         "# Keep real production values in Cloudflare secrets, not this file.",
         "WORKDOE_ENV=production",
-        "WORKDOE_AUTH_PROVIDER=clerk",
+        "WORKDOE_AUTH_PROVIDER=workdoe_email_code",
         "WORKDOE_DOMAIN=workdoe.com",
         "WORKDOE_PUBLIC_URL=https://workdoe.com",
-        "WORKDOE_CLERK_LOGIN_MODE=same_domain_email_code",
-        f"CLERK_FRONTEND_API_URL={DEFAULT_CLERK_FRONTEND_API_URL}",
-        f"CLERK_PROXY_URL={DEFAULT_CLERK_PROXY_URL}",
-        f"CLERK_FAPI={DEFAULT_CLERK_FAPI}",
+        "WORKDOE_LOGIN_MODE=same_domain_email_code",
     ]
     for key in sorted(required_env):
         if key in {
             "WORKDOE_ENV",
             "WORKDOE_AUTH_PROVIDER",
-            "CLERK_FRONTEND_API_URL",
-            "CLERK_PROXY_URL",
-            "CLERK_FAPI",
+            "WORKDOE_LOGIN_MODE",
         }:
             continue
         lines.append(f"{key}=replace-me")

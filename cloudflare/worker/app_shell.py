@@ -189,6 +189,8 @@ def nav_links(user, active_path: str) -> str:
         links = [("/leads", "Leads"), ("/contractor/dashboard", "Bids"), ("/contractor/profile", "Profile"), ("/messages", "Messages")]
     elif role == "admin":
         links = [("/admin", "Admin")]
+    if links:
+        links.append(("/logout", "Sign out"))
     return "\n".join(
         f'<a href="{escape(href)}"{" aria-current=\"page\"" if href == active_path else ""}>{escape(label)}</a>'
         for href, label in links

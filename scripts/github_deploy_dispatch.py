@@ -109,8 +109,6 @@ def dispatch_command(
         ref,
         "-f",
         "deploy=DEPLOY",
-        "-f",
-        f"clerk_proxy_url={clerk_proxy_url}",
     ]
 
 
@@ -148,7 +146,6 @@ def build_dispatch_plan(
         "repository": repository,
         "workflow": workflow,
         "ref": ref,
-        "clerk_proxy_url": clerk_proxy_url,
         "command": command,
         "command_text": command_string(command),
         "git": asdict(git_state),

@@ -79,25 +79,18 @@
     },
     "identity": {
       "domain_rules": [
-        "Mount Clerk sign-in on /login and /start; do not redirect users to hosted Clerk pages.",
-        "Proxy Clerk Frontend API traffic through https://workdoe.com/__clerk when using the Workdoe Worker.",
-        "Store Clerk user IDs in users.external_subject with users.auth_provider = 'clerk'.",
-        "Use Clerk webhooks to sync email, suspension, and deletion state into D1."
+        "Mount email-code sign-in on /login and /start without redirecting off workdoe.com.",
+        "Store only HMAC-protected code hashes in D1 and expire each code after ten minutes.",
+        "Store signed sessions in Secure, HttpOnly, SameSite=Lax cookies.",
+        "Use Cloudflare Email Service for one-time code delivery."
       ],
       "experience": "same-domain in-page sign-in on workdoe.com",
-      "fallback_strategy": "local_email_code",
       "primary_strategy": "email_code_otp",
       "required_env": {
-        "CLERK_FAPI": "https://frontend-api.clerk.dev",
-        "CLERK_FRONTEND_API_URL": "https://workdoe.com/__clerk",
-        "CLERK_JWT_KEY": "set as a secret for networkless verification",
-        "CLERK_PROXY_URL": "https://workdoe.com/__clerk",
-        "CLERK_PUBLISHABLE_KEY": "set as a secret or public deployment env",
-        "CLERK_SECRET_KEY": "set as a secret",
-        "CLERK_WEBHOOK_SECRET": "set as a secret",
-        "WORKDOE_AUTH_PROVIDER": "clerk"
+        "WORKDOE_AUTH_PROVIDER": "workdoe_email_code",
+        "WORKDOE_SECRET_KEY": "set as a secret"
       },
-      "service": "Clerk"
+      "service": "Cloudflare D1 and Email Service"
     },
     "media": {
       "binding": "MEDIA",
@@ -127,7 +120,7 @@
     "Job and contractor photos stay private behind role and match checks.",
     "Exact client contact details are not exposed on the public lead board.",
     "Client, contractor, and admin role data stays compartmentalized.",
-    "Authentication can be delegated to Clerk, but Workdoe remains the source of truth for roles, job permissions, moderation, and match visibility."
+    "Workdoe remains the source of truth for authentication, roles, job permissions, moderation, and match visibility."
   ],
   "source_stack": [
     "Python",

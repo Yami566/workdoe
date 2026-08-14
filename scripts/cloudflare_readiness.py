@@ -11,15 +11,11 @@ from urllib.parse import urlparse
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 REQUIRED_SECRETS = {
-    "CLERK_JWT_KEY",
-    "CLERK_PUBLISHABLE_KEY",
-    "CLERK_SECRET_KEY",
-    "CLERK_WEBHOOK_SECRET",
     "WORKDOE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SITE_KEY",
 }
-REQUIRED_PUBLIC_VARS = {"CLERK_FAPI", "CLERK_FRONTEND_API_URL", "CLERK_PROXY_URL"}
+REQUIRED_PUBLIC_VARS = {"WORKDOE_AUTH_PROVIDER", "WORKDOE_LOGIN_MODE"}
 REQUIRED_QUEUES = {
     "EMAIL_QUEUE": "workdoe-email",
     "MEDIA_QUEUE": "workdoe-media-review",
@@ -199,22 +195,16 @@ def command_steps() -> list[str]:
     return [
         "python scripts\\cloudflare_resource_bootstrap.py --json --no-secret-probe",
         "python scripts\\cloudflare_resource_bootstrap.py --execute --yes --no-secret-probe",
-        "confirm Clerk Domains uses proxy URL https://workdoe.com/__clerk",
         "cd cloudflare",
-        "wrangler secret put CLERK_PUBLISHABLE_KEY",
-        "wrangler secret put CLERK_SECRET_KEY",
-        "wrangler secret put CLERK_WEBHOOK_SECRET",
-        "wrangler secret put CLERK_JWT_KEY",
         "wrangler secret put WORKDOE_SECRET_KEY",
         "wrangler secret put WORKDOE_TURNSTILE_SITE_KEY",
         "wrangler secret put WORKDOE_TURNSTILE_SECRET_KEY",
         "python ..\\scripts\\cloudflare_secret_evidence.py --execute --yes --output ..\\cloudflare-secret-list.local.json",
-        "python ..\\scripts\\cloudflare_clerk_proxy_proof.py --confirm --output ..\\clerk-proxy-proof.local.json",
-        "python ..\\scripts\\cloudflare_release_evidence.py --json --secret-list-json ..\\cloudflare-secret-list.local.json --clerk-proxy-proof-json ..\\clerk-proxy-proof.local.json",
-        "python ..\\scripts\\cloudflare_readiness.py --strict-production --secret-list-json ..\\cloudflare-secret-list.local.json --clerk-proxy-proof-json ..\\clerk-proxy-proof.local.json",
+        "python ..\\scripts\\cloudflare_release_evidence.py --json --secret-list-json ..\\cloudflare-secret-list.local.json",
+        "python ..\\scripts\\cloudflare_readiness.py --strict-production --secret-list-json ..\\cloudflare-secret-list.local.json",
         "cd ..",
-        "python scripts\\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
-        "python scripts\\cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
+        "python scripts\\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json",
+        "python scripts\\cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json",
     ]
 
 
@@ -278,34 +268,12 @@ def run_readiness(
             "workers_dev must be false so production stays on workdoe.com.",
         )
         add_requirement(
-            vars_map.get("WORKDOE_AUTH_PROVIDER") == "clerk"
-            and vars_map.get("WORKDOE_CLERK_LOGIN_MODE") == "same_domain_email_code",
+            vars_map.get("WORKDOE_AUTH_PROVIDER") == "workdoe_email_code"
+            and vars_map.get("WORKDOE_LOGIN_MODE") == "same_domain_email_code",
             checks,
             blockers,
-            "Same-domain Clerk email-code mode is configured",
-            "WORKDOE_AUTH_PROVIDER must be clerk and WORKDOE_CLERK_LOGIN_MODE must be same_domain_email_code.",
-        )
-        add_requirement(
-            valid_workdoe_clerk_proxy_url(vars_map.get("CLERK_FRONTEND_API_URL", "")),
-            checks,
-            blockers,
-            "Clerk Frontend API URL uses Workdoe same-origin proxy",
-            "CLERK_FRONTEND_API_URL must be https://workdoe.com/__clerk or a nested Workdoe Clerk proxy URL.",
-        )
-        add_requirement(
-            vars_map.get("CLERK_PROXY_URL") == vars_map.get("CLERK_FRONTEND_API_URL")
-            and valid_workdoe_clerk_proxy_url(vars_map.get("CLERK_PROXY_URL", "")),
-            checks,
-            blockers,
-            "Clerk proxy URL matches the Workdoe Frontend API URL",
-            "CLERK_PROXY_URL must match the Workdoe same-origin Clerk proxy URL.",
-        )
-        add_requirement(
-            valid_clerk_fapi_url(vars_map.get("CLERK_FAPI", "")),
-            checks,
-            blockers,
-            "Clerk proxy target is the official Frontend API",
-            "CLERK_FAPI must be https://frontend-api.clerk.dev.",
+            "Same-domain Workdoe email-code mode is configured",
+            "WORKDOE_AUTH_PROVIDER must be workdoe_email_code and WORKDOE_LOGIN_MODE must be same_domain_email_code.",
         )
         add_requirement(
             vars_map.get("WORKDOE_PUBLIC_URL") == "https://workdoe.com"
@@ -363,7 +331,7 @@ def run_readiness(
             required == REQUIRED_SECRETS,
             checks,
             blockers,
-            "Required Clerk, Turnstile, and Workdoe secrets are declared",
+            "Required Turnstile and Workdoe secrets are declared",
             "Wrangler secrets.required must declare every required production secret.",
         )
         leaked = sorted(REQUIRED_SECRETS & set(vars_map))
@@ -378,15 +346,15 @@ def run_readiness(
             warnings.append("Confirm admin@workdoe.com is a real monitored inbox before launch.")
 
     worker_source = read_text(repo_root / "cloudflare" / "worker" / "entry.py")
-    clerk_proxy_source = read_text(repo_root / "cloudflare" / "worker" / "clerk_proxy.py")
-    worker_and_proxy_source = worker_source + "\n" + clerk_proxy_source
+    email_auth_source = read_text(repo_root / "cloudflare" / "worker" / "email_code_auth.py")
+    worker_and_proxy_source = worker_source + "\n" + email_auth_source
     for marker, ok_name, blocker in (
-        ("/api/auth/session", "Worker has Clerk session endpoint", "Worker is missing /api/auth/session."),
-        ("/api/auth/onboard", "Worker has same-domain onboarding endpoint", "Worker is missing /api/auth/onboard."),
-        ("/clerk/webhook", "Worker has Clerk webhook endpoint", "Worker is missing /clerk/webhook."),
-        ("entry_shell", "Worker has same-domain Clerk entry shell", "Worker is missing /login and /start same-domain entry handling."),
-        ("clerk_frontend_api_proxy", "Worker has Workdoe Clerk Frontend API proxy", "Worker is missing the /__clerk Frontend API proxy."),
-        ("Clerk-Proxy-Url", "Worker sets Clerk proxy headers", "Worker is missing required Clerk proxy headers."),
+        ("/api/auth/session", "Worker has session endpoint", "Worker is missing /api/auth/session."),
+        ("/api/auth/code/request", "Worker has email-code request endpoint", "Worker is missing /api/auth/code/request."),
+        ("/api/auth/code/verify", "Worker has email-code verification endpoint", "Worker is missing /api/auth/code/verify."),
+        ("session_cookie", "Worker issues protected session cookies", "Worker is missing protected session cookies."),
+        ("hash_code", "Worker protects stored sign-in codes", "Worker is missing code hashing."),
+        ("entry_shell", "Worker has same-domain entry shell", "Worker is missing /login and /start same-domain entry handling."),
         ("app_shell", "Worker has authenticated app page shell", "Worker is missing authenticated post-login app page handling."),
         ("contractor_profile_page", "Worker has same-domain contractor profile page shell", "Worker is missing same-domain contractor profile page handling."),
         ("message_thread_detail_html", "Worker has same-domain message page shell", "Worker is missing same-domain message page handling."),
@@ -432,28 +400,6 @@ def run_readiness(
             "Provided env file does not use placeholder auth config values",
             "Provided env file still has placeholder values for: " + ", ".join(placeholders),
         )
-        add_requirement(
-            valid_workdoe_clerk_proxy_url(env_values.get("CLERK_FRONTEND_API_URL", "")),
-            checks,
-            blockers,
-            "Provided env file uses Workdoe same-origin Clerk proxy",
-            "Provided env file CLERK_FRONTEND_API_URL must be an https Workdoe /__clerk proxy URL.",
-        )
-        add_requirement(
-            env_values.get("CLERK_PROXY_URL") == env_values.get("CLERK_FRONTEND_API_URL")
-            and valid_workdoe_clerk_proxy_url(env_values.get("CLERK_PROXY_URL", "")),
-            checks,
-            blockers,
-            "Provided env file Clerk proxy URL matches Frontend API URL",
-            "Provided env file CLERK_PROXY_URL must match CLERK_FRONTEND_API_URL.",
-        )
-        add_requirement(
-            valid_clerk_fapi_url(env_values.get("CLERK_FAPI", "")),
-            checks,
-            blockers,
-            "Provided env file Clerk proxy target is official",
-            "Provided env file CLERK_FAPI must be https://frontend-api.clerk.dev.",
-        )
     else:
         warnings.append("No env file was provided; local Wrangler preview secret values were not checked.")
 
@@ -483,21 +429,8 @@ def run_readiness(
     else:
         warnings.append("Cloudflare secret presence was not checked; pass --secret-list-json for deploy proof.")
 
-    proof_error = clerk_proxy_proof_error(clerk_proxy_proof_json)
     if clerk_proxy_proof_json:
-        add_requirement(
-            not proof_error,
-            checks,
-            blockers,
-            "Clerk same-domain proxy is confirmed in Clerk Domains",
-            proof_error,
-        )
-    elif strict_production:
-        blockers.append(proof_error)
-    else:
-        warnings.append(
-            "Clerk same-domain proxy proof was not checked; pass --clerk-proxy-proof-json for deploy proof."
-        )
+        warnings.append("Clerk proxy proof was supplied but native Workdoe email-code auth does not use it.")
 
     return ReadinessResult(
         ready=not blockers,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
 
 from admin_moderation import (
@@ -52,6 +52,29 @@ from clerk_webhooks import (
     verify_svix_signature,
 )
 from email_payloads import EmailPayloadError, build_email_message
+from email_code_auth import (
+    AUTH_PROVIDER as EMAIL_CODE_AUTH_PROVIDER,
+    CHALLENGE_TTL_SECONDS,
+    MAX_CODE_ATTEMPTS,
+    EmailCodeAuthError,
+    challenge_token,
+    clear_session_cookie,
+    compact_spaces as compact_auth_text,
+    generate_code,
+    hash_code,
+    hash_identifier,
+    normalize_code,
+    normalize_email,
+    normalize_intent as normalize_auth_intent,
+    role_for_intent,
+    safe_next_path,
+    session_cookie,
+    session_from_cookie,
+    session_token,
+    tokens_match,
+    valid_email,
+    verified_token,
+)
 from contractor_profiles import (
     MAX_CONTRACTOR_PROFILE_BODY_BYTES,
     ContractorProfileError,
@@ -198,6 +221,10 @@ from workers import Response, WorkerEntrypoint, fetch
 EXPIRE_CODES_CRON = "*/15 * * * *"
 STALE_MATCH_REMINDERS_CRON = "0 14 * * *"
 MODERATION_DIGEST_CRON = "0 13 * * 1-5"
+MAX_AUTH_BODY_BYTES = 8 * 1024
+AUTH_REQUEST_WINDOW_MINUTES = 15
+AUTH_REQUESTS_PER_EMAIL = 5
+AUTH_REQUESTS_PER_IP = 20
 
 
 def utc_now() -> str:
@@ -312,6 +339,72 @@ async def linked_workdoe_user(env, clerk_subject: str):
     return rows[0] if rows else None
 
 
+def native_email_code_enabled(env) -> bool:
+    return getattr(env, "WORKDOE_AUTH_PROVIDER", "") == EMAIL_CODE_AUTH_PROVIDER
+
+
+async def workdoe_user_by_id(env, user_id: int):
+    lookup = await db_run(
+        env,
+        """
+        SELECT id, email, role, display_name, company_name, status
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+        """,
+        user_id,
+    )
+    return first_row(lookup)
+
+
+async def workdoe_user_by_id_from_email(env, email: str):
+    lookup = await db_run(
+        env,
+        """
+        SELECT id, email, role, display_name, company_name, status
+        FROM users
+        WHERE email = ?
+        LIMIT 1
+        """,
+        email,
+    )
+    return first_row(lookup)
+
+
+def workdoe_user_json(user) -> dict:
+    return {
+        "id": row_value(user, "id"),
+        "role": row_value(user, "role"),
+        "display_name": row_value(user, "display_name"),
+        "company_name": row_value(user, "company_name", ""),
+        "status": row_value(user, "status"),
+    }
+
+
+def auth_redirect_for_user(user, requested_path: str | None) -> str:
+    fallback = dashboard_path_for_user(user)
+    requested = safe_next_path(requested_path, fallback=fallback)
+    role = row_value(user, "role")
+    if requested == "/dashboard":
+        return fallback
+    if role == "client" and (
+        requested == "/jobs/new"
+        or requested.startswith("/client/")
+        or requested.startswith("/messages/")
+    ):
+        return requested
+    if role == "contractor" and (
+        requested == "/leads"
+        or requested.startswith("/jobs/")
+        or requested.startswith("/contractor/")
+        or requested.startswith("/messages/")
+    ):
+        return requested
+    if role == "admin" and requested.startswith("/admin"):
+        return requested
+    return fallback
+
+
 def first_row(result):
     rows = rows_from(result)
     return rows[0] if rows else None
@@ -327,10 +420,14 @@ class Default(WorkerEntrypoint):
                     "ok": True,
                     "service": "workdoe-cloudflare-worker",
                     "domain": getattr(self.env, "WORKDOE_DOMAIN", "workdoe.com"),
-                    "auth_provider": getattr(self.env, "WORKDOE_AUTH_PROVIDER", "clerk"),
+                    "auth_provider": getattr(
+                        self.env,
+                        "WORKDOE_AUTH_PROVIDER",
+                        EMAIL_CODE_AUTH_PROVIDER,
+                    ),
                     "login_mode": getattr(
                         self.env,
-                        "WORKDOE_CLERK_LOGIN_MODE",
+                        "WORKDOE_LOGIN_MODE",
                         "same_domain_email_code",
                     ),
                     "bindings": {
@@ -346,7 +443,7 @@ class Default(WorkerEntrypoint):
         if path in ENTRY_ROUTES:
             return await self.entry_shell(request, path)
 
-        if is_clerk_proxy_path(path):
+        if is_clerk_proxy_path(path) and not native_email_code_enabled(self.env):
             return await self.clerk_frontend_api_proxy(request)
 
         if is_public_contractor_profile_route(path):
@@ -404,6 +501,18 @@ class Default(WorkerEntrypoint):
 
         if path == "/api/auth/session":
             return await self.auth_session(request)
+
+        if path == "/api/auth/code/request":
+            return await self.request_auth_code(request)
+
+        if path == "/api/auth/code/verify":
+            return await self.verify_auth_code(request)
+
+        if path == "/api/auth/logout":
+            return await self.auth_logout(request)
+
+        if path == "/logout":
+            return await self.auth_logout(request)
 
         if path == "/api/auth/onboard":
             return await self.auth_onboard(request)
@@ -470,10 +579,20 @@ class Default(WorkerEntrypoint):
         rows = []
         if hasattr(self.env, "DB"):
             rows = await entry_shell_jobs(self.env, params)
-        clerk_frontend_api_url = getattr(
+        auth_provider = getattr(
             self.env,
-            "CLERK_FRONTEND_API_URL",
-            "https://workdoe.com/__clerk",
+            "WORKDOE_AUTH_PROVIDER",
+            EMAIL_CODE_AUTH_PROVIDER,
+        )
+        native_auth = auth_provider == EMAIL_CODE_AUTH_PROVIDER
+        clerk_frontend_api_url = (
+            ""
+            if native_auth
+            else getattr(
+                self.env,
+                "CLERK_FRONTEND_API_URL",
+                "https://workdoe.com/__clerk",
+            )
         )
         html = build_entry_shell_html(
             path,
@@ -481,9 +600,19 @@ class Default(WorkerEntrypoint):
             rows,
             getattr(self.env, "CLERK_PUBLISHABLE_KEY", ""),
             clerk_frontend_api_url,
+            auth_provider=auth_provider,
+            turnstile_site_key=getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", ""),
         )
         body = "" if request.method == "HEAD" else html
-        return Response(body, status=200, headers=shell_headers(clerk_frontend_api_url))
+        return Response(
+            body,
+            status=200,
+            headers=shell_headers(
+                clerk_frontend_api_url,
+                include_turnstile=native_auth
+                and bool(getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", "")),
+            ),
+        )
 
     async def app_shell(self, request, path: str):
         if request.method not in {"GET", "HEAD"}:
@@ -1792,6 +1921,16 @@ class Default(WorkerEntrypoint):
         )
 
     async def optional_workdoe_user(self, request):
+        if native_email_code_enabled(self.env):
+            try:
+                claims = session_from_cookie(
+                    request_header(request, "Cookie"),
+                    getattr(self.env, "WORKDOE_SECRET_KEY", ""),
+                )
+                user = await workdoe_user_by_id(self.env, int(claims["user_id"]))
+            except (EmailCodeAuthError, KeyError, TypeError, ValueError):
+                return None
+            return user if user and row_value(user, "status") == "active" else None
         try:
             claims = await self.verified_clerk_claims(request)
         except SessionVerificationError:
@@ -2136,6 +2275,388 @@ class Default(WorkerEntrypoint):
             raise MediaUploadError("Uploaded media metadata was not recorded.")
         return int(row_value(row, "id"))
 
+    async def request_auth_code(self, request):
+        if request.method != "POST":
+            return Response(
+                "Method not allowed",
+                status=405,
+                headers={"Allow": "POST", "Cache-Control": "no-store"},
+            )
+        if not native_email_code_enabled(self.env):
+            return json_response(
+                {"ok": False, "error": "Email-code sign-in is not enabled."},
+                status=404,
+                headers={"Cache-Control": "no-store"},
+            )
+        if not all(
+            hasattr(self.env, binding)
+            for binding in ("DB", "EMAIL_QUEUE")
+        ):
+            return json_response(
+                {"ok": False, "error": "Workdoe sign-in services are not configured."},
+                status=503,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        try:
+            body = await request_json_object(request, max_bytes=MAX_AUTH_BODY_BYTES)
+            await verify_turnstile_for_request(
+                self.env,
+                request,
+                body,
+                action="login" if body.get("mode") == "signin" else "start",
+            )
+            secret = getattr(self.env, "WORKDOE_SECRET_KEY", "")
+            email = normalize_email(body.get("email"))
+            if not valid_email(email):
+                raise EmailCodeAuthError("Enter a valid email address.")
+            mode = "signin" if body.get("mode") == "signin" else "start"
+            intent = normalize_auth_intent(body.get("intent"))
+            requested_role = role_for_intent(intent)
+            display_name = compact_auth_text(body.get("display_name"), 120)
+            company_name = compact_auth_text(body.get("company_name"), 160)
+            selected_job_id = 0
+            try:
+                selected_job_id = max(0, int(body.get("selected_job_id") or 0))
+            except (TypeError, ValueError):
+                selected_job_id = 0
+
+            existing_result = await db_run(
+                self.env,
+                """
+                SELECT id, email, role, display_name, company_name, status
+                FROM users
+                WHERE email = ?
+                LIMIT 1
+                """,
+                email,
+            )
+            existing = first_row(existing_result)
+            if mode == "signin" and not existing:
+                raise EmailCodeAuthError(
+                    "No Workdoe account uses that email yet. Choose Start to create one.",
+                    404,
+                )
+            if existing and row_value(existing, "status") != "active":
+                raise EmailCodeAuthError("This Workdoe account is not active.", 403)
+            if existing and row_value(existing, "role") == "admin":
+                raise EmailCodeAuthError("Administrator email-code access is disabled.", 403)
+            if not existing and not display_name:
+                raise EmailCodeAuthError("Add your name to create a Workdoe account.")
+
+            role = row_value(existing, "role") if existing else requested_role
+            display_name = row_value(existing, "display_name") if existing else display_name
+            company_name = row_value(existing, "company_name", "") if existing else company_name
+            if role != "contractor":
+                selected_job_id = 0
+
+            email_rate_result = await db_run(
+                self.env,
+                """
+                SELECT COUNT(*) AS request_count
+                FROM login_codes
+                WHERE email = ?
+                  AND datetime(created_at) >= datetime('now', '-15 minutes')
+                """,
+                email,
+            )
+            email_rate = int(row_value(first_row(email_rate_result), "request_count", 0) or 0)
+            ip_hash = hash_identifier(remote_ip_from_headers(request.headers), secret)
+            ip_rate_result = await db_run(
+                self.env,
+                """
+                SELECT COUNT(*) AS request_count
+                FROM login_codes
+                WHERE request_ip_hash = ?
+                  AND datetime(created_at) >= datetime('now', '-15 minutes')
+                """,
+                ip_hash,
+            )
+            ip_rate = int(row_value(first_row(ip_rate_result), "request_count", 0) or 0)
+            if email_rate >= AUTH_REQUESTS_PER_EMAIL or ip_rate >= AUTH_REQUESTS_PER_IP:
+                raise EmailCodeAuthError(
+                    "Too many sign-in codes were requested. Wait 15 minutes and try again.",
+                    429,
+                )
+
+            issued_at = datetime.now(timezone.utc)
+            expires_at = issued_at + timedelta(seconds=CHALLENGE_TTL_SECONDS)
+            code = generate_code()
+            await db_run(
+                self.env,
+                """
+                UPDATE login_codes
+                SET used_at = ?
+                WHERE email = ? AND used_at IS NULL
+                """,
+                issued_at.isoformat(timespec="seconds"),
+                email,
+            )
+            result = await db_run(
+                self.env,
+                """
+                INSERT INTO login_codes
+                    (email, role, display_name, company_name, intent,
+                     selected_job_id, code_hash, expires_at, used_at,
+                     created_at, attempt_count, request_ip_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, ?)
+                """,
+                email,
+                role,
+                display_name,
+                company_name,
+                intent,
+                selected_job_id or None,
+                hash_code(code, secret),
+                expires_at.isoformat(timespec="seconds"),
+                issued_at.isoformat(timespec="seconds"),
+                ip_hash,
+            )
+            code_id = last_insert_id(result)
+            if not code_id:
+                raise EmailCodeAuthError("Workdoe could not create a sign-in code.", 500)
+            try:
+                await self.env.EMAIL_QUEUE.send(
+                    {
+                        "type": "login-code",
+                        "to": email,
+                        "code": code,
+                        "expires_minutes": 10,
+                        "intent": "post a job" if role == "client" else "find work",
+                    }
+                )
+            except Exception as exc:
+                await db_run(
+                    self.env,
+                    "UPDATE login_codes SET used_at = ? WHERE id = ?",
+                    utc_now(),
+                    code_id,
+                )
+                await record_event(
+                    self.env,
+                    "login-code-queue-failed",
+                    target_type="login_code",
+                    target_id=code_id,
+                    payload={"reason": str(exc)},
+                    status="failed",
+                )
+                raise EmailCodeAuthError("Workdoe could not send the sign-in code.", 503) from exc
+
+            await record_event(
+                self.env,
+                "login-code-requested",
+                target_type="login_code",
+                target_id=code_id,
+                payload={"mode": mode, "role": role},
+                status="processed",
+            )
+            return json_response(
+                {
+                    "ok": True,
+                    "challenge_token": challenge_token(code_id, email, secret),
+                    "expires_minutes": 10,
+                    "message": "Check your email for the six-digit Workdoe code.",
+                },
+                status=202,
+                headers={"Cache-Control": "no-store"},
+            )
+        except TurnstileError:
+            return json_response(
+                {"ok": False, "error": "Complete the security check and try again."},
+                status=400,
+                headers={"Cache-Control": "no-store"},
+            )
+        except (EmailCodeAuthError, OnboardingError) as exc:
+            return json_response(
+                {"ok": False, "error": str(exc)},
+                status=getattr(exc, "status", 400),
+                headers={"Cache-Control": "no-store"},
+            )
+
+    async def verify_auth_code(self, request):
+        if request.method != "POST":
+            return Response(
+                "Method not allowed",
+                status=405,
+                headers={"Allow": "POST", "Cache-Control": "no-store"},
+            )
+        if not native_email_code_enabled(self.env) or not hasattr(self.env, "DB"):
+            return json_response(
+                {"ok": False, "error": "Email-code sign-in is not configured."},
+                status=503,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        try:
+            body = await request_json_object(request, max_bytes=MAX_AUTH_BODY_BYTES)
+            secret = getattr(self.env, "WORKDOE_SECRET_KEY", "")
+            challenge = verified_token(
+                body.get("challenge_token"),
+                secret,
+                "challenge",
+            )
+            code = normalize_code(body.get("code"))
+            if len(code) != 6 or not code.isdigit():
+                raise EmailCodeAuthError("Enter the six-digit code.")
+            result = await db_run(
+                self.env,
+                """
+                SELECT *
+                FROM login_codes
+                WHERE id = ? AND email = ?
+                LIMIT 1
+                """,
+                int(challenge["code_id"]),
+                normalize_email(challenge["email"]),
+            )
+            login_code = first_row(result)
+            if (
+                not login_code
+                or row_value(login_code, "used_at")
+                or row_value(login_code, "expires_at", "") < utc_now()
+                or int(row_value(login_code, "attempt_count", 0) or 0) >= MAX_CODE_ATTEMPTS
+            ):
+                raise EmailCodeAuthError("That sign-in code expired. Request a new one.", 401)
+
+            if not tokens_match(
+                hash_code(code, secret),
+                row_value(login_code, "code_hash", ""),
+            ):
+                failed_at = utc_now()
+                await db_run(
+                    self.env,
+                    """
+                    UPDATE login_codes
+                    SET attempt_count = attempt_count + 1,
+                        used_at = CASE
+                            WHEN attempt_count + 1 >= ? THEN ?
+                            ELSE used_at
+                        END
+                    WHERE id = ?
+                    """,
+                    MAX_CODE_ATTEMPTS,
+                    failed_at,
+                    row_value(login_code, "id"),
+                )
+                raise EmailCodeAuthError("That code did not match.", 401)
+
+            user_result = await db_run(
+                self.env,
+                """
+                SELECT id, email, role, display_name, company_name, status
+                FROM users
+                WHERE email = ?
+                LIMIT 1
+                """,
+                row_value(login_code, "email"),
+            )
+            user = first_row(user_result)
+            created = False
+            if not user:
+                created_at = utc_now()
+                await db_run(
+                    self.env,
+                    """
+                    INSERT INTO users
+                        (email, password_hash, role, display_name, company_name,
+                         status, email_verified, auth_provider, external_subject,
+                         created_at)
+                    VALUES (?, 'email-code-only', ?, ?, ?, 'active', 1, ?, ?, ?)
+                    """,
+                    row_value(login_code, "email"),
+                    row_value(login_code, "role"),
+                    row_value(login_code, "display_name"),
+                    row_value(login_code, "company_name", ""),
+                    EMAIL_CODE_AUTH_PROVIDER,
+                    row_value(login_code, "email"),
+                    created_at,
+                )
+                user = await workdoe_user_by_id_from_email(
+                    self.env,
+                    row_value(login_code, "email"),
+                )
+                if not user:
+                    raise EmailCodeAuthError("Workdoe could not create the account.", 500)
+                user_id = row_value(user, "id")
+                if row_value(user, "role") == "client":
+                    await db_run(
+                        self.env,
+                        """
+                        INSERT INTO client_profiles (user_id, organization_name, phone)
+                        VALUES (?, ?, '')
+                        """,
+                        user_id,
+                        row_value(user, "company_name", ""),
+                    )
+                else:
+                    await db_run(
+                        self.env,
+                        """
+                        INSERT INTO contractor_profiles
+                            (user_id, business_name, trades, service_area, intro,
+                             insurance_status, license_number, years_in_business,
+                             website, phone, updated_at)
+                        VALUES (?, ?, '', 'DMV area', '', '', '', NULL, '', '', ?)
+                        """,
+                        user_id,
+                        row_value(user, "company_name", ""),
+                        created_at,
+                    )
+                created = True
+
+            if row_value(user, "status") != "active":
+                raise EmailCodeAuthError("This Workdoe account is not active.", 403)
+            await db_run(
+                self.env,
+                "UPDATE login_codes SET used_at = ?, attempt_count = attempt_count + 1 WHERE id = ?",
+                utc_now(),
+                row_value(login_code, "id"),
+            )
+            await record_event(
+                self.env,
+                "email-code-authenticated",
+                target_type="user",
+                target_id=row_value(user, "id"),
+                payload={"created": created, "role": row_value(user, "role")},
+                status="processed",
+            )
+            token = session_token(row_value(user, "id"), secret)
+            return json_response(
+                {
+                    "ok": True,
+                    "authenticated": True,
+                    "created": created,
+                    "workdoe_user": workdoe_user_json(user),
+                    "redirect_url": auth_redirect_for_user(user, body.get("next")),
+                },
+                headers={
+                    "Cache-Control": "no-store",
+                    "Set-Cookie": session_cookie(token),
+                },
+            )
+        except (EmailCodeAuthError, OnboardingError, KeyError, TypeError, ValueError) as exc:
+            return json_response(
+                {"ok": False, "error": str(exc) or "Sign-in code was not accepted."},
+                status=getattr(exc, "status", 400),
+                headers={"Cache-Control": "no-store"},
+            )
+
+    async def auth_logout(self, request):
+        if request.method not in {"GET", "POST"}:
+            return Response(
+                "Method not allowed",
+                status=405,
+                headers={"Allow": "GET, POST", "Cache-Control": "no-store"},
+            )
+        headers = {
+            "Cache-Control": "no-store",
+            "Set-Cookie": clear_session_cookie(),
+        }
+        if request.method == "GET":
+            headers["Location"] = "/"
+            return Response("", status=302, headers=headers)
+        return json_response({"ok": True}, headers=headers)
+
     async def auth_session(self, request):
         if request.method != "GET":
             return Response(
@@ -2147,9 +2668,30 @@ class Default(WorkerEntrypoint):
             return json_response(
                 {
                     "authenticated": False,
-                    "error": "D1 binding is required before Clerk sessions can load.",
+                    "error": "D1 binding is required before sessions can load.",
                 },
                 status=503,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        if native_email_code_enabled(self.env):
+            user = await self.optional_workdoe_user(request)
+            if not user:
+                return json_response(
+                    {
+                        "authenticated": False,
+                        "onboarding_required": False,
+                        "workdoe_user": None,
+                    },
+                    status=401,
+                    headers={"Cache-Control": "no-store"},
+                )
+            return json_response(
+                {
+                    "authenticated": True,
+                    "onboarding_required": False,
+                    "workdoe_user": workdoe_user_json(user),
+                },
                 headers={"Cache-Control": "no-store"},
             )
 

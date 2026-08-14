@@ -210,7 +210,7 @@ def safe_json_script(value) -> str:
 
 def role_segment(intent: str) -> str:
     return f"""
-      <fieldset class="segmented-control" data-clerk-role-choice>
+      <fieldset class="segmented-control" data-clerk-role-choice data-email-code-role-choice>
         <legend>Choose your workspace</legend>
         <label class="segmented-option">
           <input type="radio" name="intent" value="post-job" {"checked" if intent == "post-job" else ""} required>
@@ -223,9 +223,11 @@ def role_segment(intent: str) -> str:
       </fieldset>"""
 
 
-def shell_csp(clerk_frontend_api_url: str) -> str:
+def shell_csp(clerk_frontend_api_url: str, include_turnstile: bool = False) -> str:
     clerk_origin = clerk_csp_origin(clerk_frontend_api_url)
-    frame_source = clerk_origin or "'self'"
+    turnstile_origin = "https://challenges.cloudflare.com" if include_turnstile else ""
+    frame_sources = [source for source in (clerk_origin, turnstile_origin) if source]
+    frame_source = " ".join(frame_sources) or "'self'"
     return "; ".join(
         [
             "default-src 'self'",
@@ -233,12 +235,12 @@ def shell_csp(clerk_frontend_api_url: str) -> str:
             "object-src 'none'",
             "frame-ancestors 'none'",
             "form-action 'self'",
-            csp_source("script-src 'self'", clerk_origin),
+            csp_source(csp_source("script-src 'self'", clerk_origin), turnstile_origin),
             "style-src 'self'",
             csp_source("style-src-elem 'self'", clerk_origin),
             "style-src-attr 'unsafe-inline'",
             "img-src 'self' data: https://*.tile.openstreetmap.org",
-            csp_source("connect-src 'self'", clerk_origin),
+            csp_source(csp_source("connect-src 'self'", clerk_origin), turnstile_origin),
             f"frame-src {frame_source}",
             "font-src 'self'",
             "media-src 'self'",
@@ -248,13 +250,19 @@ def shell_csp(clerk_frontend_api_url: str) -> str:
     )
 
 
-def shell_headers(clerk_frontend_api_url: str) -> dict[str, str]:
+def shell_headers(
+    clerk_frontend_api_url: str,
+    include_turnstile: bool = False,
+) -> dict[str, str]:
     return {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
         "Pragma": "no-cache",
         "Expires": "0",
-        "Content-Security-Policy": shell_csp(clerk_frontend_api_url),
+        "Content-Security-Policy": shell_csp(
+            clerk_frontend_api_url,
+            include_turnstile=include_turnstile,
+        ),
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
         "Referrer-Policy": "strict-origin-when-cross-origin",
@@ -268,7 +276,10 @@ def build_entry_shell_html(
     rows: list,
     clerk_publishable_key: str,
     clerk_frontend_api_url: str,
+    auth_provider: str = "clerk",
+    turnstile_site_key: str = "",
 ) -> str:
+    native_email_code = auth_provider == "workdoe_email_code"
     target = "login" if path == "/login" else "start"
     intent = normalize_intent(first_query_value(params, "intent"), path)
     selected_id = selected_job_id(params)
@@ -277,7 +288,7 @@ def build_entry_shell_html(
     filters = public_job_filters_from_query(params)
     map_payload = public_jobs_payload(rows, filters, target=target)
     jobs_api_url = public_jobs_api_url(params, target)
-    proxy_url = clerk_proxy_url(clerk_frontend_api_url)
+    proxy_url = "" if native_email_code else clerk_proxy_url(clerk_frontend_api_url)
     proxy_data_attr = (
         f'\n          data-clerk-proxy-url="{escape(proxy_url)}"'
         if proxy_url
@@ -314,12 +325,12 @@ def build_entry_shell_html(
 {role_segment(intent)}
         <label>
           Name
-          <input name="display_name" autocomplete="name" aria-describedby="entry-name-help" data-clerk-display-name>
+          <input name="display_name" autocomplete="name" aria-describedby="entry-name-help" data-clerk-display-name data-email-code-display-name>
           <span id="entry-name-help" class="help-text">Used after email verification.</span>
         </label>
         <label>
           Company or household
-          <input name="company_name" autocomplete="organization" data-clerk-company-name>
+          <input name="company_name" autocomplete="organization" data-clerk-company-name data-email-code-company-name>
         </label>"""
         if path != "/login"
         else ""
@@ -334,6 +345,74 @@ def build_entry_shell_html(
         if path != "/login"
         else ""
     )
+    if native_email_code:
+        turnstile_html = (
+            f"""
+          <div class="turnstile-field">
+            <div class="cf-turnstile" data-sitekey="{escape(turnstile_site_key)}" data-action="{'login' if path == '/login' else 'start'}" data-theme="light"></div>
+          </div>"""
+            if turnstile_site_key
+            else ""
+        )
+        auth_mount_html = f"""
+        <form
+          class="email-code-form"
+          data-email-code-entry
+          data-mode="{'signin' if path == '/login' else 'start'}"
+          data-request-url="/api/auth/code/request"
+          data-verify-url="/api/auth/code/verify"
+          data-redirect-url="{escape(redirect_url)}"
+          data-selected-job-id="{escape(data_selected)}"
+        >
+          <div data-request-step>
+            <label>
+              Email address
+              <input type="email" name="email" autocomplete="email" maxlength="254" required>
+            </label>
+{onboarding_fields}
+{turnstile_html}
+            <button class="button primary" type="submit" data-request-code>Email me a code</button>
+          </div>
+          <div class="email-code-verify" data-code-step hidden>
+            <label>
+              6-digit code
+              <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{{6}}" maxlength="6" aria-describedby="email-code-help">
+              <span id="email-code-help" class="help-text">The code expires in 10 minutes.</span>
+            </label>
+            <button class="button primary" type="submit" data-verify-code>Verify and continue</button>
+            <button class="button secondary" type="button" data-restart-code>Use a different email</button>
+          </div>
+          <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-email-code-message></p>
+        </form>"""
+        auth_scripts_html = (
+            (
+                '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>\n'
+                if turnstile_site_key
+                else ""
+            )
+            + '  <script defer src="/static/email-code-entry.js"></script>'
+        )
+    else:
+        auth_mount_html = f"""
+{onboarding_fields}
+        <div
+          id="clerk-entry"
+          class="clerk-entry-mount"
+          data-clerk-entry
+          data-clerk-mode="{escape(clerk_mode)}"
+          data-redirect-url="{escape(redirect_url)}"
+          data-sign-up-url="{escape(sign_up_url)}"
+          data-session-url="/api/auth/session"
+          data-dashboard-url="/dashboard"
+{proxy_data_attr}
+{start_data_attrs}
+        >
+          <div class="clerk-entry-loading" role="status">Loading secure email sign-in...</div>
+        </div>
+        <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>"""
+        auth_scripts_html = f"""  <script defer crossorigin="anonymous" src="{escape(clerk_frontend_api_url)}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
+  <script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_script_attr} src="{escape(clerk_frontend_api_url)}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
+  <script defer src="/static/clerk-entry.js"></script>"""
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -397,34 +476,17 @@ def build_entry_shell_html(
 {checklist_html}
 {selected_job_pill(selected)}
         </div>
-{onboarding_fields}
-        <div
-          id="clerk-entry"
-          class="clerk-entry-mount"
-          data-clerk-entry
-          data-clerk-mode="{escape(clerk_mode)}"
-          data-redirect-url="{escape(redirect_url)}"
-          data-sign-up-url="{escape(sign_up_url)}"
-          data-session-url="/api/auth/session"
-          data-dashboard-url="/dashboard"
-{proxy_data_attr}
-{start_data_attrs}
-        >
-          <div class="clerk-entry-loading" role="status">Loading secure email sign-in...</div>
-        </div>
+{auth_mount_html}
         <div class="auth-switch clerk-entry-note">
           <span>Email code sign-in stays on workdoe.com.</span>
         </div>
-        <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>
       </section>
     </section>
   </main>
   <script id="map-jobs-data" type="application/json">{safe_json_script(map_payload["jobs"])}</script>
   <script src="/static/vendor/leaflet/leaflet.js"></script>
   <script src="/static/map.js"></script>
-  <script defer crossorigin="anonymous" src="{escape(clerk_frontend_api_url)}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
-  <script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_script_attr} src="{escape(clerk_frontend_api_url)}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
-  <script defer src="/static/clerk-entry.js"></script>
+{auth_scripts_html}
 </body>
 </html>
 """

@@ -14,15 +14,11 @@ from urllib.parse import urlparse
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 REQUIRED_DEV_ENV = {
-    "CLERK_JWT_KEY",
-    "CLERK_PUBLISHABLE_KEY",
-    "CLERK_SECRET_KEY",
-    "CLERK_WEBHOOK_SECRET",
     "WORKDOE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SITE_KEY",
 }
-REQUIRED_PUBLIC_ENV = {"CLERK_FAPI", "CLERK_FRONTEND_API_URL", "CLERK_PROXY_URL"}
+REQUIRED_PUBLIC_ENV = {"WORKDOE_AUTH_PROVIDER", "WORKDOE_LOGIN_MODE"}
 WORKDOE_PUBLIC_DOMAIN = "workdoe.com"
 CLERK_PROXY_PATH = "/__clerk"
 DEFAULT_CLERK_FAPI = "https://frontend-api.clerk.dev"
@@ -336,36 +332,14 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             "Wrangler cron triggers match automation plan",
         )
         require(
-            wrangler.get("vars", {}).get("WORKDOE_AUTH_PROVIDER") == "clerk"
-            and wrangler.get("vars", {}).get("WORKDOE_CLERK_LOGIN_MODE")
+            wrangler.get("vars", {}).get("WORKDOE_AUTH_PROVIDER")
+            == "workdoe_email_code"
+            and wrangler.get("vars", {}).get("WORKDOE_LOGIN_MODE")
             == "same_domain_email_code",
             errors,
-            "Wrangler vars must keep Clerk same-domain email-code mode.",
+            "Wrangler vars must keep Workdoe same-domain email-code mode.",
             checks,
-            "Wrangler keeps same-domain Clerk OTP mode",
-        )
-        clerk_frontend_api_url = wrangler.get("vars", {}).get("CLERK_FRONTEND_API_URL", "")
-        require(
-            valid_workdoe_clerk_proxy_url(clerk_frontend_api_url),
-            errors,
-            "Wrangler vars must set CLERK_FRONTEND_API_URL to the Workdoe /__clerk proxy URL.",
-            checks,
-            "Wrangler configures Workdoe Clerk proxy Frontend API URL",
-        )
-        require(
-            wrangler.get("vars", {}).get("CLERK_PROXY_URL") == clerk_frontend_api_url
-            and valid_workdoe_clerk_proxy_url(wrangler.get("vars", {}).get("CLERK_PROXY_URL", "")),
-            errors,
-            "Wrangler vars must set CLERK_PROXY_URL to the Workdoe /__clerk proxy URL.",
-            checks,
-            "Wrangler configures Clerk proxy URL",
-        )
-        require(
-            valid_clerk_fapi_url(wrangler.get("vars", {}).get("CLERK_FAPI", "")),
-            errors,
-            "Wrangler vars must set CLERK_FAPI to https://frontend-api.clerk.dev.",
-            checks,
-            "Wrangler configures Clerk Frontend API proxy target",
+            "Wrangler keeps native same-domain OTP mode",
         )
         require(
             wrangler.get("vars", {}).get("WORKDOE_EMAIL_FROM") == "no-reply@workdoe.com"
@@ -392,9 +366,9 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
         require(
             required_secrets == REQUIRED_WORKER_SECRETS,
             errors,
-            "Wrangler secrets.required must declare every Clerk, Turnstile, and Workdoe secret.",
+            "Wrangler secrets.required must declare the Workdoe and Turnstile secrets.",
             checks,
-            "Wrangler requires Clerk, Turnstile, and Workdoe secrets",
+            "Wrangler requires Workdoe and Turnstile secrets",
         )
         leaked_secret_vars = sorted(required_secrets & set(wrangler.get("vars", {})))
         require(
@@ -441,7 +415,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             errors,
             ".dev.vars.example is missing required env names: " + ", ".join(missing_env),
             checks,
-            ".dev.vars.example lists Clerk, Turnstile, and app secrets",
+            ".dev.vars.example lists native auth, Turnstile, and app secrets",
         )
 
     compile_python(worker_path, errors, checks, "Cloudflare Worker Python compiles")
@@ -1261,7 +1235,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "--execute",
                 "--yes",
                 "wrangler_command",
-                "\"secret\", \"list\", \"--json",
+                "\"secret\", \"list\", \"--format\", \"json\"",
                 "sanitized_secret_evidence",
                 "contains_values",
                 "REQUIRED_SECRETS",
@@ -1282,11 +1256,9 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             for marker in (
                 "run_release_evidence",
                 "secret_evidence_error",
-                "clerk_proxy_proof_error",
                 "contains_values",
                 "REQUIRED_SECRETS",
                 "cloudflare_secret_evidence.py --execute --yes",
-                "cloudflare_clerk_proxy_proof.py --confirm",
             )
             if marker not in release_evidence_source
         ]

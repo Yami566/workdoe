@@ -30,7 +30,7 @@ class SecretEvidenceError(ValueError):
 
 def run_external() -> subprocess.CompletedProcess:
     return subprocess.run(
-        wrangler_command(["secret", "list", "--json"], REPO_ROOT),
+        wrangler_command(["secret", "list", "--format", "json"], REPO_ROOT),
         cwd=str(CLOUDFLARE_DIR),
         env=wrangler_env(REPO_ROOT),
         check=False,
@@ -50,13 +50,13 @@ def json_from_streams(stdout: str, stderr: str) -> dict | list:
             return json.loads(stripped)
         except json.JSONDecodeError:
             continue
-    raise SecretEvidenceError("Could not find valid JSON from `wrangler secret list --json`.")
+    raise SecretEvidenceError("Could not find valid JSON from `wrangler secret list --format json`.")
 
 
 def sanitized_secret_evidence(data) -> dict:
     names = sorted(secret_names_from_json(data))
     return {
-        "source": "wrangler secret list --json",
+        "source": "wrangler secret list --format json",
         "contains_values": False,
         "result": [{"name": name} for name in names],
     }
@@ -78,7 +78,7 @@ def dry_run_payload(output: Path) -> dict:
         "executes_commands": False,
         "writes": "",
         "output": str(output),
-        "command": wrangler_command(["secret", "list", "--json"], REPO_ROOT),
+        "command": wrangler_command(["secret", "list", "--format", "json"], REPO_ROOT),
         "required_secret_names": sorted(REQUIRED_SECRETS),
     }
 
@@ -133,7 +133,7 @@ def main() -> int:
     parser.add_argument(
         "--execute",
         action="store_true",
-        help="Run `wrangler secret list --json` and write sanitized evidence.",
+        help="Run `wrangler secret list --format json` and write sanitized evidence.",
     )
     parser.add_argument(
         "--yes",
