@@ -89,7 +89,10 @@ def build_manifest(migration_sql: str) -> dict:
                 "main": "cloudflare/worker/entry.py",
                 "dev_vars_example": str(DEV_VARS_EXAMPLE_RELATIVE_PATH).replace("\\", "/"),
                 "compatibility_date": "2026-08-03",
-                "compatibility_flags": ["python_workers"],
+                "compatibility_flags": [
+                    "python_workers",
+                    "disable_python_external_sdk",
+                ],
             },
             "app_runtime": {
                 "service": "Cloudflare Workers Python",

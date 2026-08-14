@@ -606,7 +606,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             wrangler = json.loads(wrangler_path.read_text(encoding="utf-8"))
             self.assertEqual(wrangler["name"], "workdoe")
             self.assertEqual(wrangler["main"], "worker/entry.py")
-            self.assertEqual(wrangler["compatibility_flags"], ["python_workers"])
+            self.assertEqual(
+                wrangler["compatibility_flags"],
+                ["python_workers", "disable_python_external_sdk"],
+            )
             self.assertFalse(wrangler["workers_dev"])
             self.assertEqual(
                 {route["pattern"] for route in wrangler["routes"]},
@@ -4268,6 +4271,27 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Check Cloudflare credentials are configured", workflow)
         self.assertIn('test -n "$CLOUDFLARE_API_TOKEN"', workflow)
         self.assertIn("Print guarded deploy plan", workflow)
+        self.assertIn("pull_request:", workflow)
+        self.assertIn("concurrency:", workflow)
+        self.assertIn("Validate Cloudflare Worker bundle", workflow)
+        self.assertIn("wrangler deploy --dry-run", workflow)
+        self.assertIn("Smoke test Cloudflare Worker runtime", workflow)
+        self.assertIn("wrangler d1 migrations apply workdoe --local", workflow)
+        self.assertIn("http://127.0.0.1:8787/health", workflow)
+        self.assertIn("Verify current main release candidate", workflow)
+        self.assertIn("url: https://workdoe.com", workflow)
+        self.assertIn(
+            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7",
+            workflow,
+        )
+        self.assertIn(
+            "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6",
+            workflow,
+        )
+        self.assertIn(
+            "actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5",
+            workflow,
+        )
 
     def test_github_release_status_validates_environment_policy_and_secret_names(self):
         module = load_github_release_status_script()

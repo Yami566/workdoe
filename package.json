@@ -31,6 +31,6 @@
     "launch:doctor:live": "python scripts/workdoe_launch_doctor.py --live"
   },
   "devDependencies": {
-    "wrangler": "4.122.0"
+    "wrangler": "4.123.0"
   }
 }
