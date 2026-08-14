@@ -81,6 +81,8 @@ def build_manifest(migration_sql: str) -> dict:
                 "config": str(WRANGLER_RELATIVE_PATH).replace("\\", "/"),
                 "main": "cloudflare/worker/entry.py",
                 "dev_vars_example": str(DEV_VARS_EXAMPLE_RELATIVE_PATH).replace("\\", "/"),
+                "custom_domains": ["workdoe.com", "www.workdoe.com"],
+                "custom_domain_management": "preconfigured_outside_routine_deploys",
                 "compatibility_date": "2026-08-03",
                 "compatibility_flags": [
                     "python_workers",
@@ -222,10 +224,6 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
         "compatibility_date": targets["worker"]["compatibility_date"],
         "compatibility_flags": targets["worker"]["compatibility_flags"],
         "workers_dev": False,
-        "routes": [
-            {"pattern": "workdoe.com", "custom_domain": True},
-            {"pattern": "www.workdoe.com", "custom_domain": True},
-        ],
         "assets": {
             "directory": "../workdoe/static",
             "binding": "ASSETS",

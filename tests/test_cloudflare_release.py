@@ -604,11 +604,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 ["python_workers", "disable_python_external_sdk"],
             )
             self.assertFalse(wrangler["workers_dev"])
+            self.assertNotIn("routes", wrangler)
             self.assertEqual(
-                {route["pattern"] for route in wrangler["routes"]},
-                {"workdoe.com", "www.workdoe.com"},
+                manifest["cloudflare_targets"]["worker"]["custom_domains"],
+                ["workdoe.com", "www.workdoe.com"],
             )
-            self.assertTrue(all(route["custom_domain"] for route in wrangler["routes"]))
+            self.assertEqual(
+                manifest["cloudflare_targets"]["worker"]["custom_domain_management"],
+                "preconfigured_outside_routine_deploys",
+            )
             self.assertEqual(wrangler["d1_databases"][0]["binding"], "DB")
             self.assertEqual(
                 wrangler["d1_databases"][0]["migrations_dir"],

@@ -83,15 +83,25 @@ def wrangler_custom_domains(
     path: Path = WRANGLER_CONFIG_PATH,
 ) -> tuple[bool, list[str], str]:
     try:
-        routes = load_wrangler_routes(path)
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return False, [], str(exc)
+    routes = list(data.get("routes") or [])
     domains = sorted(
         str(route.get("pattern", "")).strip()
         for route in routes
         if route.get("custom_domain") is True and str(route.get("pattern", "")).strip()
     )
     required = {DEFAULT_DOMAIN, DEFAULT_WWW_DOMAIN}
+    vars_map = data.get("vars") or {}
+    external_policy = (
+        not routes
+        and data.get("workers_dev") is False
+        and vars_map.get("WORKDOE_DOMAIN") == DEFAULT_DOMAIN
+        and vars_map.get("WORKDOE_PUBLIC_URL") == f"https://{DEFAULT_DOMAIN}"
+    )
+    if external_policy:
+        return True, sorted(required), "managed-externally"
     return required.issubset(set(domains)), domains, ""
 
 
@@ -161,12 +171,17 @@ def build_dns_diagnostic(
     )
 
     routes_ready, custom_domains, routes_error = wrangler_custom_domains(wrangler_path)
+    domains_managed_externally = routes_error == "managed-externally"
     checks.append(
         DnsCheck(
             name="wrangler-custom-domains",
             status="ready" if routes_ready else "pending",
             summary=(
-                "Wrangler config includes custom_domain routes for workdoe.com and www.workdoe.com."
+                (
+                    "Workdoe custom domains are pre-attached; routine Wrangler deploys preserve them."
+                    if domains_managed_externally
+                    else "Wrangler config includes custom_domain routes for workdoe.com and www.workdoe.com."
+                )
                 if routes_ready
                 else f"Wrangler custom-domain routes are incomplete: {routes_error or ', '.join(custom_domains)}"
             ),
@@ -204,7 +219,7 @@ def build_dns_diagnostic(
         "next_actions": sorted(set(next_actions)),
         "references": [
             "Cloudflare Workers Custom Domains require an active Cloudflare zone and a Worker to invoke.",
-            "The checked-in Wrangler routes use custom_domain=true for workdoe.com and www.workdoe.com.",
+            "Workdoe custom domains are attached once in Cloudflare and preserved by routine GitHub deploys.",
         ],
     }
 
