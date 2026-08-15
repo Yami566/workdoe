@@ -2076,6 +2076,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("data-clerk-email-code-form", html)
         self.assertIn("data-clerk-request-code", html)
         self.assertIn("data-clerk-verify-code", html)
+        self.assertIn("data-clerk-request-code disabled", html)
+        self.assertIn("data-clerk-verify-code disabled", html)
         self.assertIn('id="clerk-captcha"', html)
         self.assertIn('data-cl-size="flexible"', html)
         self.assertIn("Email me a code", html)
@@ -2782,6 +2784,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('needsSignUpField(signUpAttempt, "password")', clerk_script)
         self.assertNotIn("Math.random", clerk_script)
         self.assertNotIn("mountSignIn", clerk_script)
+        self.assertIn("setBusy(form, false);", clerk_script)
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
         self.assertIn(".clerk-entry-status", styles)
 
