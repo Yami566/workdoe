@@ -1517,6 +1517,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'data-clerk-entry', login.data)
         self.assertIn(b'data-clerk-email-code-form', login.data)
         self.assertIn(b'Email me a code', login.data)
+        self.assertIn(b'data-clerk-request-code disabled', login.data)
         self.assertIn(b'data-clerk-mode="signin"', login.data)
         self.assertIn(b'data-redirect-url="/jobs/new"', login.data)
         self.assertIn(b'data-session-url="/api/auth/session"', login.data)

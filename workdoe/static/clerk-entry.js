@@ -324,6 +324,8 @@
         window.location.reload();
       });
     }
+
+    setBusy(form, false);
   }
 
   function clerkLoadOptions(node) {

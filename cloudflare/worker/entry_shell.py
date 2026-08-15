@@ -543,7 +543,7 @@ def build_entry_shell_html(
                 <input type="email" name="email" autocomplete="email" maxlength="254" required>
               </label>
               <div id="clerk-captcha" data-cl-theme="light" data-cl-size="flexible" data-cl-language="en-US"></div>
-              <button class="button primary" type="submit" data-clerk-request-code>Email me a code</button>
+              <button class="button primary" type="submit" data-clerk-request-code disabled>Email me a code</button>
             </div>
             <div class="email-code-verify" data-clerk-code-step hidden>
               <label>
@@ -551,7 +551,7 @@ def build_entry_shell_html(
                 <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{{6}}" maxlength="6" aria-describedby="clerk-code-help">
                 <span id="clerk-code-help" class="help-text">The code expires in 10 minutes.</span>
               </label>
-              <button class="button primary" type="submit" data-clerk-verify-code>Verify and continue</button>
+              <button class="button primary" type="submit" data-clerk-verify-code disabled>Verify and continue</button>
               <button class="button secondary" type="button" data-clerk-restart-code>Use a different email</button>
             </div>
           </form>
