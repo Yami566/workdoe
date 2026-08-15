@@ -1179,6 +1179,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 sys.executable,
                 str(ROOT / "scripts" / "workdoe_production_smoke.py"),
                 "--fail-when-not-ready",
+                "--attempts",
+                "6",
+                "--retry-delay",
+                "5",
             ],
         )
         self.assertTrue(payload["steps"][2]["required"])
@@ -4867,6 +4871,38 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         rendered = module.render_text(payload)
         self.assertIn("Workdoe production smoke", rendered)
         self.assertIn("Ready: False", rendered)
+
+    def test_workdoe_production_smoke_retries_transient_release_failures(self):
+        module = load_workdoe_production_smoke_script()
+        original_build = module.build_smoke_payload
+        original_sleep = module.time.sleep
+        calls = []
+        try:
+            def fake_build(**kwargs):
+                calls.append(kwargs)
+                return {
+                    "service": "workdoe",
+                    "domain": "workdoe.com",
+                    "base_url": "https://workdoe.com",
+                    "ready": len(calls) >= 2,
+                    "checks": [],
+                    "failures": [] if len(calls) >= 2 else ["Clerk proxy is propagating."],
+                }
+
+            module.build_smoke_payload = fake_build
+            module.time.sleep = lambda seconds: calls.append({"sleep": seconds})
+            payload = module.build_smoke_payload_with_retries(
+                attempts=3,
+                retry_delay=5,
+            )
+        finally:
+            module.build_smoke_payload = original_build
+            module.time.sleep = original_sleep
+
+        self.assertTrue(payload["ready"])
+        self.assertEqual(payload["attempt"], 2)
+        self.assertEqual(payload["attempts"], 3)
+        self.assertEqual(calls[1], {"sleep": 5})
 
     def test_workdoe_launch_doctor_combines_release_blockers(self):
         module = load_workdoe_launch_doctor_script()
