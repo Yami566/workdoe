@@ -31,6 +31,41 @@ def email_claim_verified(claims: dict) -> bool:
     return value in {None, True, 1, "1", "true", "verified"}
 
 
+def object_value(value, key: str, default=None):
+    if value is None:
+        return default
+    getter = getattr(value, "get", None)
+    if callable(getter):
+        result = getter(key)
+        return default if result is None else result
+    try:
+        result = value[key]
+    except (KeyError, TypeError):
+        return default
+    return default if result is None else result
+
+
+def claims_with_verified_clerk_email(claims: dict, user_data) -> dict:
+    primary_id = str(object_value(user_data, "primary_email_address_id", "") or "")
+    addresses = object_value(user_data, "email_addresses", []) or []
+    selected = None
+    for address in addresses:
+        if primary_id and str(object_value(address, "id", "")) == primary_id:
+            selected = address
+            break
+        if selected is None:
+            selected = address
+    email = normalize_email(object_value(selected, "email_address", ""))
+    verification = object_value(selected, "verification", {}) or {}
+    verified = object_value(verification, "status", "") == "verified"
+    if not email or "@" not in email or not verified:
+        raise OnboardingError("A verified Clerk email is required.")
+    trusted_claims = dict(claims)
+    trusted_claims["email"] = email
+    trusted_claims["email_verified"] = True
+    return trusted_claims
+
+
 def onboarding_payload(claims: dict, body: dict) -> dict[str, str]:
     if not isinstance(body, dict):
         raise OnboardingError("Onboarding body must be a JSON object.")

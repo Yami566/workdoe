@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1468,6 +1469,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("external_subject = ?", entrypoint)
         self.assertIn("/api/auth/onboard", entrypoint)
         self.assertIn("onboarding_payload", entrypoint)
+        self.assertIn("https://api.clerk.com/v1/users/", entrypoint)
+        self.assertIn("claims_with_verified_clerk_email", entrypoint)
+        self.assertIn("https://api.clerk.com/v1/sessions/", entrypoint)
+        self.assertIn("clerk-session-revoke-failed", entrypoint)
         self.assertIn("INSERT INTO users", entrypoint)
         self.assertIn("INSERT INTO client_profiles", entrypoint)
         self.assertIn("INSERT INTO contractor_profiles", entrypoint)
@@ -1726,6 +1731,34 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
     def test_clerk_onboarding_helper_requires_verified_email_and_role(self):
         module = load_clerk_onboarding_module()
+        trusted_claims = module.claims_with_verified_clerk_email(
+            {"sub": "user_123", "sid": "sess_123"},
+            {
+                "primary_email_address_id": "idn_123",
+                "email_addresses": [
+                    {
+                        "id": "idn_123",
+                        "email_address": "Verified@Example.com",
+                        "verification": {"status": "verified"},
+                    }
+                ],
+            },
+        )
+        self.assertEqual(trusted_claims["email"], "verified@example.com")
+        self.assertIs(trusted_claims["email_verified"], True)
+        with self.assertRaisesRegex(module.OnboardingError, "verified Clerk email"):
+            module.claims_with_verified_clerk_email(
+                {"sub": "user_123"},
+                {
+                    "email_addresses": [
+                        {
+                            "id": "idn_bad",
+                            "email_address": "bad@example.com",
+                            "verification": {"status": "unverified"},
+                        }
+                    ]
+                },
+            )
         payload = module.onboarding_payload(
             {
                 "sub": "user_workdoe_123",
@@ -1770,6 +1803,33 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
     def test_clerk_session_helper_extracts_and_validates_session_tokens(self):
         module = load_clerk_sessions_module()
+        source = CLERK_SESSIONS_PATH.read_text(encoding="utf-8")
+        self.assertIn('to_js(["verify"])', source)
+        self.assertIn("Clerk session signature verification failed.", source)
+        dev_env = SimpleNamespace(
+            WORKDOE_ENV="development",
+            WORKDOE_PUBLIC_URL="https://workdoe.com",
+            WORKDOE_DOMAIN="workdoe.com",
+        )
+        self.assertIn(
+            "http://127.0.0.1:8792",
+            module.authorized_parties_from_env(
+                dev_env,
+                "http://127.0.0.1:8792/api/auth/session",
+            ),
+        )
+        production_env = SimpleNamespace(
+            WORKDOE_ENV="production",
+            WORKDOE_PUBLIC_URL="https://workdoe.com",
+            WORKDOE_DOMAIN="workdoe.com",
+        )
+        self.assertNotIn(
+            "http://127.0.0.1:8792",
+            module.authorized_parties_from_env(
+                production_env,
+                "http://127.0.0.1:8792/api/auth/session",
+            ),
+        )
         token = fake_session_token()
         self.assertEqual(
             module.extract_clerk_session_token(
@@ -1964,6 +2024,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "https://workdoe.com/__clerk",
         )
         self.assertEqual(module.normalize_clerk_frontend_api_url("/__clerk/"), "/__clerk")
+        development_key = (
+            "pk_test_Y2xvc2Utc2VhbC0zNC5jbGVyay5hY2NvdW50cy5kZXYk"
+        )
+        self.assertEqual(
+            module.clerk_development_frontend_api_url(development_key),
+            "https://close-seal-34.clerk.accounts.dev",
+        )
+        self.assertEqual(module.clerk_development_frontend_api_url("pk_live_workdoe"), "")
+        self.assertEqual(module.clerk_development_frontend_api_url("pk_test_invalid"), "")
 
         rows = [
             {
@@ -2004,6 +2073,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('src="/map.js"', html)
         self.assertIn('src="/clerk-entry.js"', html)
         self.assertIn("data-clerk-entry", html)
+        self.assertIn("data-clerk-email-code-form", html)
+        self.assertIn("data-clerk-request-code", html)
+        self.assertIn("data-clerk-verify-code", html)
+        self.assertIn('id="clerk-captcha"', html)
+        self.assertIn('data-cl-size="flexible"', html)
+        self.assertIn("Email me a code", html)
+        self.assertNotIn("@clerk/ui", html)
         self.assertIn('data-clerk-mode="start"', html)
         self.assertIn('data-session-url="/api/auth/session"', html)
         self.assertIn('data-onboard-url="/api/auth/onboard"', html)
@@ -2079,10 +2155,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "https://*.tile.openstreetmap.org",
             headers["Content-Security-Policy"],
         )
-        proxy_headers = module.shell_headers("/__clerk")
-        self.assertIn("script-src 'self';", proxy_headers["Content-Security-Policy"])
-        self.assertIn("connect-src 'self';", proxy_headers["Content-Security-Policy"])
+        proxy_headers = module.shell_headers(
+            "/__clerk", clerk_publishable_key="pk_live_workdoe"
+        )
+        self.assertIn(
+            "script-src 'self' https://challenges.cloudflare.com https://*.protect.clerk.com;",
+            proxy_headers["Content-Security-Policy"],
+        )
+        self.assertIn(
+            "connect-src 'self' https://challenges.cloudflare.com https://*.protect.clerk.com",
+            proxy_headers["Content-Security-Policy"],
+        )
         self.assertIn("frame-src 'self'", proxy_headers["Content-Security-Policy"])
+        self.assertIn("https://img.clerk.com", proxy_headers["Content-Security-Policy"])
         self.assertNotIn("/__clerk", proxy_headers["Content-Security-Policy"])
 
         proxy_html = module.build_entry_shell_html(
@@ -2094,6 +2179,31 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn('data-clerk-proxy-url="https://workdoe.com/__clerk"', proxy_html)
         self.assertIn("https://workdoe.com/__clerk/npm/@clerk/clerk-js@6", proxy_html)
+
+        development_html = module.build_entry_shell_html(
+            "/login",
+            {},
+            rows,
+            development_key,
+            "https://workdoe.com/__clerk",
+        )
+        self.assertNotIn("data-clerk-proxy-url", development_html)
+        self.assertNotIn("@clerk/ui", development_html)
+        self.assertIn(
+            "https://close-seal-34.clerk.accounts.dev/npm/@clerk/clerk-js@6",
+            development_html,
+        )
+        development_headers = module.shell_headers(
+            "https://workdoe.com/__clerk",
+            clerk_publishable_key=development_key,
+        )
+        development_csp = development_headers["Content-Security-Policy"]
+        self.assertIn("https://close-seal-34.clerk.accounts.dev", development_csp)
+        self.assertIn("https://*.protect.clerk.com", development_csp)
+        self.assertIn("https://challenges.cloudflare.com", development_csp)
+        self.assertIn("https://img.clerk.com", development_csp)
+        self.assertIn("style-src 'self' 'unsafe-inline'", development_csp)
+        self.assertIn("worker-src 'self' blob:", development_csp)
 
     def test_cloudflare_clerk_proxy_plans_same_origin_fapi_requests(self):
         module = load_clerk_proxy_module()
@@ -2662,6 +2772,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("node.dataset.signUpUrl", clerk_script)
         self.assertIn("clerkUserEmail", clerk_script)
         self.assertIn("onboardPayload.email = email", clerk_script)
+        self.assertIn('strategy: "email_code"', clerk_script)
+        self.assertIn("prepareFirstFactor", clerk_script)
+        self.assertIn("attemptFirstFactor", clerk_script)
+        self.assertIn("prepareEmailAddressVerification", clerk_script)
+        self.assertIn("attemptEmailAddressVerification", clerk_script)
+        self.assertIn("window.Clerk.setActive", clerk_script)
+        self.assertIn("window.crypto.getRandomValues", clerk_script)
+        self.assertIn('needsSignUpField(signUpAttempt, "password")', clerk_script)
+        self.assertNotIn("Math.random", clerk_script)
+        self.assertNotIn("mountSignIn", clerk_script)
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
         self.assertIn(".clerk-entry-status", styles)
 

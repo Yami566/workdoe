@@ -34,7 +34,25 @@
         data-dashboard-url="{{ url_for('dashboard') }}"
         {% if login_clerk_proxy_url %}data-clerk-proxy-url="{{ login_clerk_proxy_url }}"{% endif %}
       >
-        <div class="clerk-entry-loading" role="status">Loading secure email sign-in...</div>
+        <form class="email-code-form" data-clerk-email-code-form>
+          <div data-clerk-request-step>
+            <label for="clerk-login-email">
+              Email address
+              <input type="email" name="email" id="clerk-login-email" autocomplete="email" maxlength="254" required>
+            </label>
+            <div id="clerk-captcha" data-cl-theme="light" data-cl-size="flexible" data-cl-language="en-US"></div>
+            <button class="button primary" type="submit" data-clerk-request-code>Email me a code</button>
+          </div>
+          <div class="email-code-verify" data-clerk-code-step hidden>
+            <label for="clerk-login-code">
+              6-digit code
+              <input name="code" id="clerk-login-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" aria-describedby="clerk-login-code-help">
+              <span id="clerk-login-code-help" class="help-text">The code expires in 10 minutes.</span>
+            </label>
+            <button class="button primary" type="submit" data-clerk-verify-code>Verify and continue</button>
+            <button class="button secondary" type="button" data-clerk-restart-code>Use a different email</button>
+          </div>
+        </form>
       </div>
       <div class="auth-switch clerk-entry-note">
         <span>No password needed. Your one-time code arrives by email.</span>
@@ -172,7 +190,6 @@
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
 <script src="{{ url_for('static', filename='map.js') }}"></script>
 {% if clerk_entry_enabled() %}
-  <script defer crossorigin="anonymous" src="{{ clerk_frontend_api_url() }}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
   <script defer crossorigin="anonymous" data-clerk-publishable-key="{{ clerk_publishable_key() }}" {% if clerk_proxy_url() %}data-clerk-proxy-url="{{ clerk_proxy_url() }}"{% endif %} src="{{ clerk_frontend_api_url() }}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
   <script defer src="{{ url_for('static', filename='clerk-entry.js') }}"></script>
 {% endif %}

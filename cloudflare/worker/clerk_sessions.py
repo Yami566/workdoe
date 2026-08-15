@@ -4,6 +4,7 @@ import base64
 import inspect
 import json
 import time
+from urllib.parse import urlparse
 
 
 class SessionVerificationError(ValueError):
@@ -76,9 +77,10 @@ def decode_unverified_jwt(token: str) -> tuple[dict, dict, str, bytes]:
     return header, claims, signing_input, signature
 
 
-def authorized_parties_from_env(env) -> list[str]:
+def authorized_parties_from_env(env, request_url: str = "") -> list[str]:
     public_url = str(getattr(env, "WORKDOE_PUBLIC_URL", "") or "").rstrip("/")
     domain = str(getattr(env, "WORKDOE_DOMAIN", "workdoe.com") or "workdoe.com").strip()
+    environment = str(getattr(env, "WORKDOE_ENV", "production") or "production").lower()
     parties = []
     if public_url:
         parties.append(public_url)
@@ -86,6 +88,14 @@ def authorized_parties_from_env(env) -> list[str]:
         parties.append(f"https://{domain}".rstrip("/"))
     if domain and not domain.startswith("www."):
         parties.append(f"https://www.{domain}".rstrip("/"))
+    if environment != "production" and request_url:
+        parsed = urlparse(request_url)
+        if parsed.scheme in {"http", "https"} and parsed.hostname in {
+            "localhost",
+            "127.0.0.1",
+            "0.0.0.0",
+        }:
+            parties.append(f"{parsed.scheme}://{parsed.netloc}".rstrip("/"))
     return sorted(set(parties))
 
 
@@ -154,21 +164,24 @@ async def verify_rs256_signature_with_webcrypto(
     data_bytes = Uint8Array.new(list(signing_input.encode("ascii")))
     signature_bytes = Uint8Array.new(list(signature))
     algorithm = js_object({"name": "RSASSA-PKCS1-v1_5", "hash": "SHA-256"})
-    public_key = await crypto.subtle.importKey(
-        "spki",
-        key_bytes.buffer,
-        algorithm,
-        False,
-        ["verify"],
-    )
-    return bool(
-        await crypto.subtle.verify(
+    try:
+        public_key = await crypto.subtle.importKey(
+            "spki",
+            key_bytes.buffer,
+            algorithm,
+            False,
+            to_js(["verify"]),
+        )
+        return bool(await crypto.subtle.verify(
             algorithm,
             public_key,
             signature_bytes,
             data_bytes,
-        )
-    )
+        ))
+    except Exception as exc:
+        raise SessionVerificationError(
+            "Clerk session signature verification failed."
+        ) from exc
 
 
 async def verify_clerk_session_token(
