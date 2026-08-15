@@ -225,6 +225,18 @@ MAX_AUTH_BODY_BYTES = 8 * 1024
 AUTH_REQUEST_WINDOW_MINUTES = 15
 AUTH_REQUESTS_PER_EMAIL = 5
 AUTH_REQUESTS_PER_IP = 20
+PUBLIC_HTTPS_HOSTS = {"workdoe.com", "www.workdoe.com"}
+HSTS_HEADER = "max-age=31536000; includeSubDomains"
+STATIC_ASSET_PATHS = {
+    "/clerk-entry.js",
+    "/deer.svg",
+    "/email-code-entry.js",
+    "/field-doe.webp",
+    "/map.js",
+    "/site.webmanifest",
+    "/styles.css",
+    "/worker-actions.js",
+}
 
 
 def utc_now() -> str:
@@ -232,7 +244,10 @@ def utc_now() -> str:
 
 
 def json_response(payload: dict, status: int = 200, headers: dict | None = None) -> Response:
-    response_headers = {"Content-Type": "application/json; charset=utf-8"}
+    response_headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "Strict-Transport-Security": HSTS_HEADER,
+    }
     response_headers.update(headers or {})
     return Response(
         json.dumps(payload),
@@ -410,9 +425,45 @@ def first_row(result):
     return rows[0] if rows else None
 
 
+def public_https_redirect_url(request_url: str) -> str:
+    parsed = urlparse(request_url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "http" or host not in PUBLIC_HTTPS_HOSTS:
+        return ""
+    return parsed._replace(scheme="https", netloc=host).geturl()
+
+
+def is_static_asset_path(path: str) -> bool:
+    return path in STATIC_ASSET_PATHS or path.startswith("/vendor/")
+
+
 class Default(WorkerEntrypoint):
     async def fetch(self, request):
-        path = urlparse(request.url).path
+        redirect_url = public_https_redirect_url(request.url)
+        if redirect_url:
+            return Response(
+                "",
+                status=308,
+                headers={
+                    "Location": redirect_url,
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
+
+        parsed_request = urlparse(request.url)
+        path = parsed_request.path
+
+        if path.startswith("/static/"):
+            asset_path = path.removeprefix("/static")
+            return Response(
+                "",
+                status=308,
+                headers={
+                    "Location": parsed_request._replace(path=asset_path).geturl(),
+                    "Cache-Control": "public, max-age=86400",
+                    "Strict-Transport-Security": HSTS_HEADER,
+                },
+            )
 
         if path in {"/health", "/healthz"}:
             return json_response(
@@ -526,7 +577,7 @@ class Default(WorkerEntrypoint):
         if path == "/clerk/webhook":
             return await self.handle_clerk_webhook(request)
 
-        if path.startswith("/static/") and hasattr(self.env, "ASSETS"):
+        if is_static_asset_path(path) and hasattr(self.env, "ASSETS"):
             return await self.env.ASSETS.fetch(request)
 
         return json_response(

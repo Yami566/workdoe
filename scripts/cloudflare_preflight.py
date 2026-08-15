@@ -394,6 +394,13 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 checks,
                 "Wrangler static assets path exists",
             )
+        require(
+            wrangler.get("assets", {}).get("run_worker_first") is True,
+            errors,
+            "Wrangler must route all asset requests through the Worker so HTTPS enforcement applies consistently.",
+            checks,
+            "Wrangler routes asset requests through the Worker",
+        )
 
     if dev_vars:
         require(
@@ -774,10 +781,10 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "/api/auth/onboard",
                 "/api/jobs/open?",
                 "ENTRY_JOB_LIMIT",
-                "/static/map.js",
+                "/map.js",
                 "finishSignIn",
                 "node.dataset.signUpUrl",
-                "Email code sign-in stays on workdoe.com.",
+                "No password needed. Your one-time code arrives by email.",
                 "Content-Security-Policy",
                 "Cache-Control",
                 "https://*.tile.openstreetmap.org",

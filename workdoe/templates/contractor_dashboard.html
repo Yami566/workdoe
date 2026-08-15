@@ -1,20 +1,20 @@
 {% extends "base.html" %}
-{% block title %}Contractor Dashboard - Workdoe{% endblock %}
+{% block title %}Bids - Workdoe{% endblock %}
 {% block content %}
 <section class="dashboard-header">
   <div>
-    <p class="eyebrow">Contractor dashboard</p>
-    <h1>Find nearby DMV work and track mini bids</h1>
+    <p class="eyebrow">Contractor workspace</p>
+    <h1>Your bids</h1>
   </div>
   <div class="action-row">
     <a class="button secondary" href="{{ url_for('contractor_profile') }}">Edit profile</a>
-    <a class="button" href="{{ url_for('leads') }}">Browse {{ open_jobs }} leads</a>
+    <a class="button" href="{{ url_for('leads') }}">Browse {{ open_jobs }} projects</a>
   </div>
 </section>
 
 <section class="dashboard-metrics" aria-label="Contractor work queue">
   <a class="metric-card" href="{{ url_for('leads') }}">
-    <span>Open leads</span>
+    <span>Open projects</span>
     <strong>{{ stats.open_jobs }}</strong>
   </a>
   <div class="metric-card">

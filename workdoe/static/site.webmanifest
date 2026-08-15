@@ -1,12 +1,12 @@
 {
   "name": "Workdoe",
   "short_name": "Workdoe",
-  "description": "DMV contractor leads with same-site email-code sign-in.",
+  "description": "Local projects and contractors across DC, Maryland, and Virginia.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f7f7f2",
-  "theme_color": "#1b5e20",
+  "background_color": "#edf0eb",
+  "theme_color": "#1b2b22",
   "icons": [
     {
       "src": "/static/deer.svg",

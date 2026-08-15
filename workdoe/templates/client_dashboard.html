@@ -1,21 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Client Dashboard - Workdoe{% endblock %}
+{% block title %}Projects - Workdoe{% endblock %}
 {% block content %}
 <section class="dashboard-header">
   <div>
-    <p class="eyebrow">Client dashboard</p>
-    <h1>Your jobs and match requests</h1>
+    <p class="eyebrow">Consumer workspace</p>
+    <h1>Your projects</h1>
   </div>
-  <a class="button" href="{{ url_for('new_job') }}">Post a job</a>
+  <a class="button" href="{{ url_for('new_job') }}">Post a project</a>
 </section>
 
 <section class="dashboard-metrics" aria-label="Client work queue">
   <a class="metric-card" href="{{ url_for('new_job') }}">
     <span>Post</span>
-    <strong>New job</strong>
+    <strong>New project</strong>
   </a>
   <div class="metric-card">
-    <span>Open</span>
+    <span>Open projects</span>
     <strong>{{ stats.open_jobs }}</strong>
   </div>
   <div class="metric-card">
@@ -23,7 +23,7 @@
     <strong>{{ stats.pending_requests }}</strong>
   </div>
   <div class="metric-card">
-    <span>Total jobs</span>
+    <span>Total projects</span>
     <strong>{{ stats.total_jobs }}</strong>
   </div>
 </section>
@@ -61,10 +61,11 @@
       </div>
     </a>
   {% else %}
-    <div class="empty-state">
+    <div class="empty-state field-empty-state">
+      <img class="empty-state-visual" src="{{ url_for('static', filename='field-doe.webp') }}" alt="" width="180" height="180">
       <h2>{% if job_view == "review" %}No bids to review{% elif job_view == "open" %}No open jobs{% elif job_view == "closed" %}No closed jobs{% else %}No jobs yet{% endif %}</h2>
       {% if job_view == "all" %}
-        <a class="button" href="{{ url_for('new_job') }}">Post a job</a>
+        <a class="button" href="{{ url_for('new_job') }}">Post a project</a>
       {% else %}
         <a class="button secondary" href="{{ url_for('client_dashboard') }}">All jobs</a>
       {% endif %}

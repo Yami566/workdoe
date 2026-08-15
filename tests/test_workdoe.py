@@ -325,7 +325,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertEqual(allowed.status_code, 200)
-        self.assertIn(b"Your jobs and match requests", allowed.data)
+        self.assertIn(b"Your projects", allowed.data)
 
     def test_client_posts_job_with_private_photo_and_contractor_can_view(self):
         self.login("client@workdoe.local", "workdoe-client")
@@ -401,7 +401,7 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         edit = self.client.get(f"/client/jobs/{job['id']}/edit")
         self.assertEqual(edit.status_code, 200)
-        self.assertIn(b"Edit job.", edit.data)
+        self.assertIn(b"Edit project", edit.data)
         self.assertIn(b'value="Original patio wash"', edit.data)
         self.assertIn(b"Save changes", edit.data)
         self.assertIn(b"Approve before chat", edit.data)
@@ -1076,7 +1076,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         contractor_dashboard = self.client.get("/contractor/dashboard")
         contractor_html = contractor_dashboard.data.decode("utf-8")
         self.assertIn('class="dashboard-metrics" aria-label="Contractor work queue"', contractor_html)
-        self.assertRegex(contractor_html, r"<span>Open leads</span>\s*<strong>3</strong>")
+        self.assertRegex(contractor_html, r"<span>Open projects</span>\s*<strong>3</strong>")
         self.assertRegex(contractor_html, r"<span>Pending bids</span>\s*<strong>1</strong>")
         self.assertRegex(contractor_html, r"<span>Approved</span>\s*<strong>0</strong>")
         self.assertIn(
@@ -1108,7 +1108,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('class="dashboard-metrics" aria-label="Client work queue"', client_html)
         self.assertRegex(client_html, r"<span>Open</span>\s*<strong>3</strong>")
         self.assertRegex(client_html, r"<span>Pending bids</span>\s*<strong>1</strong>")
-        self.assertRegex(client_html, r"<span>Total jobs</span>\s*<strong>3</strong>")
+        self.assertRegex(client_html, r"<span>Total projects</span>\s*<strong>3</strong>")
         self.assertIn('class="work-view-tabs" aria-label="Client job status"', client_html)
         self.assertIn('href="/client/dashboard?view=review"', client_html)
         self.assertRegex(client_html, r"<span>Needs review</span>\s*<strong>1</strong>")
@@ -1150,7 +1150,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             b'<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
             response.data,
         )
-        self.assertIn(b'<meta name="theme-color" content="#1b5e20">', response.data)
+        self.assertIn(b'<meta name="theme-color" content="#1b2b22">', response.data)
         self.assertIn(b'<link rel="canonical" href="https://workdoe.com/">', response.data)
         self.assertIn(
             b'<link rel="icon" href="/static/deer.svg" type="image/svg+xml">',
@@ -1167,7 +1167,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         manifest.close()
         self.assertEqual(manifest_payload["name"], "Workdoe")
         self.assertEqual(manifest_payload["start_url"], "/")
-        self.assertEqual(manifest_payload["theme_color"], "#1b5e20")
+        self.assertEqual(manifest_payload["theme_color"], "#1b2b22")
         self.assertEqual(manifest_payload["icons"][0]["src"], "/static/deer.svg")
 
     def test_error_pages_are_branded_private_and_navigable(self):
@@ -1237,12 +1237,12 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         start = self.client.get("/start")
         self.assertEqual(start.status_code, 200)
-        self.assertIn(b'href="/start" aria-current="page">Start</a>', start.data)
+        self.assertIn(b'href="/start" aria-current="page">Join</a>', start.data)
 
         self.login("contractor@workdoe.local", "workdoe-contractor")
         leads = self.client.get("/leads")
         self.assertEqual(leads.status_code, 200)
-        self.assertIn(b'href="/leads" aria-current="page">Leads</a>', leads.data)
+        self.assertIn(b'href="/leads" aria-current="page">Find work</a>', leads.data)
 
     def test_mobile_css_keeps_entry_header_compact_and_auth_first(self):
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
@@ -1290,7 +1290,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertEqual(returned.status_code, 200)
-        self.assertIn(b"Post a job.", returned.data)
+        self.assertIn(b"Post a project", returned.data)
 
         self.logout()
         unsafe = self.client.get("/login?next=https://example.test/jobs/new")
@@ -1519,7 +1519,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'data-redirect-url="/jobs/new"', login.data)
         self.assertIn(b'data-session-url="/api/auth/session"', login.data)
         self.assertIn(b'data-dashboard-url="/dashboard"', login.data)
-        self.assertIn(b"Email code sign-in stays on workdoe.com.", login.data)
+        self.assertIn(b"No password needed. Your one-time code arrives by email.", login.data)
         self.assertIn(
             b'class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message',
             login.data,
@@ -1790,7 +1790,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(home.status_code, 200)
         self.assertIn(b'title="Workdoe home"', home.data)
         self.assertIn(b"brand-home-button", home.data)
-        self.assertIn(b"Open jobs near you.", home.data)
+        self.assertIn(b"Open projects near you", home.data)
         self.assertIn(b"Approximate DMV job map", home.data)
         self.assertIn(b"compact-filter", home.data)
         self.assertIn(b'role="search" aria-label="Filter open jobs"', home.data)
@@ -1824,7 +1824,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertNotIn(b"job-summary", home.data)
         self.assertNotIn(b"Small office needs evening touch-up painting", home.data)
         self.assertIn(b"Target", home.data)
-        self.assertIn(b"leads near DC, Maryland, and Virginia", home.data)
+        self.assertIn(b"near DC, Maryland, and Virginia", home.data)
 
         filtered_home = self.client.get("/?category=Painting&q=Arlington")
         self.assertEqual(filtered_home.status_code, 200)
@@ -1852,12 +1852,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"lead-map", login.data)
         self.assertIn(b"Map loading. Job list is ready.", login.data)
         self.assertIn(b'aria-live="polite"', login.data)
-        self.assertIn(b"Live jobs posted", login.data)
+        self.assertIn(b"Area scan // DMV", login.data)
         self.assertIn(b'<nav class="entry-shortcuts" aria-label="Sign in shortcuts">', login.data)
-        self.assertIn(b'href="#live-jobs">Live jobs</a>', login.data)
+        self.assertIn(b'href="#live-jobs">Open projects</a>', login.data)
         self.assertIn(b'id="live-jobs" class="login-live-panel" tabindex="-1"', login.data)
         self.assertIn(b'class="entry-shortcut" href="#signin">Sign in</a>', login.data)
-        self.assertIn(b"open leads", login.data)
+        self.assertIn(b"open projects", login.data)
         self.assertIn(b"compact-filter entry-filter", login.data)
         self.assertIn(b'role="search" aria-label="Filter open jobs before signing in"', login.data)
         self.assertIn(b'aria-controls="login-open-jobs lead-map"', login.data)
@@ -1947,11 +1947,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"lead-map", start.data)
         self.assertIn(b"Map loading. Job list is ready.", start.data)
         self.assertIn(b'aria-live="polite"', start.data)
-        self.assertIn(b"Choose your workspace", start.data)
+        self.assertIn(b"What brings you here?", start.data)
         self.assertIn(b'id="live-jobs" class="login-live-panel start-live-panel" tabindex="-1"', start.data)
-        self.assertIn(b'class="entry-shortcut" href="#start-account">Start</a>', start.data)
+        self.assertIn(b'class="entry-shortcut" href="#start-account">Join</a>', start.data)
         self.assertIn(b'id="start-account" class="form-panel login-form-panel start-form-panel"', start.data)
-        self.assertIn(b'<nav class="entry-shortcuts" aria-label="Start shortcuts">', start.data)
+        self.assertIn(b'<nav class="entry-shortcuts" aria-label="Join shortcuts">', start.data)
         self.assertIn(b'value="post-job" checked', start.data)
         self.assertIn(b'value="find-work"', start.data)
         self.assertIn(b"compact-filter entry-filter", start.data)
@@ -1965,16 +1965,16 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'maxlength="80"', start.data)
         self.assertIn(b'for="start-sort"', start.data)
         self.assertIn(b'name="sort" id="start-sort"', start.data)
-        self.assertIn(b"<h2>Start</h2>", start.data)
-        self.assertIn(b'class="form-checklist auth-checklist" aria-label="Email code safeguards"', start.data)
+        self.assertIn(b"<h2>Join Workdoe</h2>", start.data)
+        self.assertIn(b"<strong>Consumer</strong>", start.data)
+        self.assertIn(b"<strong>Contractor</strong>", start.data)
         self.assertIn(b"Email code", start.data)
         self.assertIn(b'for="start-email"', start.data)
         self.assertIn(
             b'name="email" type="email" id="start-email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false"',
             start.data,
         )
-        self.assertIn(b"Same site", start.data)
-        self.assertIn(b"No password", start.data)
+        self.assertNotIn(b"Same site", start.data)
         self.assertIn(b'for="start-display-name"', start.data)
         self.assertIn(b'name="display_name" id="start-display-name" autocomplete="name"', start.data)
         self.assertIn(b'aria-describedby="start-name-help"', start.data)
@@ -1985,7 +1985,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Email code", start.data)
         self.assertNotIn(b"Use password instead", start.data)
         self.assertNotIn(b"Use demo password", start.data)
-        self.assertIn(b"open leads", start.data)
+        self.assertIn(b"open projects", start.data)
         self.assertIn(b'id="map-jobs-data" type="application/json"', start.data)
         self.assertIn(b'data-jobs-api="/api/jobs/open?limit=6"', start.data)
         self.assertNotIn(b"window.WORKDOE_JOBS", start.data)
@@ -2135,7 +2135,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Password updated", reset_response.data)
 
         login_response = self.login("client@workdoe.local", "new-client-pass")
-        self.assertIn(b"Your jobs and match requests", login_response.data)
+        self.assertIn(b"Your projects", login_response.data)
         self.assertIn(b'class="job-row link-row"', login_response.data)
         self.assertIn(b"row-cue", login_response.data)
 
@@ -2200,7 +2200,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             data={"code": f"{match.group(1)[:3]}-{match.group(1)[3:]}"},
             follow_redirects=True,
         )
-        self.assertIn(b"Post a job.", verified.data)
+        self.assertIn(b"Post a project", verified.data)
         user = self.one("SELECT * FROM users WHERE email = ?", ("new-client@example.com",))
         self.assertEqual(user["role"], "client")
 
@@ -2241,7 +2241,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             data={"code": match.group(1)},
             follow_redirects=True,
         )
-        self.assertIn(b"Open DMV jobs", verified.data)
+        self.assertIn(b"Work near you", verified.data)
         user = self.one(
             "SELECT * FROM users WHERE email = ?",
             ("legacy-contractor@example.com",),
@@ -2254,7 +2254,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             "legacy-password",
         )
         self.assertIn(b"Email or password did not match.", password_login.data)
-        self.assertNotIn(b"Open DMV jobs", password_login.data)
+        self.assertNotIn(b"Work near you", password_login.data)
 
     def test_local_one_time_code_display_can_be_hidden(self):
         self.app.config["SHOW_LOCAL_LOGIN_CODE"] = False
@@ -2278,7 +2278,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 data={"code": code},
                 follow_redirects=True,
             )
-            self.assertIn(b"Post a job.", verified.data)
+            self.assertIn(b"Post a project", verified.data)
         finally:
             self.app.config["SHOW_LOCAL_LOGIN_CODE"] = True
 
@@ -2286,7 +2286,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.login("client@workdoe.local", "workdoe-client")
         form = self.client.get("/jobs/new")
         self.assertEqual(form.status_code, 200)
-        self.assertIn(b'class="form-grid" method="post" enctype="multipart/form-data" aria-label="Post a job."', form.data)
+        self.assertIn(b'class="form-grid" method="post" enctype="multipart/form-data" aria-label="Post a project"', form.data)
         self.assertIn(b'maxlength="90"', form.data)
         self.assertIn(b'pattern="[0-9]{5}"', form.data)
         self.assertIn(b'autocomplete="postal-code"', form.data)

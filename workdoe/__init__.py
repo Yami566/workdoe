@@ -2423,8 +2423,8 @@ def render_job_form(form: dict[str, str], mode: str, job=None, errors: list[str]
         form=form,
         error_feedback=job_error_feedback(errors or []),
         mode=mode,
-        page_eyebrow="Edit client job" if is_edit else "New client job",
-        page_title="Edit job." if is_edit else "Post a job.",
+        page_eyebrow="Consumer workspace",
+        page_title="Edit project" if is_edit else "Post a project",
         page_intro=(
             "Keep scope, timing, and approximate location current."
             if is_edit
