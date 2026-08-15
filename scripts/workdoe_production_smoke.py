@@ -353,6 +353,26 @@ def build_smoke_payload(
     }
 
 
+def build_smoke_payload_with_retries(
+    *,
+    domain: str = DEFAULT_DOMAIN,
+    base_url: str = DEFAULT_BASE_URL,
+    timeout: float = DEFAULT_TIMEOUT,
+    attempts: int = 1,
+    retry_delay: float = 0.0,
+) -> dict:
+    total_attempts = max(1, int(attempts))
+    payload: dict = {}
+    for attempt in range(1, total_attempts + 1):
+        payload = build_smoke_payload(domain=domain, base_url=base_url, timeout=timeout)
+        payload["attempt"] = attempt
+        payload["attempts"] = total_attempts
+        if payload["ready"] or attempt == total_attempts:
+            break
+        time.sleep(max(0.0, retry_delay))
+    return payload
+
+
 def render_text(payload: dict) -> str:
     lines = [
         "Workdoe production smoke",
@@ -381,15 +401,29 @@ def main() -> int:
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="Production base URL.")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="HTTP timeout seconds.")
     parser.add_argument(
+        "--attempts",
+        type=int,
+        default=1,
+        help="Maximum production smoke attempts while a new Worker propagates.",
+    )
+    parser.add_argument(
+        "--retry-delay",
+        type=float,
+        default=0.0,
+        help="Seconds to wait between production smoke attempts.",
+    )
+    parser.add_argument(
         "--fail-when-not-ready",
         action="store_true",
         help="Exit nonzero when smoke checks are not ready.",
     )
     args = parser.parse_args()
-    payload = build_smoke_payload(
+    payload = build_smoke_payload_with_retries(
         domain=args.domain,
         base_url=args.base_url,
         timeout=args.timeout,
+        attempts=args.attempts,
+        retry_delay=args.retry_delay,
     )
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
