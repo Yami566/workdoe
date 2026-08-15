@@ -121,6 +121,7 @@ def contractor_lead_card(row) -> dict:
         "desired_date": row_value(row, "desired_date", "") or "",
         "created_at": row_value(row, "created_at", "") or "",
         "photo_count": count_value(row, "photo_count"),
+        "budget": row_value(row, "budget", "") or "",
         "request_status": status,
         "url": f"/jobs/{job_id}",
         "can_request_match": not bool(status),
@@ -136,11 +137,17 @@ def contractor_lead_map_marker(row) -> dict:
         "category": row_value(row, "category", "") or "",
         "city": row_value(row, "city", "") or "",
         "state": row_value(row, "state", "") or "",
+        "description": row_value(row, "description", "") or "",
+        "desired_date": row_value(row, "desired_date", "") or "",
+        "photo_count": count_value(row, "photo_count"),
+        "budget": row_value(row, "budget", "") or "Budget not provided",
         "lat": row_value(row, "approx_lat"),
         "lng": row_value(row, "approx_lng"),
         "url": f"/jobs/{row_value(row, 'id')}",
-        "action_label": "Sent" if status else "View",
+        "detail_url": f"/jobs/{row_value(row, 'id')}",
+        "action_label": "View sent bid" if status else "View and send bid",
         "request_status": status,
+        "is_demo": False,
     }
 
 

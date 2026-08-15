@@ -147,6 +147,9 @@ jobs:
       - name: Capture sanitized Worker secret names
         run: npm run cf:secrets:evidence
 
+      - name: Record same-domain Clerk proxy release proof
+        run: npm run cf:clerk:proof
+
       - name: Validate release evidence
         run: npm run cf:release:evidence
 

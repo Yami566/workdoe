@@ -57,21 +57,17 @@ def build_deploy_steps(
         ),
     ]
     if include_smoke:
-        steps.extend(
-            [
-                DeployStep(
-                    name="smoke-health",
-                    command=["curl.exe", "-fS", "-I", "https://workdoe.com/health"],
-                    cwd=str(repo_root),
-                    required=False,
-                ),
-                DeployStep(
-                    name="smoke-public-jobs",
-                    command=["curl.exe", "-fsS", "https://workdoe.com/api/jobs/open?limit=3"],
-                    cwd=str(repo_root),
-                    required=False,
-                ),
-            ]
+        steps.append(
+            DeployStep(
+                name="smoke-production",
+                command=[
+                    sys.executable,
+                    str(repo_root / "scripts" / "workdoe_production_smoke.py"),
+                    "--fail-when-not-ready",
+                ],
+                cwd=str(repo_root),
+                required=True,
+            )
         )
     return steps
 

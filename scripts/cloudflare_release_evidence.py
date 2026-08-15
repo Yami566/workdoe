@@ -16,6 +16,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from cloudflare_readiness import (  # noqa: E402
     DEFAULT_CLERK_PROXY_PROOF_PATH,
     REQUIRED_SECRETS,
+    clerk_proxy_proof_error,
     read_json,
     secret_names_from_json,
 )
@@ -51,8 +52,11 @@ def run_release_evidence(
     else:
         checks.append("Sanitized Cloudflare secret-name evidence is valid")
 
-    if clerk_proxy_proof_json and clerk_proxy_proof_json.exists():
-        checks.append("Legacy Clerk proof is present but not required by native email-code auth")
+    proxy_error = clerk_proxy_proof_error(clerk_proxy_proof_json)
+    if proxy_error:
+        blockers.append(proxy_error)
+    else:
+        checks.append("Same-domain Clerk proxy release proof is valid")
 
     return {
         "ok": not blockers,
@@ -62,6 +66,7 @@ def run_release_evidence(
         "clerk_proxy_proof_json": str(clerk_proxy_proof_json) if clerk_proxy_proof_json else "",
         "next_steps": [
             "python scripts\\cloudflare_secret_evidence.py --execute --yes",
+            "python scripts\\cloudflare_clerk_proxy_proof.py --confirm",
             "python scripts\\cloudflare_release_evidence.py --json",
         ],
     }

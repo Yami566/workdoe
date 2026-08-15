@@ -14,6 +14,9 @@ from urllib.parse import urlparse
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 REQUIRED_DEV_ENV = {
+    "CLERK_JWT_KEY",
+    "CLERK_PUBLISHABLE_KEY",
+    "CLERK_SECRET_KEY",
     "WORKDOE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SITE_KEY",
@@ -331,13 +334,13 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
         )
         require(
             wrangler.get("vars", {}).get("WORKDOE_AUTH_PROVIDER")
-            == "workdoe_email_code"
+            == "clerk"
             and wrangler.get("vars", {}).get("WORKDOE_LOGIN_MODE")
             == "same_domain_email_code",
             errors,
-            "Wrangler vars must keep Workdoe same-domain email-code mode.",
+            "Wrangler vars must keep Clerk same-domain email-code mode.",
             checks,
-            "Wrangler keeps native same-domain OTP mode",
+            "Wrangler keeps Clerk same-domain OTP mode",
         )
         require(
             wrangler.get("vars", {}).get("WORKDOE_EMAIL_FROM") == "no-reply@workdoe.com"
@@ -353,6 +356,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 {
                     "name": "EMAIL",
                     "allowed_sender_addresses": ["no-reply@workdoe.com"],
+                    "remote": True,
                 }
             ],
             errors,
@@ -364,9 +368,9 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
         require(
             required_secrets == REQUIRED_WORKER_SECRETS,
             errors,
-            "Wrangler secrets.required must declare the Workdoe and Turnstile secrets.",
+            "Wrangler secrets.required must declare the Clerk, Workdoe, and Turnstile secrets.",
             checks,
-            "Wrangler requires Workdoe and Turnstile secrets",
+            "Wrangler requires Clerk, Workdoe, and Turnstile secrets",
         )
         leaked_secret_vars = sorted(required_secrets & set(wrangler.get("vars", {})))
         require(
@@ -420,7 +424,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             errors,
             ".dev.vars.example is missing required env names: " + ", ".join(missing_env),
             checks,
-            ".dev.vars.example lists native auth, Turnstile, and app secrets",
+            ".dev.vars.example lists Clerk, Turnstile, and app secrets",
         )
 
     compile_python(worker_path, errors, checks, "Cloudflare Worker Python compiles")
@@ -1195,8 +1199,8 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "wrangler_command",
                 "\"d1\", \"migrations\", \"apply\", \"workdoe\", \"--remote",
                 "\"deploy",
-                "curl.exe\", \"-fS\", \"-I",
-                "curl.exe\", \"-fsS",
+                "workdoe_production_smoke.py",
+                "--fail-when-not-ready",
                 "Strict production readiness failed; deploy was not run.",
                 "executes_commands",
                 "output_excerpt",

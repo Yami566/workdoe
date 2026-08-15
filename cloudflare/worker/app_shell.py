@@ -207,6 +207,8 @@ def layout(
     include_map: bool = False,
     include_actions: bool = False,
     include_turnstile: bool = False,
+    body_class: str = "",
+    main_class: str = "",
 ) -> str:
     scripts = []
     if include_turnstile:
@@ -215,6 +217,7 @@ def layout(
         scripts.extend(
             [
                 '<script src="/vendor/leaflet/leaflet.js"></script>',
+                '<script src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>',
                 '<script src="/map.js"></script>',
             ]
         )
@@ -241,9 +244,10 @@ def layout(
   <link rel="manifest" href="/site.webmanifest">
   <link rel="stylesheet" href="/styles.css">
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet/leaflet.css\">" if include_map else ""}
+  {"<link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.css\"><link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.Default.css\">" if include_map else ""}
   {script_html}
 </head>
-<body>
+<body{f' class="{escape(body_class)}"' if body_class else ''}>
   <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="site-header">
     <a class="brand brand-home-button" href="/" aria-label="Workdoe home">
@@ -254,7 +258,7 @@ def layout(
       {nav_links(user, active_path)}
     </nav>
   </header>
-  <main id="main-content" tabindex="-1">
+  <main id="main-content"{f' class="{escape(main_class)}"' if main_class else ''} tabindex="-1">
 {body}
   </main>
   <footer class="site-footer">
@@ -371,6 +375,7 @@ def contractor_dashboard_html(user, payload: dict) -> str:
 
 def lead_board_html(user, payload: dict) -> str:
     jobs = payload.get("jobs", [])
+    selected = jobs[0] if jobs else None
     rows = []
     for job in jobs:
         row_cue = str(job.get("row_cue", "View") or "View")
@@ -381,44 +386,95 @@ def lead_board_html(user, payload: dict) -> str:
         )
         rows.append(
             f"""
-      <a class="job-row link-row" role="listitem" data-job-id="{escape(str(job.get('id', '')))}" href="{escape(job.get('url', '#'))}" aria-label="{escape(row_label)}">
-        <div>
-          <div class="row-meta">
-            <span>{escape(job.get('category', ''))}</span>
-            <span>{escape(job.get('city', ''))}, {escape(job.get('state', ''))}</span>
-            <span>{escape(photo_count_label(job.get('photo_count', 0)))}</span>
-            {('<span class="status ' + escape(job.get('request_status', '')) + '">bid ' + escape(job.get('request_status', '')) + '</span>') if job.get('request_status') else ''}
-          </div>
-          <h2>{escape(job.get('title', ''))}</h2>
-          <p class="job-summary">{escape(job.get('description', ''))}</p>
-        </div>
-        <span class="row-cue">{escape(row_cue)}</span>
+      <a class="project-result{' is-map-active' if job is selected else ''}" role="listitem" data-job-id="{escape(str(job.get('id', '')))}" href="{escape(job.get('url', '#'))}" aria-label="{escape(row_label)}"{' aria-current="true"' if job is selected else ''}>
+        <span class="project-result-topline">
+          <span>{escape(job.get('category', ''))}</span>
+          {('<span class="status ' + escape(job.get('request_status', '')) + '">Bid ' + escape(job.get('request_status', '')) + '</span>') if job.get('request_status') else ''}
+        </span>
+        <strong>{escape(job.get('title', ''))}</strong>
+        <span class="project-result-facts">
+          <span>{escape(job.get('city', ''))}, {escape(job.get('state', ''))}</span>
+          <span>{escape(row_cue)}</span>
+        </span>
       </a>"""
         )
-    list_html = "\n".join(rows) if rows else empty_state("No leads match this view", "/leads", "Clear filters")
+    list_html = "\n".join(rows) if rows else '<div class="market-list-empty"><strong>No matching projects</strong><span>Clear filters to widen the map.</span></div>'
     map_jobs = payload.get("map_jobs", [])
     list_role = ' role="list"' if rows else ""
+    category_options = ['<option value="">All categories</option>']
+    category_options.extend(
+        f'<option value="{escape(category)}">{escape(category)}</option>'
+        for category in sorted(JOB_CATEGORIES)
+    )
+    if selected:
+        desired_date = escape(selected.get("desired_date", "") or "Flexible")
+        detail_html = f"""
+        <article class="market-project-detail" data-project-detail-content data-job-id="{escape(str(selected.get('id', '')))}">
+          <div class="project-detail-heading"><span class="live-badge">Open project</span><span>{escape(selected.get('category', ''))}</span></div>
+          <h2>{escape(selected.get('title', ''))}</h2>
+          <p class="project-detail-location">{escape(selected.get('city', ''))}, {escape(selected.get('state', ''))}</p>
+          <dl class="project-facts">
+            <div><dt>Estimated budget</dt><dd>{escape(selected.get('budget', '') or 'Budget not provided')}</dd></div>
+            <div><dt>Desired date</dt><dd>{desired_date}</dd></div>
+          </dl>
+          <div class="project-description"><h3>Field brief</h3><p>{escape(selected.get('description', ''))}</p></div>
+          <p class="project-privacy-note">Location is intentionally approximate until a match is approved.</p>
+          <div class="project-detail-actions"><a class="button primary" href="{escape(selected.get('url', '#'))}">View and send bid</a></div>
+        </article>"""
+    else:
+        detail_html = """
+        <div class="market-detail-empty" data-project-detail-content>
+          <img src="/field-doe.webp" alt="" width="160" height="160">
+          <h2>No projects match</h2><p>Adjust the filters to widen the map.</p>
+        </div>"""
     body = f"""
-    <section class="dashboard-header">
+    <div class="market-mobile-tabs" role="tablist" aria-label="Marketplace view">
+      <button type="button" role="tab" data-mobile-panel-target="filters">Projects</button>
+      <button type="button" role="tab" data-mobile-panel-target="map">Map</button>
+      <button type="button" role="tab" data-mobile-panel-target="details">Details</button>
+    </div>
+    <section class="signed-in-market-heading">
       <div>
         <p class="eyebrow">Area scan // DMV</p>
         <h1>Work near you</h1>
-        <p>Locations stay approximate until a match is approved.</p>
       </div>
     </section>
-    <section class="lead-layout">
-      <div class="job-list lead-job-list" aria-label="Open leads"{list_role}>
+    <section class="market-workspace signed-in-market-workspace" data-market-workspace data-mobile-panel="map">
+      <aside class="market-filter-rail" data-market-panel="filters" aria-label="Project search and filters">
+        <div class="market-rail-heading"><h2>Available projects</h2><p>Dispatch view with approximate locations until a client approves your bid.</p></div>
+        <form class="market-filter-form" data-market-filters>
+          <label for="market-search">Search projects</label>
+          <input id="market-search" type="search" placeholder="Try painting or Arlington" autocomplete="off" data-market-search>
+          <label for="market-category">Category</label>
+          <select id="market-category" data-market-category>{''.join(category_options)}</select>
+          <button class="button secondary compact" type="button" data-clear-market-filters>Clear filters</button>
+        </form>
+        <div class="project-results-heading"><strong data-project-result-count>{len(jobs)} projects</strong><span>Ready to review</span></div>
+        <div class="project-results" data-project-results aria-label="Open leads"{list_role}>
 {list_html}
-      </div>
-      <div class="map-panel lead-map-panel">
-        <div id="lead-map" data-map role="region" tabindex="0" aria-label="Approximate DMV job map" aria-describedby="lead-map-status">
-          <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Map loading. Job list is ready.</p>
-          <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Map loading. Job list is ready.</p>
         </div>
-      </div>
+      </aside>
+      <section class="market-map-stage" data-market-panel="map" aria-label="Project map workspace">
+        <div class="map-stage-toolbar"><div><span class="map-live-indicator" aria-hidden="true"></span><strong data-map-result-count>{len(map_jobs)} projects mapped</strong></div><span>Approximate pins</span></div>
+        <div class="market-map-frame">
+          <div id="lead-map" data-map data-map-workspace role="region" tabindex="0" aria-label="Approximate DMV job map" aria-describedby="lead-map-status">
+            <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Map loading. Project list is ready.</p>
+            <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Map loading. Project list is ready.</p>
+          </div>
+        </div>
+      </section>
+      <aside class="market-detail-rail" data-market-panel="details" aria-label="Selected project">{detail_html}</aside>
     </section>
     <script id="map-jobs-data" type="application/json">{safe_json_script(map_jobs)}</script>"""
-    return layout(user, "/leads", "Find Work", body, include_map=True)
+    return layout(
+        user,
+        "/leads",
+        "Find Work",
+        body,
+        include_map=True,
+        body_class="app-market-body",
+        main_class="app-market-main",
+    )
 
 
 def turnstile_html(site_key: str, action: str) -> str:

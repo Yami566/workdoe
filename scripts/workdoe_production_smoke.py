@@ -14,12 +14,14 @@ DEFAULT_DOMAIN = "workdoe.com"
 DEFAULT_BASE_URL = "https://workdoe.com"
 DEFAULT_TIMEOUT = 8.0
 REQUIRED_SECURITY_HEADERS = {
+    "Strict-Transport-Security": ("max-age=", "includeSubDomains"),
     "Content-Security-Policy": ("default-src 'self'", "frame-ancestors 'none'"),
     "X-Content-Type-Options": ("nosniff",),
     "X-Frame-Options": ("DENY",),
     "Referrer-Policy": ("strict-origin-when-cross-origin",),
     "Permissions-Policy": ("geolocation=(), microphone=(), camera=()",),
 }
+CLERK_ASSET_PATH = "/__clerk/npm/@clerk/clerk-js@6/dist/clerk.browser.js"
 
 
 @dataclass
@@ -271,6 +273,36 @@ def security_headers_check(base_url: str, timeout: float) -> SmokeCheck:
     )
 
 
+def clerk_proxy_check(base_url: str, timeout: float) -> SmokeCheck:
+    url = check_url(base_url, CLERK_ASSET_PATH)
+    result = fetch_url(url, timeout=timeout)
+    if not result.ok:
+        return response_check(
+            "clerk-same-domain-proxy",
+            url,
+            result,
+            expected_summary="Same-domain Clerk asset proxy returned HTTP success.",
+        )
+    content_type = header_value(result.headers, "Content-Type").lower()
+    if "javascript" not in content_type or not result.body.strip():
+        return SmokeCheck(
+            name="clerk-same-domain-proxy",
+            status="failed",
+            summary="Clerk proxy did not return a non-empty JavaScript asset.",
+            url=url,
+            status_code=result.status_code,
+            elapsed_ms=result.elapsed_ms,
+        )
+    return SmokeCheck(
+        name="clerk-same-domain-proxy",
+        status="ready",
+        summary="Clerk sign-in assets are served through workdoe.com.",
+        url=url,
+        status_code=result.status_code,
+        elapsed_ms=result.elapsed_ms,
+    )
+
+
 def build_smoke_payload(
     *,
     domain: str = DEFAULT_DOMAIN,
@@ -303,6 +335,7 @@ def build_smoke_payload(
             health_check(base_url, timeout),
             public_jobs_check(base_url, timeout),
             security_headers_check(base_url, timeout),
+            clerk_proxy_check(base_url, timeout),
         ]
     )
     failures = [
