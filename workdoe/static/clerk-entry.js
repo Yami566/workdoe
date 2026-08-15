@@ -150,6 +150,190 @@
     }
   }
 
+  function formValue(form, name) {
+    var field = form.elements.namedItem(name);
+    return field && typeof field.value === "string" ? field.value.trim() : "";
+  }
+
+  function setBusy(form, busy) {
+    form.querySelectorAll("button, input").forEach(function (control) {
+      control.disabled = busy;
+    });
+    form.setAttribute("aria-busy", busy ? "true" : "false");
+  }
+
+  function clerkErrorCode(error) {
+    var first = error && error.errors && error.errors[0];
+    return first && first.code ? String(first.code) : "";
+  }
+
+  function clerkErrorMessage(error) {
+    var first = error && error.errors && error.errors[0];
+    if (first && (first.longMessage || first.message)) {
+      return String(first.longMessage || first.message);
+    }
+    return error && error.message
+      ? String(error.message)
+      : "Workdoe could not complete email sign-in.";
+  }
+
+  function emailCodeFactor(factors) {
+    var available = factors || [];
+    for (var index = 0; index < available.length; index += 1) {
+      if (available[index] && available[index].strategy === "email_code") {
+        return available[index];
+      }
+    }
+    return null;
+  }
+
+  function needsSignUpField(attempt, fieldName) {
+    return !!(
+      attempt &&
+      attempt.missingFields &&
+      attempt.missingFields.indexOf(fieldName) !== -1
+    );
+  }
+
+  function secureTemporaryPassword() {
+    if (!window.crypto || typeof window.crypto.getRandomValues !== "function") {
+      throw new Error("Secure email sign-in is unavailable in this browser.");
+    }
+    var alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    var randomBytes = new Uint8Array(32);
+    window.crypto.getRandomValues(randomBytes);
+    var value = "Wd9!";
+    for (var index = 0; index < randomBytes.length; index += 1) {
+      value += alphabet.charAt(randomBytes[index] % alphabet.length);
+    }
+    return value;
+  }
+
+  function showCodeStep(node, email) {
+    var form = node.querySelector("[data-clerk-email-code-form]");
+    var requestStep = form.querySelector("[data-clerk-request-step]");
+    var codeStep = form.querySelector("[data-clerk-code-step]");
+    requestStep.hidden = true;
+    codeStep.hidden = false;
+    var codeInput = form.elements.namedItem("code");
+    if (codeInput) {
+      codeInput.required = true;
+      codeInput.focus();
+    }
+    setMessage(node, "Code sent to " + email + ". Check your inbox.");
+  }
+
+  async function requestEmailCode(node) {
+    var form = node.querySelector("[data-clerk-email-code-form]");
+    var email = formValue(form, "email").toLowerCase();
+    setMessage(node, "Sending your one-time code...");
+
+    try {
+      var signInAttempt = await window.Clerk.client.signIn.create({
+        identifier: email
+      });
+      var factor = emailCodeFactor(signInAttempt.supportedFirstFactors);
+      if (!factor) {
+        throw new Error("Email code sign-in is not available for this account.");
+      }
+      await window.Clerk.client.signIn.prepareFirstFactor({
+        strategy: "email_code",
+        emailAddressId: factor.emailAddressId
+      });
+      node.dataset.clerkFlow = "signin";
+      showCodeStep(node, email);
+      return;
+    } catch (error) {
+      if (clerkErrorCode(error) !== "form_identifier_not_found") {
+        throw error;
+      }
+    }
+
+    var signUpAttempt = await window.Clerk.client.signUp.create({
+      emailAddress: email
+    });
+    if (needsSignUpField(signUpAttempt, "password")) {
+      await window.Clerk.client.signUp.update({
+        password: secureTemporaryPassword()
+      });
+    }
+    await window.Clerk.client.signUp.prepareEmailAddressVerification({
+      strategy: "email_code"
+    });
+    node.dataset.clerkFlow = "signup";
+    showCodeStep(node, email);
+  }
+
+  async function finishClerkAttempt(node, attempt) {
+    if (!attempt || attempt.status !== "complete" || !attempt.createdSessionId) {
+      window.console.error("Clerk email verification is incomplete.", {
+        status: attempt && attempt.status,
+        missingFields: attempt && attempt.missingFields,
+        unverifiedFields: attempt && attempt.unverifiedFields
+      });
+      throw new Error("Email verification needs another step. Please restart and try again.");
+    }
+    setMessage(node, "Email verified. Opening your workspace...");
+    await window.Clerk.setActive({ session: attempt.createdSessionId });
+    if (node.dataset.clerkMode === "start") {
+      await finishStartOnboarding(node);
+    } else {
+      await finishSignIn(node);
+    }
+  }
+
+  async function verifyEmailCode(node) {
+    var form = node.querySelector("[data-clerk-email-code-form]");
+    var code = formValue(form, "code");
+    setMessage(node, "Verifying your code...");
+    var attempt;
+    if (node.dataset.clerkFlow === "signup") {
+      attempt = await window.Clerk.client.signUp.attemptEmailAddressVerification({
+        code: code
+      });
+    } else {
+      attempt = await window.Clerk.client.signIn.attemptFirstFactor({
+        strategy: "email_code",
+        code: code
+      });
+    }
+    await finishClerkAttempt(node, attempt);
+  }
+
+  function bindEmailCodeForm(node) {
+    var form = node.querySelector("[data-clerk-email-code-form]");
+    if (!form) {
+      throw new Error("Email sign-in form is unavailable.");
+    }
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      setBusy(form, true);
+      var operation = node.dataset.clerkFlow
+        ? verifyEmailCode(node)
+        : requestEmailCode(node);
+      operation.catch(function (error) {
+        setMessage(node, clerkErrorMessage(error));
+      }).finally(function () {
+        setBusy(form, false);
+      });
+    });
+
+    var restart = form.querySelector("[data-clerk-restart-code]");
+    if (restart) {
+      restart.addEventListener("click", function () {
+        window.location.reload();
+      });
+    }
+  }
+
+  function clerkLoadOptions(node) {
+    var options = {};
+    if (node.dataset.clerkProxyUrl) {
+      options.proxyUrl = node.dataset.clerkProxyUrl;
+    }
+    return options;
+  }
+
   async function loadClerk(node) {
     if (!window.Clerk || typeof window.Clerk.load !== "function") {
       node.dataset.state = "unavailable";
@@ -157,14 +341,7 @@
       return;
     }
 
-    var loadOptions = {};
-    if (window.__internal_ClerkUICtor) {
-      loadOptions.ui = { ClerkUI: window.__internal_ClerkUICtor };
-    }
-    if (node.dataset.clerkProxyUrl) {
-      loadOptions.proxyUrl = node.dataset.clerkProxyUrl;
-    }
-    await window.Clerk.load(loadOptions);
+    await window.Clerk.load(clerkLoadOptions(node));
 
     if (window.Clerk.isSignedIn) {
       if (node.dataset.clerkMode === "start") {
@@ -175,17 +352,9 @@
       return;
     }
 
-    if (typeof window.Clerk.mountSignIn === "function") {
-      window.Clerk.mountSignIn(node, {
-        routing: "hash",
-        withSignUp: true,
-        signUpUrl: node.dataset.signUpUrl || "/start",
-        fallbackRedirectUrl: node.dataset.redirectUrl || "/dashboard",
-        forceRedirectUrl: node.dataset.redirectUrl || "/dashboard",
-        signUpFallbackRedirectUrl: node.dataset.redirectUrl || "/dashboard",
-        signUpForceRedirectUrl: node.dataset.redirectUrl || "/dashboard"
-      });
-    }
+    bindEmailCodeForm(node);
+    node.dataset.state = "ready";
+    setMessage(node, "");
 
     if (typeof window.Clerk.addListener === "function") {
       window.Clerk.addListener(function () {
@@ -204,7 +373,8 @@
   function boot() {
     var mounts = document.querySelectorAll("[data-clerk-entry]");
     mounts.forEach(function (node) {
-      loadClerk(node).catch(function () {
+      loadClerk(node).catch(function (error) {
+        window.console.error("Clerk email-code initialization failed.", error);
         node.dataset.state = "failed";
         setMessage(node, "Clerk sign-in could not load.");
       });

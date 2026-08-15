@@ -38,6 +38,7 @@ from app_shell import (
 from clerk_onboarding import (
     MAX_ONBOARDING_BODY_BYTES,
     OnboardingError,
+    claims_with_verified_clerk_email,
     onboarding_payload,
 )
 from clerk_sessions import (
@@ -652,11 +653,12 @@ class Default(WorkerEntrypoint):
                 "https://workdoe.com/__clerk",
             )
         )
+        clerk_publishable_key = getattr(self.env, "CLERK_PUBLISHABLE_KEY", "")
         html = build_entry_shell_html(
             path,
             params,
             rows,
-            getattr(self.env, "CLERK_PUBLISHABLE_KEY", ""),
+            clerk_publishable_key,
             clerk_frontend_api_url,
             auth_provider=auth_provider,
             turnstile_site_key=getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", ""),
@@ -670,6 +672,7 @@ class Default(WorkerEntrypoint):
                 include_turnstile=native_auth
                 and path in {"/start", "/login"}
                 and bool(getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", "")),
+                clerk_publishable_key=clerk_publishable_key,
             ),
         )
 
@@ -1978,7 +1981,7 @@ class Default(WorkerEntrypoint):
         return await verify_clerk_session_token(
             token=token,
             jwt_key=getattr(self.env, "CLERK_JWT_KEY", ""),
-            authorized_parties=authorized_parties_from_env(self.env),
+            authorized_parties=authorized_parties_from_env(self.env, request.url),
         )
 
     async def optional_workdoe_user(self, request):
@@ -2739,9 +2742,41 @@ class Default(WorkerEntrypoint):
                 status=405,
                 headers={"Allow": "GET, POST", "Cache-Control": "no-store"},
             )
+        if not native_email_code_enabled(self.env):
+            try:
+                claims = await self.verified_clerk_claims(request)
+                secret_key = str(
+                    getattr(self.env, "CLERK_SECRET_KEY", "") or ""
+                ).strip()
+                if secret_key:
+                    response = await fetch(
+                        f"https://api.clerk.com/v1/sessions/{claims['sid']}/revoke",
+                        method="POST",
+                        headers={
+                            "Accept": "application/json",
+                            "Authorization": f"Bearer {secret_key}",
+                        },
+                    )
+                    if not response.ok:
+                        raise SessionVerificationError(
+                            "Clerk session revocation was not accepted."
+                        )
+            except Exception as exc:
+                print(
+                    json.dumps(
+                        {
+                            "event": "clerk-session-revoke-failed",
+                            "reason": str(exc),
+                        }
+                    )
+                )
         headers = {
             "Cache-Control": "no-store",
-            "Set-Cookie": clear_session_cookie(),
+            "Set-Cookie": (
+                clear_session_cookie()
+                if native_email_code_enabled(self.env)
+                else "__session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+            ),
         }
         if request.method == "GET":
             headers["Location"] = "/"
@@ -2788,7 +2823,15 @@ class Default(WorkerEntrypoint):
 
         try:
             claims = await self.verified_clerk_claims(request)
-        except SessionVerificationError:
+        except SessionVerificationError as exc:
+            print(
+                json.dumps(
+                    {
+                        "event": "clerk-session-verification-failed",
+                        "reason": str(exc),
+                    }
+                )
+            )
             return json_response(
                 {"authenticated": False, "error": "Session token not verified."},
                 status=401,
@@ -2866,6 +2909,24 @@ class Default(WorkerEntrypoint):
 
         try:
             claims = await self.verified_clerk_claims(request)
+            secret_key = str(getattr(self.env, "CLERK_SECRET_KEY", "") or "").strip()
+            if not secret_key:
+                raise OnboardingError("Clerk user lookup is not configured.")
+            try:
+                clerk_user_response = await fetch(
+                    f"https://api.clerk.com/v1/users/{claims['sub']}",
+                    method="GET",
+                    headers={
+                        "Accept": "application/json",
+                        "Authorization": f"Bearer {secret_key}",
+                    },
+                )
+            except Exception as exc:
+                raise OnboardingError("Clerk user lookup failed.") from exc
+            if not clerk_user_response.ok:
+                raise OnboardingError("Clerk user lookup was not accepted.")
+            clerk_user = await clerk_user_response.json()
+            claims = claims_with_verified_clerk_email(claims, clerk_user)
             body = await request_json_object(request)
             payload = onboarding_payload(claims, body)
         except (SessionVerificationError, OnboardingError):

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from base64 import urlsafe_b64decode
+from binascii import Error as Base64Error
 from html import escape
 from urllib.parse import urlencode, urlparse
 
@@ -19,6 +21,14 @@ CLERK_SIGNIN_MODE = "signin"
 CLERK_START_MODE = "start"
 WORKDOE_PUBLIC_DOMAIN = "workdoe.com"
 CLERK_PROXY_PATH = "/__clerk"
+CLERK_DEVELOPMENT_SUFFIX = ".clerk.accounts.dev"
+CLERK_CHALLENGE_ORIGIN = "https://challenges.cloudflare.com"
+CLERK_PROTECT_ORIGIN = "https://*.protect.clerk.com"
+CLERK_IMAGE_ORIGIN = "https://img.clerk.com"
+CLERK_TELEMETRY_ORIGINS = (
+    "https://clerk-telemetry.com",
+    "https://*.clerk-telemetry.com",
+)
 
 
 def row_value(row, key: str, default=None):
@@ -61,6 +71,18 @@ def is_workdoe_domain(hostname: str | None) -> bool:
 
 
 def clerk_csp_origin(frontend_api_url: str) -> str:
+    direct = urlparse(str(frontend_api_url or "").strip().rstrip("/"))
+    if (
+        direct.scheme == "https"
+        and direct.hostname
+        and direct.hostname.endswith(CLERK_DEVELOPMENT_SUFFIX)
+        and not direct.path
+        and not direct.params
+        and not direct.query
+        and not direct.fragment
+        and direct.port is None
+    ):
+        return f"https://{direct.hostname}"
     normalized = normalize_clerk_frontend_api_url(frontend_api_url)
     if normalized.startswith("/"):
         return ""
@@ -80,8 +102,47 @@ def clerk_proxy_url(frontend_api_url: str) -> str:
     return ""
 
 
+def clerk_development_frontend_api_url(publishable_key: str | None) -> str:
+    value = str(publishable_key or "").strip()
+    if not value.startswith("pk_test_"):
+        return ""
+    encoded = value.removeprefix("pk_test_")
+    try:
+        padding = "=" * (-len(encoded) % 4)
+        hostname = urlsafe_b64decode(encoded + padding).decode("utf-8").removesuffix("$")
+    except (Base64Error, UnicodeDecodeError, ValueError):
+        return ""
+    parsed = urlparse(f"https://{hostname}")
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or not parsed.hostname.endswith(CLERK_DEVELOPMENT_SUFFIX)
+        or parsed.hostname != hostname
+        or parsed.port is not None
+    ):
+        return ""
+    return f"https://{parsed.hostname}"
+
+
+def clerk_runtime_frontend_api_url(
+    publishable_key: str | None,
+    configured_frontend_api_url: str | None,
+) -> str:
+    return clerk_development_frontend_api_url(
+        publishable_key
+    ) or normalize_clerk_frontend_api_url(configured_frontend_api_url)
+
+
 def csp_source(base: str, extra: str) -> str:
     return f"{base} {extra}" if extra else base
+
+
+def csp_sources(base: str, *extras: str) -> str:
+    values = [base]
+    for extra in extras:
+        if extra and extra not in values:
+            values.append(extra)
+    return " ".join(values)
 
 
 def selected_job_id(params: dict) -> str:
@@ -252,11 +313,26 @@ def role_segment(intent: str) -> str:
       </fieldset>"""
 
 
-def shell_csp(clerk_frontend_api_url: str, include_turnstile: bool = False) -> str:
-    clerk_origin = clerk_csp_origin(clerk_frontend_api_url)
-    turnstile_origin = "https://challenges.cloudflare.com" if include_turnstile else ""
-    frame_sources = [source for source in (clerk_origin, turnstile_origin) if source]
-    frame_source = " ".join(frame_sources) or "'self'"
+def shell_csp(
+    clerk_frontend_api_url: str,
+    include_turnstile: bool = False,
+    clerk_publishable_key: str = "",
+) -> str:
+    clerk_origin = clerk_csp_origin(
+        clerk_runtime_frontend_api_url(clerk_publishable_key, clerk_frontend_api_url)
+    )
+    clerk_enabled = bool(str(clerk_publishable_key or "").strip() or clerk_origin)
+    challenge_origin = (
+        CLERK_CHALLENGE_ORIGIN if include_turnstile or clerk_enabled else ""
+    )
+    protect_origin = CLERK_PROTECT_ORIGIN if clerk_enabled else ""
+    telemetry_origins = CLERK_TELEMETRY_ORIGINS if clerk_enabled else ("", "")
+    frame_source = csp_sources(
+        "'self'",
+        clerk_origin,
+        challenge_origin,
+        protect_origin,
+    )
     return "; ".join(
         [
             "default-src 'self'",
@@ -264,16 +340,31 @@ def shell_csp(clerk_frontend_api_url: str, include_turnstile: bool = False) -> s
             "object-src 'none'",
             "frame-ancestors 'none'",
             "form-action 'self'",
-            csp_source(csp_source("script-src 'self'", clerk_origin), turnstile_origin),
-            "style-src 'self'",
-            csp_source("style-src-elem 'self'", clerk_origin),
+            csp_sources(
+                "script-src 'self'",
+                clerk_origin,
+                challenge_origin,
+                protect_origin,
+            ),
+            "style-src 'self' 'unsafe-inline'",
+            csp_sources("style-src-elem 'self' 'unsafe-inline'", clerk_origin),
             "style-src-attr 'unsafe-inline'",
-            "img-src 'self' data: https://*.tile.openstreetmap.org",
-            csp_source(csp_source("connect-src 'self'", clerk_origin), turnstile_origin),
+            csp_sources(
+                "img-src 'self' data: https://*.tile.openstreetmap.org",
+                CLERK_IMAGE_ORIGIN if clerk_enabled else "",
+            ),
+            csp_sources(
+                "connect-src 'self'",
+                clerk_origin,
+                challenge_origin,
+                protect_origin,
+                CLERK_IMAGE_ORIGIN if clerk_enabled else "",
+                *telemetry_origins,
+            ),
             f"frame-src {frame_source}",
-            "font-src 'self'",
+            "font-src 'self' data:",
             "media-src 'self'",
-            "worker-src 'none'",
+            "worker-src 'self' blob:",
             "manifest-src 'self'",
         ]
     )
@@ -282,6 +373,7 @@ def shell_csp(clerk_frontend_api_url: str, include_turnstile: bool = False) -> s
 def shell_headers(
     clerk_frontend_api_url: str,
     include_turnstile: bool = False,
+    clerk_publishable_key: str = "",
 ) -> dict[str, str]:
     return {
         "Content-Type": "text/html; charset=utf-8",
@@ -291,6 +383,7 @@ def shell_headers(
         "Content-Security-Policy": shell_csp(
             clerk_frontend_api_url,
             include_turnstile=include_turnstile,
+            clerk_publishable_key=clerk_publishable_key,
         ),
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
@@ -310,6 +403,12 @@ def build_entry_shell_html(
     turnstile_site_key: str = "",
 ) -> str:
     native_email_code = auth_provider == "workdoe_email_code"
+    development_frontend_api_url = clerk_development_frontend_api_url(
+        clerk_publishable_key
+    )
+    clerk_asset_base_url = development_frontend_api_url or normalize_clerk_frontend_api_url(
+        clerk_frontend_api_url
+    )
     target = "login" if path == "/login" else "start"
     intent = normalize_intent(first_query_value(params, "intent"), path)
     selected_id = selected_job_id(params)
@@ -320,7 +419,11 @@ def build_entry_shell_html(
     filters = public_job_filters_from_query(params)
     map_payload = public_jobs_payload(rows, filters, target=target)
     jobs_api_url = public_jobs_api_url(params, target)
-    proxy_url = "" if native_email_code else clerk_proxy_url(clerk_frontend_api_url)
+    proxy_url = (
+        ""
+        if native_email_code or development_frontend_api_url
+        else clerk_proxy_url(clerk_frontend_api_url)
+    )
     proxy_data_attr = (
         f'\n          data-clerk-proxy-url="{escape(proxy_url)}"'
         if proxy_url
@@ -433,11 +536,28 @@ def build_entry_shell_html(
 {proxy_data_attr}
 {start_data_attrs}
         >
-          <div class="clerk-entry-loading" role="status">Loading secure email sign-in...</div>
+          <form class="email-code-form" data-clerk-email-code-form>
+            <div data-clerk-request-step>
+              <label>
+                Email address
+                <input type="email" name="email" autocomplete="email" maxlength="254" required>
+              </label>
+              <div id="clerk-captcha" data-cl-theme="light" data-cl-size="flexible" data-cl-language="en-US"></div>
+              <button class="button primary" type="submit" data-clerk-request-code>Email me a code</button>
+            </div>
+            <div class="email-code-verify" data-clerk-code-step hidden>
+              <label>
+                6-digit code
+                <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{{6}}" maxlength="6" aria-describedby="clerk-code-help">
+                <span id="clerk-code-help" class="help-text">The code expires in 10 minutes.</span>
+              </label>
+              <button class="button primary" type="submit" data-clerk-verify-code>Verify and continue</button>
+              <button class="button secondary" type="button" data-clerk-restart-code>Use a different email</button>
+            </div>
+          </form>
         </div>
         <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>"""
-        auth_scripts_html = f"""  <script defer crossorigin="anonymous" src="{escape(clerk_frontend_api_url)}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
-  <script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_script_attr} src="{escape(clerk_frontend_api_url)}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
+        auth_scripts_html = f"""  <script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_script_attr} src="{escape(clerk_asset_base_url)}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
   <script defer src="/clerk-entry.js"></script>"""
     if path == "/":
         auth_scripts_html = ""
