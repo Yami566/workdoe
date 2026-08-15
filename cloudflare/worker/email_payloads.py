@@ -6,7 +6,6 @@ from urllib.parse import urlparse
 
 
 DEFAULT_FROM_EMAIL = "no-reply@workdoe.com"
-DEFAULT_FROM_NAME = "Workdoe"
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 CODE_PATTERN = re.compile(r"^\d{6}$")
 SUPPORTED_EMAIL_TYPES = {
@@ -83,7 +82,7 @@ def require_workdoe_url(value: str | None) -> str:
 def message_shell(to_email: str, subject: str, text: str, html_body: str, from_email: str) -> dict:
     return {
         "to": require_recipient(to_email),
-        "from": {"email": require_recipient(from_email), "name": DEFAULT_FROM_NAME},
+        "from": require_recipient(from_email),
         "subject": clean_subject(subject),
         "text": text,
         "html": html_body,

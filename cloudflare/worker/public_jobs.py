@@ -90,6 +90,10 @@ def has_public_coordinates(row) -> bool:
 
 
 def public_job_url(job_id, target: str) -> str:
+    job_id_text = str(job_id or "")
+    if job_id_text.startswith("demo-"):
+        args = {"intent": "find-work", "demo": job_id_text}
+        return "/login?" + urlencode({"next": "/?" + urlencode({"job_id": job_id_text})}, safe="/?=") if normalize_public_target(target) == "login" else "/start?" + urlencode(args)
     if normalize_public_target(target) == "login":
         return "/login?" + urlencode({"next": f"/jobs/{job_id}"}, safe="/")
     return "/start?" + urlencode({"intent": "find-work", "job_id": str(job_id)})
@@ -97,17 +101,25 @@ def public_job_url(job_id, target: str) -> str:
 
 def public_job_payload(row, target: str = "start") -> dict:
     job_id = row_value(row, "id")
-    action_label = "Sign in" if normalize_public_target(target) == "login" else "Start"
+    is_demo = bool(row_value(row, "is_demo", False))
+    action_label = "Sign in" if normalize_public_target(target) == "login" else "Join to respond"
     return {
         "id": job_id,
         "title": row_value(row, "title", ""),
         "category": row_value(row, "category", ""),
         "city": row_value(row, "city", ""),
         "state": row_value(row, "state", ""),
+        "description": row_value(row, "description", "") or "Project details are available after sign-in.",
+        "budget": row_value(row, "budget", "") or "Budget not provided",
+        "desired_date": row_value(row, "desired_date", "") or "",
+        "photo_count": int(row_value(row, "photo_count", 0) or 0),
         "lat": row_value(row, "approx_lat"),
         "lng": row_value(row, "approx_lng"),
         "url": public_job_url(job_id, target),
+        "detail_url": "/?" + urlencode({"job_id": str(job_id)}),
         "action_label": action_label,
+        "is_demo": is_demo,
+        "sample_label": "Sample project" if is_demo else "Open project",
     }
 
 
@@ -122,9 +134,12 @@ def public_jobs_payload(
         for row in rows
         if has_public_coordinates(row)
     ]
+    demo_count = sum(1 for job in map_jobs if job["is_demo"])
     return {
         "count": len(map_jobs),
         "jobs": map_jobs,
+        "demo_count": demo_count,
+        "live_count": len(map_jobs) - demo_count,
         "filters": filters,
         "view": view,
         "location_privacy": PUBLIC_JOB_PRIVACY_NOTICE,

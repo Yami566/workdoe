@@ -47,6 +47,7 @@ CLIENT_JOBS_PATH = ROOT / "cloudflare" / "worker" / "client_jobs.py"
 CLIENT_REQUESTS_PATH = ROOT / "cloudflare" / "worker" / "client_requests.py"
 ENTRY_SHELL_PATH = ROOT / "cloudflare" / "worker" / "entry_shell.py"
 PUBLIC_JOBS_PATH = ROOT / "cloudflare" / "worker" / "public_jobs.py"
+DEMO_PROJECTS_PATH = ROOT / "cloudflare" / "worker" / "demo_projects.py"
 JOB_DETAILS_PATH = ROOT / "cloudflare" / "worker" / "job_details.py"
 JOB_STATUS_PATH = ROOT / "cloudflare" / "worker" / "job_status.py"
 JOB_POSTS_PATH = ROOT / "cloudflare" / "worker" / "job_posts.py"
@@ -315,6 +316,15 @@ def load_public_jobs_module():
     return module
 
 
+def load_demo_projects_module():
+    spec = importlib.util.spec_from_file_location("demo_projects", DEMO_PROJECTS_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_entry_shell_module():
     load_public_jobs_module()
     spec = importlib.util.spec_from_file_location("entry_shell", ENTRY_SHELL_PATH)
@@ -554,7 +564,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
             self.assertEqual(
                 manifest["cloudflare_targets"]["identity"]["service"],
-                "Cloudflare D1 and Email Service",
+                "Clerk with Cloudflare D1 role records",
             )
             self.assertEqual(
                 manifest["cloudflare_targets"]["identity"]["primary_strategy"],
@@ -564,7 +574,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 manifest["cloudflare_targets"]["identity"]["required_env"][
                     "WORKDOE_AUTH_PROVIDER"
                 ],
-                "workdoe_email_code",
+                "clerk",
             )
             self.assertIn(
                 "WORKDOE_SECRET_KEY",
@@ -631,7 +641,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
             self.assertEqual(
                 wrangler["vars"]["WORKDOE_AUTH_PROVIDER"],
-                "workdoe_email_code",
+                "clerk",
             )
             self.assertEqual(
                 wrangler["vars"]["WORKDOE_LOGIN_MODE"],
@@ -645,10 +655,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     {
                         "name": "EMAIL",
                         "allowed_sender_addresses": ["no-reply@workdoe.com"],
+                        "remote": True,
                     }
                 ],
             )
             required_env_names = {
+                "CLERK_JWT_KEY",
+                "CLERK_PUBLISHABLE_KEY",
+                "CLERK_SECRET_KEY",
                 "WORKDOE_SECRET_KEY",
                 "WORKDOE_TURNSTILE_SITE_KEY",
                 "WORKDOE_TURNSTILE_SECRET_KEY",
@@ -658,7 +672,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertTrue(wrangler["observability"]["enabled"])
 
             dev_vars_example = dev_vars_example_path.read_text(encoding="utf-8")
-            self.assertIn("WORKDOE_AUTH_PROVIDER=workdoe_email_code", dev_vars_example)
+            self.assertIn("WORKDOE_AUTH_PROVIDER=clerk", dev_vars_example)
             self.assertIn("WORKDOE_LOGIN_MODE=same_domain_email_code", dev_vars_example)
             for env_name in required_env_names:
                 self.assertIn(f"{env_name}=replace-me", dev_vars_example)
@@ -725,6 +739,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             preview_database_id,
         )
         self.assertEqual(set(wrangler["secrets"]["required"]), {
+            "CLERK_JWT_KEY",
+            "CLERK_PUBLISHABLE_KEY",
+            "CLERK_SECRET_KEY",
             "WORKDOE_SECRET_KEY",
             "WORKDOE_TURNSTILE_SITE_KEY",
             "WORKDOE_TURNSTILE_SECRET_KEY",
@@ -1062,7 +1079,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("CLOUDFLARE_API_TOKEN is required", payload["error"])
         self.assertIn("secret-name evidence", payload["error"])
 
-    def test_cloudflare_release_evidence_validates_secret_names_for_native_auth(self):
+    def test_cloudflare_release_evidence_validates_secret_names_and_clerk_proxy(self):
         module = load_release_evidence_script()
         readiness = load_readiness_script()
         with tempfile.TemporaryDirectory() as tmp:
@@ -1099,7 +1116,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertTrue(result["ok"], result)
             self.assertIn("Sanitized Cloudflare secret-name evidence is valid", result["checks"])
             self.assertIn(
-                "Legacy Clerk proof is present but not required by native email-code auth",
+                "Same-domain Clerk proxy release proof is valid",
                 result["checks"],
             )
 
@@ -1144,8 +1161,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             [
                 "apply-d1-migrations",
                 "deploy-worker",
-                "smoke-health",
-                "smoke-public-jobs",
+                "smoke-production",
             ],
         )
         migration_command = payload["steps"][0]["command"]
@@ -1159,12 +1175,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(deploy_command[1:], ["deploy"])
         self.assertEqual(
             payload["steps"][2]["command"],
-            ["curl.exe", "-fS", "-I", "https://workdoe.com/health"],
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "workdoe_production_smoke.py"),
+                "--fail-when-not-ready",
+            ],
         )
-        self.assertEqual(
-            payload["steps"][3]["command"],
-            ["curl.exe", "-fsS", "https://workdoe.com/api/jobs/open?limit=3"],
-        )
+        self.assertTrue(payload["steps"][2]["required"])
 
     def test_cloudflare_production_deploy_requires_execute_confirmation(self):
         module = load_production_deploy_script()
@@ -1203,14 +1220,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         module = load_production_deploy_script()
         steps = [
             module.DeployStep(
-                name="smoke-health",
-                command=["curl.exe", "-fS", "-I", "https://workdoe.com/health"],
-                cwd=str(ROOT),
-                required=False,
-            ),
-            module.DeployStep(
-                name="smoke-public-jobs",
-                command=["curl.exe", "-fsS", "https://workdoe.com/api/jobs/open?limit=3"],
+                name="smoke-production",
+                command=[sys.executable, "scripts/workdoe_production_smoke.py"],
                 cwd=str(ROOT),
                 required=False,
             ),
@@ -1230,7 +1241,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
         self.assertEqual(warnings, [])
-        self.assertEqual([step.status for step in executed], ["done", "done"])
+        self.assertEqual([step.status for step in executed], ["done"])
         self.assertIn("HTTP/2 200 OK", executed[0].output_excerpt)
 
         long_result = type(
@@ -1471,6 +1482,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("public_contractor_for_profile", entrypoint)
         self.assertIn("visible_contractor_profile_photos", entrypoint)
         self.assertIn("env.EMAIL.send", entrypoint)
+        self.assertIn("self.env.EMAIL_QUEUE.send", entrypoint)
         self.assertIn("process_email_queue_message", entrypoint)
         self.assertIn("email-message-sent", entrypoint)
         self.assertIn("email-message-invalid", entrypoint)
@@ -1641,7 +1653,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             from_email="no-reply@workdoe.com",
         )
         self.assertEqual(reminder["to"], "client@example.com")
-        self.assertEqual(reminder["from"]["email"], "no-reply@workdoe.com")
+        self.assertEqual(reminder["from"], "no-reply@workdoe.com")
         self.assertIn("Mini bid waiting", reminder["subject"])
         self.assertIn("&lt;Paint lobby&gt;", reminder["html"])
         self.assertNotIn("<script>", reminder["html"])
@@ -1875,7 +1887,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "city": "Arlington",
                     "state": "VA",
                     "zip_code": "22201",
-                    "description": "Do not expose this in the public map API.",
+                    "description": "Paint the stairwell walls and trim.",
                     "client_email": "client@example.com",
                     "approx_lat": 38.8871,
                     "approx_lng": -77.0932,
@@ -1903,8 +1915,31 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(job["action_label"], "Sign in")
         self.assertEqual(job["url"], "/login?next=/jobs/9")
         self.assertNotIn("zip_code", job)
-        self.assertNotIn("description", job)
+        self.assertEqual(job["description"], "Paint the stairwell walls and trim.")
         self.assertNotIn("client_email", job)
+
+    def test_demo_projects_are_realistic_labeled_and_filterable(self):
+        module = load_demo_projects_module()
+        projects = module.demo_projects_for_filters({})
+        self.assertEqual(len(projects), 15)
+        self.assertEqual(len({project["id"] for project in projects}), 15)
+        for project in projects:
+            self.assertTrue(project["id"].startswith("demo-"))
+            self.assertTrue(project["is_demo"])
+            self.assertTrue(project["title"])
+            self.assertTrue(project["category"])
+            self.assertTrue(project["budget"])
+            self.assertTrue(project["description"])
+            self.assertIsInstance(project["approx_lat"], float)
+            self.assertIsInstance(project["approx_lng"], float)
+            self.assertNotIn("address", project)
+            self.assertNotIn("email", project)
+        painting = module.demo_projects_for_filters({"category": "Painting"})
+        self.assertEqual(len(painting), 1)
+        self.assertEqual(painting[0]["city"], "Columbia")
+        arlington = module.demo_projects_for_filters({"q": "Arlington"})
+        self.assertEqual(len(arlington), 1)
+        self.assertEqual(arlington[0]["category"], "Window cleaning")
 
     def test_cloudflare_entry_shell_mounts_same_domain_clerk_and_live_jobs(self):
         module = load_entry_shell_module()
@@ -1948,7 +1983,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "pk_test_workdoe",
             "https://clerk.workdoe.com",
         )
-        self.assertIn("<title>Start - Workdoe</title>", html)
+        self.assertIn("<title>Join Workdoe</title>", html)
         self.assertIn(
             '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
             html,
@@ -1959,7 +1994,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', html)
         self.assertIn('href="/styles.css"', html)
         self.assertIn('href="/vendor/leaflet/leaflet.css"', html)
+        self.assertIn('href="/vendor/leaflet-markercluster/MarkerCluster.css"', html)
         self.assertIn('src="/vendor/leaflet/leaflet.js"', html)
+        self.assertIn('src="/vendor/leaflet-markercluster/leaflet.markercluster.js"', html)
         self.assertIn('src="/map.js"', html)
         self.assertIn('src="/clerk-entry.js"', html)
         self.assertIn("data-clerk-entry", html)
@@ -1975,17 +2012,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("No password needed. Your one-time code arrives by email.", html)
         self.assertIn("<strong>Consumer</strong>", html)
         self.assertIn("<strong>Contractor</strong>", html)
-        self.assertIn('id="live-jobs" class="login-live-panel start-live-panel" tabindex="-1"', html)
-        self.assertIn('class="entry-shortcut" href="#start-account">Join</a>', html)
-        self.assertIn('id="start-account" class="form-panel login-form-panel start-form-panel clerk-entry-panel"', html)
-        self.assertIn('<nav class="entry-shortcuts" aria-label="Join Workdoe shortcuts">', html)
-        self.assertIn('class="job-list login-job-list" aria-label="Open jobs while signing in" role="list"', html)
-        self.assertIn("/api/jobs/open?limit=18&amp;target=start", html)
+        self.assertIn('class="market-workspace"', html)
+        self.assertIn('class="market-filter-rail"', html)
+        self.assertIn('class="market-map-stage"', html)
+        self.assertIn('id="start-account" class="market-detail-rail market-auth-rail"', html)
+        self.assertIn('data-project-results aria-label="Available projects" role="list"', html)
+        self.assertIn("/api/jobs/open?limit=50&amp;target=start", html)
         self.assertIn("Paint &lt;stairwell&gt;", html)
         self.assertIn('role="listitem"', html)
-        self.assertIn('aria-label="Selected lead Paint &lt;stairwell&gt;"', html)
-        self.assertIn("1 photo", html)
-        self.assertNotIn("1 photos", html)
+        self.assertIn('data-job-id="9"', html)
         self.assertIn("Selected", html)
         self.assertNotIn("private@example.com", html)
         self.assertNotIn("22201", html)
@@ -1995,7 +2030,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertNotIn("&quot;", data)
         parsed = json.loads(data)
         self.assertEqual(parsed[0]["url"], "/start?intent=find-work&job_id=9")
-        self.assertEqual(parsed[0]["action_label"], "Start")
+        self.assertEqual(parsed[0]["action_label"], "Join to respond")
 
         login_html = module.build_entry_shell_html(
             "/login",
@@ -2012,16 +2047,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             login_html,
         )
         self.assertIn('data-session-url="/api/auth/session"', login_html)
-        self.assertIn('class="entry-shortcut" href="#signin">Sign in</a>', login_html)
-        self.assertIn('id="signin" class="form-panel login-form-panel start-form-panel clerk-entry-panel"', login_html)
-        self.assertIn('<nav class="entry-shortcuts" aria-label="Sign in shortcuts">', login_html)
-        self.assertIn('class="job-list login-job-list" aria-label="Open jobs while signing in" role="list"', login_html)
-        self.assertIn("/api/jobs/open?limit=18&amp;target=login", login_html)
-        self.assertIn('href="/login?next=/jobs/9"', login_html)
+        self.assertIn('id="signin" class="market-detail-rail market-auth-rail"', login_html)
+        self.assertIn('data-project-results aria-label="Available projects" role="list"', login_html)
+        self.assertIn("/api/jobs/open?limit=50&amp;target=login", login_html)
+        self.assertIn('data-redirect-url="/jobs/9"', login_html)
         self.assertIn('role="listitem"', login_html)
-        self.assertIn('aria-label="Selected lead Paint &lt;stairwell&gt;"', login_html)
-        self.assertIn("1 photo", login_html)
-        self.assertNotIn("1 photos", login_html)
+        self.assertIn('data-job-id="9"', login_html)
         self.assertIn("Welcome back", login_html)
         self.assertIn("Selected", login_html)
         self.assertIn(
@@ -2445,12 +2476,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(module.photo_count_label(1), "1 photo")
         self.assertEqual(module.photo_count_label(None), "0 photos")
         self.assertIn('src="/map.js"', lead_html)
-        self.assertIn('class="job-list lead-job-list" aria-label="Open leads" role="list"', lead_html)
+        self.assertIn('class="market-workspace signed-in-market-workspace"', lead_html)
+        self.assertIn('data-project-results aria-label="Open leads" role="list"', lead_html)
+        self.assertIn('class="market-map-stage"', lead_html)
+        self.assertIn('class="market-detail-rail"', lead_html)
+        self.assertIn('leaflet.markercluster.js', lead_html)
         self.assertIn('role="listitem"', lead_html)
         self.assertIn('data-job-id="21"', lead_html)
         self.assertIn('aria-label="View Clean windows"', lead_html)
-        self.assertIn("1 photo", lead_html)
-        self.assertNotIn("1 photos", lead_html)
         self.assertIn("Ground-floor exterior glass.", lead_html)
         self.assertNotIn("22314", lead_html)
         marker = '<script id="map-jobs-data" type="application/json">'
@@ -2616,6 +2649,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertNotIn("CSS.escape", script)
         entrypoint = (ROOT / "cloudflare" / "worker" / "entry.py").read_text(encoding="utf-8")
         self.assertIn('"field_errors": exc.field_errors', entrypoint)
+        self.assertIn('environment != "production" and result_action == "test"', entrypoint)
+        self.assertIn('row_value(metadata, "result_with_testing_key", False)', entrypoint)
+        self.assertIn('allowed_hosts.update({"localhost", "127.0.0.1", "0.0.0.0"})', entrypoint)
 
         clerk_script = (ROOT / "workdoe" / "static" / "clerk-entry.js").read_text(encoding="utf-8")
         self.assertIn("finishSignIn", clerk_script)
@@ -2699,7 +2735,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(payload["jobs"][0]["url"], "/jobs/12")
         self.assertEqual(payload["jobs"][0]["request_status"], "pending")
         self.assertFalse(payload["jobs"][0]["can_request_match"])
-        self.assertEqual(payload["map_jobs"][0]["action_label"], "Sent")
+        self.assertEqual(payload["map_jobs"][0]["action_label"], "View sent bid")
+        self.assertEqual(payload["map_jobs"][0]["description"], "Townhouse front steps need cleaning.")
+        self.assertEqual(payload["map_jobs"][0]["desired_date"], "2026-09-01")
+        self.assertFalse(payload["map_jobs"][0]["is_demo"])
         self.assertEqual(payload["count"], 1)
         self.assertNotIn("zip_code", payload["jobs"][0])
         self.assertNotIn("client_id", payload["jobs"][0])
@@ -3692,9 +3731,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         result = module.run_preflight(ROOT)
         self.assertTrue(result.ok, result.errors)
         self.assertIn("Wrangler enables Python Workers", result.checks)
-        self.assertIn("Wrangler keeps native same-domain OTP mode", result.checks)
+        self.assertIn("Wrangler keeps Clerk same-domain OTP mode", result.checks)
         self.assertIn(
-            "Wrangler requires Workdoe and Turnstile secrets",
+            "Wrangler requires Clerk, Workdoe, and Turnstile secrets",
             result.checks,
         )
         self.assertIn("Wrangler keeps required secret names out of vars", result.checks)
@@ -3857,7 +3896,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         local = module.run_readiness(ROOT)
         self.assertTrue(local.ready, local.blockers)
         self.assertIn("Wrangler config is present", local.checks)
-        self.assertIn("Same-domain Workdoe email-code mode is configured", local.checks)
+        self.assertIn("Same-domain Clerk email-code mode is configured", local.checks)
         self.assertIn("Worker has email-code request endpoint", local.checks)
         self.assertIn("Worker has email-code verification endpoint", local.checks)
         self.assertIn("Worker issues protected session cookies", local.checks)
@@ -3914,7 +3953,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 + "\nCLERK_FRONTEND_API_URL=https://workdoe.com/__clerk"
                 + "\nCLERK_PROXY_URL=https://workdoe.com/__clerk"
                 + "\nCLERK_FAPI=https://frontend-api.clerk.dev"
-                + "\nWORKDOE_AUTH_PROVIDER=workdoe_email_code"
+                + "\nWORKDOE_AUTH_PROVIDER=clerk"
                 + "\nWORKDOE_LOGIN_MODE=same_domain_email_code",
                 encoding="utf-8",
             )
@@ -3950,10 +3989,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertIn("Provided env file contains all required auth config names", result.checks)
             self.assertIn("Provided env file does not use placeholder auth config values", result.checks)
             self.assertIn("Cloudflare secret list contains every required secret name", result.checks)
-            self.assertIn(
-                "Clerk proxy proof was supplied but native Workdoe email-code auth does not use it.",
-                result.warnings,
-            )
+            self.assertIn("Same-domain Clerk proxy proof is present", result.checks)
 
             strict_with_sanitized_evidence = module.run_readiness(
                 ROOT,
@@ -4000,10 +4036,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 secret_list_json=secret_list_path,
                 clerk_proxy_proof_json=proxy_proof_path,
             )
-            self.assertTrue(bad_proxy_proof.ready, bad_proxy_proof.blockers)
+            self.assertFalse(bad_proxy_proof.ready)
             self.assertIn(
-                "Clerk proxy proof was supplied but native Workdoe email-code auth does not use it.",
-                bad_proxy_proof.warnings,
+                "Clerk proxy proof must use https://workdoe.com/__clerk.",
+                bad_proxy_proof.blockers,
             )
 
             proxy_proof_path.write_text("{not-json", encoding="utf-8")
@@ -4046,7 +4082,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 + "\nCLERK_FRONTEND_API_URL=https://evilworkdoe.com"
                 + "\nCLERK_PROXY_URL=https://evilworkdoe.com"
                 + "\nCLERK_FAPI=https://frontend-api.clerk.dev"
-                + "\nWORKDOE_AUTH_PROVIDER=workdoe_email_code"
+                + "\nWORKDOE_AUTH_PROVIDER=clerk"
                 + "\nWORKDOE_LOGIN_MODE=same_domain_email_code",
                 encoding="utf-8",
             )
@@ -4057,10 +4093,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 clerk_proxy_proof_json=proxy_proof_path,
             )
             self.assertTrue(off_domain.ready, off_domain.blockers)
-            self.assertIn(
-                "Clerk proxy proof was supplied but native Workdoe email-code auth does not use it.",
-                off_domain.warnings,
-            )
+            self.assertIn("Same-domain Clerk proxy proof is present", off_domain.checks)
 
     def test_cloudflare_launch_plan_prints_safe_operator_sequence(self):
         module = load_launch_plan_script()
@@ -4238,6 +4271,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("pull_request:", workflow)
         self.assertIn("concurrency:", workflow)
         self.assertIn("Validate Cloudflare Worker bundle", workflow)
+        self.assertIn("Record same-domain Clerk proxy release proof", workflow)
+        self.assertIn("npm run cf:clerk:proof", workflow)
         self.assertIn("wrangler deploy --dry-run", workflow)
         self.assertIn("Smoke test Cloudflare Worker runtime", workflow)
         self.assertIn("wrangler d1 migrations apply workdoe --local", workflow)
@@ -4748,6 +4783,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 status_code = 200
                 if url.endswith("/start"):
                     headers = {
+                        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
                         "Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'",
                         "X-Content-Type-Options": "nosniff",
                         "X-Frame-Options": "DENY",
@@ -4773,6 +4809,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         }
                     )
                     headers = {"Content-Type": "application/json; charset=utf-8"}
+                elif url.endswith(module.CLERK_ASSET_PATH):
+                    body = "window.Clerk = window.Clerk || {};"
+                    headers = {"Content-Type": "application/javascript; charset=utf-8"}
                 return module.FetchResult(
                     ok=True,
                     status_code=status_code,
@@ -4795,6 +4834,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(checks["health-json"]["status"], "ready")
         self.assertEqual(checks["public-jobs-api"]["status"], "ready")
         self.assertEqual(checks["entry-security-headers"]["status"], "ready")
+        self.assertEqual(checks["clerk-same-domain-proxy"]["status"], "ready")
 
     def test_workdoe_production_smoke_reports_dns_and_header_failures(self):
         module = load_workdoe_production_smoke_script()

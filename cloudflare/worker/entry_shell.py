@@ -5,14 +5,15 @@ from html import escape
 from urllib.parse import urlencode, urlparse
 
 from public_jobs import (
-    DEFAULT_JOB_SORT,
+    JOB_CATEGORIES,
     public_job_filters_from_query,
+    public_job_payload,
     public_jobs_payload,
 )
 
 
 ENTRY_ROUTES = {"/", "/login", "/start"}
-ENTRY_JOB_LIMIT = 18
+ENTRY_JOB_LIMIT = 50
 DEFAULT_CLERK_FRONTEND_API_URL = "https://workdoe.com/__clerk"
 CLERK_SIGNIN_MODE = "signin"
 CLERK_START_MODE = "start"
@@ -85,7 +86,7 @@ def csp_source(base: str, extra: str) -> str:
 
 def selected_job_id(params: dict) -> str:
     value = first_query_value(params, "job_id")
-    if value.isdigit() and int(value) > 0:
+    if (value.isdigit() and int(value) > 0) or value.startswith("demo-"):
         return value
     next_url = first_query_value(params, "next")
     if next_url.startswith("/jobs/"):
@@ -113,17 +114,10 @@ def photo_count_label(value) -> str:
 
 
 def public_jobs_api_url(params: dict, target: str) -> str:
-    filters = public_job_filters_from_query(params)
     args: dict[str, str] = {
         "limit": str(ENTRY_JOB_LIMIT),
         "target": target,
     }
-    if filters.get("category"):
-        args["category"] = filters["category"]
-    if filters.get("q"):
-        args["q"] = filters["q"]
-    if filters.get("sort", DEFAULT_JOB_SORT) != DEFAULT_JOB_SORT:
-        args["sort"] = filters["sort"]
     return "/api/jobs/open?" + urlencode(args)
 
 
@@ -144,38 +138,23 @@ def entry_sign_up_url(path: str, selected_id: str) -> str:
 
 
 def job_row(row, selected_id: str, target: str) -> str:
-    job_id = str(row_value(row, "id", ""))
-    is_selected = selected_id and selected_id == job_id
-    row_class = "job-row link-row compact-lead-row" + (" is-selected" if is_selected else "")
-    href = "/login?" + urlencode({"next": f"/jobs/{job_id}"}, safe="/")
-    cue = "Sign in" if target == "login" else "Find work"
-    if target == "start":
-        href = "/start?" + urlencode({"intent": "find-work", "job_id": job_id})
-        cue = "Selected" if is_selected else "Find work"
-    desired_date = row_value(row, "desired_date", "") or ""
-    target_label = (
-        f'<span>Target <time datetime="{escape(desired_date)}">{escape(desired_date)}</time></span>'
-        if desired_date
-        else ""
-    )
+    project = public_job_payload(row, target=target)
+    job_id = str(project["id"])
+    is_selected = selected_id == job_id
+    row_class = "project-result" + (" is-map-active" if is_selected else "")
     current = ' aria-current="true"' if is_selected else ""
-    aria_label = (
-        f"Selected lead {row_value(row, 'title', '') or ''}"
-        if is_selected
-        else f"{cue} for {row_value(row, 'title', '') or ''}"
-    )
+    sample = '<span class="sample-badge">Sample</span>' if project["is_demo"] else ""
     return f"""
-          <a class="{row_class}" role="listitem" data-job-id="{escape(job_id)}" href="{escape(href)}" aria-label="{escape(aria_label)}"{current}>
-            <div>
-              <div class="row-meta">
-                <span>{escape(row_value(row, 'category', '') or '')}</span>
-                <span>{escape(row_value(row, 'city', '') or '')}, {escape(row_value(row, 'state', '') or '')}</span>
-                {target_label}
-                <span>{escape(photo_count_label(row_value(row, 'photo_count', 0)))}</span>
-              </div>
-              <h3>{escape(row_value(row, 'title', '') or '')}</h3>
-            </div>
-            <span class="row-cue">{escape(cue)}</span>
+          <a class="{row_class}" role="listitem" data-job-id="{escape(job_id)}" href="{escape(project['detail_url'])}"{current}>
+            <span class="project-result-topline">
+              <span>{escape(project['category'])}</span>
+              {sample}
+            </span>
+            <strong>{escape(project['title'])}</strong>
+            <span class="project-result-facts">
+              <span>{escape(project['city'])}, {escape(project['state'])}</span>
+              <span>{escape(project['budget'])}</span>
+            </span>
           </a>"""
 
 
@@ -199,6 +178,54 @@ def selected_job_pill(row) -> str:
           <strong>{escape(row_value(row, 'title', '') or '')}</strong>
           <small>{escape(row_value(row, 'city', '') or '')}, {escape(row_value(row, 'state', '') or '')}</small>
         </div>"""
+
+
+def category_options(selected: str = "") -> str:
+    options = ['<option value="">All categories</option>']
+    options.extend(
+        f'<option value="{escape(category)}" {"selected" if category == selected else ""}>{escape(category)}</option>'
+        for category in sorted(JOB_CATEGORIES)
+    )
+    return "\n".join(options)
+
+
+def project_detail_html(row, target: str) -> str:
+    if not row:
+        return """
+        <div class="market-detail-empty" data-project-detail-content>
+          <img src="/field-doe.webp" alt="" width="160" height="160">
+          <h2>No projects match</h2>
+          <p>Adjust the filters to widen the map.</p>
+        </div>"""
+    project = public_job_payload(row, target=target)
+    sample = '<span class="sample-badge">Demonstration project</span>' if project["is_demo"] else '<span class="live-badge">Open project</span>'
+    date_html = (
+        f'<time datetime="{escape(project["desired_date"])}">{escape(project["desired_date"])}</time>'
+        if project["desired_date"]
+        else "Flexible"
+    )
+    return f"""
+        <article class="market-project-detail" data-project-detail-content data-job-id="{escape(str(project['id']))}">
+          <div class="project-detail-heading">
+            {sample}
+            <span>{escape(project['category'])}</span>
+          </div>
+          <h2>{escape(project['title'])}</h2>
+          <p class="project-detail-location">{escape(project['city'])}, {escape(project['state'])}</p>
+          <dl class="project-facts">
+            <div><dt>Estimated budget</dt><dd>{escape(project['budget'])}</dd></div>
+            <div><dt>Desired date</dt><dd>{date_html}</dd></div>
+          </dl>
+          <div class="project-description">
+            <h3>Field brief</h3>
+            <p>{escape(project['description'])}</p>
+          </div>
+          <p class="project-privacy-note">Location is intentionally approximate until a match is approved.</p>
+          <div class="project-detail-actions">
+            <a class="button primary" href="{escape(project['url'])}">{escape(project['action_label'])}</a>
+            <a class="button secondary" href="{escape(project['detail_url'])}">Open project link</a>
+          </div>
+        </article>"""
 
 
 def safe_json_script(value) -> str:
@@ -286,7 +313,9 @@ def build_entry_shell_html(
     target = "login" if path == "/login" else "start"
     intent = normalize_intent(first_query_value(params, "intent"), path)
     selected_id = selected_job_id(params)
-    selected = selected_job(rows, selected_id)
+    selected = selected_job(rows, selected_id) or (rows[0] if rows else None)
+    if selected and not selected_id:
+        selected_id = str(row_value(selected, "id", ""))
     redirect_url = entry_redirect_url(path, params, intent, selected_id)
     filters = public_job_filters_from_query(params)
     map_payload = public_jobs_payload(rows, filters, target=target)
@@ -303,17 +332,20 @@ def build_entry_shell_html(
         else ""
     )
     job_list_role = ' role="list"' if rows else ""
-    title = "Sign in - Workdoe" if path == "/login" else "Start - Workdoe"
+    title = (
+        "Sign in - Workdoe"
+        if path == "/login"
+        else "Join Workdoe" if path == "/start" else "Local projects - Workdoe"
+    )
     heading = "Sign in" if path == "/login" else "Join Workdoe"
     eyebrow = "Welcome back" if path == "/login" else "Choose your role"
     panel_id = "signin" if path == "/login" else "start-account"
-    panel_shortcut_label = "Sign in" if path == "/login" else "Join"
     clerk_mode = CLERK_SIGNIN_MODE if path == "/login" else CLERK_START_MODE
     sign_up_url = entry_sign_up_url(path, selected_id)
-    data_selected = selected_id if selected else ""
-    start_current = ' aria-current="page"' if path in {"/", "/start"} else ""
+    data_selected = selected_id if selected and selected_id.isdigit() else ""
+    browse_current = ' aria-current="page"' if path == "/" else ""
+    start_current = ' aria-current="page"' if path == "/start" else ""
     login_current = ' aria-current="page"' if path == "/login" else ""
-    checklist_html = ""
     onboarding_fields = (
         f"""
 {role_segment(intent)}
@@ -407,6 +439,28 @@ def build_entry_shell_html(
         auth_scripts_html = f"""  <script defer crossorigin="anonymous" src="{escape(clerk_frontend_api_url)}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
   <script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_script_attr} src="{escape(clerk_frontend_api_url)}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
   <script defer src="/clerk-entry.js"></script>"""
+    if path == "/":
+        auth_scripts_html = ""
+        right_panel_html = f"""
+      <aside class="market-detail-rail" data-market-panel="details" aria-label="Selected project">
+{project_detail_html(selected, target)}
+      </aside>"""
+    else:
+        right_panel_html = f"""
+      <aside id="{escape(panel_id)}" class="market-detail-rail market-auth-rail" data-market-panel="details" aria-labelledby="entry-title">
+        <div class="market-auth-heading">
+          <p class="eyebrow">{escape(eyebrow)}</p>
+          <h2 id="entry-title">{escape(heading)}</h2>
+          <p>{'Use your email code to reopen your workspace.' if path == '/login' else 'Choose a role and verify your email to begin.'}</p>
+{selected_job_pill(selected if selected_job_id(params) else None)}
+        </div>
+{auth_mount_html}
+        <div class="auth-switch clerk-entry-note">
+          <span>No password needed. Your one-time code arrives by email.</span>
+        </div>
+      </aside>"""
+    mobile_default = "details" if path in {"/login", "/start"} else "map"
+    filter_count = len(map_payload["jobs"])
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -427,58 +481,78 @@ def build_entry_shell_html(
   <link rel="manifest" href="/site.webmanifest">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/vendor/leaflet-markercluster/MarkerCluster.css">
+  <link rel="stylesheet" href="/vendor/leaflet-markercluster/MarkerCluster.Default.css">
 </head>
-<body>
+<body class="market-entry-body" data-default-mobile-panel="{escape(mobile_default)}">
   <a class="skip-link" href="#main-content">Skip to content</a>
-  <header class="site-header">
+  <header class="market-header">
     <a class="brand brand-home-button" href="/" aria-label="Workdoe home">
       <span class="brand-mark"><img class="brand-icon" src="/deer.svg" alt=""></span>
       <span><strong>Workdoe</strong><small>Local work exchange</small></span>
     </a>
-    <nav class="main-nav" aria-label="Primary">
-      <a href="/start"{start_current}>Join</a>
+    <div class="market-area-label"><span aria-hidden="true"></span>DC, Maryland &amp; Virginia</div>
+    <nav class="market-nav" aria-label="Primary">
+      <a href="/"{browse_current}>Browse projects</a>
+      <a href="/start?intent=post-job"{start_current}>Post a project</a>
       <a href="/login"{login_current}>Sign in</a>
     </nav>
   </header>
-  <main id="main-content" tabindex="-1">
-    <section class="start-market">
-      <div id="live-jobs" class="login-live-panel start-live-panel" tabindex="-1">
-        <div class="section-heading compact-heading">
-          <p class="eyebrow">Area scan // DMV</p>
-          <h1>{len(rows)} open projects</h1>
-          <a class="entry-shortcut" href="#{escape(panel_id)}">{escape(panel_shortcut_label)}</a>
+  <div class="market-mobile-tabs" role="tablist" aria-label="Marketplace view">
+    <button type="button" role="tab" data-mobile-panel-target="filters">Projects</button>
+    <button type="button" role="tab" data-mobile-panel-target="map">Map</button>
+    <button type="button" role="tab" data-mobile-panel-target="details">Details</button>
+  </div>
+  <main id="main-content" class="market-workspace" tabindex="-1" data-market-workspace data-mobile-panel="{escape(mobile_default)}">
+    <aside class="market-filter-rail" data-market-panel="filters" aria-label="Project search and filters">
+      <div class="market-rail-heading">
+        <p class="eyebrow">DMV field board</p>
+        <h1>Find work nearby</h1>
+        <p>Explore approximate locations before creating an account.</p>
+      </div>
+      <form class="market-filter-form" data-market-filters>
+        <label for="market-search">Search projects</label>
+        <input id="market-search" type="search" value="{escape(filters.get('q', ''))}" placeholder="Try painting or Arlington" autocomplete="off" data-market-search>
+        <label for="market-category">Category</label>
+        <select id="market-category" data-market-category>
+{category_options(filters.get('category', ''))}
+        </select>
+        <div class="filter-actions">
+          <button class="button secondary compact" type="button" data-clear-market-filters>Clear filters</button>
         </div>
-        <div class="login-board start-board">
-          <div class="map-panel login-map-panel">
-            <div id="lead-map" data-map data-jobs-api="{escape(jobs_api_url)}" role="region" tabindex="0" aria-label="Approximate DMV project map while signing in" aria-describedby="lead-map-status">
-              <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Map loading. Job list is ready.</p>
-              <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Map loading. Job list is ready.</p>
-            </div>
-          </div>
-          <div class="job-list login-job-list" aria-label="Open jobs while signing in"{job_list_role}>
+      </form>
+      <div class="sample-data-note">
+        <span class="sample-badge">Demonstration data</span>
+        <p>{map_payload['demo_count']} realistic sample projects show how Workdoe will feel as local jobs arrive.</p>
+      </div>
+      <div class="project-results-heading">
+        <strong data-project-result-count>{filter_count} projects</strong>
+        <span>Approximate locations</span>
+      </div>
+      <div class="project-results" data-project-results aria-label="Available projects"{job_list_role}>
 {job_list_html(rows, selected_id, target)}
-          </div>
+      </div>
+    </aside>
+    <section class="market-map-stage" data-market-panel="map" aria-label="Project map workspace">
+      <div class="map-stage-toolbar">
+        <div>
+          <span class="map-live-indicator" aria-hidden="true"></span>
+          <strong data-map-result-count>{filter_count} projects mapped</strong>
+        </div>
+        <span>{map_payload['live_count']} live / {map_payload['demo_count']} sample</span>
+      </div>
+      <div class="market-map-frame">
+        <div id="lead-map" data-map data-map-workspace data-jobs-api="{escape(jobs_api_url)}" role="region" tabindex="0" aria-label="Interactive map of approximate DMV project locations" aria-describedby="lead-map-status">
+          <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Loading the project map. The project list is ready.</p>
+          <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Loading the project map. The project list is ready.</p>
         </div>
       </div>
-      <section id="{escape(panel_id)}" class="form-panel login-form-panel start-form-panel clerk-entry-panel" aria-labelledby="entry-title">
-        <div>
-          <p class="eyebrow">{escape(eyebrow)}</p>
-          <h2 id="entry-title">{escape(heading)}</h2>
-          <nav class="entry-shortcuts" aria-label="{escape(heading)} shortcuts">
-            <a href="#live-jobs">Open projects</a>
-          </nav>
-{checklist_html}
-{selected_job_pill(selected)}
-        </div>
-{auth_mount_html}
-        <div class="auth-switch clerk-entry-note">
-          <span>No password needed. Your one-time code arrives by email.</span>
-        </div>
-      </section>
     </section>
+{right_panel_html}
   </main>
   <script id="map-jobs-data" type="application/json">{safe_json_script(map_payload["jobs"])}</script>
   <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>
   <script src="/map.js"></script>
 {auth_scripts_html}
 </body>

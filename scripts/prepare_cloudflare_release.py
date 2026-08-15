@@ -27,6 +27,9 @@ AUTH_SUBJECT_INDEX_SQL = (
     "WHERE external_subject IS NOT NULL;"
 )
 REQUIRED_WORKER_SECRETS = [
+    "CLERK_JWT_KEY",
+    "CLERK_PUBLISHABLE_KEY",
+    "CLERK_SECRET_KEY",
     "WORKDOE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SITE_KEY",
@@ -98,18 +101,21 @@ def build_manifest(migration_sql: str) -> dict:
                 },
             },
             "identity": {
-                "service": "Cloudflare D1 and Email Service",
+                "service": "Clerk with Cloudflare D1 role records",
                 "experience": "same-domain in-page sign-in on workdoe.com",
                 "primary_strategy": "email_code_otp",
                 "required_env": {
-                    "WORKDOE_AUTH_PROVIDER": "workdoe_email_code",
+                    "CLERK_JWT_KEY": "set as a secret",
+                    "CLERK_PUBLISHABLE_KEY": "set as a secret",
+                    "CLERK_SECRET_KEY": "set as a secret",
+                    "WORKDOE_AUTH_PROVIDER": "clerk",
                     "WORKDOE_SECRET_KEY": "set as a secret",
                 },
                 "domain_rules": [
-                    "Mount email-code sign-in on /login and /start without redirecting off workdoe.com.",
-                    "Store only HMAC-protected code hashes in D1 and expire each code after ten minutes.",
-                    "Store signed sessions in Secure, HttpOnly, SameSite=Lax cookies.",
-                    "Use Cloudflare Email Service for one-time code delivery.",
+                    "Mount Clerk email-code sign-in on /login and /start without redirecting off workdoe.com.",
+                    "Proxy Clerk frontend requests through https://workdoe.com/__clerk.",
+                    "Verify Clerk sessions in the Worker before linking D1 role records.",
+                    "Keep consumer and contractor authorization in Workdoe D1.",
                 ],
             },
             "database": {
@@ -134,8 +140,6 @@ def build_manifest(migration_sql: str) -> dict:
                 "from": "no-reply@workdoe.com",
                 "admin_digest_to": "admin@workdoe.com",
                 "uses": [
-                    "one-time start codes",
-                    "password reset links",
                     "stale match reminders",
                     "moderation digests",
                 ],
@@ -197,7 +201,7 @@ def build_manifest(migration_sql: str) -> dict:
             "Job and contractor photos stay private behind role and match checks.",
             "Exact client contact details are not exposed on the public lead board.",
             "Client, contractor, and admin role data stays compartmentalized.",
-            "Workdoe remains the source of truth for authentication, roles, job permissions, moderation, and match visibility.",
+            "Clerk verifies identity; Workdoe remains the source of truth for roles, job permissions, moderation, and match visibility.",
         ],
     }
 
@@ -240,6 +244,7 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
             {
                 "name": targets["email"]["binding"],
                 "allowed_sender_addresses": [targets["email"]["from"]],
+                "remote": True,
             }
         ],
         "queues": {
@@ -260,7 +265,7 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
         "triggers": {"crons": crons},
         "vars": {
             "WORKDOE_ENV": "production",
-            "WORKDOE_AUTH_PROVIDER": "workdoe_email_code",
+            "WORKDOE_AUTH_PROVIDER": "clerk",
             "WORKDOE_DOMAIN": manifest["domain"],
             "WORKDOE_PUBLIC_URL": f"https://{manifest['domain']}",
             "WORKDOE_LOGIN_MODE": "same_domain_email_code",
@@ -290,7 +295,7 @@ def build_dev_vars_example(manifest: dict) -> str:
         "# Copy to .dev.vars for local Wrangler previews.",
         "# Keep real production values in Cloudflare secrets, not this file.",
         "WORKDOE_ENV=production",
-        "WORKDOE_AUTH_PROVIDER=workdoe_email_code",
+        "WORKDOE_AUTH_PROVIDER=clerk",
         "WORKDOE_DOMAIN=workdoe.com",
         "WORKDOE_PUBLIC_URL=https://workdoe.com",
         "WORKDOE_LOGIN_MODE=same_domain_email_code",

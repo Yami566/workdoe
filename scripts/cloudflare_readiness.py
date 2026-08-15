@@ -11,6 +11,9 @@ from urllib.parse import urlparse
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 REQUIRED_SECRETS = {
+    "CLERK_JWT_KEY",
+    "CLERK_PUBLISHABLE_KEY",
+    "CLERK_SECRET_KEY",
     "WORKDOE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SITE_KEY",
@@ -196,6 +199,9 @@ def command_steps() -> list[str]:
         "python scripts\\cloudflare_resource_bootstrap.py --json --no-secret-probe",
         "python scripts\\cloudflare_resource_bootstrap.py --execute --yes --no-secret-probe",
         "cd cloudflare",
+        "wrangler secret put CLERK_JWT_KEY",
+        "wrangler secret put CLERK_PUBLISHABLE_KEY",
+        "wrangler secret put CLERK_SECRET_KEY",
         "wrangler secret put WORKDOE_SECRET_KEY",
         "wrangler secret put WORKDOE_TURNSTILE_SITE_KEY",
         "wrangler secret put WORKDOE_TURNSTILE_SECRET_KEY",
@@ -267,12 +273,12 @@ def run_readiness(
             "workers_dev must be false so production stays on workdoe.com.",
         )
         add_requirement(
-            vars_map.get("WORKDOE_AUTH_PROVIDER") == "workdoe_email_code"
+            vars_map.get("WORKDOE_AUTH_PROVIDER") == "clerk"
             and vars_map.get("WORKDOE_LOGIN_MODE") == "same_domain_email_code",
             checks,
             blockers,
-            "Same-domain Workdoe email-code mode is configured",
-            "WORKDOE_AUTH_PROVIDER must be workdoe_email_code and WORKDOE_LOGIN_MODE must be same_domain_email_code.",
+            "Same-domain Clerk email-code mode is configured",
+            "WORKDOE_AUTH_PROVIDER must be clerk and WORKDOE_LOGIN_MODE must be same_domain_email_code.",
         )
         add_requirement(
             vars_map.get("WORKDOE_PUBLIC_URL") == "https://workdoe.com"
@@ -318,6 +324,7 @@ def run_readiness(
                 {
                     "name": "EMAIL",
                     "allowed_sender_addresses": ["no-reply@workdoe.com"],
+                    "remote": True,
                 }
             ],
             checks,
@@ -330,7 +337,7 @@ def run_readiness(
             required == REQUIRED_SECRETS,
             checks,
             blockers,
-            "Required Turnstile and Workdoe secrets are declared",
+            "Required Clerk, Turnstile, and Workdoe secrets are declared",
             "Wrangler secrets.required must declare every required production secret.",
         )
         leaked = sorted(REQUIRED_SECRETS & set(vars_map))
@@ -428,8 +435,19 @@ def run_readiness(
     else:
         warnings.append("Cloudflare secret presence was not checked; pass --secret-list-json for deploy proof.")
 
+    proxy_error = clerk_proxy_proof_error(clerk_proxy_proof_json)
     if clerk_proxy_proof_json:
-        warnings.append("Clerk proxy proof was supplied but native Workdoe email-code auth does not use it.")
+        add_requirement(
+            not proxy_error,
+            checks,
+            blockers,
+            "Same-domain Clerk proxy proof is present",
+            proxy_error,
+        )
+    elif strict_production:
+        blockers.append(proxy_error)
+    else:
+        warnings.append(proxy_error)
 
     return ReadinessResult(
         ready=not blockers,

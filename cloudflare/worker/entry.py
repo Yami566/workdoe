@@ -52,6 +52,7 @@ from clerk_webhooks import (
     verify_svix_signature,
 )
 from email_payloads import EmailPayloadError, build_email_message
+from demo_projects import guest_project_rows
 from email_code_auth import (
     AUTH_PROVIDER as EMAIL_CODE_AUTH_PROVIDER,
     CHALLENGE_TTL_SECONDS,
@@ -217,6 +218,11 @@ from turnstile import (
 )
 from workers import Response, WorkerEntrypoint, fetch
 
+try:
+    from pyodide.ffi import jsnull as JS_NULL
+except ImportError:  # pragma: no cover - available inside the Workers runtime
+    JS_NULL = None
+
 
 EXPIRE_CODES_CRON = "*/15 * * * *"
 STALE_MATCH_REMINDERS_CRON = "0 14 * * *"
@@ -265,7 +271,8 @@ def rows_from(result) -> list[dict]:
 async def db_run(env, sql: str, *params):
     statement = env.DB.prepare(sql)
     if params:
-        statement = statement.bind(*params)
+        d1_params = tuple(JS_NULL if value is None else value for value in params)
+        statement = statement.bind(*d1_params)
     return await statement.run()
 
 
@@ -581,11 +588,9 @@ class Default(WorkerEntrypoint):
             return await self.env.ASSETS.fetch(request)
 
         return json_response(
-            {
-                "ok": True,
-                "service": "workdoe-cloudflare-worker",
-                "message": "Workdoe automation is online.",
-            }
+            {"ok": False, "error": "Not found."},
+            status=404,
+            headers={"Cache-Control": "no-store"},
         )
 
     async def clerk_frontend_api_proxy(self, request):
@@ -628,8 +633,10 @@ class Default(WorkerEntrypoint):
 
         params = parse_qs(urlparse(request.url).query)
         rows = []
+        filters = public_job_filters_from_query(params)
         if hasattr(self.env, "DB"):
             rows = await entry_shell_jobs(self.env, params)
+        rows = guest_project_rows(rows, filters)
         auth_provider = getattr(
             self.env,
             "WORKDOE_AUTH_PROVIDER",
@@ -661,6 +668,7 @@ class Default(WorkerEntrypoint):
             headers=shell_headers(
                 clerk_frontend_api_url,
                 include_turnstile=native_auth
+                and path in {"/start", "/login"}
                 and bool(getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", "")),
             ),
         )
@@ -880,6 +888,7 @@ class Default(WorkerEntrypoint):
                 jobs.category,
                 jobs.city,
                 jobs.state,
+                jobs.description,
                 jobs.approx_lat,
                 jobs.approx_lng,
                 jobs.created_at,
@@ -917,8 +926,9 @@ class Default(WorkerEntrypoint):
                 headers={"Cache-Control": "no-store"},
             )
 
+        rows = guest_project_rows(rows_from(result), filters)
         return json_response(
-            public_jobs_payload(rows_from(result), filters=filters, target=target, view="all"),
+            public_jobs_payload(rows, filters=filters, target=target, view="all"),
             headers={"Cache-Control": "no-store"},
         )
 
@@ -2473,7 +2483,7 @@ class Default(WorkerEntrypoint):
                         "to": email,
                         "code": code,
                         "expires_minutes": 10,
-                        "intent": "post a job" if role == "client" else "find work",
+                        "intent": "post a project" if role == "client" else "find local work",
                     }
                 )
             except Exception as exc:
@@ -2506,7 +2516,7 @@ class Default(WorkerEntrypoint):
                     "ok": True,
                     "challenge_token": challenge_token(code_id, email, secret),
                     "expires_minutes": 10,
-                    "message": "Check your email for the six-digit Workdoe code.",
+                    "message": "Code sent. Check your email for the six-digit Workdoe code.",
                 },
                 status=202,
                 headers={"Cache-Control": "no-store"},
@@ -2521,6 +2531,21 @@ class Default(WorkerEntrypoint):
             return json_response(
                 {"ok": False, "error": str(exc)},
                 status=getattr(exc, "status", 400),
+                headers={"Cache-Control": "no-store"},
+            )
+        except Exception as exc:
+            await record_event(
+                self.env,
+                "login-code-request-failed",
+                payload={"reason": str(exc)},
+                status="failed",
+            )
+            return json_response(
+                {
+                    "ok": False,
+                    "error": "Sign-in is temporarily unavailable. Please try again.",
+                },
+                status=503,
                 headers={"Cache-Control": "no-store"},
             )
 
@@ -2689,6 +2714,21 @@ class Default(WorkerEntrypoint):
             return json_response(
                 {"ok": False, "error": str(exc) or "Sign-in code was not accepted."},
                 status=getattr(exc, "status", 400),
+                headers={"Cache-Control": "no-store"},
+            )
+        except Exception as exc:
+            await record_event(
+                self.env,
+                "login-code-verification-failed",
+                payload={"reason": str(exc)},
+                status="failed",
+            )
+            return json_response(
+                {
+                    "ok": False,
+                    "error": "Verification is temporarily unavailable. Please try again.",
+                },
+                status=503,
                 headers={"Cache-Control": "no-store"},
             )
 
@@ -3632,6 +3672,7 @@ async def entry_shell_jobs(env, params: dict) -> list[dict]:
                jobs.category,
                jobs.city,
                jobs.state,
+               jobs.description,
                jobs.desired_date,
                jobs.approx_lat,
                jobs.approx_lng,
@@ -4026,11 +4067,21 @@ async def verify_turnstile_for_request(env, request, body: dict, action: str) ->
     except Exception as exc:
         raise TurnstileError("Turnstile verification failed.") from exc
 
+    environment = str(getattr(env, "WORKDOE_ENV", "production") or "production").lower()
+    metadata = row_value(result, "metadata", {}) or {}
+    is_testing_result = environment != "production" and bool(
+        row_value(metadata, "result_with_testing_key", False)
+    )
+    if is_testing_result and bool(row_value(result, "success", False)):
+        return result
     allowed_hosts = {"workdoe.com", "www.workdoe.com"}
+    if environment != "production":
+        allowed_hosts.update({"localhost", "127.0.0.1", "0.0.0.0"})
     result_action = row_value(result, "action", "")
-    if not turnstile_result_allowed(result, allowed_hosts) or (
-        result_action and result_action != action
-    ):
+    action_allowed = result_action == action or (
+        environment != "production" and result_action == "test"
+    )
+    if not turnstile_result_allowed(result, allowed_hosts) or not action_allowed:
         raise TurnstileError("Turnstile verification failed.")
     return result
 

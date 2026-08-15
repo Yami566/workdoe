@@ -61,6 +61,9 @@
   ],
   "secrets": {
     "required": [
+      "CLERK_JWT_KEY",
+      "CLERK_PUBLISHABLE_KEY",
+      "CLERK_SECRET_KEY",
       "WORKDOE_SECRET_KEY",
       "WORKDOE_TURNSTILE_SECRET_KEY",
       "WORKDOE_TURNSTILE_SITE_KEY"
@@ -71,7 +74,8 @@
       "allowed_sender_addresses": [
         "no-reply@workdoe.com"
       ],
-      "name": "EMAIL"
+      "name": "EMAIL",
+      "remote": true
     }
   ],
   "triggers": {
@@ -83,7 +87,7 @@
   },
   "vars": {
     "WORKDOE_ADMIN_EMAIL": "admin@workdoe.com",
-    "WORKDOE_AUTH_PROVIDER": "workdoe_email_code",
+    "WORKDOE_AUTH_PROVIDER": "clerk",
     "WORKDOE_DOMAIN": "workdoe.com",
     "WORKDOE_EMAIL_FROM": "no-reply@workdoe.com",
     "WORKDOE_ENV": "production",

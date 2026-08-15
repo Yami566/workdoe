@@ -28,11 +28,20 @@
         "Content-Type": "application/json"
       }
     }, options || {}));
-    var payload = await response.json().catch(function () {
-      return {};
-    });
+    var responseText = await response.text();
+    var payload = {};
+    try {
+      payload = responseText ? JSON.parse(responseText) : {};
+    } catch (error) {
+      payload = {};
+    }
     if (!response.ok) {
-      throw new Error(payload.error || "Workdoe could not complete sign-in.");
+      var fallback = response.status === 429
+        ? "Too many codes were requested. Wait a few minutes and try again."
+        : response.status >= 500
+          ? "Sign-in is temporarily unavailable. Please try again."
+          : "Workdoe could not complete sign-in.";
+      throw new Error(payload.error || fallback);
     }
     return payload;
   }
@@ -52,7 +61,7 @@
   }
 
   async function requestCode(form) {
-    setMessage(form, "Sending your secure code...");
+    setMessage(form, "Sending your one-time code...");
     var payload = await fetchJson(form.dataset.requestUrl, {
       method: "POST",
       body: JSON.stringify(requestPayload(form))
@@ -66,7 +75,7 @@
       codeInput.required = true;
       codeInput.focus();
     }
-    setMessage(form, payload.message || "Check your email for the six-digit code.");
+    setMessage(form, payload.message || "Code sent. Check your email for the six-digit code.");
   }
 
   async function verifyCode(form) {
@@ -78,6 +87,10 @@
         code: value(form, "code"),
         next: form.dataset.redirectUrl || "/dashboard"
       })
+    });
+    setMessage(form, "Email verified. Opening your workspace...");
+    await new Promise(function (resolve) {
+      window.setTimeout(resolve, 350);
     });
     window.location.assign(payload.redirect_url || "/dashboard");
   }
