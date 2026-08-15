@@ -137,6 +137,7 @@ def app_shell_headers(include_map: bool = False, include_turnstile: bool = False
         "X-Frame-Options": "DENY",
         "Referrer-Policy": "strict-origin-when-cross-origin",
         "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     }
 
 
@@ -184,9 +185,9 @@ def nav_links(user, active_path: str) -> str:
     role = row_value(user, "role")
     links: list[tuple[str, str]] = []
     if role == "client":
-        links = [("/client/dashboard", "Dashboard"), ("/jobs/new", "Post Job"), ("/messages", "Messages")]
+        links = [("/client/dashboard", "Projects"), ("/jobs/new", "Post project"), ("/messages", "Messages")]
     elif role == "contractor":
-        links = [("/leads", "Leads"), ("/contractor/dashboard", "Bids"), ("/contractor/profile", "Profile"), ("/messages", "Messages")]
+        links = [("/leads", "Find work"), ("/contractor/dashboard", "Bids"), ("/contractor/profile", "Profile"), ("/messages", "Messages")]
     elif role == "admin":
         links = [("/admin", "Admin")]
     if links:
@@ -213,41 +214,41 @@ def layout(
     if include_map:
         scripts.extend(
             [
-                '<script src="/static/vendor/leaflet/leaflet.js"></script>',
-                '<script src="/static/map.js"></script>',
+                '<script src="/vendor/leaflet/leaflet.js"></script>',
+                '<script src="/map.js"></script>',
             ]
         )
     if include_actions:
-        scripts.append('<script defer src="/static/worker-actions.js"></script>')
+        scripts.append('<script defer src="/worker-actions.js"></script>')
     script_html = "\n  ".join(scripts)
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="Workdoe helps DMV clients post contractor jobs and review trusted mini bids.">
-  <meta name="theme-color" content="#1b5e20">
+  <meta name="description" content="Post a local project or find nearby contractor work across DC, Maryland, and Virginia.">
+  <meta name="theme-color" content="#1b2b22">
   <meta name="application-name" content="Workdoe">
   <meta name="mobile-web-app-capable" content="yes">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://workdoe.com/">
   <meta property="og:title" content="Workdoe">
-  <meta property="og:description" content="DMV contractor leads with same-site email-code sign-in.">
+  <meta property="og:description" content="Local projects and contractors across the DMV.">
   <meta name="twitter:card" content="summary">
   <title>{escape(title)} - Workdoe</title>
   <link rel="canonical" href="https://workdoe.com/">
-  <link rel="icon" href="/static/deer.svg" type="image/svg+xml">
-  <link rel="manifest" href="/static/site.webmanifest">
-  <link rel="stylesheet" href="/static/styles.css">
-  {"<link rel=\"stylesheet\" href=\"/static/vendor/leaflet/leaflet.css\">" if include_map else ""}
+  <link rel="icon" href="/deer.svg" type="image/svg+xml">
+  <link rel="manifest" href="/site.webmanifest">
+  <link rel="stylesheet" href="/styles.css">
+  {"<link rel=\"stylesheet\" href=\"/vendor/leaflet/leaflet.css\">" if include_map else ""}
   {script_html}
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="site-header">
     <a class="brand brand-home-button" href="/" aria-label="Workdoe home">
-      <span class="brand-mark"><img class="brand-icon" src="/static/deer.svg" alt=""></span>
-      <span><strong>Workdoe</strong><small>DMV contractor leads</small></span>
+      <span class="brand-mark"><img class="brand-icon" src="/deer.svg" alt=""></span>
+      <span><strong>Workdoe</strong><small>Local work exchange</small></span>
     </a>
     <nav class="main-nav" aria-label="Primary">
       {nav_links(user, active_path)}
@@ -258,7 +259,7 @@ def layout(
   </main>
   <footer class="site-footer">
     <span>workdoe.com</span>
-    <span>DMV beta: DC, Maryland, Virginia</span>
+    <span>Serving DC, Maryland &amp; Virginia</span>
   </footer>
 </body>
 </html>
@@ -267,7 +268,8 @@ def layout(
 
 def empty_state(title: str, href: str, label: str) -> str:
     return f"""
-    <div class="empty-state">
+    <div class="empty-state field-empty-state">
+      <img class="empty-state-visual" src="/field-doe.webp" alt="" width="180" height="180">
       <h2>{escape(title)}</h2>
       <a class="button secondary" href="{escape(href)}">{escape(label)}</a>
     </div>"""
@@ -301,24 +303,24 @@ def client_dashboard_html(user, payload: dict) -> str:
       </div>
     </a>"""
         )
-    job_html = "\n".join(rows) if rows else empty_state("No jobs yet", "/jobs/new", "Post a job")
+    job_html = "\n".join(rows) if rows else empty_state("No projects yet", "/jobs/new", "Post a project")
     body = f"""
     <section class="dashboard-header">
       <div>
-        <p class="eyebrow">Client dashboard</p>
-        <h1>Your jobs</h1>
+        <p class="eyebrow">Consumer workspace</p>
+        <h1>Your projects</h1>
       </div>
-      <a class="button" href="/jobs/new">Post a job</a>
+      <a class="button" href="/jobs/new">Post a project</a>
     </section>
     <section class="dashboard-metrics" aria-label="Client work queue">
-      <div class="metric-card"><span>Open</span><strong>{int(stats.get('open_jobs', 0))}</strong></div>
+      <div class="metric-card"><span>Open projects</span><strong>{int(stats.get('open_jobs', 0))}</strong></div>
       <div class="metric-card"><span>Pending bids</span><strong>{int(stats.get('pending_requests', 0))}</strong></div>
-      <div class="metric-card"><span>Total jobs</span><strong>{int(stats.get('total_jobs', 0))}</strong></div>
+      <div class="metric-card"><span>Total projects</span><strong>{int(stats.get('total_jobs', 0))}</strong></div>
     </section>
     <section class="job-list" aria-label="Client jobs">
 {job_html}
     </section>"""
-    return layout(user, "/client/dashboard", "Client Dashboard", body)
+    return layout(user, "/client/dashboard", "Projects", body)
 
 
 def contractor_dashboard_html(user, payload: dict) -> str:
@@ -351,7 +353,7 @@ def contractor_dashboard_html(user, payload: dict) -> str:
     body = f"""
     <section class="dashboard-header">
       <div>
-        <p class="eyebrow">Contractor dashboard</p>
+        <p class="eyebrow">Contractor workspace</p>
         <h1>Your mini bids</h1>
       </div>
       <a class="button" href="/leads">Browse leads</a>
@@ -364,7 +366,7 @@ def contractor_dashboard_html(user, payload: dict) -> str:
     <section class="job-list" aria-label="Contractor mini bids">
 {bid_html}
     </section>"""
-    return layout(user, "/contractor/dashboard", "Contractor Dashboard", body)
+    return layout(user, "/contractor/dashboard", "Bids", body)
 
 
 def lead_board_html(user, payload: dict) -> str:
@@ -399,9 +401,9 @@ def lead_board_html(user, payload: dict) -> str:
     body = f"""
     <section class="dashboard-header">
       <div>
-        <p class="eyebrow">Lead board</p>
-        <h1>Open DMV jobs</h1>
-        <p>Approximate pins until matched.</p>
+        <p class="eyebrow">Area scan // DMV</p>
+        <h1>Work near you</h1>
+        <p>Locations stay approximate until a match is approved.</p>
       </div>
     </section>
     <section class="lead-layout">
@@ -416,7 +418,7 @@ def lead_board_html(user, payload: dict) -> str:
       </div>
     </section>
     <script id="map-jobs-data" type="application/json">{safe_json_script(map_jobs)}</script>"""
-    return layout(user, "/leads", "Lead Board", body, include_map=True)
+    return layout(user, "/leads", "Find Work", body, include_map=True)
 
 
 def turnstile_html(site_key: str, action: str) -> str:
@@ -438,18 +440,18 @@ def job_form_html(user, site_key: str = "") -> str:
     body = f"""
     <section class="dashboard-header">
       <div>
-        <p class="eyebrow">New client job</p>
-        <h1>Post a job.</h1>
+        <p class="eyebrow">Consumer workspace</p>
+        <h1>Post a project</h1>
       </div>
-      <a class="button secondary" href="/client/dashboard">Dashboard</a>
+      <a class="button secondary" href="/client/dashboard">Projects</a>
     </section>
     <ul class="form-checklist" aria-label="Posting safeguards">
       <li>City/ZIP pin</li>
       <li>Private photos</li>
       <li>Approve before chat</li>
     </ul>
-    <form class="form-grid" data-json-action="/api/jobs" data-upload-after-json-template="/api/media/jobs/{{job_id}}/upload" data-success-url-template="/client/jobs/{{id}}" aria-label="Post a job." aria-describedby="worker-form-status">
-      <label class="wide" for="job-title">Job title <input id="job-title" name="title" maxlength="90" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Power wash front steps and patio" required></label>
+    <form class="form-grid" data-json-action="/api/jobs" data-upload-after-json-template="/api/media/jobs/{{job_id}}/upload" data-success-url-template="/client/jobs/{{id}}" aria-label="Post a project." aria-describedby="worker-form-status">
+      <label class="wide" for="job-title">Project title <input id="job-title" name="title" maxlength="90" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Power wash front steps and patio" required></label>
       <label for="job-category">Category <select id="job-category" name="category" required>{category_options}</select></label>
       <label for="job-desired-date">Desired date <input id="job-desired-date" name="desired_date" type="date"></label>
       <label for="job-city">City <input id="job-city" name="city" maxlength="80" autocomplete="address-level2" autocapitalize="words" spellcheck="false" list="job-city-options" enterkeyhint="next" placeholder="Washington" required></label>
@@ -466,11 +468,11 @@ def job_form_html(user, site_key: str = "") -> str:
       <p id="job-photos-help" class="help-text wide">Private uploads. PNG, JPG, GIF, or WebP.</p>
       {turnstile_html(site_key, "job-post")}
       <div class="form-actions wide">
-        <button class="button" type="submit" aria-label="Post job">Post job</button>
+        <button class="button" type="submit" aria-label="Post project">Post project</button>
         <p id="worker-form-status" class="help-text" data-form-status aria-live="polite"></p>
       </div>
     </form>"""
-    return layout(user, "/jobs/new", "Post Job", body, include_actions=True, include_turnstile=bool(site_key))
+    return layout(user, "/jobs/new", "Post Project", body, include_actions=True, include_turnstile=bool(site_key))
 
 
 def contractor_profile_html(user, profile: dict, photos: list[dict] | None = None) -> str:

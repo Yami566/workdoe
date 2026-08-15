@@ -27,7 +27,7 @@
     </section>
   {% endif %}
   <label class="wide" for="job-title">
-    Job title
+    Project title
     <input id="job-title" name="title" value="{{ form.title }}" maxlength="{{ title_max }}" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Power wash front steps and patio" required {% if field_errors.title %}aria-invalid="true" aria-describedby="job-title-error"{% endif %}>
     {% if field_errors.title %}<span id="job-title-error" class="field-error">{{ field_errors.title[0] }}</span>{% endif %}
   </label>

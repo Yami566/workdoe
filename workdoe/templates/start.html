@@ -7,9 +7,9 @@
 <section class="start-market">
   <div id="live-jobs" class="login-live-panel start-live-panel" tabindex="-1">
     <div class="section-heading compact-heading">
-      <p class="eyebrow">Live jobs posted</p>
-      <h1>{{ open_jobs|length }} open leads</h1>
-      <a class="entry-shortcut" href="#start-account">Start</a>
+      <p class="eyebrow">Area scan // DMV</p>
+      <h1>{{ open_jobs|length }} open projects</h1>
+      <a class="entry-shortcut" href="#start-account">Join</a>
     </div>
     {% set start_clear_url = url_for('start', intent=intent, job_id=selected_job.id) if selected_job else url_for('start', intent=intent) %}
     <form class="filter-bar compact-filter entry-filter" method="get" role="search" aria-label="Filter open jobs while starting" aria-controls="start-open-jobs lead-map">
@@ -73,12 +73,14 @@
             <span class="row-cue">{{ row_cue }}</span>
           </a>
         {% else %}
-          <div class="empty-state">
+          <div class="empty-state field-empty-state">
+            <img class="empty-state-visual" src="{{ url_for('static', filename='field-doe.webp') }}" alt="" width="180" height="180">
             {% if has_filters %}
               <h2>No matches</h2>
               <a class="button secondary" href="{{ start_clear_url }}">Clear filters</a>
             {% else %}
-              <h2>No open jobs yet</h2>
+              <h2>The board is quiet</h2>
+              <p>New local projects will appear here.</p>
             {% endif %}
           </div>
         {% endfor %}
@@ -90,16 +92,11 @@
     {% set start_clerk_proxy_url = clerk_proxy_url() %}
     <section id="start-account" class="form-panel login-form-panel start-form-panel clerk-entry-panel" aria-labelledby="start-title">
       <div>
-        <p class="eyebrow">Start Workdoe</p>
-        <h2 id="start-title">Start</h2>
-        <nav class="entry-shortcuts" aria-label="Start shortcuts">
-          <a href="#live-jobs">Live jobs</a>
+        <p class="eyebrow">Choose your role</p>
+        <h2 id="start-title">Join Workdoe</h2>
+        <nav class="entry-shortcuts" aria-label="Join shortcuts">
+          <a href="#live-jobs">Open projects</a>
         </nav>
-        <ul class="form-checklist auth-checklist" aria-label="Email code safeguards">
-          <li>Email code</li>
-          <li>Same site</li>
-          <li>No password</li>
-        </ul>
         {% if selected_job %}
           <div class="selected-lead-pill" aria-label="Selected lead">
             <span>Selected</span>
@@ -109,23 +106,23 @@
         {% endif %}
       </div>
       <fieldset class="segmented-control" data-clerk-role-choice>
-        <legend>Choose your workspace</legend>
+        <legend>What brings you here?</legend>
         <label class="segmented-option">
           <input type="radio" name="intent" value="post-job" {% if intent == 'post-job' %}checked{% endif %} required>
-          <span>Post job</span>
+          <span><strong>Consumer</strong><small>I need work done</small></span>
         </label>
         <label class="segmented-option">
           <input type="radio" name="intent" value="find-work" {% if intent == 'find-work' %}checked{% endif %} required>
-          <span>Find work</span>
+          <span><strong>Contractor</strong><small>I am looking for work</small></span>
         </label>
       </fieldset>
       <label for="start-display-name">
         Name
         <input name="display_name" id="start-display-name" autocomplete="name" aria-describedby="start-name-help" data-clerk-display-name>
-        <span id="start-name-help" class="help-text">Used after email verification.</span>
+        <span id="start-name-help" class="help-text">Shown on your Workdoe profile.</span>
       </label>
       <label for="start-company-name">
-        Company or household
+        Business or household name <span class="optional-label">Optional</span>
         <input name="company_name" id="start-company-name" autocomplete="organization" data-clerk-company-name>
       </label>
       <div
@@ -146,7 +143,7 @@
         <div class="clerk-entry-loading" role="status">Loading secure email sign-in...</div>
       </div>
       <div class="auth-switch clerk-entry-note">
-        <span>Email code sign-in stays on workdoe.com.</span>
+        <span>No password needed. Your one-time code arrives by email.</span>
       </div>
       <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>
       <noscript>
@@ -158,16 +155,11 @@
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
       {% if selected_job %}<input type="hidden" name="job_id" value="{{ selected_job.id }}">{% endif %}
       <div>
-        <p class="eyebrow">Start Workdoe</p>
-        <h2>Start</h2>
-        <nav class="entry-shortcuts" aria-label="Start shortcuts">
-          <a href="#live-jobs">Live jobs</a>
+        <p class="eyebrow">Choose your role</p>
+        <h2>Join Workdoe</h2>
+        <nav class="entry-shortcuts" aria-label="Join shortcuts">
+          <a href="#live-jobs">Open projects</a>
         </nav>
-        <ul class="form-checklist auth-checklist" aria-label="Email code safeguards">
-          <li>Email code</li>
-          <li>Same site</li>
-          <li>No password</li>
-        </ul>
         {% if selected_job %}
           <div class="selected-lead-pill" aria-label="Selected lead">
             <span>Selected</span>
@@ -177,14 +169,14 @@
         {% endif %}
       </div>
       <fieldset class="segmented-control">
-        <legend>Choose your workspace</legend>
+        <legend>What brings you here?</legend>
         <label class="segmented-option">
           <input type="radio" name="intent" value="post-job" {% if intent == 'post-job' %}checked{% endif %} required>
-          <span>Post job</span>
+          <span><strong>Consumer</strong><small>I need work done</small></span>
         </label>
         <label class="segmented-option">
           <input type="radio" name="intent" value="find-work" {% if intent == 'find-work' %}checked{% endif %} required>
-          <span>Find work</span>
+          <span><strong>Contractor</strong><small>I am looking for work</small></span>
         </label>
       </fieldset>
       <label for="start-email">
@@ -197,7 +189,7 @@
         <span id="start-name-help" class="help-text">New accounts only.</span>
       </label>
       <label for="start-company-name">
-        Company or household
+        Business or household name <span class="optional-label">Optional</span>
         <input name="company_name" id="start-company-name" autocomplete="organization" value="{{ form_company_name }}">
       </label>
       {% with action='start' %}{% include "_turnstile.html" %}{% endwith %}

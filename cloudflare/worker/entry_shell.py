@@ -182,8 +182,10 @@ def job_row(row, selected_id: str, target: str) -> str:
 def job_list_html(rows: list, selected_id: str, target: str) -> str:
     if not rows:
         return """
-          <div class="empty-state">
-            <h2>No open jobs yet</h2>
+          <div class="empty-state field-empty-state">
+            <img class="empty-state-visual" src="/field-doe.webp" alt="" width="180" height="180">
+            <h2>The board is quiet</h2>
+            <p>New local projects will appear here.</p>
           </div>"""
     return "\n".join(job_row(row, selected_id, target) for row in rows)
 
@@ -211,14 +213,14 @@ def safe_json_script(value) -> str:
 def role_segment(intent: str) -> str:
     return f"""
       <fieldset class="segmented-control" data-clerk-role-choice data-email-code-role-choice>
-        <legend>Choose your workspace</legend>
+        <legend>What brings you here?</legend>
         <label class="segmented-option">
           <input type="radio" name="intent" value="post-job" {"checked" if intent == "post-job" else ""} required>
-          <span>Post job</span>
+          <span><strong>Consumer</strong><small>I need work done</small></span>
         </label>
         <label class="segmented-option">
           <input type="radio" name="intent" value="find-work" {"checked" if intent == "find-work" else ""} required>
-          <span>Find work</span>
+          <span><strong>Contractor</strong><small>I am looking for work</small></span>
         </label>
       </fieldset>"""
 
@@ -267,6 +269,7 @@ def shell_headers(
         "X-Frame-Options": "DENY",
         "Referrer-Policy": "strict-origin-when-cross-origin",
         "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     }
 
 
@@ -301,35 +304,26 @@ def build_entry_shell_html(
     )
     job_list_role = ' role="list"' if rows else ""
     title = "Sign in - Workdoe" if path == "/login" else "Start - Workdoe"
-    heading = "Sign in" if path == "/login" else "Start"
-    eyebrow = "Welcome back" if path == "/login" else "Workdoe account"
+    heading = "Sign in" if path == "/login" else "Join Workdoe"
+    eyebrow = "Welcome back" if path == "/login" else "Choose your role"
     panel_id = "signin" if path == "/login" else "start-account"
-    panel_shortcut_label = "Sign in" if path == "/login" else "Start"
+    panel_shortcut_label = "Sign in" if path == "/login" else "Join"
     clerk_mode = CLERK_SIGNIN_MODE if path == "/login" else CLERK_START_MODE
     sign_up_url = entry_sign_up_url(path, selected_id)
     data_selected = selected_id if selected else ""
     start_current = ' aria-current="page"' if path in {"/", "/start"} else ""
     login_current = ' aria-current="page"' if path == "/login" else ""
-    checklist_html = (
-        """
-          <ul class="form-checklist auth-checklist" aria-label="Email code safeguards">
-            <li>Email code</li>
-            <li>Same site</li>
-            <li>No password</li>
-          </ul>"""
-        if path != "/login"
-        else ""
-    )
+    checklist_html = ""
     onboarding_fields = (
         f"""
 {role_segment(intent)}
         <label>
           Name
           <input name="display_name" autocomplete="name" aria-describedby="entry-name-help" data-clerk-display-name data-email-code-display-name>
-          <span id="entry-name-help" class="help-text">Used after email verification.</span>
+          <span id="entry-name-help" class="help-text">Shown on your Workdoe profile.</span>
         </label>
         <label>
-          Company or household
+          Business or household name <span class="optional-label">Optional</span>
           <input name="company_name" autocomplete="organization" data-clerk-company-name data-email-code-company-name>
         </label>"""
         if path != "/login"
@@ -390,7 +384,7 @@ def build_entry_shell_html(
                 if turnstile_site_key
                 else ""
             )
-            + '  <script defer src="/static/email-code-entry.js"></script>'
+            + '  <script defer src="/email-code-entry.js"></script>'
         )
     else:
         auth_mount_html = f"""
@@ -412,37 +406,37 @@ def build_entry_shell_html(
         <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>"""
         auth_scripts_html = f"""  <script defer crossorigin="anonymous" src="{escape(clerk_frontend_api_url)}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
   <script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_script_attr} src="{escape(clerk_frontend_api_url)}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
-  <script defer src="/static/clerk-entry.js"></script>"""
+  <script defer src="/clerk-entry.js"></script>"""
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="Workdoe helps DMV clients post contractor jobs and review trusted mini bids.">
-  <meta name="theme-color" content="#1b5e20">
+  <meta name="description" content="Post a local project or find nearby contractor work across DC, Maryland, and Virginia.">
+  <meta name="theme-color" content="#1b2b22">
   <meta name="application-name" content="Workdoe">
   <meta name="mobile-web-app-capable" content="yes">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://workdoe.com/">
   <meta property="og:title" content="Workdoe">
-  <meta property="og:description" content="DMV contractor leads with same-site email-code sign-in.">
+  <meta property="og:description" content="Local projects and contractors across the DMV.">
   <meta name="twitter:card" content="summary">
   <title>{escape(title)}</title>
   <link rel="canonical" href="https://workdoe.com/">
-  <link rel="icon" href="/static/deer.svg" type="image/svg+xml">
-  <link rel="manifest" href="/static/site.webmanifest">
-  <link rel="stylesheet" href="/static/styles.css">
-  <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+  <link rel="icon" href="/deer.svg" type="image/svg+xml">
+  <link rel="manifest" href="/site.webmanifest">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="site-header">
     <a class="brand brand-home-button" href="/" aria-label="Workdoe home">
-      <span class="brand-mark"><img class="brand-icon" src="/static/deer.svg" alt=""></span>
-      <span><strong>Workdoe</strong><small>DMV contractor leads</small></span>
+      <span class="brand-mark"><img class="brand-icon" src="/deer.svg" alt=""></span>
+      <span><strong>Workdoe</strong><small>Local work exchange</small></span>
     </a>
     <nav class="main-nav" aria-label="Primary">
-      <a href="/start"{start_current}>Start</a>
+      <a href="/start"{start_current}>Join</a>
       <a href="/login"{login_current}>Sign in</a>
     </nav>
   </header>
@@ -450,13 +444,13 @@ def build_entry_shell_html(
     <section class="start-market">
       <div id="live-jobs" class="login-live-panel start-live-panel" tabindex="-1">
         <div class="section-heading compact-heading">
-          <p class="eyebrow">Live jobs posted</p>
-          <h1>{len(rows)} open leads</h1>
+          <p class="eyebrow">Area scan // DMV</p>
+          <h1>{len(rows)} open projects</h1>
           <a class="entry-shortcut" href="#{escape(panel_id)}">{escape(panel_shortcut_label)}</a>
         </div>
         <div class="login-board start-board">
           <div class="map-panel login-map-panel">
-            <div id="lead-map" data-map data-jobs-api="{escape(jobs_api_url)}" role="region" tabindex="0" aria-label="Approximate DMV job map while signing in" aria-describedby="lead-map-status">
+            <div id="lead-map" data-map data-jobs-api="{escape(jobs_api_url)}" role="region" tabindex="0" aria-label="Approximate DMV project map while signing in" aria-describedby="lead-map-status">
               <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Map loading. Job list is ready.</p>
               <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Map loading. Job list is ready.</p>
             </div>
@@ -471,21 +465,21 @@ def build_entry_shell_html(
           <p class="eyebrow">{escape(eyebrow)}</p>
           <h2 id="entry-title">{escape(heading)}</h2>
           <nav class="entry-shortcuts" aria-label="{escape(heading)} shortcuts">
-            <a href="#live-jobs">Live jobs</a>
+            <a href="#live-jobs">Open projects</a>
           </nav>
 {checklist_html}
 {selected_job_pill(selected)}
         </div>
 {auth_mount_html}
         <div class="auth-switch clerk-entry-note">
-          <span>Email code sign-in stays on workdoe.com.</span>
+          <span>No password needed. Your one-time code arrives by email.</span>
         </div>
       </section>
     </section>
   </main>
   <script id="map-jobs-data" type="application/json">{safe_json_script(map_payload["jobs"])}</script>
-  <script src="/static/vendor/leaflet/leaflet.js"></script>
-  <script src="/static/map.js"></script>
+  <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="/map.js"></script>
 {auth_scripts_html}
 </body>
 </html>

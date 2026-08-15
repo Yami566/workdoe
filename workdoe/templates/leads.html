@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Lead Board - Workdoe{% endblock %}
+{% block title %}Find Work - Workdoe{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
 {% endblock %}
 {% block content %}
 <section class="dashboard-header">
   <div>
-    <p class="eyebrow">Lead board</p>
-    <h1>Open DMV jobs</h1>
-    <p>Approximate pins until matched.</p>
+    <p class="eyebrow">Area scan // DMV</p>
+    <h1>Work near you</h1>
+    <p>Locations stay approximate until a match is approved.</p>
   </div>
 </section>
 
@@ -90,7 +90,8 @@
         <span class="row-cue">{{ row_cue }}</span>
       </a>
     {% else %}
-      <div class="empty-state">
+      <div class="empty-state field-empty-state">
+        <img class="empty-state-visual" src="{{ url_for('static', filename='field-doe.webp') }}" alt="" width="180" height="180">
         <h2>{% if lead_view == "sent" %}No bids sent yet{% elif lead_view == "new" %}No new leads{% else %}No leads match this search{% endif %}</h2>
         <a class="button secondary" href="{{ url_for('leads') }}">{% if lead_view != "all" and not has_query_filters %}Show all leads{% else %}Clear filters{% endif %}</a>
       </div>

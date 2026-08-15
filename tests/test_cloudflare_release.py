@@ -620,6 +620,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
             self.assertEqual(wrangler["r2_buckets"][0]["binding"], "MEDIA")
             self.assertEqual(wrangler["assets"]["binding"], "ASSETS")
+            self.assertTrue(wrangler["assets"]["run_worker_first"])
             self.assertEqual(
                 {producer["binding"] for producer in wrangler["queues"]["producers"]},
                 {"EMAIL_QUEUE", "MEDIA_QUEUE"},
@@ -1338,6 +1339,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("jobs.status = 'open'", entrypoint)
         self.assertIn("jobs.zip_code LIKE ?", entrypoint)
         self.assertIn("Cache-Control", entrypoint)
+        self.assertIn("public_https_redirect_url", entrypoint)
+        self.assertIn("PUBLIC_HTTPS_HOSTS", entrypoint)
+        self.assertIn("Strict-Transport-Security", entrypoint)
+        self.assertIn("is_static_asset_path", entrypoint)
         self.assertIn("ENTRY_ROUTES", entrypoint)
         self.assertIn("entry_shell", entrypoint)
         self.assertIn("build_entry_shell_html", entrypoint)
@@ -1948,15 +1953,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
             html,
         )
-        self.assertIn('<meta name="theme-color" content="#1b5e20">', html)
+        self.assertIn('<meta name="theme-color" content="#1b2b22">', html)
         self.assertIn('<link rel="canonical" href="https://workdoe.com/">', html)
-        self.assertIn('<link rel="icon" href="/static/deer.svg" type="image/svg+xml">', html)
-        self.assertIn('<link rel="manifest" href="/static/site.webmanifest">', html)
-        self.assertIn('href="/static/styles.css"', html)
-        self.assertIn('href="/static/vendor/leaflet/leaflet.css"', html)
-        self.assertIn('src="/static/vendor/leaflet/leaflet.js"', html)
-        self.assertIn('src="/static/map.js"', html)
-        self.assertIn('src="/static/clerk-entry.js"', html)
+        self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', html)
+        self.assertIn('<link rel="manifest" href="/site.webmanifest">', html)
+        self.assertIn('href="/styles.css"', html)
+        self.assertIn('href="/vendor/leaflet/leaflet.css"', html)
+        self.assertIn('src="/vendor/leaflet/leaflet.js"', html)
+        self.assertIn('src="/map.js"', html)
+        self.assertIn('src="/clerk-entry.js"', html)
         self.assertIn("data-clerk-entry", html)
         self.assertIn('data-clerk-mode="start"', html)
         self.assertIn('data-session-url="/api/auth/session"', html)
@@ -1967,11 +1972,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             html,
         )
         self.assertIn('data-clerk-publishable-key="pk_test_workdoe"', html)
-        self.assertIn("Email code sign-in stays on workdoe.com.", html)
+        self.assertIn("No password needed. Your one-time code arrives by email.", html)
+        self.assertIn("<strong>Consumer</strong>", html)
+        self.assertIn("<strong>Contractor</strong>", html)
         self.assertIn('id="live-jobs" class="login-live-panel start-live-panel" tabindex="-1"', html)
-        self.assertIn('class="entry-shortcut" href="#start-account">Start</a>', html)
+        self.assertIn('class="entry-shortcut" href="#start-account">Join</a>', html)
         self.assertIn('id="start-account" class="form-panel login-form-panel start-form-panel clerk-entry-panel"', html)
-        self.assertIn('<nav class="entry-shortcuts" aria-label="Start shortcuts">', html)
+        self.assertIn('<nav class="entry-shortcuts" aria-label="Join Workdoe shortcuts">', html)
         self.assertIn('class="job-list login-job-list" aria-label="Open jobs while signing in" role="list"', html)
         self.assertIn("/api/jobs/open?limit=18&amp;target=start", html)
         self.assertIn("Paint &lt;stairwell&gt;", html)
@@ -2025,6 +2032,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
         headers = module.shell_headers("https://clerk.workdoe.com")
         self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertEqual(
+            headers["Strict-Transport-Security"],
+            "max-age=31536000; includeSubDomains",
+        )
         self.assertIn(
             "script-src 'self' https://clerk.workdoe.com",
             headers["Content-Security-Policy"],
@@ -2152,7 +2163,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "stats": {"open_jobs": 1, "pending_requests": 2, "total_jobs": 1},
             },
         )
-        self.assertIn("Client Dashboard - Workdoe", client_html)
+        self.assertIn("Projects - Workdoe", client_html)
+        self.assertIn("Consumer workspace", client_html)
         self.assertIn("/client/jobs/12?bids=pending#mini-bids", client_html)
         self.assertIn('aria-label="Review pending bids for Power wash steps"', client_html)
         self.assertIn("Review bids", client_html)
@@ -2189,7 +2201,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("multiple", form_html)
         self.assertIn('class="form-checklist" aria-label="Posting safeguards"', form_html)
         self.assertIn("City/ZIP pin", form_html)
-        self.assertIn('aria-label="Post a job."', form_html)
+        self.assertIn('aria-label="Post a project."', form_html)
         self.assertIn('for="job-title"', form_html)
         self.assertIn('id="job-title"', form_html)
         self.assertIn('autocapitalize="sentences"', form_html)
@@ -2205,11 +2217,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('enterkeyhint="done"', form_html)
         self.assertIn('aria-describedby="job-photos-help"', form_html)
         self.assertIn('id="job-photos-help"', form_html)
-        self.assertIn('aria-label="Post job"', form_html)
-        self.assertIn('src="/static/worker-actions.js"', form_html)
+        self.assertIn('aria-label="Post project"', form_html)
+        self.assertIn('src="/worker-actions.js"', form_html)
         self.assertIn('class="cf-turnstile"', form_html)
         self.assertIn('data-sitekey="turnstile-site-key"', form_html)
-        self.assertIn("Post job", form_html)
+        self.assertIn("Post project", form_html)
 
         profile_html = module.contractor_profile_html(
             contractor,
@@ -2248,7 +2260,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('aria-describedby="profile-photos-help"', profile_html)
         self.assertIn('id="profile-photos-help"', profile_html)
         self.assertIn('href="/contractors/7"', profile_html)
-        self.assertIn('src="/static/worker-actions.js"', profile_html)
+        self.assertIn('src="/worker-actions.js"', profile_html)
         self.assertNotIn("contractor@example.com", profile_html)
 
         public_profile_html = module.public_contractor_profile_html(
@@ -2340,7 +2352,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('spellcheck="true"', thread_html)
         self.assertIn('enterkeyhint="send"', thread_html)
         self.assertIn('aria-label="Send message"', thread_html)
-        self.assertIn('src="/static/worker-actions.js"', thread_html)
+        self.assertIn('src="/worker-actions.js"', thread_html)
         self.assertIn("1 message", thread_html)
         self.assertNotIn("1 messages", thread_html)
         self.assertIn("Can you start Tuesday?", thread_html)
@@ -2432,7 +2444,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('id="lead-map"', lead_html)
         self.assertEqual(module.photo_count_label(1), "1 photo")
         self.assertEqual(module.photo_count_label(None), "0 photos")
-        self.assertIn('src="/static/map.js"', lead_html)
+        self.assertIn('src="/map.js"', lead_html)
         self.assertIn('class="job-list lead-job-list" aria-label="Open leads" role="list"', lead_html)
         self.assertIn('role="listitem"', lead_html)
         self.assertIn('data-job-id="21"', lead_html)
@@ -2540,10 +2552,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
             client_job_html,
         )
-        self.assertIn('<meta name="theme-color" content="#1b5e20">', client_job_html)
+        self.assertIn('<meta name="theme-color" content="#1b2b22">', client_job_html)
         self.assertIn('<link rel="canonical" href="https://workdoe.com/">', client_job_html)
-        self.assertIn('<link rel="icon" href="/static/deer.svg" type="image/svg+xml">', client_job_html)
-        self.assertIn('<link rel="manifest" href="/static/site.webmanifest">', client_job_html)
+        self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', client_job_html)
+        self.assertIn('<link rel="manifest" href="/site.webmanifest">', client_job_html)
         self.assertIn("Job controls", client_job_html)
         self.assertIn('data-json-action="/api/jobs/12/close"', client_job_html)
         self.assertIn('aria-label="Close Power wash steps"', client_job_html)
@@ -2564,11 +2576,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('aria-describedby="match-request-31-reject-status"', client_job_html)
         self.assertIn('id="match-request-31-reject-status"', client_job_html)
         self.assertIn('href="/messages/5"', client_job_html)
-        self.assertIn('src="/static/worker-actions.js"', client_job_html)
+        self.assertIn('src="/worker-actions.js"', client_job_html)
         self.assertNotIn("contractor@example.com", client_job_html)
 
         headers = module.app_shell_headers(include_map=True, include_turnstile=True)
         self.assertEqual(headers["Cache-Control"], "no-store")
+        self.assertEqual(
+            headers["Strict-Transport-Security"],
+            "max-age=31536000; includeSubDomains",
+        )
         self.assertIn("https://*.tile.openstreetmap.org", headers["Content-Security-Policy"])
         self.assertIn("https://challenges.cloudflare.com", headers["Content-Security-Policy"])
 

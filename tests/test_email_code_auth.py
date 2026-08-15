@@ -97,7 +97,7 @@ class EmailCodeAuthTests(unittest.TestCase):
         self.assertIn('data-request-url="/api/auth/code/request"', html)
         self.assertIn('data-verify-url="/api/auth/code/verify"', html)
         self.assertIn('data-sitekey="turnstile-site-key"', html)
-        self.assertIn('/static/email-code-entry.js', html)
+        self.assertIn('/email-code-entry.js', html)
         self.assertNotIn('data-clerk-entry', html)
         self.assertNotIn('frontend-api.clerk.dev', html)
 

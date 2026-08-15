@@ -2,7 +2,8 @@
   "$schema": "../node_modules/wrangler/config-schema.json",
   "assets": {
     "binding": "ASSETS",
-    "directory": "../workdoe/static"
+    "directory": "../workdoe/static",
+    "run_worker_first": true
   },
   "compatibility_date": "2026-08-03",
   "compatibility_flags": [

@@ -1,17 +1,18 @@
 :root {
   color-scheme: light;
-  --bg: #f7f7f2;
+  --bg: #edf0eb;
   --surface: #ffffff;
-  --surface-strong: #f0f5ec;
-  --ink: #172018;
-  --muted: #617063;
-  --line: #d9dfd5;
-  --accent: #1b5e20;
-  --accent-dark: #134817;
-  --blue: #265d8f;
-  --gold: #b97818;
-  --danger: #b13a32;
-  --shadow: 0 12px 32px rgba(23, 32, 24, 0.08);
+  --surface-strong: #e6ebe6;
+  --ink: #111512;
+  --muted: #55615b;
+  --line: #c7d0c8;
+  --accent: #3b5b45;
+  --accent-dark: #1b2b22;
+  --blue: #146d78;
+  --gold: #a34b37;
+  --signal: #d33d2f;
+  --danger: #b52f36;
+  --shadow: 0 12px 28px rgba(17, 21, 18, 0.08);
 }
 
 * {
@@ -24,6 +25,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   line-height: 1.5;
+  letter-spacing: 0;
 }
 
 a {
@@ -72,6 +74,7 @@ main:focus {
   justify-content: space-between;
   gap: 24px;
   flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
 }
 
 .skip-link {
@@ -110,7 +113,7 @@ main:focus {
   align-items: center;
   gap: 12px;
   color: var(--ink);
-  border-radius: 10px;
+  border-radius: 6px;
   flex: 1 1 220px;
   min-width: 0;
 }
@@ -125,6 +128,7 @@ main:focus {
 }
 
 .brand-mark {
+  position: relative;
   display: grid;
   place-items: center;
   width: 42px;
@@ -133,8 +137,18 @@ main:focus {
   color: var(--accent-dark);
   background: var(--surface-strong);
   font-weight: 800;
-  border-radius: 8px;
+  border-radius: 4px;
   transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.brand-mark::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 7px;
+  height: 7px;
+  background: var(--signal);
 }
 
 .brand-home-button {
@@ -205,7 +219,7 @@ button.button {
   border: 1px solid var(--accent-dark);
   background: var(--accent);
   color: #fff;
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 11px 16px;
   font-weight: 750;
   cursor: pointer;
@@ -448,11 +462,17 @@ button.compact {
 }
 
 .hero h1,
-.page-header h1,
-.dashboard-header h1 {
+.page-header h1 {
   font-size: clamp(2rem, 5vw, 4.5rem);
   line-height: 1;
   margin: 0 0 18px;
+  letter-spacing: 0;
+}
+
+.dashboard-header h1 {
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  line-height: 1.05;
+  margin: 0 0 10px;
   letter-spacing: 0;
 }
 
@@ -470,6 +490,8 @@ button.compact {
   font-weight: 800;
   text-transform: uppercase;
   font-size: 0.78rem;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  letter-spacing: 0;
 }
 
 .hero-panel,
@@ -753,7 +775,8 @@ button.compact {
 
 .job-row.needs-review {
   border-color: rgba(185, 120, 24, 0.38);
-  background: linear-gradient(90deg, #fff9ec 0, var(--surface) 26%);
+  border-left: 4px solid #a15d13;
+  background: #fffdf7;
 }
 
 .job-row.needs-review .row-cue,
@@ -902,6 +925,8 @@ button.compact {
   gap: 8px;
   flex-wrap: wrap;
   font-size: 0.9rem;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  letter-spacing: 0;
 }
 
 .thread-meta {
@@ -1354,9 +1379,11 @@ legend {
 
 .segmented-option span {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
+  gap: 2px;
+  min-height: 58px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -1366,6 +1393,22 @@ legend {
   text-align: center;
   cursor: pointer;
   transition: border-color 160ms ease, background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.segmented-option strong,
+.segmented-option small {
+  display: block;
+  line-height: 1.2;
+}
+
+.segmented-option small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.segmented-option input:checked + span small {
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .segmented-option input:checked + span {
@@ -1497,6 +1540,23 @@ textarea:focus {
   box-shadow: 0 18px 48px rgba(18, 38, 24, 0.08);
 }
 
+.map-panel::after {
+  content: "AREA SCAN // APPROXIMATE";
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 500;
+  border-left: 3px solid var(--signal);
+  background: rgba(17, 21, 18, 0.9);
+  color: #fff;
+  padding: 6px 8px;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  pointer-events: none;
+}
+
 .home-map,
 .home-map #lead-map {
   min-height: 560px;
@@ -1535,6 +1595,7 @@ textarea:focus {
 .compact-heading {
   background: var(--surface);
   border: 1px solid var(--line);
+  border-left: 4px solid var(--signal);
   border-radius: 8px;
   padding: 14px 16px;
 }
@@ -1818,6 +1879,69 @@ textarea:focus {
   white-space: pre-line;
 }
 
+.field-empty-state {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 220px;
+  overflow: hidden;
+  border-style: dashed;
+}
+
+.field-empty-state h2,
+.field-empty-state p {
+  margin: 0;
+}
+
+.field-empty-state p {
+  color: var(--muted);
+}
+
+.empty-state-visual {
+  width: 132px;
+  height: 132px;
+  object-fit: contain;
+  opacity: 0.88;
+}
+
+.optional-label {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.start-form-panel {
+  border-top: 4px solid var(--accent-dark);
+}
+
+.start-form-panel::before {
+  content: "CLEAR CONTACT // ONE STEP";
+  color: var(--signal);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.job-row,
+.metric-card,
+.panel,
+.form-panel,
+.map-panel,
+.compact-heading {
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @media (max-width: 900px) {
   .site-header,
   .dashboard-header,
@@ -1882,7 +2006,7 @@ textarea:focus {
   }
 
   .map-panel {
-    position: static;
+    position: relative;
   }
 
   .lead-map-panel,

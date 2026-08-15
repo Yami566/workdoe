@@ -13,7 +13,7 @@
         <p class="eyebrow">Welcome back</p>
         <h1 id="signin-title">Sign in</h1>
         <nav class="entry-shortcuts" aria-label="Sign in shortcuts">
-          <a href="#live-jobs">Live jobs</a>
+          <a href="#live-jobs">Open projects</a>
         </nav>
         {% if selected_job %}
           <div class="selected-lead-pill" aria-label="Selected lead">
@@ -37,7 +37,7 @@
         <div class="clerk-entry-loading" role="status">Loading secure email sign-in...</div>
       </div>
       <div class="auth-switch clerk-entry-note">
-        <span>Email code sign-in stays on workdoe.com.</span>
+        <span>No password needed. Your one-time code arrives by email.</span>
       </div>
       <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>
       <noscript>
@@ -52,7 +52,7 @@
         <p class="eyebrow">Welcome back</p>
         <h1>Sign in</h1>
         <nav class="entry-shortcuts" aria-label="Sign in shortcuts">
-          <a href="#live-jobs">Live jobs</a>
+          <a href="#live-jobs">Open projects</a>
         </nav>
         {% if selected_job %}
           <div class="selected-lead-pill" aria-label="Selected lead">
@@ -87,8 +87,8 @@
 
   <div id="live-jobs" class="login-live-panel" tabindex="-1">
     <div class="section-heading compact-heading">
-      <p class="eyebrow">Live jobs posted</p>
-      <h2>{{ open_jobs|length }} open leads</h2>
+      <p class="eyebrow">Area scan // DMV</p>
+      <h2>{{ open_jobs|length }} open projects</h2>
       <a class="entry-shortcut" href="#signin">Sign in</a>
     </div>
     {% set login_clear_url = url_for('login', next=next_url) if next_url else url_for('login') %}
@@ -152,12 +152,14 @@
             <span class="row-cue">{{ row_cue }}</span>
           </a>
         {% else %}
-          <div class="empty-state">
+          <div class="empty-state field-empty-state">
+            <img class="empty-state-visual" src="{{ url_for('static', filename='field-doe.webp') }}" alt="" width="180" height="180">
             {% if has_filters %}
               <h2>No matches</h2>
               <a class="button secondary" href="{{ login_clear_url }}">Clear filters</a>
             {% else %}
-              <h2>No open jobs yet</h2>
+              <h2>The board is quiet</h2>
+              <p>New local projects will appear here.</p>
             {% endif %}
           </div>
         {% endfor %}
