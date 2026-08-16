@@ -242,6 +242,7 @@ STATIC_ASSET_PATHS = {
     "/map.js",
     "/site.webmanifest",
     "/styles.css",
+    "/workdoe-share.png",
     "/worker-actions.js",
 }
 

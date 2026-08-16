@@ -1359,6 +1359,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("PUBLIC_HTTPS_HOSTS", entrypoint)
         self.assertIn("Strict-Transport-Security", entrypoint)
         self.assertIn("is_static_asset_path", entrypoint)
+        self.assertIn('"/workdoe-share.png"', entrypoint)
         self.assertIn("ENTRY_ROUTES", entrypoint)
         self.assertIn("entry_shell", entrypoint)
         self.assertIn("build_entry_shell_html", entrypoint)
