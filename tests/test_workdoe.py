@@ -1153,6 +1153,18 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'<meta name="theme-color" content="#1b2b22">', response.data)
         self.assertIn(b'<link rel="canonical" href="https://workdoe.com/">', response.data)
         self.assertIn(
+            b'<meta property="og:title" content="Workdoe - a local Work Exchange">',
+            response.data,
+        )
+        self.assertIn(
+            b'<meta property="og:image" content="https://workdoe.com/workdoe-share.png">',
+            response.data,
+        )
+        self.assertIn(
+            b'<meta name="twitter:card" content="summary_large_image">',
+            response.data,
+        )
+        self.assertIn(
             b'<link rel="icon" href="/static/deer.svg" type="image/svg+xml">',
             response.data,
         )
@@ -1169,6 +1181,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(manifest_payload["start_url"], "/")
         self.assertEqual(manifest_payload["theme_color"], "#1b2b22")
         self.assertEqual(manifest_payload["icons"][0]["src"], "/static/deer.svg")
+
+        share_image = self.client.get("/static/workdoe-share.png")
+        self.assertEqual(share_image.status_code, 200)
+        self.assertEqual(share_image.mimetype, "image/png")
+        self.assertEqual(share_image.data[:8], b"\x89PNG\r\n\x1a\n")
+        share_image.close()
 
     def test_error_pages_are_branded_private_and_navigable(self):
         missing = self.client.get("/missing-workdoe-page")

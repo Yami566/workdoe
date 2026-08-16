@@ -234,10 +234,22 @@ def layout(
   <meta name="application-name" content="Workdoe">
   <meta name="mobile-web-app-capable" content="yes">
   <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Workdoe">
+  <meta property="og:locale" content="en_US">
   <meta property="og:url" content="https://workdoe.com/">
-  <meta property="og:title" content="Workdoe">
-  <meta property="og:description" content="Local projects and contractors across the DMV.">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:title" content="Workdoe - a local Work Exchange">
+  <meta property="og:description" content="Find nearby projects and trusted local contractors across DC, Maryland, and Virginia.">
+  <meta property="og:image" content="https://workdoe.com/workdoe-share.png">
+  <meta property="og:image:secure_url" content="https://workdoe.com/workdoe-share.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Workdoe deer logo with the slogan a local Work Exchange">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Workdoe - a local Work Exchange">
+  <meta name="twitter:description" content="Find nearby projects and trusted local contractors across DC, Maryland, and Virginia.">
+  <meta name="twitter:image" content="https://workdoe.com/workdoe-share.png">
+  <meta name="twitter:image:alt" content="Workdoe deer logo with the slogan a local Work Exchange">
   <title>{escape(title)} - Workdoe</title>
   <link rel="canonical" href="https://workdoe.com/">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">

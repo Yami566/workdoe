@@ -2063,6 +2063,17 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn('<meta name="theme-color" content="#1b2b22">', html)
         self.assertIn('<link rel="canonical" href="https://workdoe.com/">', html)
+        self.assertIn(
+            '<meta property="og:title" content="Workdoe - a local Work Exchange">',
+            html,
+        )
+        self.assertIn(
+            '<meta property="og:image" content="https://workdoe.com/workdoe-share.png">',
+            html,
+        )
+        self.assertIn('<meta property="og:image:width" content="1200">', html)
+        self.assertIn('<meta property="og:image:height" content="630">', html)
+        self.assertIn('<meta name="twitter:card" content="summary_large_image">', html)
         self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', html)
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', html)
         self.assertIn('href="/styles.css"', html)
@@ -2703,6 +2714,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn('<meta name="theme-color" content="#1b2b22">', client_job_html)
         self.assertIn('<link rel="canonical" href="https://workdoe.com/">', client_job_html)
+        self.assertIn(
+            '<meta property="og:image" content="https://workdoe.com/workdoe-share.png">',
+            client_job_html,
+        )
         self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', client_job_html)
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', client_job_html)
         self.assertIn("Job controls", client_job_html)
