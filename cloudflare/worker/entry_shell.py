@@ -18,7 +18,6 @@ from service_taxonomy import (
     service_icon,
 )
 
-
 ENTRY_ROUTES = {"/", "/login", "/start", "/create-account", "/post-project"}
 ENTRY_JOB_LIMIT = 50
 DEFAULT_CLERK_FRONTEND_API_URL = "https://workdoe.com/__clerk"

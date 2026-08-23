@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 REQUIRED_SECRETS = {

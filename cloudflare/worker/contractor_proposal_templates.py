@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 PROPOSAL_TEMPLATE_LIMIT = 6
 PROPOSAL_TEMPLATE_NAME_MAX_LENGTH = 60
 PROPOSAL_TEMPLATE_DELETE_PATH_RE = re.compile(

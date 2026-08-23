@@ -7,7 +7,6 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 CLOUDFLARE_DIR = REPO_ROOT / "cloudflare"
@@ -17,14 +16,13 @@ DEFAULT_CLERK_PROXY_PROOF_PATH = REPO_ROOT / "clerk-proxy-proof.local.json"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from cloudflare_readiness import run_readiness  # noqa: E402
-from cloudflare_wrangler import (  # noqa: E402
+from cloudflare_readiness import run_readiness
+from cloudflare_wrangler import (
     cloudflare_api_token_error,
     cloudflare_api_token_present,
     wrangler_command,
     wrangler_env,
 )
-
 
 SMOKE_OUTPUT_MAX = 1200
 

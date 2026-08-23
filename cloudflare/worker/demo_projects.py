@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from service_taxonomy import service_selection
 
-
 DEMO_PROJECTS = [
     {
         "id": "demo-01",

@@ -5,7 +5,6 @@ from urllib.parse import urlencode
 from job_posts import budget_label
 from service_taxonomy import GROUP_BY_SLUG, SERVICE_BY_SLUG, service_label
 
-
 FILTER_QUERY_MAX_LENGTH = 80
 DEFAULT_JOB_SORT = "newest"
 PUBLIC_JOB_PRIVACY_NOTICE = "Approximate city or ZIP-level pins only."
@@ -68,9 +67,7 @@ def public_job_filters_from_query(params: dict) -> dict[str, str]:
         family = ""
     service = compact_spaces(first_query_value(params, "service"))
     selected_service = SERVICE_BY_SLUG.get(service)
-    if not selected_service:
-        service = ""
-    elif family and selected_service["group_slug"] != family:
+    if not selected_service or family and selected_service["group_slug"] != family:
         service = ""
     elif not family:
         family = selected_service["group_slug"]

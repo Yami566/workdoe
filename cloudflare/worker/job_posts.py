@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
-from service_taxonomy import GROUP_BY_SLUG, SERVICE_BY_SLUG, service_selection
 from service_scope import clean_scope_answers, validate_scope_answers
-
+from service_taxonomy import GROUP_BY_SLUG, SERVICE_BY_SLUG, service_selection
 
 JOB_CATEGORIES = {
     "Power washing",

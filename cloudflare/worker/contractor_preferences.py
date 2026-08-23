@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from urllib.parse import urlencode
 
 from service_taxonomy import GROUP_BY_SLUG, SERVICE_BY_SLUG
-
 
 AVAILABILITY_OPTIONS = (
     ("available", "Available for new work"),
@@ -56,7 +55,7 @@ def normalized_available_from(value: str | None) -> str:
             ["Use a valid next-available date."],
             {"available_from": ["Use a valid next-available date."]},
         ) from exc
-    if parsed < date.today():
+    if parsed < datetime.now(timezone.utc).date():
         raise ContractorPreferenceError(
             ["Next available date cannot be in the past."],
             {"available_from": ["Next available date cannot be in the past."]},

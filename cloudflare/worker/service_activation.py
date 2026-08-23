@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-
 ACTIVATION_NOT_OPEN_MESSAGE = (
     "This service is not open in that area yet. Choose another service or location."
 )

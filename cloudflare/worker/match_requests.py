@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 BID_SCOPE_MIN_LENGTH = 20
 BID_SCOPE_MAX_LENGTH = 800
 BID_PRICE_MAX_LENGTH = 80

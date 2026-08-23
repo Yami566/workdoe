@@ -10,7 +10,6 @@ import urllib.request
 from dataclasses import asdict, dataclass
 from urllib.parse import urljoin, urlparse
 
-
 DEFAULT_DOMAIN = "workdoe.com"
 DEFAULT_BASE_URL = "https://workdoe.com"
 DEFAULT_TIMEOUT = 8.0

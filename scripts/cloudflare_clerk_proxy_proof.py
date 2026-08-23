@@ -6,19 +6,17 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from cloudflare_readiness import (  # noqa: E402
+from cloudflare_readiness import (
     CLERK_PROXY_PATH,
     DEFAULT_CLERK_PROXY_PROOF_PATH,
     WORKDOE_PUBLIC_DOMAIN,
     clerk_proxy_proof_error,
     valid_workdoe_clerk_proxy_url,
 )
-
 
 DEFAULT_PROXY_URL = f"https://{WORKDOE_PUBLIC_DOMAIN}{CLERK_PROXY_PATH}"
 DEFAULT_SIGN_UP_URL = f"https://{WORKDOE_PUBLIC_DOMAIN}/create-account"

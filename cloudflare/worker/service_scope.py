@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from service_taxonomy import service_slug_from_value
 
-
 SCOPE_SCHEMA_VERSION = 1
 SCOPE_FIELD_PREFIX = "scope_"
 

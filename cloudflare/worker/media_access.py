@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 PRIVATE_MEDIA_NOTICE = (
     "Private Workdoe media is served only after role, ownership, match, "
     "and moderation checks."

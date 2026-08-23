@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-
 DEFAULT_BID_LIMIT = 4
 BID_WINDOW_DAYS = 7
 BID_EXTENSION_DAYS = 7

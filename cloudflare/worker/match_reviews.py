@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 REVIEW_DIMENSIONS = (
     ("communication", "Communication"),
     ("scope_accuracy", "Scope accuracy"),

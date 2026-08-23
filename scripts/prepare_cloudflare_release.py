@@ -6,7 +6,6 @@ import json
 import re
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 D1_MIGRATION_RELATIVE_PATH = Path("cloudflare/d1/migrations/0001_initial.sql")
 D1_MIGRATIONS_RELATIVE_PATH = D1_MIGRATION_RELATIVE_PATH.parent

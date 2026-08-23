@@ -7,7 +7,6 @@ import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DOMAIN = "workdoe.com"
 DEFAULT_WWW_DOMAIN = "www.workdoe.com"

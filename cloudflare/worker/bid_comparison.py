@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 MAX_COMPARISON_OFFERS = 4
 COMPARISON_VIEWS = {"all", "pending"}
 

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from urllib.parse import urlparse, urlunparse
-
 
 CREDENTIAL_TYPES = (
     ("trade_license", "Trade license"),
@@ -175,7 +174,8 @@ def contractor_credential_review_payload(
     raw_expiry = (payload.get("expires_at") or "").strip()
     if raw_expiry and not expires_at:
         errors.append("Use a valid expiration date.")
-    if action == "verify" and expires_at and expires_at < date.today().isoformat():
+    current_date = datetime.now(timezone.utc).date().isoformat()
+    if action == "verify" and expires_at and expires_at < current_date:
         errors.append("An expired record cannot be marked source checked.")
     if len(review_note) > CREDENTIAL_REVIEW_NOTE_MAX_LENGTH:
         errors.append(
@@ -203,7 +203,9 @@ def credential_is_current(credential, today: str | None = None) -> bool:
         else credential["expires_at"]
     )
     return status == "verified" and (
-        not expires_at or str(expires_at) >= (today or date.today().isoformat())
+        not expires_at
+        or str(expires_at)
+        >= (today or datetime.now(timezone.utc).date().isoformat())
     )
 
 

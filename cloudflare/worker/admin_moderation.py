@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 ADMIN_ACTION_RE = re.compile(
     r"^/api/admin/(?:(users)/([1-9][0-9]*)/(suspend|activate)"
     r"|(jobs)/([1-9][0-9]*)/(hide|restore)"

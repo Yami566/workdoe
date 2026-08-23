@@ -4,7 +4,6 @@ import secrets
 
 from email_code_auth import hash_identifier, parse_cookie_header
 
-
 JOB_DRAFT_COOKIE_NAME = "workdoe_job_draft"
 JOB_DRAFT_TTL_SECONDS = 24 * 60 * 60
 

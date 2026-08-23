@@ -16,8 +16,8 @@ from werkzeug.security import generate_password_hash
 
 from workdoe import (
     CLERK_PROXY_PATH,
-    create_app,
     clerk_proxy_url,
+    create_app,
     get_db,
     message_count_label,
     normalize_clerk_frontend_api_url,
@@ -25,6 +25,10 @@ from workdoe import (
     photo_count_label,
     uploaded_file_signature_matches,
 )
+from workdoe.bid_comparison import bid_comparison
+from workdoe.contractor_proposal_templates import PROPOSAL_TEMPLATE_LIMIT
+from workdoe.pilot_metrics import pilot_cell_metrics
+from workdoe.project_readiness import project_brief_readiness
 from workdoe.service_activation import activation_is_live
 from workdoe.service_scope import (
     clean_scope_answers,
@@ -32,11 +36,6 @@ from workdoe.service_scope import (
     scope_readiness,
     validate_scope_answers,
 )
-from workdoe.project_readiness import project_brief_readiness
-from workdoe.pilot_metrics import pilot_cell_metrics
-from workdoe.bid_comparison import bid_comparison
-from workdoe.contractor_proposal_templates import PROPOSAL_TEMPLATE_LIMIT
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -1773,7 +1772,7 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         composer = self.client.get(f"/jobs/new?template={template['id']}")
         self.assertEqual(composer.status_code, 200)
-        self.assertIn(f'value="{source["title"]}"'.encode("utf-8"), composer.data)
+        self.assertIn(f'value="{source["title"]}"'.encode(), composer.data)
         self.assertIn(source["description"].encode("utf-8"), composer.data)
         self.assertIn(b'id="job-city" name="city" value=""', composer.data)
         self.assertIn(b'id="job-zip-code" name="zip_code" value=""', composer.data)
@@ -2404,7 +2403,7 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         repeated = self.client.get(f"/jobs/new?repeat={job['id']}")
         self.assertEqual(repeated.status_code, 200)
-        self.assertIn(f'value="{job["title"]}"'.encode("utf-8"), repeated.data)
+        self.assertIn(f'value="{job["title"]}"'.encode(), repeated.data)
         self.assertIn(f'value="{job["zip_code"]}"'.encode("ascii"), repeated.data)
         self.assertIn(b'id="job-desired-date"', repeated.data)
         self.assertNotIn(
@@ -2867,7 +2866,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             r'\.main-nav \.button\[aria-current="page"\]\s*\{[^}]*color: #fff;[^}]*text-decoration: none;',
         )
         self.assertRegex(styles, r"\.entry-shortcuts a,\s*\.entry-shortcut\s*\{[^}]*min-height: 30px;")
-        mobile_rules = re.search(r"@media \(max-width: 900px\) \{(?P<body>.*)\n\}", styles, re.S)
+        mobile_rules = re.search(r"@media \(max-width: 900px\) \{(?P<body>.*)\n\}", styles, re.DOTALL)
         self.assertIsNotNone(mobile_rules)
         body = mobile_rules.group("body")
         self.assertRegex(body, r"\.brand,\s*\.main-nav\s*\{[^}]*flex: 0 1 auto;[^}]*width: 100%;")
@@ -3876,7 +3875,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Selected", selected_login.data)
         self.assertIn(b"is-selected", selected_login.data)
         self.assertIn(
-            f'aria-label="Selected lead {selected_login_job["title"]}"'.encode("utf-8"),
+            f'aria-label="Selected lead {selected_login_job["title"]}"'.encode(),
             selected_login.data,
         )
         self.assertIn(
@@ -3999,7 +3998,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(selected_start.status_code, 200)
         self.assertIn(b"Selected", selected_start.data)
         self.assertIn(
-            f'aria-label="Selected lead {selected_job["title"]}"'.encode("utf-8"),
+            f'aria-label="Selected lead {selected_job["title"]}"'.encode(),
             selected_start.data,
         )
         self.assertIn(f'name="job_id" value="{selected_job["id"]}"'.encode("ascii"), selected_start.data)

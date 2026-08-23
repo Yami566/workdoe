@@ -6,7 +6,6 @@ from bid_comparison import bid_comparison
 from job_posts import bid_window
 from match_completions import completion_label, completion_state
 
-
 CLIENT_REQUEST_VIEWS = {"all", "pending", "approved", "rejected"}
 DEFAULT_CLIENT_REQUEST_VIEW = "all"
 CLIENT_REQUEST_LIMIT = 100

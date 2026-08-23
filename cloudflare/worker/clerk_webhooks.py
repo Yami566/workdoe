@@ -5,8 +5,7 @@ import hashlib
 import hmac
 import json
 import time
-from typing import Mapping
-
+from collections.abc import Mapping
 
 DEFAULT_TIMESTAMP_TOLERANCE_SECONDS = 5 * 60
 SYNCABLE_USER_EVENTS = {"user.created", "user.updated", "user.deleted"}

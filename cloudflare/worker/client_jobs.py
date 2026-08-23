@@ -3,7 +3,6 @@ from __future__ import annotations
 from job_posts import bid_window, budget_label
 from project_readiness import project_brief_readiness
 
-
 PROJECT_CLOSE_REASON_LABELS = {
     "workdoe-match": "Hired through Workdoe",
     "hired-elsewhere": "Hired elsewhere",

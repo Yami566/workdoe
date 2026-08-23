@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import re
 
-from contractor_profiles import normalized_profile_website, profile_website_label
 from contractor_credentials import public_credential_responses
 from contractor_preferences import availability_response
+from contractor_profiles import normalized_profile_website, profile_website_label
 from market_fit import (
     ZONE_BY_SLUG,
     infer_service_slugs_from_trades,

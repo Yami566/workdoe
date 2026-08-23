@@ -17,7 +17,6 @@ from client_project_templates import (
     PROJECT_TEMPLATE_LIMIT,
     PROJECT_TEMPLATE_NAME_MAX_LENGTH,
 )
-from contractor_profiles import contractor_profile_readiness
 from contractor_credentials import (
     CREDENTIAL_IDENTIFIER_MAX_LENGTH,
     CREDENTIAL_JURISDICTIONS,
@@ -26,14 +25,7 @@ from contractor_credentials import (
     CREDENTIAL_TYPES,
 )
 from contractor_preferences import AVAILABILITY_OPTIONS, LEAD_ALERT_OPTIONS
-from match_reviews import (
-    REVIEW_COMMENT_MAX_LENGTH,
-    REVIEW_DIMENSIONS,
-    REVIEW_RATING_OPTIONS,
-    REVIEW_REPORT_MAX_LENGTH,
-    REVIEW_RESPONSE_MAX_LENGTH,
-    WOULD_WORK_AGAIN_OPTIONS,
-)
+from contractor_profiles import contractor_profile_readiness
 from entry_shell import (
     CLERK_CHALLENGE_ORIGIN,
     CLERK_IMAGE_ORIGIN,
@@ -57,6 +49,16 @@ from market_fit import (
     normalize_service_slugs,
     normalize_zone_slugs,
 )
+from match_reviews import (
+    REVIEW_COMMENT_MAX_LENGTH,
+    REVIEW_DIMENSIONS,
+    REVIEW_RATING_OPTIONS,
+    REVIEW_REPORT_MAX_LENGTH,
+    REVIEW_RESPONSE_MAX_LENGTH,
+    WOULD_WORK_AGAIN_OPTIONS,
+)
+from service_activation import activation_is_live
+from service_scope import SERVICE_SCOPE_QUESTIONS
 from service_taxonomy import (
     GROUP_BY_SLUG,
     SERVICE_GROUPS,
@@ -64,9 +66,6 @@ from service_taxonomy import (
     service_label,
     service_selection,
 )
-from service_scope import SERVICE_SCOPE_QUESTIONS
-from service_activation import activation_is_live
-
 
 APP_SHELL_ROUTES = {
     "/dashboard",

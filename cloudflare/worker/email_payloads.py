@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import hashlib
-import html
 import hmac
+import html
 import re
 from urllib.parse import urlparse
-
 
 DEFAULT_FROM_EMAIL = "no-reply@workdoe.com"
 DEFAULT_PREFERENCES_URL = "https://workdoe.com/client/profile#bid-reminders"
@@ -288,7 +287,7 @@ def email_audit_metadata(payload: dict, secret: str) -> dict:
     if len(secret_bytes) >= 32:
         metadata["recipient_hash"] = hmac.new(
             secret_bytes,
-            f"email-audit:{recipient}".encode("utf-8"),
+            f"email-audit:{recipient}".encode(),
             hashlib.sha256,
         ).hexdigest()
     return metadata

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from urllib.parse import urlparse, urlunparse
 
-
 CLERK_PROXY_PATH = "/__clerk"
 DEFAULT_CLERK_FAPI = "https://frontend-api.clerk.dev"
 DEFAULT_CLERK_PROXY_URL = "https://workdoe.com/__clerk"

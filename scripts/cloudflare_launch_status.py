@@ -6,7 +6,6 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 DEFAULT_SECRET_LIST_PATH = REPO_ROOT / "cloudflare-secret-list.local.json"
@@ -15,11 +14,13 @@ DEFAULT_CLERK_PROXY_PROOF_PATH = REPO_ROOT / "clerk-proxy-proof.local.json"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from cloudflare_launch_plan import build_launch_plan  # noqa: E402
-from cloudflare_preflight import run_preflight  # noqa: E402
-from cloudflare_release_evidence import run_release_evidence  # noqa: E402
-from cloudflare_resource_bootstrap import plan_payload as resource_plan_payload  # noqa: E402
-from cloudflare_wrangler import (  # noqa: E402
+from cloudflare_launch_plan import build_launch_plan
+from cloudflare_preflight import run_preflight
+from cloudflare_release_evidence import run_release_evidence
+from cloudflare_resource_bootstrap import (
+    plan_payload as resource_plan_payload,
+)
+from cloudflare_wrangler import (
     CLOUDFLARE_API_TOKEN_ENV_VAR,
     WRANGLER_ENV_VAR,
     cloudflare_api_token_present,

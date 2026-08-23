@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import secrets
 
-
 SAFE_HTTP_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 WORKDOE_REQUEST_HEADER = "X-Workdoe-Request"
 WORKDOE_REQUEST_MARKER = "same-origin"

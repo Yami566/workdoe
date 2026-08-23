@@ -6,7 +6,6 @@ import re
 import sys
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 DEFAULT_OUTPUT = REPO_ROOT / "docs" / "workdoe-launch-handoff.local.md"
@@ -16,9 +15,12 @@ LOCAL_WORKSPACE_PLACEHOLDER = "<workdoe-repo>"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from github_deploy_dispatch import build_dispatch_plan  # noqa: E402
-from workdoe_launch_doctor import CLOUDFLARE_TOKEN_ACTION, DEFAULT_LOCAL_URL, build_doctor  # noqa: E402
-
+from github_deploy_dispatch import build_dispatch_plan
+from workdoe_launch_doctor import (
+    CLOUDFLARE_TOKEN_ACTION,
+    DEFAULT_LOCAL_URL,
+    build_doctor,
+)
 
 SECRET_VALUE_PATTERNS = [
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{20,}"),
@@ -144,15 +146,11 @@ ACTION_GROUPS = [
 BLOCKER_GROUPS = [
     (
         "Local And Repository Gate",
-        lambda blocker: blocker.startswith("Local ")
-        or blocker.startswith("Could not read local ")
-        or "worktree" in blocker
-        or "upstream branch" in blocker,
+        lambda blocker: blocker.startswith(("Local ", "Could not read local ")) or "worktree" in blocker or "upstream branch" in blocker,
     ),
     (
         "GitHub Deployment Secrets",
-        lambda blocker: blocker.startswith("GitHub ")
-        or blocker.startswith("Could not read GitHub "),
+        lambda blocker: blocker.startswith(("GitHub ", "Could not read GitHub ")),
     ),
     (
         "Cloudflare Account And Resources",

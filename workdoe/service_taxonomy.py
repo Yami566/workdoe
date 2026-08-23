@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 SERVICE_GROUPS = (
     {
         "slug": "outdoor-yard",

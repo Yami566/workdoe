@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 INVITATION_STATUSES = {"pending", "bid_sent", "declined", "withdrawn"}
 INVITATION_STATUS_LABELS = {
     "pending": "Waiting for contractor",
@@ -37,7 +36,7 @@ def positive_int(value) -> int:
         parsed = int(value or 0)
     except (TypeError, ValueError):
         return 0
-    return parsed if parsed > 0 else 0
+    return max(0, parsed)
 
 
 def validate_repeat_invitation_source(user, source) -> dict:

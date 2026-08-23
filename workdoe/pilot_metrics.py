@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from statistics import median
 
 from .project_readiness import project_brief_readiness
-
 
 DEFAULT_MINIMUM_ELIGIBLE_CONTRACTORS = 3
 NO_MATCH_OR_CANCELLED_REASONS = frozenset(
@@ -40,7 +39,7 @@ def project_week_start(value) -> str:
         created = datetime.fromisoformat(text.replace("Z", "+00:00")).date()
     except ValueError:
         try:
-            created = datetime.strptime(text[:10], "%Y-%m-%d").date()
+            created = datetime.strptime(text[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc).date()
         except ValueError:
             return text[:10] or "Unknown week"
     return (created - timedelta(days=created.weekday())).isoformat()
@@ -89,7 +88,9 @@ def response_time_label(minutes) -> str:
 
 
 def pilot_cell_metrics(project_rows: list, supply_rows: list, as_of=None) -> dict:
-    current_week_start = project_week_start(as_of or date.today().isoformat())
+    current_week_start = project_week_start(
+        as_of or datetime.now(timezone.utc).date().isoformat()
+    )
     supply_by_cell = {}
     for row in supply_rows:
         key = (

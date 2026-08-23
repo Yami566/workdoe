@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 MAX_ONBOARDING_BODY_BYTES = 8192
 ONBOARDING_ROLES = {"client", "contractor"}
 ONBOARDING_TEXT_MAX_LENGTH = 120

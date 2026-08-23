@@ -7,7 +7,6 @@ from market_fit import annotate_job_fits
 from project_readiness import project_brief_readiness
 from service_taxonomy import GROUP_BY_SLUG, SERVICE_BY_SLUG
 
-
 FILTER_QUERY_MAX_LENGTH = 80
 DEFAULT_JOB_SORT = "newest"
 DEFAULT_CONTRACTOR_LEAD_VIEW = "all"
@@ -79,9 +78,7 @@ def contractor_lead_filters_from_query(params: dict) -> dict[str, str]:
         family = ""
     service = compact_spaces(first_query_value(params, "service"))
     service_record = SERVICE_BY_SLUG.get(service)
-    if not service_record:
-        service = ""
-    elif family and service_record["group_slug"] != family:
+    if not service_record or family and service_record["group_slug"] != family:
         service = ""
     elif not family:
         family = service_record["group_slug"]

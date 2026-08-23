@@ -3,7 +3,6 @@ from __future__ import annotations
 from job_posts import bid_window, budget_label, project_setting_label
 from project_readiness import project_brief_readiness
 
-
 JOB_DETAIL_PRIVACY_NOTICE = (
     "Contractors see city/state and ZIP prefix only until a client approves a match."
 )

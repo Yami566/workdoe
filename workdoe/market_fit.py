@@ -9,7 +9,6 @@ from .service_taxonomy import (
     service_slug_from_value,
 )
 
-
 DMV_SERVICE_ZONES = (
     {
         "slug": "district-of-columbia",
@@ -265,7 +264,7 @@ def annotate_job_fits(jobs: list, service_slugs, zone_slugs) -> list[dict]:
         if isinstance(row, dict):
             job = dict(row)
         elif hasattr(row, "keys"):
-            job = {key: row[key] for key in row.keys()}
+            job = {key: row[key] for key in row.keys()}  # noqa: SIM118 - keys are columns.
         else:
             job = dict(row)
         job.update(contractor_fit_for_job(job, service_slugs, zone_slugs))

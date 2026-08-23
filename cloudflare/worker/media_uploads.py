@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 import uuid
 
-
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
 ALLOWED_IMAGE_MIME = {
     "gif": "image/gif",
@@ -106,9 +105,9 @@ async def validate_uploaded_file_signature(file, extension: str) -> None:
 
 async def sanitize_uploaded_image(images_binding, file, js_object) -> dict:
     if not images_binding or not callable(getattr(images_binding, "info", None)):
-        raise RuntimeError("Cloudflare Images binding is unavailable.")
+        raise TypeError("Cloudflare Images binding is unavailable.")
     if not callable(getattr(images_binding, "input", None)):
-        raise RuntimeError("Cloudflare Images binding is unavailable.")
+        raise TypeError("Cloudflare Images binding is unavailable.")
 
     try:
         source_info = await images_binding.info(file.stream())

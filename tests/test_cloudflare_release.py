@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import importlib.util
-import json
-import base64
 import asyncio
+import base64
 import contextlib
+import importlib.util
 import io
+import json
 import os
 import sqlite3
 import sys
@@ -13,7 +13,6 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = ROOT / "scripts" / "prepare_cloudflare_release.py"
@@ -2234,9 +2233,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "jobs/12//photo.webp",
         ]
         for key in unsafe_keys:
-            with self.subTest(key=key):
-                with self.assertRaises(module.MediaAccessError):
-                    module.safe_media_key(key, "jobs/12")
+            with self.subTest(key=key), self.assertRaises(module.MediaAccessError):
+                module.safe_media_key(key, "jobs/12")
 
         admin = {"id": 1, "role": "admin", "status": "active"}
         client = {"id": 2, "role": "client", "status": "active"}
@@ -2321,9 +2319,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             ("photo.webp", "image/webp", module.MAX_UPLOAD_BYTES + 1),
             ("photo.gif", "image/gif", 0),
         ):
-            with self.subTest(filename=filename, mime=mime, size=size):
-                with self.assertRaises(module.MediaUploadError):
-                    module.safe_upload_metadata(filename, mime, size)
+            with self.subTest(
+                filename=filename, mime=mime, size=size
+            ), self.assertRaises(module.MediaUploadError):
+                module.safe_upload_metadata(filename, mime, size)
 
         key = module.build_r2_upload_key("job", 12, "png")
         self.assertRegex(key, r"^jobs/12/[0-9a-f]{32}\.png$")
@@ -6093,11 +6092,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "https://127.0.0.1/record",
             "https://user:pass@registry.example/record",
         ):
-            with self.subTest(unsafe_source=unsafe_source):
-                with self.assertRaises(module.ContractorCredentialError):
-                    module.contractor_credential_claim_payload(
-                        {**claim, "source_url": unsafe_source}
-                    )
+            with self.subTest(unsafe_source=unsafe_source), self.assertRaises(
+                module.ContractorCredentialError
+            ):
+                module.contractor_credential_claim_payload(
+                    {**claim, "source_url": unsafe_source}
+                )
 
         with self.assertRaises(module.ContractorCredentialError):
             module.contractor_credential_review_payload(
@@ -7942,8 +7942,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         try:
             module.run_nslookup = lambda domain, resolver="1.1.1.1": (
                 True,
-                "workdoe.com nameserver = ada.ns.cloudflare.com\n"
-                "workdoe.com nameserver = bob.ns.cloudflare.com\n",
+                ("workdoe.com nameserver = ada.ns.cloudflare.com\n"
+                "workdoe.com nameserver = bob.ns.cloudflare.com\n"),
             )
             module.resolve_addresses = lambda hostname: (
                 True,

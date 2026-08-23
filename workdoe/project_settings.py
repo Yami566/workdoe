@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 PROJECT_SETTINGS = (
     {
         "value": "house",

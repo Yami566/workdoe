@@ -17,28 +17,28 @@ from app_shell import (
     admin_dashboard_html,
     app_login_url,
     app_shell_headers,
-    client_profile_html,
-    client_job_detail_html,
     client_dashboard_html,
+    client_job_detail_html,
+    client_profile_html,
     client_request_inbox_html,
     contractor_dashboard_html,
     contractor_job_detail_html,
     contractor_profile_html,
     dashboard_path_for_user,
-    is_public_contractor_profile_route,
     is_app_shell_route,
+    is_public_contractor_profile_route,
     job_form_html,
     lead_board_html,
     message_thread_detail_html,
     message_threads_html,
-    parse_app_client_job_id,
     parse_app_client_job_edit_id,
+    parse_app_client_job_id,
     parse_app_contractor_id,
     parse_app_job_id,
     parse_app_thread_id,
-    public_job_draft_html,
-    public_contractor_profile_html,
     privacy_page_html,
+    public_contractor_profile_html,
+    public_job_draft_html,
     public_robots_txt,
     public_security_txt,
     public_sitemap_xml,
@@ -51,6 +51,11 @@ from clerk_onboarding import (
     claims_with_verified_clerk_email,
     onboarding_payload,
 )
+from clerk_proxy import (
+    ClerkProxyError,
+    clerk_proxy_request_plan,
+    is_clerk_proxy_path,
+)
 from clerk_sessions import (
     SessionVerificationError,
     authorized_parties_from_env,
@@ -62,68 +67,11 @@ from clerk_webhooks import (
     clerk_user_sync_payload,
     verify_svix_signature,
 )
-from email_payloads import (
-    EmailPayloadError,
-    build_email_message,
-    email_audit_metadata,
-    email_send_result_summary,
-)
-from demo_projects import guest_project_rows
-from email_code_auth import (
-    AUTH_PROVIDER as EMAIL_CODE_AUTH_PROVIDER,
-    CHALLENGE_TTL_SECONDS,
-    MAX_CODE_ATTEMPTS,
-    EmailCodeAuthError,
-    challenge_token,
-    clear_session_cookie,
-    compact_spaces as compact_auth_text,
-    generate_code,
-    hash_code,
-    hash_identifier,
-    fixed_account_role,
-    normalize_code,
-    normalize_email,
-    normalize_intent as normalize_auth_intent,
-    role_for_intent,
-    safe_next_path,
-    session_cookie,
-    session_from_cookie,
-    session_token,
-    tokens_match,
-    valid_email,
-    verified_token,
-)
-from contractor_profiles import (
-    MAX_CONTRACTOR_PROFILE_BODY_BYTES,
-    ContractorProfileError,
-    can_update_contractor_profile,
-    contractor_profile_payload,
-    contractor_profile_response,
-)
-from contractor_credentials import (
-    MAX_CONTRACTOR_CREDENTIAL_BODY_BYTES,
-    ContractorCredentialError,
-    contractor_credential_claim_payload,
-    contractor_credential_review_payload,
-    credential_response,
-    parse_contractor_credential_remove_path,
-)
-from contractor_preferences import (
-    ContractorPreferenceError,
-    availability_payload,
-    contractor_preferences_response,
-    saved_lead_view_payload,
-    saved_lead_view_url,
-)
-from contractor_proposal_templates import (
-    PROPOSAL_TEMPLATE_LIMIT,
-    PROPOSAL_TEMPLATE_NAME_MAX_LENGTH,
-    ProposalTemplateError,
-    parse_proposal_template_delete_path,
-    proposal_template_bid_form,
-    proposal_template_request_payload,
-    proposal_template_response,
-    proposal_template_values,
+from client_jobs import (
+    CLIENT_JOB_LIMIT,
+    can_view_client_jobs,
+    client_jobs_payload,
+    normalize_client_job_view,
 )
 from client_profiles import (
     MAX_CLIENT_PROFILE_BODY_BYTES,
@@ -146,19 +94,27 @@ from client_project_templates import (
     project_template_request_payload,
     project_template_response,
 )
-from market_fit import (
-    infer_service_slugs_from_trades,
-    infer_zone_slugs_from_area,
-    job_zone_slug,
-    normalize_service_slugs,
-    normalize_zone_slugs,
+from client_requests import (
+    CLIENT_REQUEST_LIMIT,
+    ClientRequestError,
+    can_view_client_job_requests,
+    client_job_requests_payload,
+    normalize_client_request_view,
+    parse_client_job_requests_path,
 )
-from contractor_public_profiles import (
-    ContractorPublicProfileError,
-    can_view_contractor_website,
-    can_view_public_contractor_profile,
-    parse_public_contractor_id,
-    public_contractor_profile_payload,
+from contractor_bids import (
+    CONTRACTOR_BID_LIMIT,
+    can_view_contractor_bids,
+    contractor_bids_payload,
+    normalize_contractor_bid_view,
+)
+from contractor_credentials import (
+    MAX_CONTRACTOR_CREDENTIAL_BODY_BYTES,
+    ContractorCredentialError,
+    contractor_credential_claim_payload,
+    contractor_credential_review_payload,
+    credential_response,
+    parse_contractor_credential_remove_path,
 )
 from contractor_leads import (
     can_view_contractor_leads,
@@ -168,17 +124,73 @@ from contractor_leads import (
     normalize_contractor_lead_view,
     parse_contractor_lead_limit,
 )
-from contractor_bids import (
-    CONTRACTOR_BID_LIMIT,
-    can_view_contractor_bids,
-    contractor_bids_payload,
-    normalize_contractor_bid_view,
+from contractor_preferences import (
+    ContractorPreferenceError,
+    availability_payload,
+    contractor_preferences_response,
+    saved_lead_view_payload,
+    saved_lead_view_url,
 )
-from client_jobs import (
-    CLIENT_JOB_LIMIT,
-    can_view_client_jobs,
-    client_jobs_payload,
-    normalize_client_job_view,
+from contractor_profiles import (
+    MAX_CONTRACTOR_PROFILE_BODY_BYTES,
+    ContractorProfileError,
+    can_update_contractor_profile,
+    contractor_profile_payload,
+    contractor_profile_response,
+)
+from contractor_proposal_templates import (
+    PROPOSAL_TEMPLATE_LIMIT,
+    PROPOSAL_TEMPLATE_NAME_MAX_LENGTH,
+    ProposalTemplateError,
+    parse_proposal_template_delete_path,
+    proposal_template_bid_form,
+    proposal_template_request_payload,
+    proposal_template_response,
+    proposal_template_values,
+)
+from contractor_public_profiles import (
+    ContractorPublicProfileError,
+    can_view_contractor_website,
+    can_view_public_contractor_profile,
+    parse_public_contractor_id,
+    public_contractor_profile_payload,
+)
+from demo_projects import guest_project_rows
+from email_code_auth import (
+    AUTH_PROVIDER as EMAIL_CODE_AUTH_PROVIDER,
+)
+from email_code_auth import (
+    CHALLENGE_TTL_SECONDS,
+    MAX_CODE_ATTEMPTS,
+    EmailCodeAuthError,
+    challenge_token,
+    clear_session_cookie,
+    fixed_account_role,
+    generate_code,
+    hash_code,
+    hash_identifier,
+    normalize_code,
+    normalize_email,
+    role_for_intent,
+    safe_next_path,
+    session_cookie,
+    session_from_cookie,
+    session_token,
+    tokens_match,
+    valid_email,
+    verified_token,
+)
+from email_code_auth import (
+    compact_spaces as compact_auth_text,
+)
+from email_code_auth import (
+    normalize_intent as normalize_auth_intent,
+)
+from email_payloads import (
+    EmailPayloadError,
+    build_email_message,
+    email_audit_metadata,
+    email_send_result_summary,
 )
 from entry_shell import (
     ENTRY_JOB_LIMIT,
@@ -188,34 +200,20 @@ from entry_shell import (
     is_production_clerk_publishable_key,
     shell_headers,
 )
-from client_requests import (
-    CLIENT_REQUEST_LIMIT,
-    ClientRequestError,
-    can_view_client_job_requests,
-    client_job_requests_payload,
-    normalize_client_request_view,
-    parse_client_job_requests_path,
+from idempotency import (
+    IdempotencyError,
+    idempotency_action,
+    idempotency_key_hash,
+    idempotency_resource_type,
+    new_idempotency_key,
+    normalize_idempotency_key,
 )
-from clerk_proxy import (
-    ClerkProxyError,
-    clerk_proxy_request_plan,
-    is_clerk_proxy_path,
-)
-from job_posts import (
-    DEFAULT_BID_LIMIT,
-    JOB_CATEGORIES,
-    JOB_LOCATION_PRIVACY_NOTICE,
-    MAX_JOB_POST_BODY_BYTES,
-    JobPostError,
-    budget_database_value,
-    bid_window,
-    can_update_job,
-    cleaned_job_payload,
-    default_bidding_closes_at,
-    extended_bidding_closes_at,
-    job_post_payload,
-    parse_job_update_id,
-    validate_job_payload,
+from job_details import (
+    JobDetailError,
+    can_view_job_detail,
+    job_detail_payload,
+    parse_job_detail_id,
+    viewer_kind,
 )
 from job_drafts import (
     JOB_DRAFT_TTL_SECONDS,
@@ -224,6 +222,22 @@ from job_drafts import (
     job_draft_cookie,
     job_draft_token_from_cookie,
     job_draft_token_hash,
+)
+from job_posts import (
+    DEFAULT_BID_LIMIT,
+    JOB_CATEGORIES,
+    JOB_LOCATION_PRIVACY_NOTICE,
+    MAX_JOB_POST_BODY_BYTES,
+    JobPostError,
+    bid_window,
+    budget_database_value,
+    can_update_job,
+    cleaned_job_payload,
+    default_bidding_closes_at,
+    extended_bidding_closes_at,
+    job_post_payload,
+    parse_job_update_id,
+    validate_job_payload,
 )
 from job_status import (
     MAX_OUTCOME_BODY_BYTES,
@@ -236,12 +250,18 @@ from job_status import (
     validate_lead_quality_payload,
     validate_project_close_payload,
 )
-from job_details import (
-    JobDetailError,
-    can_view_job_detail,
-    job_detail_payload,
-    parse_job_detail_id,
-    viewer_kind,
+from market_fit import (
+    infer_service_slugs_from_trades,
+    infer_zone_slugs_from_area,
+    job_zone_slug,
+    normalize_service_slugs,
+    normalize_zone_slugs,
+)
+from match_completions import (
+    MatchCompletionError,
+    completion_response,
+    parse_match_completion_path,
+    validate_completion_confirmation,
 )
 from match_decisions import (
     APPROVAL_THREAD_MESSAGE,
@@ -251,19 +271,11 @@ from match_decisions import (
     match_decision_response,
     parse_match_decision_path,
 )
-from match_completions import (
-    MatchCompletionError,
-    completion_response,
-    parse_match_completion_path,
-    validate_completion_confirmation,
-)
-from idempotency import (
-    IdempotencyError,
-    idempotency_action,
-    idempotency_key_hash,
-    idempotency_resource_type,
-    new_idempotency_key,
-    normalize_idempotency_key,
+from match_requests import (
+    MAX_MATCH_REQUEST_BODY_BYTES,
+    MatchRequestError,
+    match_request_payload,
+    parse_match_request_job_id,
 )
 from match_reviews import (
     MAX_MATCH_REVIEW_BODY_BYTES,
@@ -277,59 +289,9 @@ from match_reviews import (
     validate_review_report,
     validate_review_response,
 )
-from match_requests import (
-    MAX_MATCH_REQUEST_BODY_BYTES,
-    MatchRequestError,
-    match_request_payload,
-    parse_match_request_job_id,
-)
-from pilot_metrics import pilot_cell_metrics
-from repeat_provider_invitations import (
-    RepeatProviderInvitationError,
-    parse_invitation_action_path,
-    positive_int,
-    repeat_invitation_response,
-    validate_invitation_action,
-    validate_repeat_invitation_service,
-    validate_repeat_invitation_source,
-)
-from service_activation import (
-    ACTIVATION_NOT_OPEN_MESSAGE,
-    activation_is_live,
-    enabled_flag,
-)
-from service_taxonomy import (
-    GROUP_BY_SLUG,
-    SERVICE_BY_SLUG,
-    service_label,
-    service_selection,
-)
-from service_scope import (
-    SCOPE_SCHEMA_VERSION,
-    scope_answer_field_names,
-    scope_answer_projection,
-)
-from message_threads import (
-    MAX_MESSAGE_BODY_BYTES,
-    MessageThreadError,
-    can_send_thread_message,
-    can_view_thread,
-    message_body_payload,
-    message_thread_summary,
-    parse_thread_id,
-    thread_detail_payload,
-)
-from moderation_reports import (
-    MAX_REPORT_BODY_BYTES,
-    ModerationReportError,
-    can_create_report,
-    report_payload,
-    report_response,
-    report_target_query,
-)
 from media_access import (
-    MediaAccessError,
     PRIVATE_MEDIA_NOTICE,
+    MediaAccessError,
     can_view_contractor_photo,
     can_view_job_photo,
     inline_content_disposition,
@@ -354,6 +316,25 @@ from media_uploads import (
     validate_uploaded_file_signature,
     validated_media_review_payload,
 )
+from message_threads import (
+    MAX_MESSAGE_BODY_BYTES,
+    MessageThreadError,
+    can_send_thread_message,
+    can_view_thread,
+    message_body_payload,
+    message_thread_summary,
+    parse_thread_id,
+    thread_detail_payload,
+)
+from moderation_reports import (
+    MAX_REPORT_BODY_BYTES,
+    ModerationReportError,
+    can_create_report,
+    report_payload,
+    report_response,
+    report_target_query,
+)
+from pilot_metrics import pilot_cell_metrics
 from public_jobs import (
     first_query_value,
     normalize_public_target,
@@ -362,11 +343,36 @@ from public_jobs import (
     public_job_order_clause,
     public_jobs_payload,
 )
+from repeat_provider_invitations import (
+    RepeatProviderInvitationError,
+    parse_invitation_action_path,
+    positive_int,
+    repeat_invitation_response,
+    validate_invitation_action,
+    validate_repeat_invitation_service,
+    validate_repeat_invitation_source,
+)
 from request_security import (
     WORKDOE_REQUEST_HEADER,
     authenticated_write_rate_limit_key,
     authenticated_write_rate_limit_required,
     same_origin_api_write_allowed,
+)
+from service_activation import (
+    ACTIVATION_NOT_OPEN_MESSAGE,
+    activation_is_live,
+    enabled_flag,
+)
+from service_scope import (
+    SCOPE_SCHEMA_VERSION,
+    scope_answer_field_names,
+    scope_answer_projection,
+)
+from service_taxonomy import (
+    GROUP_BY_SLUG,
+    SERVICE_BY_SLUG,
+    service_label,
+    service_selection,
 )
 from turnstile import (
     TURNSTILE_VERIFY_URL,
@@ -380,7 +386,8 @@ from workers import Response, WorkerEntrypoint, fetch
 
 try:
     from js import Object as JS_OBJECT
-    from pyodide.ffi import jsnull as JS_NULL, to_js as PYODIDE_TO_JS
+    from pyodide.ffi import jsnull as JS_NULL
+    from pyodide.ffi import to_js as PYODIDE_TO_JS
 except ImportError:  # pragma: no cover - available inside the Workers runtime
     JS_OBJECT = None
     JS_NULL = None
@@ -560,9 +567,7 @@ def idempotency_conflict_response(request_state: dict) -> Response | None:
 
 def request_idempotency_value(request, payload=None):
     value = None
-    if isinstance(payload, dict):
-        value = payload.get("idempotency_key")
-    elif payload is not None and hasattr(payload, "get"):
+    if isinstance(payload, dict) or payload is not None and hasattr(payload, "get"):
         value = payload.get("idempotency_key")
     if value:
         return value
@@ -805,7 +810,7 @@ async def authenticated_write_rate_limit_response(env, user):
                 {"key": authenticated_write_rate_limit_key(row_value(user, "id"))}
             )
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Worker bindings may raise JS-backed errors.
         print(
             json.dumps(
                 {
@@ -926,7 +931,7 @@ async def record_event_best_effort(
             status=status,
         )
         return True
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Worker bindings may raise JS-backed errors.
         print(
             json.dumps(
                 {
@@ -1050,16 +1055,11 @@ def auth_redirect_for_user(user, requested_path: str | None) -> str:
     if requested_route == "/dashboard":
         return fallback
     if role == "client" and (
-        requested_route == "/jobs/new"
-        or requested_route.startswith("/client/")
-        or requested_route.startswith("/messages/")
+        requested_route == "/jobs/new" or requested_route.startswith(("/client/", "/messages/"))
     ):
         return requested
     if role == "contractor" and (
-        requested_route == "/leads"
-        or requested_route.startswith("/jobs/")
-        or requested_route.startswith("/contractor/")
-        or requested_route.startswith("/messages/")
+        requested_route == "/leads" or requested_route.startswith(("/jobs/", "/contractor/", "/messages/"))
     ):
         return requested
     if role == "admin" and requested_route.startswith("/admin"):
@@ -1268,7 +1268,7 @@ class Default(WorkerEntrypoint):
             return await self.submit_job_quality_feedback(request, path)
 
         if path.startswith("/api/jobs/") and (
-            path.endswith("/close") or path.endswith("/reopen")
+            path.endswith(("/close", "/reopen"))
         ):
             return await self.update_job_status(request, path)
 
@@ -1305,10 +1305,10 @@ class Default(WorkerEntrypoint):
         if path == "/api/auth/onboard":
             return await self.auth_onboard(request)
 
-        if path.startswith("/media/jobs/") or path.startswith("/media/contractors/"):
+        if path.startswith(("/media/jobs/", "/media/contractors/")):
             return await self.private_media(request, path)
 
-        if path.startswith("/api/media/jobs/") or path.startswith("/api/media/contractors/"):
+        if path.startswith(("/api/media/jobs/", "/api/media/contractors/")):
             return await self.upload_private_media(request, path)
 
         if path == "/clerk/webhook":
@@ -1450,9 +1450,7 @@ class Default(WorkerEntrypoint):
             requested_family = ""
         requested_service = first_query_value(params, "service")
         selected_service = SERVICE_BY_SLUG.get(requested_service)
-        if not selected_service:
-            requested_service = ""
-        elif requested_family and selected_service["group_slug"] != requested_family:
+        if not selected_service or requested_family and selected_service["group_slug"] != requested_family:
             requested_service = ""
         elif not requested_family:
             requested_family = selected_service["group_slug"]
@@ -2229,7 +2227,7 @@ class Default(WorkerEntrypoint):
 
         try:
             result = await db_run(self.env, "\n".join(sql), *bindings)
-        except Exception:
+        except Exception:  # noqa: BLE001 - D1 failures cross the Worker binding boundary.
             return json_response(
                 {
                     "ok": False,
@@ -5655,7 +5653,7 @@ class Default(WorkerEntrypoint):
     async def r2_media_response(self, request, key: str, photo):
         try:
             media_object = await self.env.MEDIA.get(key)
-        except Exception:
+        except Exception:  # noqa: BLE001 - R2 failures cross the Worker binding boundary.
             return Response(
                 "Media is temporarily unavailable.",
                 status=503,
@@ -5851,7 +5849,7 @@ class Default(WorkerEntrypoint):
                 status=400,
                 headers={"Cache-Control": "no-store"},
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - upload rollback must cover binding errors.
             cleanup = await self.rollback_media_upload(scope, owner_id, photo_id, key)
             await cancel_idempotent_request(
                 self.env, row_value(user, "id"), request_state
@@ -5870,7 +5868,7 @@ class Default(WorkerEntrypoint):
                     payload=failure_payload,
                     status="failed",
                 )
-            except Exception as audit_exc:
+            except Exception as audit_exc:  # noqa: BLE001 - auditing is best effort.
                 print(
                     json.dumps(
                         {
@@ -6018,13 +6016,13 @@ class Default(WorkerEntrypoint):
             try:
                 await self.delete_media_metadata(scope, owner_id, photo_id, key)
                 cleanup["metadata_cleanup"] = "deleted"
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - cleanup spans D1 binding failures.
                 cleanup["metadata_cleanup"] = f"failed:{type(exc).__name__}"
         if key:
             try:
                 await self.env.MEDIA.delete(key)
                 cleanup["object_cleanup"] = "deleted"
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - cleanup spans R2 binding failures.
                 cleanup["object_cleanup"] = f"failed:{type(exc).__name__}"
         return cleanup
 
@@ -6228,7 +6226,7 @@ class Default(WorkerEntrypoint):
                 status=getattr(exc, "status", 400),
                 headers={"Cache-Control": "no-store"},
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - Worker bindings may raise JS-backed errors.
             await record_event(
                 self.env,
                 "login-code-request-failed",
@@ -6407,7 +6405,7 @@ class Default(WorkerEntrypoint):
                 status=getattr(exc, "status", 400),
                 headers={"Cache-Control": "no-store"},
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - Worker bindings may raise JS-backed errors.
             await record_event(
                 self.env,
                 "login-code-verification-failed",
@@ -6449,7 +6447,7 @@ class Default(WorkerEntrypoint):
                         raise SessionVerificationError(
                             "Clerk session revocation was not accepted."
                         )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - Clerk fetch errors cross the JS boundary.
                 print(
                     json.dumps(
                         {
@@ -6764,7 +6762,7 @@ class Default(WorkerEntrypoint):
             )
         try:
             event = verify_svix_signature(
-                secret=getattr(self.env, "CLERK_WEBHOOK_SECRET"),
+                secret=self.env.CLERK_WEBHOOK_SECRET,
                 headers=request.headers,
                 raw_body=raw_body,
             )
@@ -7012,7 +7010,7 @@ async def queue_repeat_provider_invitation_email(
     }
     try:
         await env.EMAIL_QUEUE.send(payload)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Queue binding errors are JS-backed.
         await record_event_best_effort(
             env,
             "repeat-provider-invitation-email-queue-failed",
@@ -7040,7 +7038,7 @@ async def queue_contractor_lead_alert_fanout(env, job_id: int) -> bool:
     payload = {"type": "contractor-lead-alert-fanout", "job_id": job_id}
     try:
         await env.EMAIL_QUEUE.send(payload)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Queue binding errors are JS-backed.
         await record_event_best_effort(
             env,
             "contractor-lead-alert-fanout-queue-failed",
@@ -9654,7 +9652,7 @@ async def process_email_queue_message(env, message, body: dict, queue_name: str)
             return
         try:
             queued_count = await process_contractor_lead_alert_fanout(env, job_id)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - alert fanout crosses Queue and D1 bindings.
             await record_event_best_effort(
                 env,
                 "contractor-lead-alert-fanout-failed",
@@ -9723,7 +9721,7 @@ async def process_email_queue_message(env, message, body: dict, queue_name: str)
 
     try:
         result = await env.EMAIL.send(email_message)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Email binding errors are JS-backed.
         await record_event(
             env,
             "email-message-send-failed",
@@ -9756,7 +9754,7 @@ async def process_email_queue_message(env, message, body: dict, queue_name: str)
                 utc_now(),
                 delivery_id,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - delivery audit is best effort.
             print(
                 json.dumps(
                     {

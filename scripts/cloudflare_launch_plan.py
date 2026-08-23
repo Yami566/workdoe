@@ -6,21 +6,23 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from cloudflare_readiness import (  # noqa: E402
-    REQUIRED_SECRETS,
+from cloudflare_readiness import (
     REPO_ROOT,
+    REQUIRED_SECRETS,
     ZERO_UUID,
     clerk_proxy_proof_error,
     read_json,
     run_readiness,
 )
-from cloudflare_release_evidence import secret_evidence_error  # noqa: E402
-from cloudflare_wrangler import CLOUDFLARE_API_TOKEN_ENV_VAR, cloudflare_api_token_present  # noqa: E402
+from cloudflare_release_evidence import secret_evidence_error
+from cloudflare_wrangler import (
+    CLOUDFLARE_API_TOKEN_ENV_VAR,
+    cloudflare_api_token_present,
+)
 
 
 @dataclass

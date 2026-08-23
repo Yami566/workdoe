@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 JOB_STATUS_ACTIONS = {"close": "closed", "reopen": "open"}
 JOB_STATUS_EVENTS = {"closed": "job-closed", "open": "job-reopened"}
 PROJECT_CLOSE_REASONS = (

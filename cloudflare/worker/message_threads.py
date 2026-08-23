@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 MESSAGE_BODY_MAX_LENGTH = 1000
 MAX_MESSAGE_BODY_BYTES = 4096
 MESSAGE_BODY_TOO_LONG = "Keep messages under 1000 characters."

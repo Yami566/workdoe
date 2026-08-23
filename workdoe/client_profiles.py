@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 CLIENT_ACCOUNT_TYPES = (
     ("household", "Home or household"),
     ("small_business", "Small business"),

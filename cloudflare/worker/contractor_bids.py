@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from match_completions import completion_label, completion_state
 
-
 BID_VIEWS = {"all", "pending", "approved", "rejected"}
 DEFAULT_BID_VIEW = "all"
 CONTRACTOR_BID_LIMIT = 100

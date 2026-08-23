@@ -12,7 +12,8 @@ from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
-from urllib.request import Request as UrlRequest, urlopen
+from urllib.request import Request as UrlRequest
+from urllib.request import urlopen
 
 from flask import (
     Flask,
@@ -21,24 +22,24 @@ from flask import (
     current_app,
     flash,
     g,
+    jsonify,
     redirect,
     render_template,
     request,
     send_file,
     session,
     url_for,
-    jsonify,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
+from .bid_comparison import bid_comparison
 from .bid_windows import (
     DEFAULT_BID_LIMIT,
     bid_window,
     default_bidding_closes_at,
     extended_bidding_closes_at,
 )
-from .bid_comparison import bid_comparison
 from .client_profiles import (
     CLIENT_ACCOUNT_TYPES,
     CLIENT_NOTIFICATION_OPTIONS,
@@ -75,6 +76,15 @@ from .contractor_credentials import (
     credential_response,
     public_credential_responses,
 )
+from .contractor_preferences import (
+    AVAILABILITY_OPTIONS,
+    LEAD_ALERT_OPTIONS,
+    ContractorPreferenceError,
+    availability_payload,
+    contractor_preferences_response,
+    saved_lead_view_payload,
+    saved_lead_view_url,
+)
 from .contractor_proposal_templates import (
     PROPOSAL_TEMPLATE_LIMIT,
     PROPOSAL_TEMPLATE_NAME_MAX_LENGTH,
@@ -84,14 +94,13 @@ from .contractor_proposal_templates import (
     proposal_template_response,
     proposal_template_values,
 )
-from .contractor_preferences import (
-    AVAILABILITY_OPTIONS,
-    LEAD_ALERT_OPTIONS,
-    ContractorPreferenceError,
-    availability_payload,
-    contractor_preferences_response,
-    saved_lead_view_payload,
-    saved_lead_view_url,
+from .idempotency import (
+    IdempotencyError,
+    idempotency_action,
+    idempotency_key_hash,
+    idempotency_resource_type,
+    new_idempotency_key,
+    normalize_idempotency_key,
 )
 from .job_outcomes import (
     LEAD_QUALITY_REASONS,
@@ -102,14 +111,6 @@ from .job_outcomes import (
     project_close_reason_label,
     validate_lead_quality_payload,
     validate_project_close_payload,
-)
-from .idempotency import (
-    IdempotencyError,
-    idempotency_action,
-    idempotency_key_hash,
-    idempotency_resource_type,
-    new_idempotency_key,
-    normalize_idempotency_key,
 )
 from .market_fit import (
     DMV_SERVICE_ZONES,
@@ -144,22 +145,20 @@ from .match_reviews import (
     validate_review_report,
     validate_review_response,
 )
-from .service_taxonomy import (
-    GROUP_BY_SLUG,
-    LEGACY_CATEGORY_DEFAULTS,
-    SERVICE_ALIASES,
-    SERVICE_BY_SLUG,
-    SERVICE_GROUPS,
-    service_icon,
-    service_label,
-    service_selection,
+from .pilot_metrics import pilot_cell_metrics
+from .project_readiness import project_brief_readiness
+from .project_settings import (
+    PROJECT_SETTING_BY_VALUE,
+    PROJECT_SETTINGS,
+    normalize_project_setting,
+    project_setting_label,
 )
-from .service_scope import (
-    SCOPE_SCHEMA_VERSION,
-    SERVICE_SCOPE_QUESTIONS,
-    clean_scope_answers,
-    scope_answer_projection,
-    validate_scope_answers,
+from .repeat_provider_invitations import (
+    RepeatProviderInvitationError,
+    repeat_invitation_response,
+    validate_invitation_action,
+    validate_repeat_invitation_service,
+    validate_repeat_invitation_source,
 )
 from .service_activation import (
     ACTIVATION_NOT_OPEN_MESSAGE,
@@ -171,22 +170,23 @@ from .service_activation import (
     activation_is_live,
     enabled_flag,
 )
-from .project_settings import (
-    PROJECT_SETTING_BY_VALUE,
-    PROJECT_SETTINGS,
-    normalize_project_setting,
-    project_setting_label,
+from .service_scope import (
+    SCOPE_SCHEMA_VERSION,
+    SERVICE_SCOPE_QUESTIONS,
+    clean_scope_answers,
+    scope_answer_projection,
+    validate_scope_answers,
 )
-from .project_readiness import project_brief_readiness
-from .pilot_metrics import pilot_cell_metrics
-from .repeat_provider_invitations import (
-    RepeatProviderInvitationError,
-    repeat_invitation_response,
-    validate_invitation_action,
-    validate_repeat_invitation_service,
-    validate_repeat_invitation_source,
+from .service_taxonomy import (
+    GROUP_BY_SLUG,
+    LEGACY_CATEGORY_DEFAULTS,
+    SERVICE_ALIASES,
+    SERVICE_BY_SLUG,
+    SERVICE_GROUPS,
+    service_icon,
+    service_label,
+    service_selection,
 )
-
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -2033,9 +2033,7 @@ def register_routes(app: Flask) -> None:
             requested_family = ""
         requested_service = compact_spaces(request.values.get("service"))
         service = SERVICE_BY_SLUG.get(requested_service)
-        if not service:
-            requested_service = ""
-        elif requested_family and service["group_slug"] != requested_family:
+        if not service or requested_family and service["group_slug"] != requested_family:
             requested_service = ""
         elif not requested_family:
             requested_family = service["group_slug"]
@@ -4791,7 +4789,7 @@ def register_routes(app: Flask) -> None:
             """
         ).fetchone()
         match_review_metrics = {
-            key: int(match_review_row[key] or 0) for key in match_review_row.keys()
+            key: int(value or 0) for key, value in dict(match_review_row).items()
         }
         match_review_metrics["open_reports"] = len(review_reports)
         hidden_content_count = db.execute(
@@ -4856,7 +4854,9 @@ def register_routes(app: Flask) -> None:
                 ) AS lead_quality_signals
             """
         ).fetchone()
-        marketplace_metrics = {key: int(marketplace_row[key] or 0) for key in marketplace_row.keys()}
+        marketplace_metrics = {
+            key: int(value or 0) for key, value in dict(marketplace_row).items()
+        }
         marketplace_metrics["qualified_match_rate"] = percentage_rate(
             marketplace_metrics["matched_projects"],
             marketplace_metrics["published_projects"],
@@ -4973,7 +4973,7 @@ def register_routes(app: Flask) -> None:
             """
         ).fetchone()
         repeat_work_metrics = {
-            key: int(repeat_work_row[key] or 0) for key in repeat_work_row.keys()
+            key: int(value or 0) for key, value in dict(repeat_work_row).items()
         }
         repeat_work_metrics["invitation_bid_rate"] = percentage_rate(
             repeat_work_metrics["invitations_bid_sent"],
@@ -5039,7 +5039,7 @@ def register_routes(app: Flask) -> None:
             """
         ).fetchone()
         lead_alert_metrics = {
-            key: int(lead_alert_row[key] or 0) for key in lead_alert_row.keys()
+            key: int(value or 0) for key, value in dict(lead_alert_row).items()
         }
         recent_lead_alerts = db.execute(
             """
@@ -6172,7 +6172,7 @@ def job_to_form(job) -> dict:
         "service_group_slug": selection["service_group_slug"],
         "service_slug": selection["service_slug"],
         "project_setting": normalize_project_setting(
-            job["project_setting"] if "project_setting" in job.keys() else ""
+            job["project_setting"] if "project_setting" in job_keys else ""
         ),
         "desired_date": job["desired_date"] or "",
         "city": job["city"],
@@ -7297,9 +7297,7 @@ def public_job_filters(values=None) -> dict[str, str]:
         family = ""
     service = compact_spaces(first_filter_value(values, "service"))
     selected_service = SERVICE_BY_SLUG.get(service)
-    if not selected_service:
-        service = ""
-    elif family and selected_service["group_slug"] != family:
+    if not selected_service or family and selected_service["group_slug"] != family:
         service = ""
     elif not family:
         family = selected_service["group_slug"]
@@ -7463,7 +7461,7 @@ def map_jobs_api_url(
 
 
 def attach_contractor_request_status(jobs, contractor_id: int) -> list[dict]:
-    annotated_jobs = [{key: row[key] for key in row.keys()} for row in jobs]
+    annotated_jobs = [dict(row) for row in jobs]
     if not annotated_jobs:
         return annotated_jobs
     placeholders = ", ".join("?" for _ in annotated_jobs)
@@ -7564,7 +7562,7 @@ def client_jobs_workspace(client_id: int, job_view: str) -> tuple[list[dict], di
         """,
         (client_id,),
     ).fetchall()
-    all_jobs = [{key: row[key] for key in row.keys()} for row in rows]
+    all_jobs = [dict(row) for row in rows]
     for job in all_jobs:
         job["bid_window"] = bid_window(job)
         job["brief_readiness"] = project_brief_readiness(job)
@@ -7691,7 +7689,7 @@ def contractor_repeat_invitations(contractor_id: int) -> list[dict]:
         item = repeat_invitation_response(row)
         item["bid_window"] = bid_window(
             {
-                **{key: row[key] for key in row.keys()},
+                **dict(row),
                 "status": row["job_status"],
             },
             row["request_count"],

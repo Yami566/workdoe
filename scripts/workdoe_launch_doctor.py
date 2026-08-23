@@ -10,7 +10,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 DEFAULT_LOCAL_URL = "http://127.0.0.1:5000/start"
@@ -30,15 +29,15 @@ GITHUB_CLOUDFLARE_TOKEN_ACTION = "gh secret set CLOUDFLARE_API_TOKEN --repo Yami
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from cloudflare_launch_status import build_launch_status  # noqa: E402
-from github_release_status import (  # noqa: E402
-    build_live_status as build_github_live_status,
-)
-from cloudflare_wrangler import (  # noqa: E402
+from cloudflare_launch_status import build_launch_status
+from cloudflare_wrangler import (
     wrangler_command,
     wrangler_env,
 )
-from workdoe_dns_diagnostic import build_dns_diagnostic  # noqa: E402
+from github_release_status import (
+    build_live_status as build_github_live_status,
+)
+from workdoe_dns_diagnostic import build_dns_diagnostic
 
 
 @dataclass
@@ -117,8 +116,8 @@ def wrangler_auth_status(repo_root: Path = REPO_ROOT, timeout: float = 20.0) -> 
             if profile == "ambient":
                 return (
                     True,
-                    "Wrangler is authenticated through the ambient encrypted OAuth profile; "
-                    "non-interactive release automation still requires CLOUDFLARE_API_TOKEN.",
+                    ("Wrangler is authenticated through the ambient encrypted OAuth profile; "
+                    "non-interactive release automation still requires CLOUDFLARE_API_TOKEN."),
                 )
             return True, "Wrangler is authenticated for live Cloudflare operations."
         if "not authenticated" not in output_lower:
@@ -136,10 +135,10 @@ def parse_wrangler_secret_names(output: str) -> set[str]:
     start = output.find("[")
     end = output.rfind("]")
     if start < 0 or end < start:
-        raise ValueError("Wrangler secret list did not return a JSON array.")
+        raise TypeError("Wrangler secret list did not return a JSON array.")
     payload = json.loads(output[start : end + 1])
     if not isinstance(payload, list):
-        raise ValueError("Wrangler secret list did not return a JSON array.")
+        raise TypeError("Wrangler secret list did not return a JSON array.")
     return {
         str(item.get("name") or "").strip()
         for item in payload

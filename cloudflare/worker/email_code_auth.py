@@ -9,7 +9,6 @@ import secrets
 import time
 from urllib.parse import urlparse
 
-
 AUTH_PROVIDER = "workdoe_email_code"
 SESSION_COOKIE_NAME = "workdoe_session"
 SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
@@ -69,14 +68,14 @@ def require_secret(secret: str | None) -> bytes:
 def hash_code(code: str, secret: str) -> str:
     if not CODE_PATTERN.fullmatch(code or ""):
         raise EmailCodeAuthError("Sign-in code must contain six digits.")
-    return hmac.new(require_secret(secret), f"otp:{code}".encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.new(require_secret(secret), f"otp:{code}".encode(), hashlib.sha256).hexdigest()
 
 
 def hash_identifier(value: str | None, secret: str) -> str:
     normalized = str(value or "").strip().lower()
     return hmac.new(
         require_secret(secret),
-        f"identifier:{normalized}".encode("utf-8"),
+        f"identifier:{normalized}".encode(),
         hashlib.sha256,
     ).hexdigest()
 

@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 REQUIRED_DEV_ENV = {
@@ -1480,15 +1479,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             checks,
             "Cloudflare Worker bounds signed Clerk webhook payloads",
         )
-        combined_request_security_source = "\n".join(
-            (
-                worker_source,
-                request_security_source,
-                worker_actions_source,
-                clerk_entry_source,
-                email_code_entry_source,
-            )
-        )
+        combined_request_security_source = f"{worker_source}\n{request_security_source}\n{worker_actions_source}\n{clerk_entry_source}\n{email_code_entry_source}"
         missing_request_security_markers = [
             marker
             for marker in (

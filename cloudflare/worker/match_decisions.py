@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 MATCH_DECISION_ACTIONS = {"approve": "approved", "reject": "rejected"}
 APPROVAL_THREAD_MESSAGE = (
     "Thanks for reviewing my mini bid. I am ready to coordinate details here."

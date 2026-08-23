@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-
 PROJECT_CLOSE_REASONS = (
     {
         "value": "workdoe-match",

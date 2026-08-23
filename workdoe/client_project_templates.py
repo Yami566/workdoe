@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 PROJECT_TEMPLATE_LIMIT = 12
 PROJECT_TEMPLATE_NAME_MAX_LENGTH = 60
 PROJECT_TEMPLATE_PATH_RE = re.compile(r"^/api/client/templates/([1-9][0-9]*)/delete$")
