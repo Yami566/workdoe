@@ -638,6 +638,22 @@ button.compact {
   text-align: center;
 }
 
+.account-entry-switch {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+.account-entry-switch a {
+  color: var(--accent-dark);
+  font-weight: 800;
+}
+
 .entry-shortcuts {
   display: flex;
   gap: 8px;
@@ -4484,15 +4500,6 @@ textarea:focus {
   border-top: 4px solid var(--accent-dark);
 }
 
-.start-form-panel::before {
-  content: "CLEAR CONTACT // ONE STEP";
-  color: var(--signal);
-  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 0.68rem;
-  font-weight: 850;
-  letter-spacing: 0;
-}
-
 .job-row,
 .metric-card,
 .panel,
@@ -7020,6 +7027,10 @@ textarea:focus {
 @media (max-width: 720px) {
   body:not(.dialog-fragment-body) {
     padding-bottom: calc(68px + env(safe-area-inset-bottom));
+  }
+
+  .market-entry .market-actions {
+    display: none;
   }
 
   .site-header {

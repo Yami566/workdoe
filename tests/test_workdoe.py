@@ -3055,7 +3055,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'name="next" value="/jobs/new"', login.data)
         self.assertIn(b'name="auth_action" value="code"', login.data)
         self.assertIn(b"Email code", login.data)
-        self.assertIn(b"Admin/demo password", login.data)
+        self.assertIn(b"Use a password", login.data)
 
         returned = self.client.post(
             "/login?next=/jobs/new",
@@ -3332,6 +3332,8 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'data-session-url="/api/auth/session"', login.data)
         self.assertIn(b'data-dashboard-url="/dashboard"', login.data)
         self.assertIn(b"No password needed. Your one-time code arrives by email.", login.data)
+        self.assertIn(b"New to Workdoe?", login.data)
+        self.assertIn(b">Create account</a>", login.data)
         self.assertIn(
             b'class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message',
             login.data,
@@ -3373,6 +3375,8 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(create_account.status_code, 200)
         self.assertIn(b"<title>Create Account - Workdoe</title>", create_account.data)
         self.assertIn(b"Create your Workdoe account", create_account.data)
+        self.assertIn(b"Already have an account?", create_account.data)
+        self.assertIn(b'href="/login?next=/leads">Sign in</a>', create_account.data)
         self.assertIn(b'data-clerk-mode="start"', create_account.data)
         self.assertIn(b'data-sign-up-url="/create-account"', create_account.data)
         self.assertIn(
@@ -4179,7 +4183,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             login.data,
         )
         self.assertIn(b"No password needed.", login.data)
-        self.assertIn(b"Admin/demo password", login.data)
+        self.assertIn(b"Use a password", login.data)
         self.assertIn(b'for="signin-password"', login.data)
         self.assertIn(b'name="password" type="password" id="signin-password"', login.data)
         self.assertIn(b'name="auth_action" value="password"', login.data)

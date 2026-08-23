@@ -38,6 +38,7 @@
       <div class="auth-switch clerk-entry-note">
         <span>No password needed. Your one-time code arrives by email.</span>
       </div>
+      <p class="account-entry-switch">New to Workdoe? <a href="{{ login_sign_up_url }}">Create account</a></p>
       <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>
       <noscript>
         <p class="help-text">Enable JavaScript to use Clerk email-code sign-in.</p>
@@ -71,7 +72,7 @@
         <span>No password needed.</span>
       </div>
       <details class="auth-password">
-        <summary>Admin/demo password</summary>
+        <summary>Use a password</summary>
         <label for="signin-password">
           Password
           <input name="password" type="password" id="signin-password" autocomplete="current-password">
@@ -81,6 +82,7 @@
           <a href="{{ url_for('forgot_password') }}">Reset password</a>
         </div>
       </details>
+      <p class="account-entry-switch">New to Workdoe? <a href="{{ login_sign_up_url }}">Create account</a></p>
     </form>
   {% endif %}
 

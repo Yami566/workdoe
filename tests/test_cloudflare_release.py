@@ -3749,6 +3749,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('data-redirect-url="/jobs/new"', create_account_html)
         self.assertIn("One account keeps one role during beta.", create_account_html)
         self.assertIn('data-sign-up-url="/create-account"', create_account_html)
+        self.assertIn("Already have an account?", create_account_html)
+        self.assertIn('href="/login?next=%2Fjobs%2Fnew">Sign in</a>', create_account_html)
 
         post_project_html = module.build_entry_shell_html(
             "/post-project",
@@ -3809,6 +3811,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('role="listitem"', login_html)
         self.assertIn('data-job-id="9"', login_html)
         self.assertIn("Welcome back", login_html)
+        self.assertIn("New to Workdoe?", login_html)
+        self.assertIn(
+            'href="/create-account?intent=find-work&amp;job_id=9&amp;next=%2Fjobs%2F9">Create account</a>',
+            login_html,
+        )
         self.assertIn("Selected", login_html)
         self.assertIn(
             'class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message',

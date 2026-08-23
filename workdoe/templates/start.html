@@ -5,6 +5,8 @@
 {% set account_label = 'Post project' if is_post_project else ('Create account' if is_create_account else 'Join') %}
 {% set account_heading = 'Post a project' if is_post_project else ('Create your Workdoe account' if is_create_account else 'Join Workdoe') %}
 {% set account_eyebrow = 'Consumer workspace' if is_post_project else 'Choose your role' %}
+{% set account_login_next = next_url or (url_for('contractor_job_detail', job_id=selected_job.id) if selected_job else (url_for('new_job') if intent == 'post-job' else url_for('leads'))) %}
+{% set account_login_url = url_for('login', next=account_login_next) %}
 {% block title %}{{ "Post Project" if is_post_project else ("Create Account" if is_create_account else "Start") }} - Workdoe{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
@@ -162,6 +164,7 @@
       <div class="auth-switch clerk-entry-note">
         <span>No password needed. Your one-time code arrives by email.</span>
       </div>
+      <p class="account-entry-switch">Already have an account? <a href="{{ account_login_url }}">Sign in</a></p>
       <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>
       <noscript>
         <p class="help-text">Enable JavaScript to use Clerk email-code sign-in.</p>
@@ -213,6 +216,7 @@
       </label>
       {% with action='start' %}{% include "_turnstile.html" %}{% endwith %}
       <button class="button" type="submit">Email code</button>
+      <p class="account-entry-switch">Already have an account? <a href="{{ account_login_url }}">Sign in</a></p>
     </form>
   {% endif %}
 </section>

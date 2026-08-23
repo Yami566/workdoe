@@ -218,6 +218,18 @@ deployment has been performed during this stabilization pass.
   normally, and responsive direct routes had zero horizontal overflow at
   390x844, 820x1180, and 1280x720. Evidence and limits are recorded in
   `docs/ux-audit/2026-08-23-project-composer-friction/`.
+- The account-entry correction passed all 228 tests in 84.101 seconds. The
+  complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed secret
+  across 481 non-ignored files, and no dependency drift. Cloudflare preflight
+  remained warning-free; both expected D1 public indexes were used without a
+  table scan; and Wrangler 4.125.0 packaged 48 Python modules and 86 assets at
+  894.38 KiB / 163.85 KiB gzip without deploying.
+- Fresh browser evidence shows that the mobile map begins 106 pixels earlier,
+  sign-in and account creation switch in place while preserving the map, and
+  both sheet directions keep their context-aware destination. No horizontal
+  overflow appeared at 390x844, 820x1180, or 1280x720. Evidence and limits are
+  recorded in `docs/ux-audit/2026-08-23-account-entry-friction/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

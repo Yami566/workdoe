@@ -686,6 +686,11 @@ def build_entry_shell_html(
     panel_id = "signin" if path == "/login" else "start-account"
     clerk_mode = CLERK_SIGNIN_MODE if path == "/login" else CLERK_START_MODE
     sign_up_url = entry_sign_up_url(path, auth_selected_id, params)
+    account_switch_html = (
+        f'<p class="account-entry-switch">New to Workdoe? <a href="{escape(sign_up_url)}">Create account</a></p>'
+        if path == "/login"
+        else f'<p class="account-entry-switch">Already have an account? <a href="/login?{escape(urlencode({"next": redirect_url}))}">Sign in</a></p>'
+    )
     contractor_leads_url = lead_next_with_filters(
         safe_entry_next(first_query_value(params, "next")),
         filters,
@@ -816,6 +821,7 @@ def build_entry_shell_html(
         <div class="auth-switch clerk-entry-note">
           <span>No password needed. Your one-time code arrives by email. One account keeps one role during beta.</span>
         </div>
+        {account_switch_html}
       </aside>"""
     mobile_default = "details" if path in {"/login", "/start", "/create-account", "/post-project"} else "map"
     filter_count = len(map_payload["jobs"])
