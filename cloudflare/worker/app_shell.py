@@ -2500,6 +2500,16 @@ def message_thread_detail_html(user, payload: dict, can_reply: bool = True) -> s
     messages = payload.get("messages", [])
     thread_id = int(thread.get("id", 0) or 0)
     user_id = int(row_value(user, "id", 0) or 0)
+    role = str(row_value(user, "role", "") or "")
+    job_id = int(thread.get("job_id", 0) or 0)
+    project_href = (
+        f"/client/jobs/{job_id}" if role == "client" else f"/jobs/{job_id}"
+    )
+    project_link = (
+        f'<a class="button secondary compact" href="{project_href}">View project</a>'
+        if can_reply and job_id
+        else ""
+    )
     message_rows = []
     for message in messages:
         is_mine = int(message.get("sender_id", 0) or 0) == user_id
@@ -2518,7 +2528,7 @@ def message_thread_detail_html(user, payload: dict, can_reply: bool = True) -> s
     reply_html = ""
     if can_reply:
         reply_html = f"""
-    <form class="message-form" data-json-action="/api/messages/threads/{thread_id}" data-success-url-template="/messages/{thread_id}" aria-label="New message" aria-describedby="message-reply-status">
+    <form class="message-form thread-message-form" data-json-action="/api/messages/threads/{thread_id}" data-success-url-template="/messages/{thread_id}" aria-label="New message" aria-describedby="message-reply-status">
       <label for="message-body">New message <textarea id="message-body" name="body" rows="4" maxlength="1000" placeholder="Share timing, access, or next steps." autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required></textarea></label>
       <button class="button full" type="submit" aria-label="Send message">Send</button>
       <p id="message-reply-status" class="help-text" data-form-status aria-live="polite"></p>
@@ -2537,11 +2547,20 @@ def message_thread_detail_html(user, payload: dict, can_reply: bool = True) -> s
       </div>
       <a class="button secondary" href="/messages">All messages</a>
     </section>
-    <section class="message-shell">
-      <div class="message-list">
+    <section class="message-shell thread-message-shell">
+      <aside class="thread-match-context" aria-label="Approved match summary">
+        <p class="eyebrow">Approved match</p>
+        {project_link}
+        <dl class="thread-match-facts">
+          <div><dt>Price</dt><dd>{escape(thread.get('price_range') or 'Not provided')}</dd></div>
+          <div><dt>Timeline</dt><dd>{escape(thread.get('timeline') or 'Not provided')}</dd></div>
+          <div><dt>Availability</dt><dd>{escape(thread.get('availability') or 'Not provided')}</dd></div>
+        </dl>
+      </aside>
+      <div class="message-list thread-message-list">
 {messages_html}
       </div>
-{reply_html}
+      {reply_html}
     </section>"""
     return layout(user, f"/messages/{thread_id}", "Message Thread", body, include_actions=can_reply)
 

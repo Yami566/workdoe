@@ -61,6 +61,10 @@ deployment has been performed during this stabilization pass.
   and a consumer can choose a pending contractor directly from the card while
   retaining profile and full-offer access. Received order and no-paid-ranking
   behavior are unchanged.
+- Added a compact approved-match summary to private message threads. Price,
+  timeline, and availability come from the accepted mini bid; project links are
+  role-correct; and the projection excludes exact address and contact fields.
+  Flask and Worker adapters share the same message-context contract.
 
 ## Verification evidence
 
@@ -117,9 +121,9 @@ deployment has been performed during this stabilization pass.
   `docs/ux-audit/2026-08-23-current-journeys/`.
 - The final local security pass found no known Python or Node vulnerabilities,
   no medium/high Bandit issues, no Ruff findings, no unreviewed detected
-  secrets across 447 non-ignored files, and no dependency-provenance drift.
+  secrets across 453 non-ignored files, and no dependency-provenance drift.
   Cloudflare preflight, D1 query-plan verification, and the Wrangler 4.125.0
-  48-module/86-asset dry run also passed at 890.48 KiB / 163.19 KiB gzip.
+  48-module/86-asset dry run also passed at 891.77 KiB / 163.41 KiB gzip.
 - A consumer-choice browser pass at 390x844 and 1280x720 verified the condensed
   received-order cards, current-license filtering, reviewed-record labels, and
   direct approval into a private message thread. Same-state before/after
@@ -127,6 +131,12 @@ deployment has been performed during this stabilization pass.
   `docs/ux-audit/2026-08-23-current-journeys/`; all temporary QA records were
   removed afterward. The repeated full suite passed 225 tests in 82.326
   seconds.
+- An approved-match message pass at 390x844 and 1280x720 verified compact bid
+  terms, the bounded message list, the always-visible composer, and the
+  consumer's private View project route with browser Back restoration.
+  Same-state evidence is stored as captures `27` through `32`; Flask/Worker
+  privacy and route contracts pass, and the full suite passed 225 tests in
+  80.480 seconds.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

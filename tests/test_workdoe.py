@@ -1539,6 +1539,17 @@ class WorkdoeFlowTests(unittest.TestCase):
         )
         self.assertIn(b'class="message-shell thread-message-shell"', detail.data)
         self.assertIn(b'class="message-list thread-message-list"', detail.data)
+        self.assertIn(b'aria-label="Approved match summary"', detail.data)
+        self.assertIn(
+            f'href="/client/jobs/{job["id"]}">View project</a>'.encode("ascii"),
+            detail.data,
+        )
+        self.assertIn(b"<dt>Price</dt><dd>$500-$700</dd>", detail.data)
+        self.assertIn(b"<dt>Timeline</dt><dd>Two business days</dd>", detail.data)
+        self.assertIn(
+            b"<dt>Availability</dt><dd>Weekday afternoons</dd>", detail.data
+        )
+        self.assertNotIn(b"client@workdoe.local", detail.data)
         self.assertIn(b'for="message-body"', detail.data)
         self.assertIn(b'id="message-body"', detail.data)
         self.assertIn(b"required", detail.data)
@@ -1566,6 +1577,15 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(("X" * 80).encode("ascii"), invalid.data)
         after = self.one("SELECT COUNT(*) AS total FROM messages WHERE thread_id = ?", (thread["id"],))
         self.assertEqual(after["total"], before["total"])
+
+        self.logout()
+        self.login("contractor@workdoe.local", "workdoe-contractor")
+        contractor_detail = self.client.get(f"/messages/{thread['id']}")
+        self.assertIn(
+            f'href="/jobs/{job["id"]}">View project</a>'.encode("ascii"),
+            contractor_detail.data,
+        )
+        self.assertNotIn(b"client@workdoe.local", contractor_detail.data)
 
     def test_mini_bid_constraints_and_error_value_preservation(self):
         job = self.one("SELECT id FROM jobs WHERE status = 'open' ORDER BY id LIMIT 1")
@@ -4017,7 +4037,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         )
         self.assertIn("grid-auto-columns: 142px;", styles)
         self.assertIn(".thread-message-shell {", styles)
-        self.assertIn("grid-template-rows: minmax(220px, 1fr) auto;", styles)
+        self.assertIn("grid-template-rows: auto minmax(180px, 1fr) auto;", styles)
         self.assertIn("overscroll-behavior: contain;", styles)
         self.assertIn(".dashboard-metrics .metric-supporting {", styles)
 

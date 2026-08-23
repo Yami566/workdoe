@@ -9849,10 +9849,13 @@ async def thread_for_messages(env, thread_id: int):
         env,
         """
         SELECT threads.*, jobs.title, jobs.category, jobs.city, jobs.state,
+               match_requests.price_range, match_requests.timeline,
+               match_requests.availability,
                client.display_name AS client_name,
                contractor.display_name AS contractor_name
         FROM threads
         JOIN jobs ON jobs.id = threads.job_id
+        JOIN match_requests ON match_requests.id = threads.match_request_id
         JOIN users AS client ON client.id = threads.client_id
         JOIN users AS contractor ON contractor.id = threads.contractor_id
         WHERE threads.id = ?

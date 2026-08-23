@@ -20,6 +20,17 @@
 </section>
 
 <section class="message-shell thread-message-shell">
+  <aside class="thread-match-context" aria-label="Approved match summary">
+    <p class="eyebrow">Approved match</p>
+    {% if can_reply %}
+      <a class="button secondary compact" href="{{ url_for('client_job_detail', job_id=thread.job_id) if g.user.role == 'client' else url_for('contractor_job_detail', job_id=thread.job_id) }}">View project</a>
+    {% endif %}
+    <dl class="thread-match-facts">
+      <div><dt>Price</dt><dd>{{ thread.price_range or "Not provided" }}</dd></div>
+      <div><dt>Timeline</dt><dd>{{ thread.timeline or "Not provided" }}</dd></div>
+      <div><dt>Availability</dt><dd>{{ thread.availability or "Not provided" }}</dd></div>
+    </dl>
+  </aside>
   <div class="message-list thread-message-list">
     {% for message in messages %}
       <article class="message {% if message.sender_id == g.user.id %}mine{% endif %}{% if message.is_hidden %} is-hidden{% endif %}">

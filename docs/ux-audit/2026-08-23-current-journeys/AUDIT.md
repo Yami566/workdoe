@@ -86,6 +86,17 @@ reduces long-scroll friction, and avoids inventing another controller.
     `25-consumer-comparison-mobile-before-after.jpg` hold the same-state visual
     comparisons used for acceptance. `26-consumer-license-filter-mobile.jpg`
     records the license-filtered card and its direct approval action.
+15. `27-message-context-desktop-before.jpg` and
+    `28-message-context-mobile-before.jpg` record the accepted-match thread
+    before project terms were brought into the conversation workspace.
+16. `29-message-context-desktop-after.jpg` and
+    `30-message-context-mobile-after.jpg` add a compact approved-match summary
+    for price, timeline, and availability while retaining the bounded message
+    list and visible composer.
+17. `31-message-context-desktop-before-after.jpg` and
+    `32-message-context-mobile-before-after.jpg` hold the same-state comparison
+    used for acceptance. The consumer View project action opened the private
+    client project route and browser Back restored the message thread.
 
 The implementation reuses the existing Worker workspace, Leaflet controller,
 green/gray tokens, service taxonomy, and Tabler icon set. No new dependency or
@@ -110,3 +121,8 @@ offers. Filtering to a current source-checked trade-license record left one
 comparison card; choosing that contractor followed the established approval
 route and opened the private message thread. The temporary users, credentials,
 offers, thread, and message were removed after capture.
+
+The accepted-match context projects only terms from the approved mini bid:
+price range, timeline, and availability. Flask and Worker contract coverage
+confirms the role-correct client or contractor project link and excludes exact
+address, email, and phone fields from this private thread summary.

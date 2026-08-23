@@ -148,6 +148,24 @@ performance, identity-provider, or assistive-technology evidence.
 - Accepted evidence is stored as captures `20` through `26` in
   `docs/ux-audit/2026-08-23-current-journeys/`.
 
+## Approved-match message-context follow-up
+
+- The accepted message thread now keeps the approved price range, timeline,
+  and availability beside the conversation rather than requiring either party
+  to leave the thread to recall the selected offer.
+- At 1280x720 and 390x844, the summary remains compact, the message list stays
+  independently scrollable, and the reply composer remains visible without
+  horizontal overflow or overlapping controls.
+- The View project action is role-correct: consumers use the private client
+  project route and contractors use the contractor-visible project route. The
+  consumer route and browser Back restoration were checked interactively.
+- Flask and Worker contract tests verify the same summary fields and routes.
+  Exact addresses, email addresses, and phone numbers are not selected or
+  rendered by this projection.
+- Same-state before/after evidence is stored as captures `27` through `32` in
+  `docs/ux-audit/2026-08-23-current-journeys/`. The full suite passed 225 tests
+  in 80.480 seconds after the contract was updated.
+
 ## Live gates not replaced by this check
 
 - A real screen-reader pass with VoiceOver, NVDA, or an equivalent remains

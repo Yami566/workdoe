@@ -4440,10 +4440,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             {
                 "thread": {
                     "id": 5,
+                    "job_id": 12,
                     "title": "Window cleaning",
                     "category": "Window cleaning",
                     "city": "Arlington",
                     "state": "VA",
+                    "price_range": "$450-$650",
+                    "timeline": "Two business days",
+                    "availability": "Tuesday morning",
                     "client_name": "Avery Client",
                     "contractor_name": "Doe Exterior Care",
                 },
@@ -4472,10 +4476,34 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('spellcheck="true"', thread_html)
         self.assertIn('enterkeyhint="send"', thread_html)
         self.assertIn('aria-label="Send message"', thread_html)
+        self.assertIn('class="message-shell thread-message-shell"', thread_html)
+        self.assertIn('class="message-list thread-message-list"', thread_html)
+        self.assertIn('aria-label="Approved match summary"', thread_html)
+        self.assertIn('href="/client/jobs/12">View project</a>', thread_html)
+        self.assertIn("<dt>Price</dt><dd>$450-$650</dd>", thread_html)
+        self.assertIn("<dt>Timeline</dt><dd>Two business days</dd>", thread_html)
+        self.assertIn("<dt>Availability</dt><dd>Tuesday morning</dd>", thread_html)
         self.assertIn('src="/worker-actions.js"', thread_html)
         self.assertIn("1 message", thread_html)
         self.assertNotIn("1 messages", thread_html)
         self.assertIn("Can you start Tuesday?", thread_html)
+        contractor_thread_html = module.message_thread_detail_html(
+            contractor,
+            {
+                "thread": {
+                    "id": 5,
+                    "job_id": 12,
+                    "title": "Window cleaning",
+                    "price_range": "$450-$650",
+                    "timeline": "Two business days",
+                    "availability": "Tuesday morning",
+                },
+                "messages": [],
+            },
+            can_reply=True,
+        )
+        self.assertIn('href="/jobs/12">View project</a>', contractor_thread_html)
+        self.assertNotIn("client@example.com", contractor_thread_html)
 
         admin_html = module.admin_dashboard_html(
             admin,
@@ -6825,6 +6853,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "category": "Window cleaning",
                 "city": "Arlington",
                 "state": "VA",
+                "price_range": "$450-$650",
+                "timeline": "Two business days",
+                "availability": "Tuesday morning",
                 "client_name": "Avery Client",
                 "contractor_name": "Doe Powerwash",
                 "last_message": "Can you start Tuesday?",
@@ -6837,6 +6868,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(summary["message_count"], 2)
         self.assertEqual(summary["unread_count"], 1)
         self.assertTrue(summary["has_unread"])
+        self.assertEqual(summary["price_range"], "$450-$650")
+        self.assertEqual(summary["timeline"], "Two business days")
+        self.assertEqual(summary["availability"], "Tuesday morning")
         self.assertNotIn("client_email", summary)
         detail = module.thread_detail_payload(
             summary,
