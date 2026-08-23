@@ -2776,7 +2776,8 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         contractor_dashboard = self.client.get("/contractor/dashboard")
         contractor_html = contractor_dashboard.data.decode("utf-8")
-        self.assertIn('class="dashboard-metrics" aria-label="Contractor work queue"', contractor_html)
+        self.assertNotIn('aria-label="Contractor work queue"', contractor_html)
+        self.assertNotIn("dashboard-metrics", contractor_html)
         self.assertIn(
             'class="contractor-workspace-context" aria-label="Contractor profile summary"',
             contractor_html,
@@ -2785,11 +2786,11 @@ class WorkdoeFlowTests(unittest.TestCase):
             'class="work-history contractor-bid-workspace"',
             contractor_html,
         )
-        self.assertRegex(contractor_html, r"<span>Open projects</span>\s*<strong>3</strong>")
-        self.assertRegex(contractor_html, r"<span>Pending bids</span>\s*<strong>1</strong>")
+        self.assertIn(">Browse projects</a>", contractor_html)
+        self.assertRegex(contractor_html, r"<span>Pending</span>\s*<strong>1</strong>")
         self.assertRegex(contractor_html, r"<span>Approved</span>\s*<strong>0</strong>")
         self.assertIn(
-            'class="work-view-tabs bid-view-tabs" aria-label="Contractor mini bid status"',
+            'class="work-view-tabs bid-view-tabs contractor-bid-tabs" aria-label="Contractor mini bid status"',
             contractor_html,
         )
         self.assertLess(
@@ -2817,6 +2818,7 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         contractor_approved = self.client.get("/contractor/dashboard?bids=approved")
         self.assertIn(b"No approved bids.", contractor_approved.data)
+        self.assertIn(b">All bids</a>", contractor_approved.data)
 
         self.logout()
         self.login("client@workdoe.local", "workdoe-client")

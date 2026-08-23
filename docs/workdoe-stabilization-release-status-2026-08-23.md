@@ -105,6 +105,13 @@ deployment has been performed during this stabilization pass.
   jobs, counts, and history from one workspace query instead of repeating the
   query and loading unused profile context. The Worker exposes the same view
   and empty-state contract.
+- Reframed the contractor dashboard around bid triage. All, Pending, Approved,
+  and Rejected views now fit in one mobile row; the first bid begins 323 pixels
+  earlier in the same-state 390x844 comparison; and Flask no longer counts all
+  open projects solely for a duplicated metric. The Worker now uses the same
+  primary-first order, compact bid rows, and view-aware empty-state contract,
+  while milestone points, source-checked credential signals, profile context,
+  and completed-work history remain intact.
 
 ## Verification evidence
 
@@ -266,6 +273,19 @@ deployment has been performed during this stabilization pass.
   improvement in first-project position, and a one-viewport Review zero state.
   The same-state comparison and evidence limits are recorded in
   `docs/ux-audit/2026-08-23-consumer-dashboard-friction/`.
+- The contractor-dashboard correction passed all 228 tests in 81.890 seconds.
+  The complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed secret
+  across 499 non-ignored files, and no dependency drift. Cloudflare preflight
+  remained warning-free; all 31 forward-only migrations and both expected D1
+  public indexes passed without a hot-table scan; and Wrangler 4.125.0 packaged
+  48 Python modules and 86 assets at 896.26 KiB / 164.54 KiB gzip without
+  deploying.
+- Current-run contractor-dashboard evidence at 390x844 and 1280x720 shows zero
+  horizontal overflow, all four bid states in one mobile row, a 323-pixel
+  improvement in first-bid position, and a one-viewport Pending zero state.
+  The same-state comparison and evidence limits are recorded in
+  `docs/ux-audit/2026-08-23-contractor-dashboard-friction/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

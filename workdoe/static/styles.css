@@ -1365,6 +1365,10 @@ button.compact {
   max-width: 520px;
 }
 
+.contractor-bid-tabs {
+  max-width: 620px;
+}
+
 .thread-preview {
   display: -webkit-box;
   max-width: 820px;
@@ -5900,6 +5904,16 @@ textarea:focus {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  .contractor-bid-tabs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .contractor-bid-tabs .work-view-tab {
+    gap: 4px;
+    padding-inline: 4px;
+    font-size: 0.78rem;
+  }
+
   .lead-view-tab,
   .work-view-tab {
     gap: 5px;
@@ -6361,7 +6375,9 @@ textarea:focus {
 }
 
 .contractor-bid-workspace {
-  margin-top: 24px;
+  margin: -4px 0 30px;
+  border-top: 0;
+  padding-top: 0;
 }
 
 .contractor-bid-workspace .bid-view-tabs {

@@ -3614,11 +3614,7 @@ def register_routes(app: Flask) -> None:
             and item["job_status"] == "closed"
             and item["close_reason"] == "workdoe-match"
         ]
-        open_jobs = db.execute(
-            "SELECT COUNT(*) AS count FROM jobs WHERE status = 'open'"
-        ).fetchone()["count"]
         stats = {
-            "open_jobs": open_jobs,
             "visible_requests": len(requests),
             "total_requests": len(all_requests),
             "pending_requests": sum(1 for item in all_requests if item["status"] == "pending"),
@@ -3647,7 +3643,6 @@ def register_routes(app: Flask) -> None:
             requests=requests,
             completed_work=completed_work,
             repeat_invitations=contractor_repeat_invitations(g.user["id"]),
-            open_jobs=open_jobs,
             stats=stats,
             reputation=reputation,
             bid_view=bid_view,

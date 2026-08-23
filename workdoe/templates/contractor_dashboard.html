@@ -7,38 +7,12 @@
     <h1>Your bids</h1>
   </div>
   <div class="action-row">
-    <a class="button" href="{{ url_for('leads') }}">Browse {{ open_jobs }} projects</a>
+    <a class="button" href="{{ url_for('leads') }}">Browse projects</a>
   </div>
 </section>
 
-<section class="dashboard-metrics" aria-label="Contractor work queue">
-  <a class="metric-card" href="{{ url_for('leads') }}">
-    <span>Open projects</span>
-    <strong>{{ stats.open_jobs }}</strong>
-  </a>
-  <div class="metric-card">
-    <span>Pending bids</span>
-    <strong>{{ stats.pending_requests }}</strong>
-  </div>
-  <a class="metric-card" href="{{ url_for('message_threads') }}">
-    <span>Approved</span>
-    <strong>{{ stats.approved_requests }}</strong>
-  </a>
-  <div class="metric-card">
-    <span>Verified complete</span>
-    <strong>{{ stats.verified_completions }}</strong>
-  </div>
-</section>
-
-<section class="work-history contractor-bid-workspace" aria-labelledby="contractor-bid-status-title">
-  <div class="section-heading history-heading">
-    <div>
-      <p class="eyebrow">Response queue</p>
-      <h2 id="contractor-bid-status-title">Mini bid status</h2>
-    </div>
-    <span class="count-pill">{{ stats.visible_requests }} showing</span>
-  </div>
-  <nav class="work-view-tabs bid-view-tabs" aria-label="Contractor mini bid status">
+<section class="work-history contractor-bid-workspace" aria-label="Contractor mini bids">
+  <nav class="work-view-tabs bid-view-tabs contractor-bid-tabs" aria-label="Contractor mini bid status">
     {% for item in bid_view_links %}
       {% set count = stats.total_requests if item.value == "all" else (stats.pending_requests if item.value == "pending" else (stats.approved_requests if item.value == "approved" else stats.rejected_requests)) %}
       <a class="work-view-tab{% if bid_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if bid_view == item.value %}aria-current="page"{% endif %}>
@@ -47,7 +21,7 @@
       </a>
     {% endfor %}
   </nav>
-  <div class="job-list compact-list">
+  <div class="job-list compact-list" aria-label="Contractor mini bids">
     {% for item in requests %}
       {% set row_href = url_for('thread_detail', thread_id=item.thread_id) if item.status == 'approved' and item.thread_id else url_for('contractor_job_detail', job_id=item.job_id) %}
       {% set row_cue = "Message" if item.status == "approved" and item.thread_id else "View" %}
@@ -63,7 +37,12 @@
         </span>
       </a>
     {% else %}
-      <p class="empty">{% if bid_view == "pending" %}No pending bids.{% elif bid_view == "approved" %}No approved bids.{% elif bid_view == "rejected" %}No rejected bids.{% else %}No mini bids yet. Browse leads to start.{% endif %}</p>
+      <p class="empty">
+        {% if bid_view == "pending" %}No pending bids. <a href="{{ url_for('contractor_dashboard') }}">All bids</a>
+        {% elif bid_view == "approved" %}No approved bids. <a href="{{ url_for('contractor_dashboard') }}">All bids</a>
+        {% elif bid_view == "rejected" %}No rejected bids. <a href="{{ url_for('contractor_dashboard') }}">All bids</a>
+        {% else %}No mini bids yet. <a href="{{ url_for('leads') }}">Browse projects</a>{% endif %}
+      </p>
     {% endfor %}
   </div>
 </section>

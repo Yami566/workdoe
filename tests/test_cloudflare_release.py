@@ -4273,14 +4273,53 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "approved_requests": 1,
                     "total_requests": 1,
                 },
+                "reputation": {
+                    "level_label": "New to Workdoe",
+                    "completion_points": 0,
+                    "method_label": "100 points per mutually confirmed Workdoe project",
+                    "progress_value": 0,
+                    "progress_max": 1,
+                    "next_milestone": {"remaining": 1, "label": "First finish"},
+                    "credential_signals": [],
+                },
             },
         )
         self.assertIn("Rivera Exterior Care", contractor_dashboard_html)
         self.assertIn('aria-label="Contractor profile summary"', contractor_dashboard_html)
         self.assertIn('aria-label="Contractor mini bid status"', contractor_dashboard_html)
+        self.assertIn("Browse projects", contractor_dashboard_html)
+        self.assertNotIn('aria-label="Contractor work queue"', contractor_dashboard_html)
+        self.assertNotIn("dashboard-metrics", contractor_dashboard_html)
+        self.assertLess(
+            contractor_dashboard_html.find('aria-label="Contractor mini bids"'),
+            contractor_dashboard_html.find('class="work-progress"'),
+        )
+        self.assertLess(
+            contractor_dashboard_html.find('aria-label="Contractor mini bids"'),
+            contractor_dashboard_html.find('aria-label="Contractor profile summary"'),
+        )
         self.assertIn('href="/contractor/dashboard" aria-current="page"', contractor_dashboard_html)
         self.assertIn('aria-label="Message about Power wash steps"', contractor_dashboard_html)
         self.assertIn('<span class="row-cue">Message</span>', contractor_dashboard_html)
+
+        contractor_empty_html = module.contractor_dashboard_html(
+            contractor,
+            {
+                "bids": [],
+                "view": "approved",
+                "view_links": [
+                    {"value": "all", "label": "All", "url": "/contractor/dashboard"},
+                    {
+                        "value": "approved",
+                        "label": "Approved",
+                        "url": "/contractor/dashboard?bids=approved",
+                    },
+                ],
+                "stats": {"approved_requests": 0, "total_requests": 1},
+            },
+        )
+        self.assertIn("No approved bids.", contractor_empty_html)
+        self.assertIn('href="/contractor/dashboard">All bids</a>', contractor_empty_html)
 
         form_html = module.job_form_html(client, site_key="turnstile-site-key")
         self.assertIn('data-json-action="/api/jobs"', form_html)

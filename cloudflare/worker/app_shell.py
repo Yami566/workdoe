@@ -1246,19 +1246,24 @@ def contractor_dashboard_html(user, payload: dict) -> str:
         rows.append(
             f"""
     <a class="job-row link-row" href="{escape(bid.get('url', '#'))}" aria-label="{escape(row_label)}">
-      <div>
-        <div class="row-meta">
-          <span class="status {escape(bid.get('status', ''))}">{escape(bid.get('status', ''))}</span>
-          <span>{escape(bid.get('category', ''))}</span>
-          <span>{escape(bid.get('city', ''))}, {escape(bid.get('state', ''))}</span>
-        </div>
-        <h2>{escape(bid.get('title', ''))}</h2>
-        <p class="job-summary">{escape(bid.get('scope_note', ''))}</p>
-      </div>
-      <span class="row-cue">{escape(row_cue)}</span>
+      <span><strong>{escape(bid.get('title', ''))}</strong><small>{escape(bid.get('category', ''))} in {escape(bid.get('city', ''))}, {escape(bid.get('state', ''))}</small></span>
+      <span class="row-actions"><span class="status {escape(bid.get('status', ''))}">{escape(bid.get('status', ''))}</span><span class="row-cue">{escape(row_cue)}</span></span>
     </a>"""
         )
-    bid_html = "\n".join(rows) if rows else empty_state("No mini bids yet", "/leads", "Browse leads")
+    if rows:
+        bid_html = "\n".join(rows)
+    elif bid_view == "all":
+        bid_html = '<p class="empty">No mini bids yet. <a href="/leads">Browse projects</a></p>'
+    else:
+        empty_label = {
+            "pending": "No pending bids.",
+            "approved": "No approved bids.",
+            "rejected": "No rejected bids.",
+        }.get(bid_view, "No mini bids yet.")
+        bid_html = (
+            f'<p class="empty">{empty_label} '
+            '<a href="/contractor/dashboard">All bids</a></p>'
+        )
     invitation_rows = []
     for invitation in repeat_invitations:
         invitation_id = int(invitation.get("id", 0) or 0)
@@ -1381,15 +1386,15 @@ def contractor_dashboard_html(user, payload: dict) -> str:
     <section class="dashboard-header">
       <div>
         <p class="eyebrow">Contractor workspace</p>
-        <h1>Your mini bids</h1>
+        <h1>Your bids</h1>
       </div>
-      <a class="button" href="/leads">Browse leads</a>
+      <a class="button" href="/leads">Browse projects</a>
     </section>
-    <section class="dashboard-metrics" aria-label="Contractor work queue">
-      <div class="metric-card"><span>Pending</span><strong>{int(stats.get('pending_requests', 0))}</strong></div>
-      <div class="metric-card"><span>Approved</span><strong>{int(stats.get('approved_requests', 0))}</strong></div>
-      <div class="metric-card"><span>Total bids</span><strong>{int(stats.get('total_requests', 0))}</strong></div>
-      <div class="metric-card"><span>Verified complete</span><strong>{int(stats.get('verified_completions', 0))}</strong></div>
+    <section class="work-history contractor-bid-workspace" aria-label="Contractor mini bids">
+      <nav class="work-view-tabs bid-view-tabs contractor-bid-tabs" aria-label="Contractor mini bid status">{bid_tabs_html}</nav>
+      <div class="job-list compact-list" aria-label="Contractor mini bids">
+{bid_html}
+      </div>
     </section>
     {contractor_reputation_html(reputation, 'dashboard-reputation-title')}
     {(
@@ -1411,13 +1416,6 @@ def contractor_dashboard_html(user, payload: dict) -> str:
         <div><dt>Insurance</dt><dd>{escape(profile.get('insurance_status') or 'Not set')}</dd></div>
       </dl>
       <a class="button secondary compact" href="/contractor/profile">Edit profile</a>
-    </section>
-    <section class="work-history contractor-bid-workspace" aria-labelledby="contractor-bid-status-title">
-      <div class="section-heading history-heading"><div><p class="eyebrow">Response queue</p><h2 id="contractor-bid-status-title">Mini bid status</h2></div><span class="count-pill">{int(stats.get('visible_requests', len(bids)))} showing</span></div>
-      <nav class="work-view-tabs bid-view-tabs" aria-label="Contractor mini bid status">{bid_tabs_html}</nav>
-      <div class="job-list compact-list" aria-label="Contractor mini bids">
-{bid_html}
-      </div>
     </section>
     <section id="proposal-templates" class="work-history" aria-labelledby="proposal-templates-title">
       <div class="section-heading history-heading"><div><p class="eyebrow">Faster responses</p><h2 id="proposal-templates-title">Proposal templates</h2></div><span class="count-pill">{len(proposal_templates)}/{proposal_template_limit}</span></div>
