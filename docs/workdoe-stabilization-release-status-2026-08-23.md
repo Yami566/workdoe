@@ -94,6 +94,11 @@ deployment has been performed during this stabilization pass.
   position. Optional quote-ready questions now use a compact native disclosure,
   reopen when prior answers exist, and preserve the six-step data contract in
   both Flask and the Cloudflare Worker adapter.
+- Reframed the private message inbox around conversation triage. Compact All
+  and Unread views replace non-actionable summary cards, rows identify the
+  other participant, and the validated server-side filter preserves private
+  read markers and aggregate analytics. Flask and Worker adapters share the
+  same role-aware behavior and invalid values safely return to All.
 
 ## Verification evidence
 
@@ -230,6 +235,18 @@ deployment has been performed during this stabilization pass.
   both sheet directions keep their context-aware destination. No horizontal
   overflow appeared at 390x844, 820x1180, or 1280x720. Evidence and limits are
   recorded in `docs/ux-audit/2026-08-23-account-entry-friction/`.
+- The message-inbox correction passed all 228 tests in 80.563 seconds. The
+  complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed secret
+  across 487 non-ignored files, and no dependency drift. Cloudflare preflight
+  remained warning-free; both expected D1 public indexes were used without a
+  table scan; and Wrangler 4.125.0 packaged 48 Python modules and 86 assets at
+  895.71 KiB / 164.20 KiB gzip without deploying.
+- Current-run inbox evidence at 390x844 and 1280x720 shows zero horizontal
+  overflow, role-aware counterpart labels, an active Unread view, and a
+  one-viewport empty state. The same-state mobile comparison and evidence
+  limits are recorded in
+  `docs/ux-audit/2026-08-23-message-inbox-friction/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

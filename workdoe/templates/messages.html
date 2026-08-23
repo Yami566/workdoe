@@ -6,23 +6,19 @@
   <h1>Messages</h1>
 </section>
 
-<section class="dashboard-metrics compact-metrics message-metrics" aria-label="Message summary">
-  <div class="metric-card">
-    <span>Threads</span>
-    <strong>{{ stats.threads }}</strong>
-  </div>
-  <div class="metric-card">
-    <span>Messages</span>
-    <strong>{{ stats.messages }}</strong>
-  </div>
-  <div class="metric-card">
-    <span>Unread</span>
-    <strong>{{ stats.unread }}</strong>
-  </div>
-</section>
+<nav class="work-view-tabs message-view-tabs" aria-label="Message thread view">
+  {% for item in thread_view_links %}
+    {% set count = stats.threads if item.value == "all" else stats.unread_threads %}
+    <a class="work-view-tab{% if thread_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if thread_view == item.value %}aria-current="page"{% endif %}>
+      <span>{{ item.label }}</span>
+      <strong>{{ count }}</strong>
+    </a>
+  {% endfor %}
+</nav>
 
-<section class="job-list">
+<section class="job-list" aria-label="Message threads">
   {% for thread in threads %}
+    {% set other_name = thread.contractor_name if g.user.role == "client" else thread.client_name %}
     <a class="job-row link-row{% if thread.unread_count %} has-unread{% endif %}" href="{{ url_for('thread_detail', thread_id=thread.id) }}" aria-label="Open message thread for {{ thread.title }}{% if thread.unread_count %}, {{ thread.unread_count }} unread{% endif %}">
       <span>
         <span class="row-meta">
@@ -33,15 +29,21 @@
           {% if thread.last_message_at %}<time datetime="{{ thread.last_message_at }}">{{ thread.last_message_at|datetime_label }}</time>{% endif %}
         </span>
         <strong>{{ thread.title }}</strong>
-        <small class="thread-participants">{{ thread.client_name }} and {{ thread.contractor_name }}</small>
+        <small class="thread-participants">With {{ other_name }}</small>
         <small class="thread-preview">{{ thread.last_message or "No messages yet" }}</small>
       </span>
       <span class="button secondary compact">{{ "Read" if thread.unread_count else "Open" }}</span>
     </a>
   {% else %}
     <div class="empty-state">
-      <h2>No message threads yet</h2>
-      <p>Approve a mini bid or wait for a client approval to start messaging.</p>
+      {% if thread_view == "unread" %}
+        <h2>No unread messages</h2>
+        <p>You are all caught up.</p>
+        <a class="button secondary" href="{{ url_for('message_threads') }}">View all messages</a>
+      {% else %}
+        <h2>No message threads yet</h2>
+        <p>Approve a mini bid or wait for a client approval to start messaging.</p>
+      {% endif %}
     </div>
   {% endfor %}
 </section>

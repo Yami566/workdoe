@@ -1301,20 +1301,38 @@ class WorkdoeFlowTests(unittest.TestCase):
         threads = self.client.get("/messages")
         threads_html = threads.data.decode("utf-8")
         self.assertIn(
-            'class="dashboard-metrics compact-metrics message-metrics" aria-label="Message summary"',
+            'class="work-view-tabs message-view-tabs" aria-label="Message thread view"',
             threads_html,
         )
-        self.assertRegex(threads_html, r"<span>Threads</span>\s*<strong>1</strong>")
-        self.assertRegex(threads_html, r"<span>Messages</span>\s*<strong>2</strong>")
-        self.assertRegex(threads_html, r"<span>Unread</span>\s*<strong>0</strong>")
+        self.assertRegex(
+            threads_html,
+            r'href="/messages"\s+aria-current="page">\s*<span>All</span>\s*<strong>1</strong>',
+        )
+        self.assertRegex(
+            threads_html,
+            r'href="/messages\?view=unread"\s*>\s*<span>Unread</span>\s*<strong>0</strong>',
+        )
+        self.assertNotIn("message-metrics", threads_html)
         self.assertIn(b"2 messages", threads.data)
         self.assertNotIn(b"2 message</span>", threads.data)
         self.assertIn(b"<time datetime=", threads.data)
         self.assertIn(b"Thanks, can you start next week?", threads.data)
+        self.assertIn(b"With Jordan Rivera", threads.data)
+        self.assertNotIn(b"Avery Homeowner and Jordan Rivera", threads.data)
         self.assertIn(
             b'aria-label="Open message thread for Power wash townhouse front steps"',
             threads.data,
         )
+        empty_unread = self.client.get("/messages?view=unread")
+        self.assertIn(b"No unread messages", empty_unread.data)
+        self.assertIn(b"View all messages", empty_unread.data)
+        self.assertNotIn(b"Power wash townhouse front steps", empty_unread.data)
+        invalid_view_html = self.client.get("/messages?view=invalid").data.decode("utf-8")
+        self.assertRegex(
+            invalid_view_html,
+            r'href="/messages"\s+aria-current="page">\s*<span>All</span>',
+        )
+        self.assertIn("Power wash townhouse front steps", invalid_view_html)
 
         self.logout()
         self.login("contractor@workdoe.local", "workdoe-contractor")
@@ -1342,15 +1360,22 @@ class WorkdoeFlowTests(unittest.TestCase):
         contractor_threads_html = contractor_threads.data.decode("utf-8")
         self.assertRegex(
             contractor_threads_html,
-            r"<span>Unread</span>\s*<strong>1</strong>",
+            r'href="/messages\?view=unread"\s*>\s*<span>Unread</span>\s*<strong>1</strong>',
         )
         self.assertIn('<span class="unread-chip">1 new</span>', contractor_threads_html)
         self.assertIn("has-unread", contractor_threads_html)
+        self.assertIn("With Avery Homeowner", contractor_threads_html)
+        contractor_unread_html = self.client.get("/messages?view=unread").data.decode("utf-8")
+        self.assertRegex(
+            contractor_unread_html,
+            r'href="/messages\?view=unread"\s+aria-current="page">\s*<span>Unread</span>\s*<strong>1</strong>',
+        )
+        self.assertIn("Power wash townhouse front steps", contractor_unread_html)
         self.client.head(f"/messages/{thread['id']}")
         head_threads_html = self.client.get("/messages").data.decode("utf-8")
         self.assertRegex(
             head_threads_html,
-            r"<span>Unread</span>\s*<strong>1</strong>",
+            r'<span>Unread</span>\s*<strong>1</strong>',
         )
         read_thread_detail_html = self.client.get(f"/messages/{thread['id']}").data.decode(
             "utf-8"
@@ -1359,9 +1384,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         read_threads_html = self.client.get("/messages").data.decode("utf-8")
         self.assertRegex(
             read_threads_html,
-            r"<span>Unread</span>\s*<strong>0</strong>",
+            r'<span>Unread</span>\s*<strong>0</strong>',
         )
         self.assertNotIn('<span class="unread-chip">1 new</span>', read_threads_html)
+        read_unread_html = self.client.get("/messages?view=unread").data.decode("utf-8")
+        self.assertIn("No unread messages", read_unread_html)
+        self.assertNotIn("Power wash townhouse front steps", read_unread_html)
         approved_dashboard = self.client.get("/contractor/dashboard?bids=approved")
         approved_dashboard_html = approved_dashboard.data.decode("utf-8")
         self.assertIn(

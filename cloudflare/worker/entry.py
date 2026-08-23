@@ -323,7 +323,7 @@ from message_threads import (
     can_send_thread_message,
     can_view_thread,
     message_body_payload,
-    message_thread_summary,
+    message_threads_listing_payload,
     parse_thread_id,
     thread_detail_payload,
 )
@@ -2133,7 +2133,10 @@ class Default(WorkerEntrypoint):
                 self.env,
                 row_value(user, "id"),
             )
-            payload = message_threads_listing_payload(rows)
+            payload = message_threads_listing_payload(
+                rows,
+                first_query_value(params, "view"),
+            )
             html = message_threads_html(
                 user,
                 payload,
@@ -5524,8 +5527,12 @@ class Default(WorkerEntrypoint):
                 self.env,
                 row_value(user, "id"),
             )
+            params = parse_qs(urlparse(request.url).query)
             return json_response(
-                message_threads_listing_payload(rows),
+                message_threads_listing_payload(
+                    rows,
+                    first_query_value(params, "view"),
+                ),
                 headers={"Cache-Control": "no-store"},
             )
 
@@ -9799,18 +9806,6 @@ def user_with_unread_message_count(user, unread_count: int) -> dict:
     presentation_user = {field: row_value(user, field) for field in public_fields}
     presentation_user["unread_message_count"] = max(0, int(unread_count or 0))
     return presentation_user
-
-
-def message_threads_listing_payload(rows: list[dict]) -> dict:
-    return {
-        "ok": True,
-        "threads": [message_thread_summary(thread) for thread in rows],
-        "stats": {
-            "threads": len(rows),
-            "messages": sum(row_value(thread, "message_count", 0) or 0 for thread in rows),
-            "unread": sum(row_value(thread, "unread_count", 0) or 0 for thread in rows),
-        },
-    }
 
 
 async def mark_message_thread_read(

@@ -3,6 +3,7 @@ from __future__ import annotations
 MESSAGE_BODY_MAX_LENGTH = 1000
 MAX_MESSAGE_BODY_BYTES = 4096
 MESSAGE_BODY_TOO_LONG = "Keep messages under 1000 characters."
+MESSAGE_THREAD_VIEW_OPTIONS = ("all", "unread")
 
 
 class MessageThreadError(ValueError):
@@ -23,6 +24,10 @@ def count_value(row, key: str) -> int:
         return max(0, int(row_value(row, key, 0) or 0))
     except (TypeError, ValueError):
         return 0
+
+
+def normalize_message_thread_view(value: str | None) -> str:
+    return value if value in MESSAGE_THREAD_VIEW_OPTIONS else "all"
 
 
 def parse_thread_id(path: str) -> int:
@@ -101,6 +106,27 @@ def message_thread_summary(row) -> dict:
         "unread_count": unread_count,
         "has_unread": unread_count > 0,
         "url": f"/messages/{row_value(row, 'id')}",
+    }
+
+
+def message_threads_listing_payload(rows: list[dict], view: str | None = None) -> dict:
+    thread_view = normalize_message_thread_view(view)
+    summaries = [message_thread_summary(thread) for thread in rows]
+    visible_threads = (
+        [thread for thread in summaries if thread["has_unread"]]
+        if thread_view == "unread"
+        else summaries
+    )
+    return {
+        "ok": True,
+        "view": thread_view,
+        "threads": visible_threads,
+        "stats": {
+            "threads": len(summaries),
+            "messages": sum(thread["message_count"] for thread in summaries),
+            "unread": sum(thread["unread_count"] for thread in summaries),
+            "unread_threads": sum(1 for thread in summaries if thread["has_unread"]),
+        },
     }
 
 

@@ -2456,6 +2456,8 @@ def public_contractor_profile_html(user, payload: dict) -> str:
 def message_threads_html(user, payload: dict) -> str:
     threads = payload.get("threads", [])
     stats = payload.get("stats", {})
+    thread_view = payload.get("view", "all")
+    role = str(row_value(user, "role", "") or "")
     rows = []
     for thread in threads:
         unread_count = int(thread.get("unread_count", 0) or 0)
@@ -2464,6 +2466,11 @@ def message_threads_html(user, payload: dict) -> str:
             f'<span class="unread-chip">{unread_count} new</span>'
             if unread_count
             else ""
+        )
+        other_name = (
+            thread.get("contractor_name", "Contractor")
+            if role == "client"
+            else thread.get("client_name", "Client")
         )
         rows.append(
             f"""
@@ -2476,23 +2483,39 @@ def message_threads_html(user, payload: dict) -> str:
           {unread_chip}
         </span>
         <strong>{escape(thread.get('title', 'Message thread'))}</strong>
-        <small class="thread-participants">{escape(thread.get('client_name', 'Client'))} and {escape(thread.get('contractor_name', 'Contractor'))}</small>
+        <small class="thread-participants">With {escape(other_name)}</small>
         <small class="thread-preview">{escape(thread.get('last_message') or 'No messages yet')}</small>
       </span>
       <span class="button secondary compact">{'Read' if unread_count else 'Open'}</span>
     </a>"""
         )
-    thread_html = "\n".join(rows) if rows else empty_state("No message threads yet", "/dashboard", "Back to dashboard")
+    thread_html = "\n".join(rows) if rows else (
+        empty_state("No unread messages", "/messages", "View all messages")
+        if thread_view == "unread"
+        else empty_state("No message threads yet", "/dashboard", "Back to dashboard")
+    )
+    tabs_html = "".join(
+        (
+            f'<a class="work-view-tab{" is-active" if thread_view == value else ""}" '
+            f'href="{href}"{" aria-current=\"page\"" if thread_view == value else ""}>'
+            f'<span>{label}</span><strong>{count}</strong></a>'
+        )
+        for value, label, href, count in (
+            ("all", "All", "/messages", int(stats.get("threads", 0))),
+            (
+                "unread",
+                "Unread",
+                "/messages?view=unread",
+                int(stats.get("unread_threads", 0)),
+            ),
+        )
+    )
     body = f"""
     <section class="page-header">
       <p class="eyebrow">Approved matches</p>
       <h1>Messages</h1>
     </section>
-    <section class="dashboard-metrics compact-metrics message-metrics" aria-label="Message summary">
-      <div class="metric-card"><span>Threads</span><strong>{int(stats.get('threads', 0))}</strong></div>
-      <div class="metric-card"><span>Messages</span><strong>{int(stats.get('messages', 0))}</strong></div>
-      <div class="metric-card"><span>Unread</span><strong>{int(stats.get('unread', 0))}</strong></div>
-    </section>
+    <nav class="work-view-tabs message-view-tabs" aria-label="Message thread view">{tabs_html}</nav>
     <section class="job-list" aria-label="Message threads">
 {thread_html}
     </section>"""

@@ -311,6 +311,10 @@ BID_VIEW_OPTIONS = (
     ("approved", "Approved"),
     ("rejected", "Rejected"),
 )
+MESSAGE_THREAD_VIEW_OPTIONS = (
+    ("all", "All"),
+    ("unread", "Unread"),
+)
 PROFILE_BUSINESS_MAX_LENGTH = 120
 PROFILE_TRADES_MAX_LENGTH = 240
 PROFILE_SERVICE_AREA_MAX_LENGTH = 160
@@ -4565,7 +4569,7 @@ def register_routes(app: Flask) -> None:
     @app.route("/messages")
     @role_required("client", "contractor")
     def message_threads():
-        threads = get_db().execute(
+        all_threads = get_db().execute(
             """
             SELECT threads.*, jobs.title, jobs.category, jobs.city, jobs.state,
                    client.display_name AS client_name,
@@ -4617,12 +4621,27 @@ def register_routes(app: Flask) -> None:
             """,
             (g.user["id"], g.user["id"], g.user["id"], g.user["id"]),
         ).fetchall()
+        thread_view = normalize_message_thread_view(request.args.get("view"))
         stats = {
-            "threads": len(threads),
-            "messages": sum(thread["message_count"] or 0 for thread in threads),
-            "unread": sum(thread["unread_count"] or 0 for thread in threads),
+            "threads": len(all_threads),
+            "messages": sum(thread["message_count"] or 0 for thread in all_threads),
+            "unread": sum(thread["unread_count"] or 0 for thread in all_threads),
+            "unread_threads": sum(
+                1 for thread in all_threads if (thread["unread_count"] or 0) > 0
+            ),
         }
-        return render_template("messages.html", threads=threads, stats=stats)
+        threads = (
+            [thread for thread in all_threads if (thread["unread_count"] or 0) > 0]
+            if thread_view == "unread"
+            else all_threads
+        )
+        return render_template(
+            "messages.html",
+            threads=threads,
+            stats=stats,
+            thread_view=thread_view,
+            thread_view_links=message_thread_view_links(),
+        )
 
     @app.route("/messages/<int:thread_id>", methods=("GET", "POST"))
     @role_required("client", "contractor", "admin")
@@ -7742,6 +7761,22 @@ def client_job_view_links() -> list[dict[str, str]]:
 def normalize_bid_view(value: str | None) -> str:
     allowed = {option[0] for option in BID_VIEW_OPTIONS}
     return value if value in allowed else "all"
+
+
+def normalize_message_thread_view(value: str | None) -> str:
+    allowed = {option[0] for option in MESSAGE_THREAD_VIEW_OPTIONS}
+    return value if value in allowed else "all"
+
+
+def message_thread_view_links() -> list[dict[str, str]]:
+    return [
+        {
+            "value": value,
+            "label": label,
+            "url": url_for("message_threads", **({"view": value} if value != "all" else {})),
+        }
+        for value, label in MESSAGE_THREAD_VIEW_OPTIONS
+    ]
 
 
 def bid_view_links(

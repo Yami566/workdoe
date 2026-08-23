@@ -2152,7 +2152,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("INSERT OR IGNORE INTO threads", entrypoint)
         self.assertIn("/api/messages/threads", entrypoint)
         self.assertIn("message_threads_api", entrypoint)
-        self.assertIn("message_thread_summary", entrypoint)
+        self.assertIn("message_threads_listing_payload", entrypoint)
         self.assertIn("can_view_thread", entrypoint)
         self.assertIn("can_send_thread_message", entrypoint)
         self.assertIn("message_body_payload", entrypoint)
@@ -4431,7 +4431,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "unread_count": 1,
                     }
                 ],
-                "stats": {"threads": 1, "messages": 2, "unread": 1},
+                "view": "all",
+                "stats": {
+                    "threads": 1,
+                    "messages": 2,
+                    "unread": 1,
+                    "unread_threads": 1,
+                },
             },
         )
         self.assertIn("Messages - Workdoe", messages_html)
@@ -4445,9 +4451,39 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("2 messages", messages_html)
         self.assertIn('<span class="unread-chip">1 new</span>', messages_html)
         self.assertIn("1 unread", messages_html)
-        self.assertIn("<span>Unread</span><strong>1</strong>", messages_html)
+        self.assertIn(
+            '<nav class="work-view-tabs message-view-tabs" aria-label="Message thread view">',
+            messages_html,
+        )
+        self.assertIn(
+            '<a class="work-view-tab is-active" href="/messages" aria-current="page"><span>All</span><strong>1</strong></a>',
+            messages_html,
+        )
+        self.assertIn(
+            '<a class="work-view-tab" href="/messages?view=unread"><span>Unread</span><strong>1</strong></a>',
+            messages_html,
+        )
+        self.assertIn("With Doe Exterior Care", messages_html)
+        self.assertNotIn("Avery Client and Doe Exterior Care", messages_html)
+        self.assertNotIn("message-metrics", messages_html)
         self.assertIn("Tuesday works.", messages_html)
         self.assertNotIn("private@example.com", messages_html)
+
+        unread_empty_html = module.message_threads_html(
+            client,
+            {
+                "threads": [],
+                "view": "unread",
+                "stats": {
+                    "threads": 1,
+                    "messages": 2,
+                    "unread": 0,
+                    "unread_threads": 0,
+                },
+            },
+        )
+        self.assertIn("No unread messages", unread_empty_html)
+        self.assertIn('href="/messages">View all messages</a>', unread_empty_html)
 
         thread_html = module.message_thread_detail_html(
             client,
@@ -6864,6 +6900,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
     def test_cloudflare_message_thread_helper_matches_local_messaging_contract(self):
         module = load_message_threads_module()
         self.assertEqual(module.parse_thread_id("/api/messages/threads/42"), 42)
+        self.assertEqual(module.normalize_message_thread_view("unread"), "unread")
+        self.assertEqual(module.normalize_message_thread_view("invalid"), "all")
         client = {"id": 8, "role": "client", "status": "active"}
         contractor = {"id": 7, "role": "contractor", "status": "active"}
         admin = {"id": 1, "role": "admin", "status": "active"}
@@ -6917,6 +6955,25 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(summary["timeline"], "Two business days")
         self.assertEqual(summary["availability"], "Tuesday morning")
         self.assertNotIn("client_email", summary)
+        listing_rows = [
+            summary,
+            {
+                **summary,
+                "id": 43,
+                "message_count": 4,
+                "unread_count": 0,
+            },
+        ]
+        unread_listing = module.message_threads_listing_payload(listing_rows, "unread")
+        self.assertEqual(unread_listing["view"], "unread")
+        self.assertEqual([thread["id"] for thread in unread_listing["threads"]], [42])
+        self.assertEqual(unread_listing["stats"]["threads"], 2)
+        self.assertEqual(unread_listing["stats"]["messages"], 6)
+        self.assertEqual(unread_listing["stats"]["unread"], 1)
+        self.assertEqual(unread_listing["stats"]["unread_threads"], 1)
+        invalid_listing = module.message_threads_listing_payload(listing_rows, "invalid")
+        self.assertEqual(invalid_listing["view"], "all")
+        self.assertEqual(len(invalid_listing["threads"]), 2)
         detail = module.thread_detail_payload(
             summary,
             [
