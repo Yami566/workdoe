@@ -20,6 +20,25 @@ The six work-family slugs remain stable. This keeps old jobs, D1 records,
 filters, alerts, and reporting comparable while allowing labels and task order
 to become clearer.
 
+## 2026-08-23 implementation decision
+
+Workdoe now adds a deliberately narrow progress layer for contractors:
+
+- 100 completion points per mutually confirmed Workdoe project;
+- milestone labels at 1, 3, 10, and 25 verified completions;
+- separate source-checked-record and source-checked-license signals;
+- no paid weight, eligibility change, search boost, bid reorder, or composite
+  star score; and
+- no new points table or inferred reputation data. The display is a
+  deterministic projection of compartmentalized completion and credential
+  records already required by the marketplace.
+
+Consumers can filter the four received-order comparison cards by any current
+source-checked record or a current source-checked trade-license record. Every
+offer remains visible in the complete received-order list. The wording stays
+atomic: a reviewed public record is not a guarantee of skill, safety,
+insurance coverage, or legal eligibility.
+
 ## Research method and limits
 
 This review uses public product pages, public help centers, public company
@@ -46,6 +65,21 @@ copy protected text, branding, imagery, screen composition, or implementation.
 | Porch | Professional preferences, lead controls, service area and budget concepts | Lead and subscription programs | Keep service capabilities, zones, availability, and lead preferences first-class | Making the consumer solely responsible for all platform quality checks |
 | Homes.com | Locality, neighborhood information, agent profiles, conversational property discovery | Real-estate advertising and agent products | Use locality as context and keep profiles useful for repeat property work | Treating it as a direct contractor-marketplace blueprint |
 | Uber | Upfront marketplace principles, reliability, two-sided marketplace measurement, open H3 geospatial tooling | Transaction service fee | Measure consumer time-to-match and contractor opportunity together; consider a clear success fee only after booking evidence exists | Dynamic or opaque pricing before trust and liquidity are established |
+
+## Current SWOT
+
+| Area | Workdoe position |
+| --- | --- |
+| Strengths | Structured six-step briefs, public approximate-location demand, four-offer caps, received-order fairness, role separation, source provenance, mutual completion, and no paid rank create a clearer service workflow than a general classified or social feed. |
+| Weaknesses | Workdoe has no established liquidity or reputation network, requires human credential moderation, carries Flask/Worker parity cost, and still lacks production proof for email, identity, media, and operator response. |
+| Opportunities | Meta's official policy leaves services such as home cleaning outside Marketplace; Uber's Trip Radar demonstrates provider-selected nearby opportunities; Nextdoor demonstrates demand for local reputation; and Thumbtack/Angi demonstrate consumer value in structured scope and comparison. Workdoe can combine those needs without selling the same lead broadly. |
+| Threats | Incumbent supply, completion collusion, jurisdiction-specific licensing, moderation load, tile-provider limits, paid-acquisition pressure, and the two-sided cold start can all undermine a DMV launch before the product earns reliable repeat use. |
+
+The competitive boundary remains intentional. Uber's driver app lets providers
+select interesting Trip Radar opportunities, while Nextdoor's recommendation
+volume can affect business recognition and visibility. Workdoe adopts the
+provider-choice and visible-milestone ideas, but completion points never alter
+lead order and consumer comparison filters never hide the full bid record.
 
 ## Category strategy
 
@@ -416,6 +450,8 @@ workflow evidence, not a source of copied code or branded copy.
 Use the six numbered lanes as progressive disclosure, not a points economy.
 The useful game loop is: choose a lane, choose a task, complete a six-step
 brief, receive qualified bids, confirm the work, and make repeat hiring easier.
+The implemented completion points are presentation-only milestones inside that
+loop; they are not currency, eligibility, pricing, or rank.
 Avoid streaks, loot-like rewards, urgency counters, or payment/ranking mechanics
 that pressure consumers or encourage contractors to bid indiscriminately.
 
@@ -466,6 +502,8 @@ Three additional commercial controls are required before public monetization:
   https://support.taskrabbit.com/hc/en-us/articles/46260491906203-Overview-of-Trust-and-Safety
 - Nextdoor local business products:
   https://business.nextdoor.com/en-us/local-1
+- Nextdoor Neighborhood Faves:
+  https://business.nextdoor.com/en-us/small-business/neighborhood-faves
 - Google Local Services categories and controls:
   https://support.google.com/localservices/answer/6224841?hl=en
 - Google Local Services lead charging:
@@ -484,6 +522,8 @@ Three additional commercial controls are required before public monetization:
   https://www.homes.com/support/2022/07/18/how-do-i-find-an-agent/
 - Uber Marketplace principles:
   https://www.uber.com/us/en/marketplace/principles/
+- Uber Driver app and Trip Radar:
+  https://www.uber.com/us/en/drive/driver-app/
 - Uber service-fee explanation:
   https://www.uber.com/us/en/marketplace/pricing/service-fee/
 - Uber 2025 annual report filed with the SEC:

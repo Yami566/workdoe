@@ -115,6 +115,7 @@ from contractor_credentials import (
     contractor_credential_review_payload,
     credential_response,
     parse_contractor_credential_remove_path,
+    public_credential_responses,
 )
 from contractor_leads import (
     can_view_contractor_leads,
@@ -1746,7 +1747,22 @@ class Default(WorkerEntrypoint):
         elif path == "/contractor/dashboard" and role == "contractor":
             view = normalize_contractor_bid_view(first_query_value(params, "bids"))
             rows = await contractor_bids_for_user(self.env, row_value(user, "id"))
-            dashboard_payload = contractor_bids_payload(rows, view)
+            public_credentials = public_credential_responses(
+                await contractor_credentials_for_user(
+                    self.env,
+                    row_value(user, "id"),
+                )
+            )
+            dashboard_payload = contractor_bids_payload(
+                rows,
+                view,
+                len(public_credentials),
+                sum(
+                    1
+                    for credential in public_credentials
+                    if credential.get("credential_type") == "trade_license"
+                ),
+            )
             profile = await contractor_profile_for_user(
                 self.env,
                 row_value(user, "id"),
@@ -1933,6 +1949,7 @@ class Default(WorkerEntrypoint):
             view = normalize_client_request_view(
                 first_query_value(params, "bids") or first_query_value(params, "view")
             )
+            credential_filter = first_query_value(params, "credentials")
             rows = await client_requests_for_job(self.env, job_id)
             scope_answers = scope_answer_projection(
                 row_value(job, "service_slug", ""),
@@ -1950,7 +1967,12 @@ class Default(WorkerEntrypoint):
                 detail_payload["repeat_invitation"] = repeat_invitation_response(
                     invitation
                 )
-            requests_payload = client_job_requests_payload(job, rows, view)
+            requests_payload = client_job_requests_payload(
+                job,
+                rows,
+                view,
+                credential_filter,
+            )
             requests_payload["reviews_by_request"] = await match_reviews_for_request_ids(
                 self.env,
                 [int(row_value(item, "id", 0) or 0) for item in rows],
@@ -2117,6 +2139,16 @@ class Default(WorkerEntrypoint):
                 thread_id,
                 include_hidden=row_value(user, "role") == "admin",
             )
+            if request.method != "HEAD" and row_value(user, "role") != "admin":
+                await mark_message_thread_read(
+                    self.env,
+                    thread_id,
+                    row_value(user, "id"),
+                    positive_int(row_value(messages[-1], "id")) if messages else 0,
+                    row_value(messages[-1], "created_at")
+                    if messages
+                    else row_value(thread, "created_at"),
+                )
             html = message_thread_detail_html(
                 user,
                 thread_detail_payload(thread, messages),
@@ -2369,9 +2401,10 @@ class Default(WorkerEntrypoint):
         view = normalize_client_request_view(
             first_query_value(params, "bids") or first_query_value(params, "view")
         )
+        credential_filter = first_query_value(params, "credentials")
         rows = await client_requests_for_job(self.env, job_id)
         return json_response(
-            client_job_requests_payload(job, rows, view),
+            client_job_requests_payload(job, rows, view, credential_filter),
             headers={"Cache-Control": "no-store"},
         )
 
@@ -2542,9 +2575,22 @@ class Default(WorkerEntrypoint):
         view = normalize_contractor_bid_view(
             first_query_value(params, "bids") or first_query_value(params, "view")
         )
-        rows = await contractor_bids_for_user(self.env, row_value(user, "id"))
+        contractor_id = row_value(user, "id")
+        rows = await contractor_bids_for_user(self.env, contractor_id)
+        public_credentials = public_credential_responses(
+            await contractor_credentials_for_user(self.env, contractor_id)
+        )
         return json_response(
-            contractor_bids_payload(rows, view),
+            contractor_bids_payload(
+                rows,
+                view,
+                len(public_credentials),
+                sum(
+                    1
+                    for credential in public_credentials
+                    if credential.get("credential_type") == "trade_license"
+                ),
+            ),
             headers={"Cache-Control": "no-store"},
         )
 
@@ -5573,6 +5619,13 @@ class Default(WorkerEntrypoint):
                 request_state,
                 message_id,
             )
+            await mark_message_thread_read(
+                self.env,
+                thread_id,
+                row_value(user, "id"),
+                message_id,
+                created_at,
+            )
             await record_event(
                 self.env,
                 "message-created",
@@ -5598,6 +5651,16 @@ class Default(WorkerEntrypoint):
             thread_id,
             include_hidden=row_value(user, "role") == "admin",
         )
+        if row_value(user, "role") != "admin":
+            await mark_message_thread_read(
+                self.env,
+                thread_id,
+                row_value(user, "id"),
+                positive_int(row_value(messages[-1], "id")) if messages else 0,
+                row_value(messages[-1], "created_at")
+                if messages
+                else row_value(thread, "created_at"),
+            )
         return json_response(
             thread_detail_payload(thread, messages),
             headers={"Cache-Control": "no-store"},
@@ -8906,6 +8969,18 @@ async def client_requests_for_job(env, job_id: int) -> list[dict]:
                   )
             ) AS source_checked_credential_count,
             (
+                SELECT COUNT(*)
+                FROM contractor_credentials
+                WHERE contractor_credentials.contractor_id = users.id
+                  AND contractor_credentials.credential_type = 'trade_license'
+                  AND contractor_credentials.status = 'verified'
+                  AND (
+                      contractor_credentials.expires_at IS NULL
+                      OR contractor_credentials.expires_at = ''
+                      OR date(contractor_credentials.expires_at) >= date('now')
+                  )
+            ) AS source_checked_license_count,
+            (
                 SELECT COUNT(DISTINCT completed_request.id)
                 FROM match_requests AS completed_request
                 JOIN match_completions AS completed_match
@@ -9595,35 +9670,51 @@ async def message_threads_for_user(env, user_id: int) -> list[dict]:
                (
                    SELECT body FROM messages
                    WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                   ORDER BY messages.created_at DESC
+                   ORDER BY messages.id DESC
                    LIMIT 1
                ) AS last_message,
                (
                    SELECT created_at FROM messages
                    WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                   ORDER BY messages.created_at DESC
+                   ORDER BY messages.id DESC
                    LIMIT 1
                ) AS last_message_at,
                (
+                   SELECT id FROM messages
+                   WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
+                   ORDER BY messages.id DESC
+                   LIMIT 1
+               ) AS last_message_id,
+               (
                    SELECT COUNT(*) FROM messages
                    WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-               ) AS message_count
+               ) AS message_count,
+               (
+                   SELECT COUNT(*) FROM messages
+                   WHERE messages.thread_id = threads.id
+                     AND messages.is_hidden = 0
+                     AND messages.sender_id != ?
+                     AND messages.id > COALESCE(
+                         (
+                             SELECT thread_reads.last_read_message_id
+                             FROM thread_reads
+                             WHERE thread_reads.thread_id = threads.id
+                               AND thread_reads.user_id = ?
+                         ),
+                         0
+                     )
+               ) AS unread_count
         FROM threads
         JOIN jobs ON jobs.id = threads.job_id
         JOIN users AS client ON client.id = threads.client_id
         JOIN users AS contractor ON contractor.id = threads.contractor_id
         WHERE threads.client_id = ? OR threads.contractor_id = ?
-        ORDER BY COALESCE(
-            (
-                SELECT created_at FROM messages
-                WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                ORDER BY messages.created_at DESC
-                LIMIT 1
-            ),
-            threads.created_at
-        ) DESC
+        ORDER BY COALESCE(last_message_at, threads.created_at) DESC,
+                 COALESCE(last_message_id, 0) DESC
         LIMIT 50
         """,
+        user_id,
+        user_id,
         user_id,
         user_id,
     )
@@ -9637,8 +9728,40 @@ def message_threads_listing_payload(rows: list[dict]) -> dict:
         "stats": {
             "threads": len(rows),
             "messages": sum(row_value(thread, "message_count", 0) or 0 for thread in rows),
+            "unread": sum(row_value(thread, "unread_count", 0) or 0 for thread in rows),
         },
     }
+
+
+async def mark_message_thread_read(
+    env,
+    thread_id: int,
+    user_id: int,
+    last_read_message_id: int,
+    last_read_at: str,
+) -> None:
+    await db_run(
+        env,
+        """
+        INSERT INTO thread_reads
+            (thread_id, user_id, last_read_message_id, last_read_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(thread_id, user_id) DO UPDATE SET
+            last_read_message_id = MAX(
+                thread_reads.last_read_message_id,
+                excluded.last_read_message_id
+            ),
+            last_read_at = CASE
+                WHEN excluded.last_read_message_id >= thread_reads.last_read_message_id
+                THEN excluded.last_read_at
+                ELSE thread_reads.last_read_at
+            END
+        """,
+        thread_id,
+        user_id,
+        last_read_message_id,
+        last_read_at,
+    )
 
 
 async def thread_for_messages(env, thread_id: int):
@@ -9663,21 +9786,27 @@ async def thread_for_messages(env, thread_id: int):
 async def messages_for_thread(env, thread_id: int, include_hidden: bool = False) -> list[dict]:
     query = (
         """
-        SELECT messages.*, users.display_name
-        FROM messages
-        JOIN users ON users.id = messages.sender_id
-        WHERE messages.thread_id = ?
-        ORDER BY messages.created_at
-        LIMIT 100
+        SELECT visible_messages.*, users.display_name
+        FROM (
+            SELECT * FROM messages
+            WHERE messages.thread_id = ?
+            ORDER BY messages.id DESC
+            LIMIT 100
+        ) AS visible_messages
+        JOIN users ON users.id = visible_messages.sender_id
+        ORDER BY visible_messages.id
         """
         if include_hidden
         else """
-        SELECT messages.*, users.display_name
-        FROM messages
-        JOIN users ON users.id = messages.sender_id
-        WHERE messages.thread_id = ? AND messages.is_hidden = 0
-        ORDER BY messages.created_at
-        LIMIT 100
+        SELECT visible_messages.*, users.display_name
+        FROM (
+            SELECT * FROM messages
+            WHERE messages.thread_id = ? AND messages.is_hidden = 0
+            ORDER BY messages.id DESC
+            LIMIT 100
+        ) AS visible_messages
+        JOIN users ON users.id = visible_messages.sender_id
+        ORDER BY visible_messages.id
         """
     )
     result = await db_run(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from urllib.parse import urlencode
 
-from bid_comparison import bid_comparison
+from bid_comparison import bid_comparison, normalize_credential_filter
 from job_posts import bid_window
 from match_completions import completion_label, completion_state
 
@@ -92,6 +92,13 @@ def client_request_card(row) -> dict:
         "can_reject": status == "pending",
         "needs_review": status == "pending",
         "row_cue": "Message" if status == "approved" and thread_link else "Review",
+        "source_checked_credential_count": int(
+            row_value(row, "source_checked_credential_count", 0) or 0
+        ),
+        "source_checked_license_count": int(
+            row_value(row, "source_checked_license_count", 0) or 0
+        ),
+        "verified_work_count": int(row_value(row, "verified_work_count", 0) or 0),
     }
     card["completion_state"] = completion_state(card)
     card["completion_label"] = completion_label(card, "client")
@@ -116,7 +123,10 @@ def client_request_stats(all_requests: list[dict], visible_requests: list[dict])
     }
 
 
-def client_request_view_links(job_id: int) -> list[dict[str, str]]:
+def client_request_view_links(
+    job_id: int,
+    credential_filter: str = "all",
+) -> list[dict[str, str]]:
     labels = {
         "all": "All",
         "pending": "Pending",
@@ -126,6 +136,8 @@ def client_request_view_links(job_id: int) -> list[dict[str, str]]:
     links = []
     for value in ("all", "pending", "approved", "rejected"):
         args = {"bids": value} if value != "all" else {}
+        if credential_filter != "all":
+            args["credentials"] = credential_filter
         query = f"?{urlencode(args)}" if args else ""
         links.append(
             {
@@ -137,12 +149,47 @@ def client_request_view_links(job_id: int) -> list[dict[str, str]]:
     return links
 
 
-def client_job_requests_payload(job, rows: list, view: str) -> dict:
+def comparison_filter_links(
+    job_id: int,
+    view: str,
+    options: list[dict],
+) -> list[dict]:
+    links = []
+    for option in options:
+        value = option["value"]
+        args = {}
+        if view != "all":
+            args["bids"] = view
+        if value != "all":
+            args["credentials"] = value
+        query = f"?{urlencode(args)}" if args else ""
+        links.append(
+            {
+                **option,
+                "url": f"/client/jobs/{job_id}{query}#mini-bids",
+            }
+        )
+    return links
+
+
+def client_job_requests_payload(
+    job,
+    rows: list,
+    view: str,
+    credential_filter: str = "all",
+) -> dict:
     job_id = row_value(job, "id")
     normalized_view = normalize_client_request_view(view)
+    normalized_filter = normalize_credential_filter(credential_filter)
     all_requests = [client_request_card(row) for row in rows]
     visible_requests = filter_client_request_cards(all_requests, normalized_view)
     bidding = bid_window(job, len(all_requests))
+    comparison = bid_comparison(rows, normalized_view, normalized_filter)
+    comparison["credential_filter_options"] = comparison_filter_links(
+        job_id,
+        normalized_view,
+        comparison["credential_filter_options"],
+    )
     return {
         "ok": True,
         "view": normalized_view,
@@ -154,7 +201,7 @@ def client_job_requests_payload(job, rows: list, view: str) -> dict:
             "url": f"/client/jobs/{job_id}",
         },
         "requests": visible_requests,
-        "comparison": bid_comparison(rows, normalized_view),
+        "comparison": comparison,
         "stats": client_request_stats(all_requests, visible_requests),
-        "view_links": client_request_view_links(job_id),
+        "view_links": client_request_view_links(job_id, normalized_filter),
     }

@@ -6,7 +6,7 @@
   <h1>Messages</h1>
 </section>
 
-<section class="dashboard-metrics compact-metrics" aria-label="Message summary">
+<section class="dashboard-metrics compact-metrics message-metrics" aria-label="Message summary">
   <div class="metric-card">
     <span>Threads</span>
     <strong>{{ stats.threads }}</strong>
@@ -15,23 +15,28 @@
     <span>Messages</span>
     <strong>{{ stats.messages }}</strong>
   </div>
+  <div class="metric-card">
+    <span>Unread</span>
+    <strong>{{ stats.unread }}</strong>
+  </div>
 </section>
 
 <section class="job-list">
   {% for thread in threads %}
-    <a class="job-row link-row" href="{{ url_for('thread_detail', thread_id=thread.id) }}" aria-label="Open message thread for {{ thread.title }}">
+    <a class="job-row link-row{% if thread.unread_count %} has-unread{% endif %}" href="{{ url_for('thread_detail', thread_id=thread.id) }}" aria-label="Open message thread for {{ thread.title }}{% if thread.unread_count %}, {{ thread.unread_count }} unread{% endif %}">
       <span>
         <span class="row-meta">
           <span>{{ thread.category }}</span>
           <span>{{ thread.city }}, {{ thread.state }}</span>
           <span>{{ thread.message_count|message_count_label }}</span>
+          {% if thread.unread_count %}<span class="unread-chip">{{ thread.unread_count }} new</span>{% endif %}
           {% if thread.last_message_at %}<time datetime="{{ thread.last_message_at }}">{{ thread.last_message_at|datetime_label }}</time>{% endif %}
         </span>
         <strong>{{ thread.title }}</strong>
-        <small>{{ thread.client_name }} and {{ thread.contractor_name }}</small>
+        <small class="thread-participants">{{ thread.client_name }} and {{ thread.contractor_name }}</small>
         <small class="thread-preview">{{ thread.last_message or "No messages yet" }}</small>
       </span>
-      <span class="button secondary compact">Open</span>
+      <span class="button secondary compact">{{ "Read" if thread.unread_count else "Open" }}</span>
     </a>
   {% else %}
     <div class="empty-state">

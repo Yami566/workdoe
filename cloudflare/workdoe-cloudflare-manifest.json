@@ -65,7 +65,7 @@
     "database": {
       "binding": "DB",
       "migration": "cloudflare/d1/migrations/0001_initial.sql",
-      "migration_chain_sha256": "8aad37afeaac6b0938484609f1de34b30e465de557de1d30cac5348475afc8a0",
+      "migration_chain_sha256": "90d31d625690f76863962451f36d4e63ebafeb0d6d44f958eab90d3ec50ca9e4",
       "migration_sha256": "dd46194b4f45811901a8fe1718a482ea286863a4a87e3bcdce66cf60967c479e",
       "migrations_dir": "cloudflare/d1/migrations",
       "service": "D1"

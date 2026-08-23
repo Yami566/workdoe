@@ -43,6 +43,7 @@ EMAIL_PAYLOADS_PATH = ROOT / "cloudflare" / "worker" / "email_payloads.py"
 EMAIL_CODE_AUTH_PATH = ROOT / "cloudflare" / "worker" / "email_code_auth.py"
 ADMIN_MODERATION_PATH = ROOT / "cloudflare" / "worker" / "admin_moderation.py"
 CONTRACTOR_PROFILES_PATH = ROOT / "cloudflare" / "worker" / "contractor_profiles.py"
+CONTRACTOR_REPUTATION_PATH = ROOT / "cloudflare" / "worker" / "contractor_reputation.py"
 CONTRACTOR_CREDENTIALS_PATH = ROOT / "cloudflare" / "worker" / "contractor_credentials.py"
 CONTRACTOR_PREFERENCES_PATH = ROOT / "cloudflare" / "worker" / "contractor_preferences.py"
 CONTRACTOR_PROPOSAL_TEMPLATES_PATH = (
@@ -647,6 +648,17 @@ def load_contractor_credentials_module():
     return module
 
 
+def load_contractor_reputation_module():
+    spec = importlib.util.spec_from_file_location(
+        "contractor_reputation", CONTRACTOR_REPUTATION_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_contractor_preferences_module():
     load_service_taxonomy_module()
     spec = importlib.util.spec_from_file_location(
@@ -694,6 +706,7 @@ def load_contractor_public_profiles_module():
     load_market_fit_module()
     load_contractor_profiles_module()
     load_contractor_credentials_module()
+    load_contractor_reputation_module()
     load_contractor_preferences_module()
     spec = importlib.util.spec_from_file_location(
         "contractor_public_profiles",
@@ -730,6 +743,7 @@ def load_client_requests_module():
 
 
 def load_bid_comparison_module():
+    load_contractor_reputation_module()
     spec = importlib.util.spec_from_file_location(
         "bid_comparison", BID_COMPARISON_PATH
     )
@@ -754,6 +768,7 @@ def load_contractor_leads_module():
 
 def load_contractor_bids_module():
     load_match_completions_module()
+    load_contractor_reputation_module()
     spec = importlib.util.spec_from_file_location("contractor_bids", CONTRACTOR_BIDS_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -1160,7 +1175,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
     def test_fresh_d1_database_accepts_complete_migration_chain(self):
         migrations_dir = ROOT / "cloudflare" / "d1" / "migrations"
         migration_paths = sorted(migrations_dir.glob("[0-9][0-9][0-9][0-9]_*.sql"))
-        self.assertEqual(len(migration_paths), 29)
+        self.assertEqual(len(migration_paths), 30)
 
         connection = sqlite3.connect(":memory:")
         try:
@@ -1184,6 +1199,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertIn("budget_min", job_columns)
             self.assertIn("service_group_slug", job_columns)
             self.assertIn("service_slug", job_columns)
+            thread_read_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(thread_reads)")
+            }
+            self.assertEqual(
+                thread_read_columns,
+                {"thread_id", "user_id", "last_read_message_id", "last_read_at"},
+            )
             job_indexes = {
                 row[1] for row in connection.execute("PRAGMA index_list(jobs)")
             }
@@ -3418,7 +3440,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             ["idx_job_photos_public_job", "idx_jobs_open_geo"],
         )
         self.assertEqual(plan["table_scans"], [])
-        self.assertEqual(plan["last_migration"], "0029_public_job_photo_index.sql")
+        self.assertEqual(plan["last_migration"], "0030_thread_reads.sql")
 
     def test_demo_projects_are_realistic_labeled_and_filterable(self):
         module = load_demo_projects_module()
@@ -4314,17 +4336,24 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "contractor_name": "Doe Exterior Care",
                         "last_message": "Tuesday works.",
                         "message_count": 2,
+                        "unread_count": 1,
                     }
                 ],
-                "stats": {"threads": 1, "messages": 2},
+                "stats": {"threads": 1, "messages": 2, "unread": 1},
             },
         )
         self.assertIn("Messages - Workdoe", messages_html)
         self.assertEqual(module.message_count_label(1), "1 message")
         self.assertEqual(module.message_count_label("2"), "2 messages")
         self.assertIn('href="/messages/5"', messages_html)
-        self.assertIn('aria-label="Open message thread for Window cleaning"', messages_html)
+        self.assertIn(
+            'aria-label="Open message thread for Window cleaning, 1 unread"',
+            messages_html,
+        )
         self.assertIn("2 messages", messages_html)
+        self.assertIn('<span class="unread-chip">1 new</span>', messages_html)
+        self.assertIn("1 unread", messages_html)
+        self.assertIn("<span>Unread</span><strong>1</strong>", messages_html)
         self.assertIn("Tuesday works.", messages_html)
         self.assertNotIn("private@example.com", messages_html)
 
@@ -5587,6 +5616,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "years_in_business": 5,
                 "insurance_status": "Policy available on request",
                 "source_checked_credential_count": 1,
+                "source_checked_license_count": 1,
                 "verified_work_count": 2,
                 "created_at": "2026-08-03T12:00:00+00:00",
                 "updated_at": "2026-08-03T12:00:00+00:00",
@@ -5667,8 +5697,24 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertEqual(
             payload["comparison"]["offers"][0]["provider_facts"][2]["value"],
+            "1 record",
+        )
+        self.assertEqual(
+            payload["comparison"]["offers"][0]["provider_facts"][3]["value"],
             "2 projects",
         )
+        license_payload = module.client_job_requests_payload(
+            job,
+            rows,
+            "pending",
+            "license-checked",
+        )
+        self.assertEqual(license_payload["comparison"]["count"], 1)
+        self.assertIn(
+            "credentials=license-checked",
+            license_payload["comparison"]["credential_filter_options"][2]["url"],
+        )
+        self.assertEqual(len(license_payload["requests"]), 1)
         comparison_json = json.dumps(payload["comparison"]).lower()
         self.assertNotIn("contractor@example.com", comparison_json)
         self.assertNotIn("202) 555", comparison_json)
@@ -5701,6 +5747,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "years_in_business": 4,
                 "insurance_status": "Available",
                 "source_checked_credential_count": 1,
+                "source_checked_license_count": 1,
                 "verified_work_count": 2,
                 "created_at": "2026-08-17T14:00:00+00:00",
                 "email": "private@example.com",
@@ -5721,6 +5768,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "years_in_business": None,
                 "insurance_status": "",
                 "source_checked_credential_count": 0,
+                "source_checked_license_count": 0,
                 "verified_work_count": 0,
                 "created_at": "2026-08-17T13:00:00+00:00",
             },
@@ -5734,6 +5782,22 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertNotIn("private@example.com", json.dumps(worker_result))
         self.assertNotIn("Private Street", json.dumps(worker_result))
+        worker_filtered = worker.bid_comparison(rows, "pending", "license-checked")
+        self.assertEqual(worker_filtered["count"], 1)
+        self.assertEqual(worker_filtered["offers"][0]["contractor_name"], "Second Offer")
+
+    def test_cloudflare_contractor_reputation_matches_local_contract(self):
+        worker = load_contractor_reputation_module()
+        from workdoe.contractor_reputation import contractor_reputation
+
+        self.assertEqual(
+            worker.contractor_reputation(10, 2, 1),
+            contractor_reputation(10, 2, 1),
+        )
+        reputation = worker.contractor_reputation(10, 2, 1)
+        self.assertEqual(reputation["completion_points"], 1000)
+        self.assertEqual(reputation["level_label"], "Local regular")
+        self.assertEqual(reputation["ranking_effect"], "none")
 
     def test_cloudflare_job_detail_payload_redacts_contractor_location(self):
         module = load_job_details_module()
@@ -6669,11 +6733,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "contractor_name": "Doe Powerwash",
                 "last_message": "Can you start Tuesday?",
                 "message_count": 2,
+                "unread_count": 1,
                 "client_email": "private@example.com",
             }
         )
         self.assertEqual(summary["url"], "/messages/42")
         self.assertEqual(summary["message_count"], 2)
+        self.assertEqual(summary["unread_count"], 1)
+        self.assertTrue(summary["has_unread"])
         self.assertNotIn("client_email", summary)
         detail = module.thread_detail_payload(
             summary,
@@ -6689,6 +6756,21 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             ],
         )
         self.assertEqual(detail["messages"][0]["body"], "Yes, Tuesday works.")
+        read_migration = (
+            ROOT / "cloudflare" / "d1" / "migrations" / "0030_thread_reads.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CREATE TABLE IF NOT EXISTS thread_reads", read_migration)
+        self.assertIn("PRIMARY KEY (thread_id, user_id)", read_migration)
+        self.assertIn("last_read_message_id INTEGER NOT NULL DEFAULT 0", read_migration)
+        self.assertIn("idx_messages_thread_unread", read_migration)
+        self.assertNotIn("body", read_migration.lower())
+        worker_source = (ROOT / "cloudflare" / "worker" / "entry.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            'if request.method != "HEAD" and row_value(user, "role") != "admin":',
+            worker_source,
+        )
         with self.assertRaisesRegex(module.MessageThreadError, "Unsupported"):
             module.parse_thread_id("/api/messages/threads/0")
 

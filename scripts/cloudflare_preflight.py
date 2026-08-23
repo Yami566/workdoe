@@ -297,6 +297,10 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     email_payloads_path = repo_root / "cloudflare" / "worker" / "email_payloads.py"
     admin_moderation_path = repo_root / "cloudflare" / "worker" / "admin_moderation.py"
     contractor_profiles_path = repo_root / "cloudflare" / "worker" / "contractor_profiles.py"
+    contractor_reputation_path = (
+        repo_root / "cloudflare" / "worker" / "contractor_reputation.py"
+    )
+    local_contractor_reputation_path = repo_root / "workdoe" / "contractor_reputation.py"
     contractor_credentials_path = repo_root / "cloudflare" / "worker" / "contractor_credentials.py"
     contractor_preferences_path = repo_root / "cloudflare" / "worker" / "contractor_preferences.py"
     client_project_templates_path = repo_root / "cloudflare" / "worker" / "client_project_templates.py"
@@ -1201,6 +1205,12 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     compile_python(email_payloads_path, errors, checks, "Cloudflare email payload helper compiles")
     compile_python(admin_moderation_path, errors, checks, "Cloudflare admin moderation helper compiles")
     compile_python(contractor_profiles_path, errors, checks, "Cloudflare contractor profile helper compiles")
+    compile_python(
+        contractor_reputation_path,
+        errors,
+        checks,
+        "Cloudflare contractor reputation helper compiles",
+    )
     compile_python(contractor_credentials_path, errors, checks, "Cloudflare contractor credential helper compiles")
     compile_python(contractor_preferences_path, errors, checks, "Cloudflare contractor preference helper compiles")
     compile_python(client_project_templates_path, errors, checks, "Cloudflare consumer project-template helper compiles")
@@ -1291,6 +1301,11 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     email_payloads_source = read_text(email_payloads_path, errors)
     admin_moderation_source = read_text(admin_moderation_path, errors)
     contractor_profiles_source = read_text(contractor_profiles_path, errors)
+    contractor_reputation_source = read_text(contractor_reputation_path, errors)
+    local_contractor_reputation_source = read_text(
+        local_contractor_reputation_path,
+        errors,
+    )
     contractor_credentials_source = read_text(contractor_credentials_path, errors)
     contractor_preferences_source = read_text(contractor_preferences_path, errors)
     client_project_templates_source = read_text(client_project_templates_path, errors)
@@ -1337,6 +1352,29 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     clerk_entry_source = read_text(clerk_entry_path, errors)
     clerk_account_source = read_text(clerk_account_path, errors)
     email_code_entry_source = read_text(email_code_entry_path, errors)
+    if contractor_reputation_source and local_contractor_reputation_source:
+        require(
+            contractor_reputation_source == local_contractor_reputation_source,
+            errors,
+            "Flask and Worker contractor reputation projections must remain byte-identical.",
+            checks,
+            "Flask and Worker contractor reputation projections match",
+        )
+        require(
+            all(
+                marker in contractor_reputation_source
+                for marker in (
+                    "COMPLETION_POINTS = 100",
+                    '"ranking_effect": "none"',
+                    "verified_completions",
+                    "source_checked_licenses",
+                )
+            ),
+            errors,
+            "Contractor reputation must remain completion-derived and ranking-neutral.",
+            checks,
+            "Contractor reputation is deterministic and ranking-neutral",
+        )
     if idempotency_source and worker_source and worker_actions_source:
         require(
             all(

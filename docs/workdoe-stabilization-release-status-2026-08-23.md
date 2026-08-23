@@ -24,10 +24,22 @@ deployment has been performed during this stabilization pass.
 - Recorded Workdoe's proprietary first-party license, exact Python runtime
   pins, official dependency sources/licenses/hashes, retained browser licenses,
   and deterministic local provenance verification.
+- Added deterministic contractor completion milestones and points derived only
+  from mutually confirmed Workdoe projects. The shared Flask/Worker projection
+  stores no new personal data and has no ranking effect.
+- Added received-order comparison filters for any current source-checked record
+  and specifically for a current source-checked trade-license record. Every
+  offer remains in the complete bid list and the interface does not describe a
+  checked record as a guarantee.
+- Added private per-participant message read markers, unread thread counts, and
+  compact unread cues. Ordering and read state use immutable message IDs so
+  same-second replies remain deterministic; `HEAD` requests never mark a
+  thread read.
 
 ## Verification evidence
 
-- Full suite: 220 tests passed in 80.016 seconds.
+- Full suite: 223 tests passed in 77.296 seconds after the reputation,
+  credential-filter, and unread-message work.
 - Full Ruff baseline and the ordinary CI quality command passed.
 - Dependency provenance passed locally and against all recorded upstream Python
   source archives on 2026-08-23.
@@ -35,7 +47,7 @@ deployment has been performed during this stabilization pass.
   dependency vulnerabilities, `npm audit` found no known Node vulnerabilities,
   Bandit found no medium/high issues, Ruff passed, and the reviewed secret gate
   passed across 414 non-ignored files.
-- All 29 forward-only D1 migrations apply to a blank database and to the local
+- All 30 forward-only D1 migrations apply to a blank database and to the local
   Wrangler database. `EXPLAIN QUERY PLAN` uses `idx_jobs_open_geo` and the
   covering `idx_job_photos_public_job` index without scanning either hot table.
 - Wrangler 4.125.0 serves the 2026-08-23 compatibility date locally. Runtime
@@ -49,6 +61,14 @@ deployment has been performed during this stabilization pass.
   map/list selection, keyboard project navigation, and 44-pixel map/policy
   controls. Exact evidence and live-test limits are recorded in
   `docs/release-evidence/2026-08-23-local-browser-acceptance.md`.
+- A second authenticated responsive pass at 390x844 and 820x1180 verified no
+  horizontal overflow, compact milestone rendering, existing bottom
+  navigation, public contractor-profile continuity, and a clean browser
+  console. Flask/Worker contract tests cover the received-order and credential
+  filter behavior.
+- An authenticated message-state pass at 390x844 and 1280x720 verified compact
+  unread metrics, separated project/participant labels, zero horizontal
+  overflow, a clean console, and per-thread read-state updates.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

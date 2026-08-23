@@ -316,6 +316,14 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS thread_reads (
+    thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    last_read_message_id INTEGER NOT NULL DEFAULT 0,
+    last_read_at TEXT NOT NULL,
+    PRIMARY KEY (thread_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS reports (
     id INTEGER PRIMARY KEY,
     reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -387,6 +395,10 @@ CREATE INDEX IF NOT EXISTS idx_repeat_provider_invitations_client
 ON repeat_provider_invitations(client_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_threads_parties ON threads(client_id, contractor_id);
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_thread_unread
+ON messages(thread_id, is_hidden, id, sender_id);
+CREATE INDEX IF NOT EXISTS idx_thread_reads_user
+ON thread_reads(user_id, last_read_message_id DESC);
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_login_codes_email ON login_codes(email, expires_at);

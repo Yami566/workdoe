@@ -18,6 +18,13 @@ def row_value(row, key: str, default=None):
     return getattr(row, key, default)
 
 
+def count_value(row, key: str) -> int:
+    try:
+        return max(0, int(row_value(row, key, 0) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def parse_thread_id(path: str) -> int:
     prefix = "/api/messages/threads/"
     if not path.startswith(prefix):
@@ -74,6 +81,7 @@ def message_thread_error_field(message: str) -> str:
 
 
 def message_thread_summary(row) -> dict:
+    unread_count = count_value(row, "unread_count")
     return {
         "id": row_value(row, "id"),
         "job_id": row_value(row, "job_id"),
@@ -86,7 +94,9 @@ def message_thread_summary(row) -> dict:
         "contractor_name": row_value(row, "contractor_name"),
         "last_message": row_value(row, "last_message", "") or "",
         "last_message_at": row_value(row, "last_message_at", "") or "",
-        "message_count": row_value(row, "message_count", 0) or 0,
+        "message_count": count_value(row, "message_count"),
+        "unread_count": unread_count,
+        "has_unread": unread_count > 0,
         "url": f"/messages/{row_value(row, 'id')}",
     }
 

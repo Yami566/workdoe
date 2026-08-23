@@ -1116,6 +1116,38 @@ Policy: https://workdoe.com/safety
 """
 
 
+def contractor_reputation_html(reputation: dict, title_id: str) -> str:
+    if not reputation:
+        return ""
+    next_milestone = reputation.get("next_milestone")
+    if next_milestone:
+        remaining = int(next_milestone.get("remaining", 0) or 0)
+        project_label = "project" if remaining == 1 else "projects"
+        next_html = (
+            f"{remaining} more {project_label} to "
+            f"{escape(next_milestone.get('label', 'the next milestone'))}"
+        )
+    else:
+        next_html = "All current completion milestones reached"
+    signals_html = "".join(
+        '<span class="trust-chip"><img src="/static/vendor/tabler-icons/home-check.svg" alt="">'
+        + escape(signal.get("label", "Source checked"))
+        + "</span>"
+        for signal in reputation.get("credential_signals", [])
+    )
+    return f"""
+    <section class="work-progress" aria-labelledby="{escape(title_id)}">
+      <div class="work-progress-heading">
+        <span class="work-progress-icon" aria-hidden="true"><img src="/static/vendor/tabler-icons/sparkles.svg" alt=""></span>
+        <div><p class="eyebrow">Work milestones</p><h3 id="{escape(title_id)}">{escape(reputation.get('level_label', 'New to Workdoe'))}</h3></div>
+        <strong>{int(reputation.get('completion_points', 0) or 0)} points</strong>
+      </div>
+      <p>{escape(reputation.get('method_label', '100 points per mutually confirmed Workdoe project'))}. Points summarize completed work only and never change lead or bid order.</p>
+      <progress value="{int(reputation.get('progress_value', 0) or 0)}" max="{max(1, int(reputation.get('progress_max', 1) or 1))}">{int(reputation.get('progress_value', 0) or 0)} of {max(1, int(reputation.get('progress_max', 1) or 1))}</progress>
+      <div class="work-progress-footer"><span>{next_html}</span>{signals_html}</div>
+    </section>"""
+
+
 def contractor_dashboard_html(user, payload: dict) -> str:
     bids = payload.get("bids", [])
     profile = payload.get("profile", {})
@@ -1124,6 +1156,7 @@ def contractor_dashboard_html(user, payload: dict) -> str:
     proposal_templates = payload.get("proposal_templates", [])
     proposal_template_limit = int(payload.get("proposal_template_limit", 6) or 6)
     stats = payload.get("stats", {})
+    reputation = payload.get("reputation", {})
     reviews_by_request = payload.get("reviews_by_request", {})
     bid_view = str(payload.get("view", "all") or "all")
     bid_view_links = payload.get("view_links", [])
@@ -1283,6 +1316,7 @@ def contractor_dashboard_html(user, payload: dict) -> str:
       <div class="metric-card"><span>Total bids</span><strong>{int(stats.get('total_requests', 0))}</strong></div>
       <div class="metric-card"><span>Verified complete</span><strong>{int(stats.get('verified_completions', 0))}</strong></div>
     </section>
+    {contractor_reputation_html(reputation, 'dashboard-reputation-title')}
     {(
         '<section class="work-history" aria-labelledby="repeat-invitations-title"><div class="section-heading history-heading"><div><p class="eyebrow">Prior clients</p><h2 id="repeat-invitations-title">Invited back</h2></div><span class="count-pill">'
         + str(len(repeat_invitations))
@@ -2355,6 +2389,7 @@ def public_contractor_profile_html(user, payload: dict) -> str:
           <div><dt>Years</dt><dd>{escape(year_label)}</dd></div>
           <div><dt>Workdoe completions</dt><dd>{int(contractor.get('verified_completions', 0) or 0)} verified</dd></div>
         </dl>
+        {contractor_reputation_html(contractor.get('reputation', {}), 'public-reputation-title')}
         {credentials_html}
         <p class="help-text">Profile details are self-reported. A source-checked record means Workdoe reviewed the linked public source on the date shown; it is not a guarantee of skill, safety, coverage, or legal eligibility.</p>
         <p class="help-text">{escape(contractor.get('contact_policy', 'Clients approve a mini bid before messaging opens.'))}</p>
@@ -2379,20 +2414,28 @@ def message_threads_html(user, payload: dict) -> str:
     stats = payload.get("stats", {})
     rows = []
     for thread in threads:
+        unread_count = int(thread.get("unread_count", 0) or 0)
+        unread_label = f", {unread_count} unread" if unread_count else ""
+        unread_chip = (
+            f'<span class="unread-chip">{unread_count} new</span>'
+            if unread_count
+            else ""
+        )
         rows.append(
             f"""
-    <a class="job-row link-row" href="{escape(thread.get('url', '#'))}" aria-label="Open message thread for {escape(thread.get('title', 'message thread'))}">
+    <a class="job-row link-row{' has-unread' if unread_count else ''}" href="{escape(thread.get('url', '#'))}" aria-label="Open message thread for {escape(thread.get('title', 'message thread'))}{unread_label}">
       <span>
         <span class="row-meta">
           <span>{escape(thread.get('category', ''))}</span>
           <span>{escape(thread.get('city', ''))}, {escape(thread.get('state', ''))}</span>
           <span>{escape(message_count_label(thread.get('message_count', 0)))}</span>
+          {unread_chip}
         </span>
         <strong>{escape(thread.get('title', 'Message thread'))}</strong>
-        <small>{escape(thread.get('client_name', 'Client'))} and {escape(thread.get('contractor_name', 'Contractor'))}</small>
+        <small class="thread-participants">{escape(thread.get('client_name', 'Client'))} and {escape(thread.get('contractor_name', 'Contractor'))}</small>
         <small class="thread-preview">{escape(thread.get('last_message') or 'No messages yet')}</small>
       </span>
-      <span class="button secondary compact">Open</span>
+      <span class="button secondary compact">{'Read' if unread_count else 'Open'}</span>
     </a>"""
         )
     thread_html = "\n".join(rows) if rows else empty_state("No message threads yet", "/dashboard", "Back to dashboard")
@@ -2401,9 +2444,10 @@ def message_threads_html(user, payload: dict) -> str:
       <p class="eyebrow">Approved matches</p>
       <h1>Messages</h1>
     </section>
-    <section class="dashboard-metrics compact-metrics" aria-label="Message summary">
+    <section class="dashboard-metrics compact-metrics message-metrics" aria-label="Message summary">
       <div class="metric-card"><span>Threads</span><strong>{int(stats.get('threads', 0))}</strong></div>
       <div class="metric-card"><span>Messages</span><strong>{int(stats.get('messages', 0))}</strong></div>
+      <div class="metric-card"><span>Unread</span><strong>{int(stats.get('unread', 0))}</strong></div>
     </section>
     <section class="job-list" aria-label="Message threads">
 {thread_html}
@@ -3081,11 +3125,12 @@ def contractor_job_detail_html(user, payload: dict, site_key: str = "") -> str:
 
 def bid_comparison_html(comparison: dict) -> str:
     offers = comparison.get("offers", [])
-    if not offers:
+    if not offers and not comparison.get("pending_count"):
         return ""
     offer_cards = []
     for offer in offers:
         offer_id = int(offer.get("id", 0) or 0)
+        reputation = offer.get("reputation", {})
         provider_facts = "".join(
             f"""
             <div>
@@ -3104,6 +3149,10 @@ def bid_comparison_html(comparison: dict) -> str:
               <p>{escape(offer.get('trades', 'Contractor profile'))}</p>
             </div>
           </header>
+          <div class="bid-reputation-strip">
+            <img src="/static/vendor/tabler-icons/sparkles.svg" alt="">
+            <span><strong>{escape(reputation.get('level_label', 'New to Workdoe'))}</strong><small>{int(reputation.get('completion_points', 0) or 0)} completion points</small></span>
+          </div>
           <dl class="bid-compare-terms">
             <div><dt>Price</dt><dd>{escape(offer.get('price_range', 'Not provided'))}</dd></div>
             <div><dt>Timeline</dt><dd>{escape(offer.get('timeline', 'Not provided'))}</dd></div>
@@ -3117,6 +3166,18 @@ def bid_comparison_html(comparison: dict) -> str:
         </article>"""
         )
     count = min(4, max(1, len(offers)))
+    active_filter = comparison.get("credential_filter", "all")
+    filter_tabs = "".join(
+        f'<a href="{escape(option.get("url", "#"))}"'
+        + (' aria-current="page"' if option.get("value") == active_filter else "")
+        + f'><span>{escape(option.get("label", "Filter"))}</span><strong>{int(option.get("count", 0) or 0)}</strong></a>'
+        for option in comparison.get("credential_filter_options", [])
+    )
+    comparison_grid = (
+        f'<div class="bid-comparison-grid bid-comparison-grid--{count}">{"".join(offer_cards)}</div>'
+        if offers
+        else '<p class="empty comparison-empty">No pending offers match this record filter. All pending offers remain below.</p>'
+    )
     return f"""
     <section class="bid-comparison" aria-labelledby="bid-comparison-title">
       <div class="section-heading">
@@ -3129,7 +3190,10 @@ def bid_comparison_html(comparison: dict) -> str:
         <li><span>03</span><strong>Approve one</strong></li>
       </ol>
       <p class="bid-comparison-note">Compare scope, timing, price, and provider facts. Lowest price is not automatically the best fit.</p>
-      <div class="bid-comparison-grid bid-comparison-grid--{count}">{''.join(offer_cards)}</div>
+      <nav class="comparison-filter-tabs" aria-label="Filter comparison by source-checked records">{filter_tabs}</nav>
+      <p class="comparison-filter-note">These filters change the comparison cards only. Every offer remains in the received-order list below.</p>
+      {comparison_grid}
+      <p class="help-text">A source-checked record means Workdoe reviewed a current public source. It does not guarantee skill, safety, insurance coverage, or legal eligibility.</p>
     </section>"""
 
 

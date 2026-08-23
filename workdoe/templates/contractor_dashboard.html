@@ -30,6 +30,9 @@
   </div>
 </section>
 
+{% set reputation_id_prefix = "dashboard-reputation" %}
+{% include "_contractor_reputation.html" %}
+
 {% if repeat_invitations %}
   <section id="repeat-invitations" class="work-history repeat-invitation-section" aria-labelledby="repeat-invitations-title">
     <div class="section-heading history-heading">

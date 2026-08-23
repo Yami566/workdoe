@@ -1286,9 +1286,13 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         threads = self.client.get("/messages")
         threads_html = threads.data.decode("utf-8")
-        self.assertIn('class="dashboard-metrics compact-metrics" aria-label="Message summary"', threads_html)
+        self.assertIn(
+            'class="dashboard-metrics compact-metrics message-metrics" aria-label="Message summary"',
+            threads_html,
+        )
         self.assertRegex(threads_html, r"<span>Threads</span>\s*<strong>1</strong>")
         self.assertRegex(threads_html, r"<span>Messages</span>\s*<strong>2</strong>")
+        self.assertRegex(threads_html, r"<span>Unread</span>\s*<strong>0</strong>")
         self.assertIn(b"2 messages", threads.data)
         self.assertNotIn(b"2 message</span>", threads.data)
         self.assertIn(b"<time datetime=", threads.data)
@@ -1300,6 +1304,27 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         self.logout()
         self.login("contractor@workdoe.local", "workdoe-contractor")
+        contractor_threads = self.client.get("/messages")
+        contractor_threads_html = contractor_threads.data.decode("utf-8")
+        self.assertRegex(
+            contractor_threads_html,
+            r"<span>Unread</span>\s*<strong>1</strong>",
+        )
+        self.assertIn('<span class="unread-chip">1 new</span>', contractor_threads_html)
+        self.assertIn("has-unread", contractor_threads_html)
+        self.client.head(f"/messages/{thread['id']}")
+        head_threads_html = self.client.get("/messages").data.decode("utf-8")
+        self.assertRegex(
+            head_threads_html,
+            r"<span>Unread</span>\s*<strong>1</strong>",
+        )
+        self.client.get(f"/messages/{thread['id']}")
+        read_threads_html = self.client.get("/messages").data.decode("utf-8")
+        self.assertRegex(
+            read_threads_html,
+            r"<span>Unread</span>\s*<strong>0</strong>",
+        )
+        self.assertNotIn('<span class="unread-chip">1 new</span>', read_threads_html)
         approved_dashboard = self.client.get("/contractor/dashboard?bids=approved")
         approved_dashboard_html = approved_dashboard.data.decode("utf-8")
         self.assertIn(
@@ -6228,6 +6253,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "years_in_business": 5,
                 "insurance_status": "Policy available on request",
                 "source_checked_credential_count": 1,
+                "source_checked_license_count": 1,
                 "verified_work_count": 3,
                 "created_at": "2026-08-17T14:00:00+00:00",
                 "email": "later@example.com",
@@ -6251,6 +6277,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "years_in_business": 0,
                 "insurance_status": "",
                 "source_checked_credential_count": 0,
+                "source_checked_license_count": 0,
                 "verified_work_count": 0,
                 "created_at": "2026-08-17T13:00:00+00:00",
             },
@@ -6280,7 +6307,26 @@ class WorkdoeFlowTests(unittest.TestCase):
         )
         self.assertEqual(
             comparison["offers"][1]["provider_facts"][2]["value"],
+            "1 record",
+        )
+        self.assertEqual(
+            comparison["offers"][1]["provider_facts"][3]["value"],
             "3 projects",
+        )
+        self.assertEqual(
+            comparison["offers"][1]["reputation"]["level_label"],
+            "Steady provider",
+        )
+        license_filtered = bid_comparison(rows, "pending", "license-checked")
+        self.assertEqual(license_filtered["count"], 1)
+        self.assertEqual(
+            license_filtered["offers"][0]["contractor_name"],
+            "Later Crew",
+        )
+        self.assertEqual(license_filtered["credential_filter"], "license-checked")
+        self.assertEqual(
+            [option["count"] for option in license_filtered["credential_filter_options"]],
+            [2, 1, 1],
         )
         self.assertEqual(bid_comparison(rows, "approved")["offers"], [])
         serialized = json.dumps(comparison).lower()

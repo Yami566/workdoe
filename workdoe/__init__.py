@@ -33,7 +33,7 @@ from flask import (
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
-from .bid_comparison import bid_comparison
+from .bid_comparison import bid_comparison, normalize_credential_filter
 from .bid_windows import (
     DEFAULT_BID_LIMIT,
     bid_window,
@@ -94,6 +94,7 @@ from .contractor_proposal_templates import (
     proposal_template_response,
     proposal_template_values,
 )
+from .contractor_reputation import contractor_reputation
 from .idempotency import (
     IdempotencyError,
     idempotency_action,
@@ -3001,6 +3002,9 @@ def register_routes(app: Flask) -> None:
         if g.user["role"] != "admin" and job["client_id"] != g.user["id"]:
             abort(403)
         bid_view = normalize_bid_view(request.args.get("bids"))
+        credential_filter = normalize_credential_filter(
+            request.args.get("credentials")
+        )
         db = get_db()
         photos = db.execute(
             "SELECT * FROM job_photos WHERE job_id = ? ORDER BY created_at",
@@ -3023,6 +3027,18 @@ def register_routes(app: Flask) -> None:
                              OR date(contractor_credentials.expires_at) >= date('now')
                          )
                    ) AS source_checked_credential_count,
+                   (
+                       SELECT COUNT(*)
+                       FROM contractor_credentials
+                       WHERE contractor_credentials.contractor_id = users.id
+                         AND contractor_credentials.credential_type = 'trade_license'
+                         AND contractor_credentials.status = 'verified'
+                         AND (
+                             contractor_credentials.expires_at IS NULL
+                             OR contractor_credentials.expires_at = ''
+                             OR date(contractor_credentials.expires_at) >= date('now')
+                         )
+                   ) AS source_checked_license_count,
                    (
                        SELECT COUNT(DISTINCT completed_request.id)
                        FROM match_requests AS completed_request
@@ -3072,16 +3088,26 @@ def register_routes(app: Flask) -> None:
         scope_answers = scope_answer_projection(
             job["service_slug"], load_job_scope_answers(job_id)
         )
+        comparison = bid_comparison(
+            all_requests,
+            bid_view,
+            credential_filter,
+        )
+        comparison["credential_filter_options"] = bid_credential_filter_links(
+            job_id,
+            bid_view,
+            comparison["credential_filter_options"],
+        )
         return render_template(
             "client_job_detail.html",
             job=job,
             photos=photos,
             requests=requests,
             request_stats=request_stats,
-            bid_comparison=bid_comparison(all_requests, bid_view),
+            bid_comparison=comparison,
             bid_window=bidding,
             bid_view=bid_view,
-            bid_view_links=bid_view_links(job_id),
+            bid_view_links=bid_view_links(job_id, credential_filter),
             repeat_invitation=(
                 repeat_invitation_response(invitation) if invitation else None
             ),
@@ -3601,6 +3627,18 @@ def register_routes(app: Flask) -> None:
             "rejected_requests": sum(1 for item in all_requests if item["status"] == "rejected"),
             "verified_completions": sum(1 for item in all_requests if item["verified_at"]),
         }
+        public_credentials = public_credential_responses(
+            contractor_credentials_for_user(g.user["id"])
+        )
+        reputation = contractor_reputation(
+            stats["verified_completions"],
+            len(public_credentials),
+            sum(
+                1
+                for credential in public_credentials
+                if credential["credential_type"] == "trade_license"
+            ),
+        )
         reviews_by_request = match_reviews_by_request(
             [int(item["id"]) for item in all_requests]
         )
@@ -3612,6 +3650,7 @@ def register_routes(app: Flask) -> None:
             repeat_invitations=contractor_repeat_invitations(g.user["id"]),
             open_jobs=open_jobs,
             stats=stats,
+            reputation=reputation,
             bid_view=bid_view,
             bid_view_links=contractor_bid_view_links(),
             reviews_by_request=reviews_by_request,
@@ -4014,6 +4053,15 @@ def register_routes(app: Flask) -> None:
         credentials = public_credential_responses(
             contractor_credentials_for_user(contractor_id)
         )
+        reputation = contractor_reputation(
+            contractor["verified_completions"],
+            len(credentials),
+            sum(
+                1
+                for credential in credentials
+                if credential["credential_type"] == "trade_license"
+            ),
+        )
         availability = contractor_preferences_response(
             contractor_preferences_for_user(contractor_id)
         )["availability"]
@@ -4034,6 +4082,7 @@ def register_routes(app: Flask) -> None:
             public_website=public_website,
             website_label=profile_website_label(public_website),
             credentials=credentials,
+            reputation=reputation,
             availability=availability,
             completed_work_reviews=completed_work_reviews,
             review_dimensions=REVIEW_DIMENSIONS,
@@ -4494,39 +4543,54 @@ def register_routes(app: Flask) -> None:
                    (
                        SELECT body FROM messages
                        WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                       ORDER BY messages.created_at DESC
+                       ORDER BY messages.id DESC
                        LIMIT 1
                    ) AS last_message,
                    (
                        SELECT created_at FROM messages
                        WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                       ORDER BY messages.created_at DESC
+                       ORDER BY messages.id DESC
                        LIMIT 1
                    ) AS last_message_at,
                    (
+                       SELECT id FROM messages
+                       WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
+                       ORDER BY messages.id DESC
+                       LIMIT 1
+                   ) AS last_message_id,
+                   (
                        SELECT COUNT(*) FROM messages
                        WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                   ) AS message_count
+                   ) AS message_count,
+                   (
+                       SELECT COUNT(*) FROM messages
+                       WHERE messages.thread_id = threads.id
+                         AND messages.is_hidden = 0
+                         AND messages.sender_id != ?
+                         AND messages.id > COALESCE(
+                             (
+                                 SELECT thread_reads.last_read_message_id
+                                 FROM thread_reads
+                                 WHERE thread_reads.thread_id = threads.id
+                                   AND thread_reads.user_id = ?
+                             ),
+                             0
+                         )
+                   ) AS unread_count
             FROM threads
             JOIN jobs ON jobs.id = threads.job_id
             JOIN users AS client ON client.id = threads.client_id
             JOIN users AS contractor ON contractor.id = threads.contractor_id
             WHERE threads.client_id = ? OR threads.contractor_id = ?
-            ORDER BY COALESCE(
-                (
-                    SELECT created_at FROM messages
-                    WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                    ORDER BY messages.created_at DESC
-                    LIMIT 1
-                ),
-                threads.created_at
-            ) DESC
+            ORDER BY COALESCE(last_message_at, threads.created_at) DESC,
+                     COALESCE(last_message_id, 0) DESC
             """,
-            (g.user["id"], g.user["id"]),
+            (g.user["id"], g.user["id"], g.user["id"], g.user["id"]),
         ).fetchall()
         stats = {
             "threads": len(threads),
             "messages": sum(thread["message_count"] or 0 for thread in threads),
+            "unread": sum(thread["unread_count"] or 0 for thread in threads),
         }
         return render_template("messages.html", threads=threads, stats=stats)
 
@@ -4571,12 +4635,20 @@ def register_routes(app: Flask) -> None:
                     db.rollback()
                     flash("Message already sent.", "success")
                     return redirect(url_for("thread_detail", thread_id=thread_id))
+                created_at = now_iso()
                 result = db.execute(
                     """
                     INSERT INTO messages (thread_id, sender_id, body, is_hidden, created_at)
                     VALUES (?, ?, ?, 0, ?)
                     """,
-                    (thread_id, g.user["id"], draft_body, now_iso()),
+                    (thread_id, g.user["id"], draft_body, created_at),
+                )
+                mark_thread_read(
+                    db,
+                    thread_id,
+                    g.user["id"],
+                    int(result.lastrowid),
+                    created_at,
                 )
                 complete_idempotent_write(
                     db,
@@ -4595,7 +4667,7 @@ def register_routes(app: Flask) -> None:
             FROM messages
             JOIN users ON users.id = messages.sender_id
             WHERE messages.thread_id = ?
-            ORDER BY messages.created_at
+            ORDER BY messages.id
             """
             if is_admin
             else """
@@ -4603,13 +4675,23 @@ def register_routes(app: Flask) -> None:
             FROM messages
             JOIN users ON users.id = messages.sender_id
             WHERE messages.thread_id = ? AND messages.is_hidden = 0
-            ORDER BY messages.created_at
+            ORDER BY messages.id
             """
         )
         messages = db.execute(
             message_query,
             (thread_id,),
         ).fetchall()
+        if not is_admin and request.method != "HEAD":
+            last_message = messages[-1] if messages else None
+            mark_thread_read(
+                db,
+                thread_id,
+                g.user["id"],
+                int(last_message["id"]) if last_message else 0,
+                last_message["created_at"] if last_message else thread["created_at"],
+            )
+            db.commit()
         return render_template(
             "thread_detail.html",
             thread=thread,
@@ -7416,6 +7498,33 @@ def fetch_thread(thread_id: int):
     ).fetchone()
 
 
+def mark_thread_read(
+    db: sqlite3.Connection,
+    thread_id: int,
+    user_id: int,
+    last_read_message_id: int,
+    last_read_at: str,
+) -> None:
+    db.execute(
+        """
+        INSERT INTO thread_reads
+            (thread_id, user_id, last_read_message_id, last_read_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(thread_id, user_id) DO UPDATE SET
+            last_read_message_id = MAX(
+                thread_reads.last_read_message_id,
+                excluded.last_read_message_id
+            ),
+            last_read_at = CASE
+                WHEN excluded.last_read_message_id >= thread_reads.last_read_message_id
+                THEN excluded.last_read_at
+                ELSE thread_reads.last_read_at
+            END
+        """,
+        (thread_id, user_id, last_read_message_id, last_read_at),
+    )
+
+
 def first_filter_value(values, key: str) -> str:
     value = values.get(key, "")
     if isinstance(value, list):
@@ -7549,15 +7658,43 @@ def normalize_bid_view(value: str | None) -> str:
     return value if value in allowed else "all"
 
 
-def bid_view_links(job_id: int) -> list[dict[str, str]]:
+def bid_view_links(
+    job_id: int,
+    credential_filter: str = "all",
+) -> list[dict[str, str]]:
     links = []
     for value, label in BID_VIEW_OPTIONS:
         args = {"bids": value} if value != "all" else {}
+        if credential_filter != "all":
+            args["credentials"] = credential_filter
         links.append(
             {
                 "value": value,
                 "label": label,
                 "url": url_for("client_job_detail", job_id=job_id, **args),
+            }
+        )
+    return links
+
+
+def bid_credential_filter_links(
+    job_id: int,
+    bid_view: str,
+    options: list[dict],
+) -> list[dict]:
+    links = []
+    for option in options:
+        value = option["value"]
+        args = {}
+        if bid_view != "all":
+            args["bids"] = bid_view
+        if value != "all":
+            args["credentials"] = value
+        links.append(
+            {
+                **option,
+                "url": url_for("client_job_detail", job_id=job_id, **args)
+                + "#mini-bids",
             }
         )
     return links

@@ -1,4 +1,4 @@
-{% if bid_comparison.offers %}
+{% if bid_comparison.pending_count %}
   <section class="bid-comparison" aria-labelledby="bid-comparison-title">
     <div class="section-heading">
       <div>
@@ -13,35 +13,52 @@
       <li><span>03</span><strong>Approve one</strong></li>
     </ol>
     <p class="bid-comparison-note">Compare scope, timing, price, and provider facts. Lowest price is not automatically the best fit.</p>
-    <div class="bid-comparison-grid bid-comparison-grid--{{ bid_comparison.count }}">
-      {% for offer in bid_comparison.offers %}
-        <article class="bid-compare-card" aria-labelledby="compare-offer-{{ offer.id }}">
-          <header>
-            <div>
-              <p class="bid-offer-label">{{ offer.offer_label }}</p>
-              <h4 id="compare-offer-{{ offer.id }}">{{ offer.contractor_name }}</h4>
-              <p>{{ offer.trades }}</p>
-            </div>
-          </header>
-          <dl class="bid-compare-terms">
-            <div><dt>Price</dt><dd>{{ offer.price_range }}</dd></div>
-            <div><dt>Timeline</dt><dd>{{ offer.timeline }}</dd></div>
-            <div><dt>Availability</dt><dd>{{ offer.availability }}</dd></div>
-          </dl>
-          <dl class="bid-provider-facts">
-            {% for fact in offer.provider_facts %}
-              <div>
-                <dt>{{ fact.label }}</dt>
-                <dd>{{ fact.value }}<small>{{ fact.qualifier }}</small></dd>
-              </div>
-            {% endfor %}
-          </dl>
-          <div class="bid-compare-actions">
-            <a class="button secondary compact" href="{{ offer.profile_url }}">Profile</a>
-            <a class="button secondary compact" href="#bid-title-{{ offer.id }}">Full offer</a>
-          </div>
-        </article>
+    <nav class="comparison-filter-tabs" aria-label="Filter comparison by source-checked records">
+      {% for item in bid_comparison.credential_filter_options %}
+        <a href="{{ item.url }}"{% if item.value == bid_comparison.credential_filter %} aria-current="page"{% endif %}>
+          <span>{{ item.label }}</span><strong>{{ item.count }}</strong>
+        </a>
       {% endfor %}
-    </div>
+    </nav>
+    <p class="comparison-filter-note">These filters change the comparison cards only. Every offer remains in the received-order list below.</p>
+    {% if bid_comparison.offers %}
+      <div class="bid-comparison-grid bid-comparison-grid--{{ bid_comparison.count }}">
+        {% for offer in bid_comparison.offers %}
+          <article class="bid-compare-card" aria-labelledby="compare-offer-{{ offer.id }}">
+            <header>
+              <div>
+                <p class="bid-offer-label">{{ offer.offer_label }}</p>
+                <h4 id="compare-offer-{{ offer.id }}">{{ offer.contractor_name }}</h4>
+                <p>{{ offer.trades }}</p>
+              </div>
+            </header>
+            <div class="bid-reputation-strip">
+              <img src="{{ url_for('static', filename='vendor/tabler-icons/sparkles.svg') }}" alt="">
+              <span><strong>{{ offer.reputation.level_label }}</strong><small>{{ offer.reputation.completion_points }} completion points</small></span>
+            </div>
+            <dl class="bid-compare-terms">
+              <div><dt>Price</dt><dd>{{ offer.price_range }}</dd></div>
+              <div><dt>Timeline</dt><dd>{{ offer.timeline }}</dd></div>
+              <div><dt>Availability</dt><dd>{{ offer.availability }}</dd></div>
+            </dl>
+            <dl class="bid-provider-facts">
+              {% for fact in offer.provider_facts %}
+                <div>
+                  <dt>{{ fact.label }}</dt>
+                  <dd>{{ fact.value }}<small>{{ fact.qualifier }}</small></dd>
+                </div>
+              {% endfor %}
+            </dl>
+            <div class="bid-compare-actions">
+              <a class="button secondary compact" href="{{ offer.profile_url }}">Profile</a>
+              <a class="button secondary compact" href="#bid-title-{{ offer.id }}">Full offer</a>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty comparison-empty">No pending offers match this record filter. All pending offers remain below.</p>
+    {% endif %}
+    <p class="help-text">A source-checked record means Workdoe reviewed a current public source. It does not guarantee skill, safety, insurance coverage, or legal eligibility.</p>
   </section>
 {% endif %}

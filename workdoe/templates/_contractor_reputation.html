@@ -1,0 +1,22 @@
+<section class="work-progress" aria-labelledby="{{ reputation_id_prefix }}-title">
+  <div class="work-progress-heading">
+    <span class="work-progress-icon" aria-hidden="true"><img src="{{ url_for('static', filename='vendor/tabler-icons/sparkles.svg') }}" alt=""></span>
+    <div>
+      <p class="eyebrow">Work milestones</p>
+      <h3 id="{{ reputation_id_prefix }}-title">{{ reputation.level_label }}</h3>
+    </div>
+    <strong>{{ reputation.completion_points }} points</strong>
+  </div>
+  <p>{{ reputation.method_label }}. Points summarize completed work only and never change lead or bid order.</p>
+  <progress value="{{ reputation.progress_value }}" max="{{ reputation.progress_max }}">{{ reputation.progress_value }} of {{ reputation.progress_max }}</progress>
+  <div class="work-progress-footer">
+    {% if reputation.next_milestone %}
+      <span>{{ reputation.next_milestone.remaining }} more {{ "project" if reputation.next_milestone.remaining == 1 else "projects" }} to {{ reputation.next_milestone.label }}</span>
+    {% else %}
+      <span>All current completion milestones reached</span>
+    {% endif %}
+    {% for signal in reputation.credential_signals %}
+      <span class="trust-chip"><img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt="">{{ signal.label }}</span>
+    {% endfor %}
+  </div>
+</section>

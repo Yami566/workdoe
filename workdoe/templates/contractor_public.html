@@ -34,6 +34,8 @@
       <div><dt>Years in business</dt><dd>{{ contractor.years_in_business or "Not listed" }}</dd></div>
       <div><dt>Workdoe completions</dt><dd>{{ contractor.verified_completions }} verified</dd></div>
     </dl>
+    {% set reputation_id_prefix = "public-reputation" %}
+    {% include "_contractor_reputation.html" %}
     {% if credentials %}
       <section class="profile-capability-block" aria-labelledby="public-credentials-title">
         <h3 id="public-credentials-title">Source-checked records</h3>

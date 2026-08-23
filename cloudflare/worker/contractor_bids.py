@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contractor_reputation import contractor_reputation
 from match_completions import completion_label, completion_state
 
 BID_VIEWS = {"all", "pending", "approved", "rejected"}
@@ -104,10 +105,16 @@ def contractor_bid_view_links() -> list[dict[str, str]]:
     ]
 
 
-def contractor_bids_payload(rows: list, view: str) -> dict:
+def contractor_bids_payload(
+    rows: list,
+    view: str,
+    source_checked_credentials: int = 0,
+    source_checked_licenses: int = 0,
+) -> dict:
     normalized_view = normalize_contractor_bid_view(view)
     all_bids = [contractor_bid_card(row) for row in rows]
     visible_bids = filter_contractor_bid_cards(all_bids, normalized_view)
+    stats = contractor_bid_stats(all_bids, visible_bids)
     return {
         "ok": True,
         "view": normalized_view,
@@ -119,6 +126,11 @@ def contractor_bids_payload(rows: list, view: str) -> dict:
             and bid["job_status"] == "closed"
             and bid["close_reason"] == "workdoe-match"
         ],
-        "stats": contractor_bid_stats(all_bids, visible_bids),
+        "stats": stats,
+        "reputation": contractor_reputation(
+            stats["verified_completions"],
+            source_checked_credentials,
+            source_checked_licenses,
+        ),
         "view_links": contractor_bid_view_links(),
     }

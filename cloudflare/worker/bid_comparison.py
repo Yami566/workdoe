@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+from contractor_reputation import contractor_reputation
+
 MAX_COMPARISON_OFFERS = 4
 COMPARISON_VIEWS = {"all", "pending"}
+CREDENTIAL_FILTER_OPTIONS = (
+    ("all", "All offers"),
+    ("source-checked", "Source checked"),
+    ("license-checked", "License record"),
+)
+CREDENTIAL_FILTERS = {value for value, _label in CREDENTIAL_FILTER_OPTIONS}
 
 
 def row_value(row, key: str, default=None):
@@ -42,6 +50,18 @@ def count_label(count: int, singular: str, plural: str) -> str:
     return f"{count} {singular if count == 1 else plural}"
 
 
+def normalize_credential_filter(value: str | None) -> str:
+    return value if value in CREDENTIAL_FILTERS else "all"
+
+
+def row_matches_credential_filter(row, credential_filter: str) -> bool:
+    if credential_filter == "source-checked":
+        return count_value(row, "source_checked_credential_count") > 0
+    if credential_filter == "license-checked":
+        return count_value(row, "source_checked_license_count") > 0
+    return True
+
+
 def offer_order_key(row) -> tuple[str, int]:
     created_at = str(row_value(row, "created_at", "") or "")
     try:
@@ -54,7 +74,13 @@ def offer_order_key(row) -> tuple[str, int]:
 def comparison_offer(row, position: int) -> dict:
     contractor_id = count_value(row, "contractor_id")
     checked_credentials = count_value(row, "source_checked_credential_count")
+    checked_licenses = count_value(row, "source_checked_license_count")
     verified_work = count_value(row, "verified_work_count")
+    reputation = contractor_reputation(
+        verified_work,
+        checked_credentials,
+        checked_licenses,
+    )
     return {
         "id": count_value(row, "id"),
         "contractor_id": contractor_id,
@@ -65,6 +91,7 @@ def comparison_offer(row, position: int) -> dict:
         "price_range": str(row_value(row, "price_range", "") or "Not provided"),
         "timeline": str(row_value(row, "timeline", "") or "Not provided"),
         "availability": str(row_value(row, "availability", "") or "Not provided"),
+        "reputation": reputation,
         "provider_facts": [
             {
                 "key": "years-active",
@@ -79,6 +106,12 @@ def comparison_offer(row, position: int) -> dict:
                     checked_credentials, "credential", "credentials"
                 ),
                 "qualifier": "Current records",
+            },
+            {
+                "key": "license-source-checked",
+                "label": "License record",
+                "value": count_label(checked_licenses, "record", "records"),
+                "qualifier": "Current public source",
             },
             {
                 "key": "workdoe-completed",
@@ -100,25 +133,51 @@ def comparison_offer(row, position: int) -> dict:
     }
 
 
-def bid_comparison(rows: list, view: str = "all") -> dict:
+def bid_comparison(
+    rows: list,
+    view: str = "all",
+    credential_filter: str = "all",
+) -> dict:
+    normalized_filter = normalize_credential_filter(credential_filter)
     if view not in COMPARISON_VIEWS:
-        pending_rows = []
+        all_pending_rows = []
     else:
-        pending_rows = sorted(
+        all_pending_rows = sorted(
             (
                 row
                 for row in rows
                 if str(row_value(row, "status", "") or "") == "pending"
             ),
             key=offer_order_key,
-        )[:MAX_COMPARISON_OFFERS]
+        )
+    pending_rows = [
+        row
+        for row in all_pending_rows
+        if row_matches_credential_filter(row, normalized_filter)
+    ][:MAX_COMPARISON_OFFERS]
     offers = [
         comparison_offer(row, position)
         for position, row in enumerate(pending_rows, start=1)
+    ]
+    filter_options = [
+        {
+            "value": value,
+            "label": label,
+            "count": sum(
+                1
+                for row in all_pending_rows
+                if row_matches_credential_filter(row, value)
+            ),
+        }
+        for value, label in CREDENTIAL_FILTER_OPTIONS
     ]
     return {
         "offers": offers,
         "count": len(offers),
         "has_multiple": len(offers) > 1,
+        "pending_count": len(all_pending_rows),
+        "credential_filter": normalized_filter,
+        "credential_filter_options": filter_options,
         "order_label": "Received order",
+        "ranking_effect": "none",
     }

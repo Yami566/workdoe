@@ -42,6 +42,39 @@ performance, identity-provider, or assistive-technology evidence.
   locks the 44-pixel map and policy-link targets.
 - The full suite passed 220 tests in 80.016 seconds after these corrections.
 
+## Contractor milestone follow-up
+
+- Requested viewport: 390x844. The browser reported a 375-pixel document width
+  with zero horizontal overflow.
+- The contractor dashboard kept the compact app bar, primary work-queue
+  metrics, completion milestone, profile summary, and bottom navigation in a
+  coherent scan order.
+- The public contractor profile was checked at 820x1180. Its milestone band
+  remained inside the existing profile panel and did not change the restrained
+  green/gray design system.
+- The browser console reported no warnings or errors on the checked contractor
+  pages.
+- The final local suite passed 223 tests in 77.296 seconds. Flask/Worker parity
+  tests lock the deterministic reputation projection, received-order bid
+  comparison, credential-filter counts, and privacy redactions.
+
+## Message-state follow-up
+
+- Message listings expose a compact unread total and thread-level unread cue
+  without publishing message text outside the participant-authorized view.
+- Read progress is tracked per participant by immutable message ID, preserving
+  deterministic ordering when multiple messages share a timestamp.
+- At 390x844, all three message metrics remained in one row, participant names
+  stayed on their own line, and the page had zero horizontal overflow. Opening
+  one unread thread changed the aggregate unread count from 3 to 1 while the
+  other thread retained its unread cue.
+- At 1280x720, the three metrics and both project rows remained balanced with
+  zero horizontal overflow. The checked message views produced no browser
+  console warnings or errors.
+- Automated local and Worker-contract coverage verifies that sending, listing,
+  reading, same-second ordering, and `HEAD` request behavior preserve the
+  expected unread state.
+
 ## Live gates not replaced by this check
 
 - A real screen-reader pass with VoiceOver, NVDA, or an equivalent remains

@@ -5,6 +5,7 @@ import re
 from contractor_credentials import public_credential_responses
 from contractor_preferences import availability_response
 from contractor_profiles import normalized_profile_website, profile_website_label
+from contractor_reputation import contractor_reputation
 from market_fit import (
     ZONE_BY_SLUG,
     infer_service_slugs_from_trades,
@@ -97,6 +98,16 @@ def public_contractor_profile_payload(
         service_slugs = infer_service_slugs_from_trades(row_value(contractor, "trades", ""))
     if not zone_slugs:
         zone_slugs = infer_zone_slugs_from_area(row_value(contractor, "service_area", ""))
+    public_credentials = public_credential_responses(credentials or [])
+    reputation = contractor_reputation(
+        row_value(contractor, "verified_completions", 0),
+        len(public_credentials),
+        sum(
+            1
+            for credential in public_credentials
+            if credential.get("credential_type") == "trade_license"
+        ),
+    )
     profile = {
         "id": contractor_id,
         "business_name": public_contractor_name(contractor),
@@ -115,7 +126,8 @@ def public_contractor_profile_payload(
         "photos": [contractor_public_photo_payload(photo) for photo in photos],
         "services": [SERVICE_BY_SLUG[slug] for slug in service_slugs],
         "service_zones": [ZONE_BY_SLUG[slug] for slug in zone_slugs],
-        "credentials": public_credential_responses(credentials or []),
+        "credentials": public_credentials,
+        "reputation": reputation,
         "availability": availability_response(availability),
     }
     if is_active_admin(viewer):
