@@ -1,26 +1,34 @@
 {% macro scope_panel(service_slug, questions, answers, hidden=false, disable=false) %}
-  <section class="service-scope-panel" data-service-scope-set="{{ service_slug }}"{% if hidden %} hidden{% endif %}>
-    <header class="service-scope-head">
-      <div>
-        <span class="eyebrow">Quote-ready details</span>
-        <h3>Answer what you know</h3>
+  {% set scope_state = namespace(complete=0) %}
+  {% for question in questions %}
+    {% if answers.get(question.key) %}{% set scope_state.complete = scope_state.complete + 1 %}{% endif %}
+  {% endfor %}
+  <details class="service-scope-panel" data-service-scope-set="{{ service_slug }}"{% if hidden %} hidden{% endif %}{% if scope_state.complete %} open{% endif %}>
+    <summary class="service-scope-head">
+      <span class="service-scope-summary-content">
+        <span class="service-scope-title">
+          <span class="eyebrow">Quote-ready details</span>
+          <strong>Add details <span class="optional-label">Optional</span></strong>
+        </span>
+        <span class="scope-readiness" data-scope-readiness>{{ scope_state.complete }} of {{ questions|length }} details ready</span>
+      </span>
+    </summary>
+    <div class="service-scope-body">
+      <p class="help-text">Answer what you know to help contractors compare the same scope.</p>
+      <div class="scope-question-grid">
+        {% for question in questions %}
+          <label for="scope-{{ service_slug }}-{{ question.key }}">
+            {{ question.label }} <span class="optional-label">Optional</span>
+            <select id="scope-{{ service_slug }}-{{ question.key }}" name="{{ question.field_name }}" data-scope-select{% if disable %} disabled{% endif %}>
+              <option value="">Open</option>
+              {% for option in question.options %}
+                <option value="{{ option.value }}"{% if answers.get(question.key) == option.value %} selected{% endif %}>{{ option.label }}</option>
+              {% endfor %}
+            </select>
+            {% if question.help %}<span class="help-text">{{ question.help }}</span>{% endif %}
+          </label>
+        {% endfor %}
       </div>
-      <span class="scope-readiness" data-scope-readiness>{{ answers|length }} of {{ questions|length }} details ready</span>
-    </header>
-    <p class="help-text">These structured details help contractors compare the same scope. You can leave any answer open.</p>
-    <div class="scope-question-grid">
-      {% for question in questions %}
-        <label for="scope-{{ service_slug }}-{{ question.key }}">
-          {{ question.label }} <span class="optional-label">Optional</span>
-          <select id="scope-{{ service_slug }}-{{ question.key }}" name="{{ question.field_name }}" data-scope-select{% if disable %} disabled{% endif %}>
-            <option value="">Open</option>
-            {% for option in question.options %}
-              <option value="{{ option.value }}"{% if answers.get(question.key) == option.value %} selected{% endif %}>{{ option.label }}</option>
-            {% endfor %}
-          </select>
-          {% if question.help %}<span class="help-text">{{ question.help }}</span>{% endif %}
-        </label>
-      {% endfor %}
     </div>
-  </section>
+  </details>
 {% endmacro %}

@@ -1660,14 +1660,18 @@ def scope_questions_html(
                 f'{' disabled' if not active else ''}>{"".join(options)}</select>{help_html}</label>'
             )
         complete = sum(1 for question in questions if answers.get(question["key"]))
+        open_attr = " open" if complete else ""
         panels.append(
-            f'<section class="service-scope-panel" data-service-scope-set="{escape(service_slug)}"'
-            f'{' hidden' if not active else ''}>'
-            '<header class="service-scope-head"><div><span class="eyebrow">Quote-ready details</span>'
-            '<h3>Answer what you know</h3></div>'
-            f'<span class="scope-readiness" data-scope-readiness>{complete} of {len(questions)} details ready</span></header>'
-            '<p class="help-text">These structured details help contractors compare the same scope. You can leave any answer open.</p>'
-            f'<div class="scope-question-grid">{"".join(fields)}</div></section>'
+            f'<details class="service-scope-panel" data-service-scope-set="{escape(service_slug)}"'
+            f'{' hidden' if not active else ''}{open_attr}>'
+            '<summary class="service-scope-head"><span class="service-scope-summary-content">'
+            '<span class="service-scope-title">'
+            '<span class="eyebrow">Quote-ready details</span>'
+            '<strong>Add details <span class="optional-label">Optional</span></strong></span>'
+            f'<span class="scope-readiness" data-scope-readiness>{complete} of {len(questions)} details ready</span>'
+            '</span></summary>'
+            '<div class="service-scope-body"><p class="help-text">Answer what you know to help contractors compare the same scope.</p>'
+            f'<div class="scope-question-grid">{"".join(fields)}</div></div></details>'
         )
     return "".join(panels)
 

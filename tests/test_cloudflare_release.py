@@ -4261,12 +4261,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "service_group_slug": "outdoor-yard",
                 "service_slug": "pressure-washing",
                 "category": "Power washing",
+                "scope_answers": {"surface": "concrete"},
             },
             include_photos=False,
             submit_label="Continue",
             cancel_url="/",
         )
         self.assertIn('<details class="service-option-more" open>', selected_composer)
+        self.assertIn(
+            '<details class="service-scope-panel" data-service-scope-set="pressure-washing" open>',
+            selected_composer,
+        )
+        self.assertIn('class="service-scope-body"', selected_composer)
+        self.assertIn("Add details", selected_composer)
 
         draft_html = module.public_job_draft_html(
             {

@@ -2453,12 +2453,11 @@ button.compact {
 
 .service-scope-panel {
   display: grid;
-  gap: 14px;
   border: 1px solid var(--line);
   border-left: 4px solid var(--accent);
   border-radius: 6px;
   background: var(--surface-soft);
-  padding: 16px;
+  padding: 0;
 }
 
 .service-scope-panel[hidden] {
@@ -2466,15 +2465,53 @@ button.compact {
 }
 
 .service-scope-head {
-  display: flex;
-  align-items: flex-start;
+  list-style: none;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+
+.service-scope-head::-webkit-details-marker {
+  display: none;
+}
+
+.service-scope-head:hover {
+  background: var(--surface);
+}
+
+.service-scope-summary-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
 
-.service-scope-head h3 {
+.service-scope-head:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.service-scope-title,
+.service-scope-title > span,
+.service-scope-title > strong {
+  display: block;
+  min-width: 0;
+}
+
+.service-scope-title > strong {
   margin: 2px 0 0;
   font-size: 1rem;
+}
+
+.service-scope-body {
+  display: grid;
+  gap: 14px;
+  border-top: 1px solid var(--line-soft);
+  padding: 16px;
+}
+
+.service-scope-body > .help-text {
+  margin: 0;
 }
 
 .scope-readiness {

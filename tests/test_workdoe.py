@@ -4675,6 +4675,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'name="budget_max" type="number" value="700"', verified.data)
         self.assertIn(b'name="scope_surface"', verified.data)
         self.assertIn(b'value="concrete" selected', verified.data)
+        self.assertIn(
+            b'data-service-scope-set="pressure-washing" open',
+            verified.data,
+        )
+        self.assertIn(b"4 of 4 details ready", verified.data)
 
         posted = self.client.post(
             "/jobs/new",
@@ -5219,6 +5224,12 @@ class WorkdoeFlowTests(unittest.TestCase):
             '.project-composer-step[hidden] .project-step-actions',
             styles,
         )
+        composer_script = (
+            ROOT / "workdoe" / "static" / "project-composer.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn('composer.closest("[data-site-dialog-content]")', composer_script)
+        self.assertIn("dialogContent.scrollTop = 0", composer_script)
+        self.assertIn('composer.querySelector(".project-composer-head")', composer_script)
 
     def test_role_dashboards_show_private_project_and_closed_work_history(self):
         with self.app.app_context():
@@ -5960,6 +5971,9 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'data-selected-service-family', form.data)
         self.assertIn(b'class="service-select-control"', form.data)
         self.assertEqual(form.data.count(b'class="project-setting-option"'), 6)
+        self.assertIn(b'<details class="service-scope-panel"', form.data)
+        self.assertIn(b'class="service-scope-body"', form.data)
+        self.assertIn(b"Add details", form.data)
         self.assertIn(b'data-review-setting', form.data)
 
         from workdoe.service_taxonomy import SERVICE_ICON_BY_SLUG

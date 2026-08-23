@@ -89,6 +89,11 @@ deployment has been performed during this stabilization pass.
   invitation exposed a stale Worker route. The gate uses a synthetic Clerk
   ticket, requires the Workdoe account HTML shell, and rejects development
   Clerk publishable keys without logging or replaying a real invitation token.
+- Corrected mobile project-composer step transitions so Continue and Back return
+  to the new step heading instead of preserving an obsolete dialog scroll
+  position. Optional quote-ready questions now use a compact native disclosure,
+  reopen when prior answers exist, and preserve the six-step data contract in
+  both Flask and the Cloudflare Worker adapter.
 
 ## Verification evidence
 
@@ -200,6 +205,19 @@ deployment has been performed during this stabilization pass.
   headers, social share card, and same-domain Clerk asset proxy passed. These
   failures are release evidence for replacing the stale Worker, not candidate
   regressions.
+- The final project-composer correction passed the 228-test suite in 88.290 seconds.
+  The complete security/provenance command found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed secret
+  across 472 non-ignored files, and no dependency drift. Cloudflare preflight
+  remained warning-free; D1 query-plan verification used both expected public
+  indexes without hot-table scans; and Wrangler 4.125.0 packaged 48 Python
+  modules and 86 assets at 894.04 KiB / 163.76 KiB gzip without deploying.
+- Browser evidence at 390x844 measured the corrected dialog at `scrollTop: 0`,
+  with the new step heading visible and the required title 250 pixels earlier.
+  The optional scope panel fell from 719 to 106 pixels when closed, reopened
+  normally, and responsive direct routes had zero horizontal overflow at
+  390x844, 820x1180, and 1280x720. Evidence and limits are recorded in
+  `docs/ux-audit/2026-08-23-project-composer-friction/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

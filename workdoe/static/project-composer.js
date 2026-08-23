@@ -207,6 +207,18 @@
     writeReview("[data-review-budget]", budget);
   }
 
+  function resetStepScroll() {
+    var dialogContent = composer.closest("[data-site-dialog-content]");
+    if (dialogContent) {
+      dialogContent.scrollTop = 0;
+      return;
+    }
+    var composerHead = composer.querySelector(".project-composer-head");
+    if (composerHead && typeof composerHead.scrollIntoView === "function") {
+      composerHead.scrollIntoView({block: "start"});
+    }
+  }
+
   function showStep(stepNumber, focusStep) {
     currentStep = Math.max(1, Math.min(steps.length, stepNumber));
     steps.forEach(function (step) {
@@ -226,9 +238,12 @@
     if (currentStep === steps.length) {
       updateReview();
     }
-    if (focusStep && stepTitle) {
-      stepTitle.setAttribute("tabindex", "-1");
-      stepTitle.focus({preventScroll: true});
+    if (focusStep) {
+      resetStepScroll();
+      if (stepTitle) {
+        stepTitle.setAttribute("tabindex", "-1");
+        stepTitle.focus({preventScroll: true});
+      }
     }
   }
 
