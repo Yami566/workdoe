@@ -7,7 +7,7 @@
 <section class="login-market">
   {% if clerk_entry_enabled() %}
     {% set login_clerk_proxy_url = clerk_proxy_url() %}
-    <section id="signin" class="form-panel login-form-panel clerk-entry-panel" aria-labelledby="signin-title">
+    <section id="signin" class="form-panel login-form-panel clerk-entry-panel" aria-labelledby="signin-title" data-dialog-fragment>
       <div>
         <p class="eyebrow">Welcome back</p>
         <h1 id="signin-title">Sign in</h1>
@@ -44,7 +44,7 @@
       </noscript>
     </section>
   {% else %}
-    <form id="signin" class="form-panel login-form-panel" method="post">
+    <form id="signin" class="form-panel login-form-panel" method="post" data-dialog-fragment>
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
       {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
       <div>

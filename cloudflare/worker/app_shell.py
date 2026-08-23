@@ -296,7 +296,6 @@ def app_shell_csp(
     include_clerk: bool = False,
     clerk_publishable_key: str = "",
     clerk_frontend_api_url: str = "",
-    allow_same_origin_frame: bool = False,
 ) -> str:
     script_sources = ["'self'"]
     frame_sources = []
@@ -347,7 +346,7 @@ def app_shell_csp(
         "default-src 'self'",
         "base-uri 'self'",
         "object-src 'none'",
-        "frame-ancestors 'self'" if allow_same_origin_frame else "frame-ancestors 'none'",
+        "frame-ancestors 'none'",
         "form-action 'self'",
         "script-src " + " ".join(script_sources),
         "style-src " + " ".join(style_sources),
@@ -371,7 +370,6 @@ def app_shell_headers(
     include_clerk: bool = False,
     clerk_publishable_key: str = "",
     clerk_frontend_api_url: str = "",
-    allow_same_origin_frame: bool = False,
 ) -> dict[str, str]:
     return {
         "Content-Type": "text/html; charset=utf-8",
@@ -384,10 +382,9 @@ def app_shell_headers(
             include_clerk=include_clerk,
             clerk_publishable_key=clerk_publishable_key,
             clerk_frontend_api_url=clerk_frontend_api_url,
-            allow_same_origin_frame=allow_same_origin_frame,
         ),
         "X-Content-Type-Options": "nosniff",
-        "X-Frame-Options": "SAMEORIGIN" if allow_same_origin_frame else "DENY",
+        "X-Frame-Options": "DENY",
         "Referrer-Policy": "strict-origin-when-cross-origin",
         "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
         "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
@@ -474,15 +471,16 @@ def nav_links(user, active_path: str) -> str:
 
 def site_dialog_html() -> str:
     return """
-  <div class="site-dialog" data-site-dialog role="dialog" aria-modal="true" aria-labelledby="site-dialog-title" hidden>
+  <dialog class="site-dialog" data-site-dialog aria-labelledby="site-dialog-title">
     <section class="site-dialog-surface">
       <header class="site-dialog-header">
         <div><p class="eyebrow">Workdoe</p><h2 id="site-dialog-title" data-site-dialog-title>Continue</h2></div>
-        <button class="button secondary compact" type="button" data-site-dialog-close>Close</button>
+        <button class="icon-button" type="button" data-site-dialog-close aria-label="Close dialog" title="Close"><img src="/vendor/tabler-icons/x.svg" alt="" width="20" height="20"></button>
       </header>
-      <iframe class="site-dialog-frame" data-site-dialog-frame title="Workdoe account or project form" src="about:blank"></iframe>
+      <div class="site-dialog-status" data-site-dialog-status role="status" aria-live="polite">Loading...</div>
+      <div class="site-dialog-content" data-site-dialog-content></div>
     </section>
-  </div>"""
+  </dialog>"""
 
 
 def layout(
@@ -502,7 +500,7 @@ def layout(
     main_class: str = "",
 ) -> str:
     scripts = []
-    embedded = "dialog-frame-body" in body_class.split()
+    embedded = "dialog-fragment-body" in body_class.split()
     authenticated = row_value(user, "role") in {"client", "contractor", "admin"}
     if include_turnstile:
         scripts.append('<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>')
@@ -1782,7 +1780,7 @@ def job_form_html(
     {posting_intro}
     {invitation_banner}
     {location_launcher}
-    <form class="form-grid" data-project-composer data-project-initial-step="{'3' if form.get('service_slug') else ('2' if form.get('service_group_slug') else '1')}" data-json-action="/api/jobs" data-upload-after-json-template="/api/media/jobs/{{job_id}}/upload" data-success-url-template="/client/jobs/{{id}}" aria-label="Post a project." aria-describedby="worker-form-status">
+    <form class="form-grid" data-dialog-fragment data-project-composer data-project-initial-step="{'3' if form.get('service_slug') else ('2' if form.get('service_group_slug') else '1')}" data-json-action="/api/jobs" data-upload-after-json-template="/api/media/jobs/{{job_id}}/upload" data-success-url-template="/client/jobs/{{id}}" aria-label="Post a project." aria-describedby="worker-form-status">
       {invitation_fields}
       {composer}
       <p id="worker-form-status" class="help-text wide" data-form-status aria-live="polite"></p>
@@ -1795,7 +1793,7 @@ def job_form_html(
             include_actions=True,
             include_turnstile=bool(site_key),
             include_project_composer=True,
-            body_class="dialog-frame-body" if embedded else "",
+            body_class="dialog-fragment-body" if embedded else "",
         )
     selected_category = str(row_value(job, "category", "") or "")
     selected_state = str(row_value(job, "state", "DC") or "DC")
@@ -1832,7 +1830,7 @@ def job_form_html(
       <li>Private photos</li>
       <li>Approve before chat</li>
     </ul>
-    <form class="form-grid" data-json-action="{'/api/jobs/' + str(job_id) + '/update' if is_edit else '/api/jobs'}" data-upload-after-json-template="/api/media/jobs/{{job_id}}/upload" data-success-url-template="/client/jobs/{{id}}" aria-label="{'Edit project' if is_edit else 'Post a project.'}" aria-describedby="worker-form-status">
+    <form class="form-grid" data-dialog-fragment data-json-action="{'/api/jobs/' + str(job_id) + '/update' if is_edit else '/api/jobs'}" data-upload-after-json-template="/api/media/jobs/{{job_id}}/upload" data-success-url-template="/client/jobs/{{id}}" aria-label="{'Edit project' if is_edit else 'Post a project.'}" aria-describedby="worker-form-status">
       <label class="wide" for="job-title">Project title <input id="job-title" name="title" value="{escape(str(row_value(job, 'title', '') or ''))}" maxlength="90" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Power wash front steps and patio" required></label>
       <label for="job-category">Category <select id="job-category" name="category" required>{category_options}</select></label>
       <div class="wide">{edit_scope_html}</div>
@@ -1865,7 +1863,7 @@ def job_form_html(
         body,
         include_actions=True,
         include_turnstile=bool(site_key),
-        body_class="dialog-frame-body" if embedded else "",
+        body_class="dialog-fragment-body" if embedded else "",
     )
 
 
@@ -1894,7 +1892,7 @@ def public_job_draft_html(
     <ul class="form-checklist" aria-label="Project draft steps"><li>Save scope</li><li>Verify email</li><li>Add private photos</li></ul>"""
     body = f"""
     {posting_intro}
-    <form class="form-grid" method="post" action="/post-project" aria-label="Project draft" data-project-composer data-project-initial-step="{'3' if form.get('service_slug') else ('2' if form.get('service_group_slug') else '1')}">
+    <form class="form-grid" method="post" action="/post-project" aria-label="Project draft" data-dialog-fragment data-project-composer data-project-initial-step="{'3' if form.get('service_slug') else ('2' if form.get('service_group_slug') else '1')}">
       {summary}{composer}
     </form>"""
     return layout(
@@ -1904,7 +1902,7 @@ def public_job_draft_html(
         body,
         include_turnstile=bool(site_key),
         include_project_composer=True,
-        body_class="dialog-frame-body" if embedded else "",
+        body_class="dialog-fragment-body" if embedded else "",
     )
 
 

@@ -678,12 +678,7 @@ async def replace_job_draft_scope_answers(
 
 def embedded_dialog_request(request) -> bool:
     params = parse_qs(urlparse(request.url).query)
-    if first_query_value(params, "embed") == "1":
-        return True
-    return (
-        str(request.headers.get("Sec-Fetch-Dest") or "").lower() == "iframe"
-        and str(request.headers.get("Sec-Fetch-Site") or "").lower() == "same-origin"
-    )
+    return first_query_value(params, "embed") == "1"
 
 
 def row_value(row, key: str, default=None):
@@ -1375,7 +1370,6 @@ class Default(WorkerEntrypoint):
             )
 
         params = parse_qs(urlparse(request.url).query)
-        embedded = embedded_dialog_request(request)
         rows = []
         filters = entry_job_filters(params)
         if hasattr(self.env, "DB"):
@@ -1401,7 +1395,7 @@ class Default(WorkerEntrypoint):
             path in {"/login", "/start", "/create-account"}
             and not clerk_production_configuration_ready(self.env)
         ):
-            unavailable_headers = shell_headers("", allow_same_origin_frame=embedded)
+            unavailable_headers = shell_headers("")
             unavailable_headers["Content-Type"] = "text/plain; charset=utf-8"
             return Response(
                 "Sign-in is temporarily unavailable.",
@@ -1427,7 +1421,6 @@ class Default(WorkerEntrypoint):
                 and path in {"/start", "/create-account", "/post-project", "/login"}
                 and bool(getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", "")),
                 clerk_publishable_key=clerk_publishable_key,
-                allow_same_origin_frame=embedded,
             ),
         )
 
@@ -1561,7 +1554,6 @@ class Default(WorkerEntrypoint):
                 include_turnstile=bool(
                     getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", "")
                 ),
-                allow_same_origin_frame=embedded,
             ),
         )
 
@@ -2111,7 +2103,6 @@ class Default(WorkerEntrypoint):
                     "CLERK_FRONTEND_API_URL",
                     "https://workdoe.com/__clerk",
                 ),
-                allow_same_origin_frame=embedded,
             ),
         )
 

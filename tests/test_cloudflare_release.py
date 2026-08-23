@@ -8838,28 +8838,31 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "pk_test_workdoe",
             "https://clerk.workdoe.com",
         )
-        self.assertIn('class="market-entry-body dialog-frame-body"', embedded_entry)
+        self.assertIn('class="market-entry-body dialog-fragment-body"', embedded_entry)
         self.assertNotIn('src="/map.js"', embedded_entry)
         self.assertNotIn("data-site-dialog", embedded_entry)
-        frame_headers = entry_shell.shell_headers(
-            "https://clerk.workdoe.com",
-            allow_same_origin_frame=True,
-        )
-        self.assertEqual(frame_headers["X-Frame-Options"], "SAMEORIGIN")
-        self.assertIn("frame-ancestors 'self'", frame_headers["Content-Security-Policy"])
+        frame_headers = entry_shell.shell_headers("https://clerk.workdoe.com")
+        self.assertEqual(frame_headers["X-Frame-Options"], "DENY")
+        self.assertIn("frame-ancestors 'none'", frame_headers["Content-Security-Policy"])
+        native_dialog = entry_shell.site_dialog_html()
+        self.assertIn('<dialog class="site-dialog"', native_dialog)
+        self.assertIn("data-site-dialog-content", native_dialog)
+        self.assertNotIn("iframe", native_dialog)
 
         app_shell = load_app_shell_module()
         client = {"id": 4, "role": "client", "status": "active"}
         embedded_form = app_shell.job_form_html(client, embedded=True)
-        self.assertIn('<body class="dialog-frame-body">', embedded_form)
+        self.assertIn('<body class="dialog-fragment-body">', embedded_form)
         self.assertNotIn("data-site-dialog", embedded_form)
         self.assertNotIn('aria-label="Posting safeguards"', embedded_form)
         embedded_draft = app_shell.public_job_draft_html(embedded=True)
         self.assertNotIn("What needs doing?", embedded_draft)
         self.assertNotIn('aria-label="Project draft steps"', embedded_draft)
-        app_headers = app_shell.app_shell_headers(allow_same_origin_frame=True)
-        self.assertEqual(app_headers["X-Frame-Options"], "SAMEORIGIN")
-        self.assertIn("frame-ancestors 'self'", app_headers["Content-Security-Policy"])
+        app_headers = app_shell.app_shell_headers()
+        self.assertEqual(app_headers["X-Frame-Options"], "DENY")
+        self.assertIn("frame-ancestors 'none'", app_headers["Content-Security-Policy"])
+        self.assertIn("data-dialog-fragment", embedded_form)
+        self.assertIn("data-dialog-fragment", embedded_draft)
 
         client_jobs = load_client_jobs_module()
         client_payload = client_jobs.client_jobs_payload(

@@ -16,7 +16,7 @@
 {% endif %}
 
 {% set field_errors = error_feedback.fields %}
-<form class="form-grid" method="post" aria-label="Project draft" data-project-composer data-project-initial-step="{{ 3 if form.service_slug else (2 if form.service_group_slug else 1) }}" {% if error_feedback.summary %}aria-describedby="job-form-errors"{% endif %}>
+<form class="form-grid" method="post" aria-label="Project draft" data-dialog-fragment data-project-composer data-project-initial-step="{{ 3 if form.service_slug else (2 if form.service_group_slug else 1) }}" {% if error_feedback.summary %}aria-describedby="job-form-errors"{% endif %}>
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
   {% if error_feedback.summary %}
     <section id="job-form-errors" class="form-error-summary wide" role="alert" aria-labelledby="job-form-errors-title">

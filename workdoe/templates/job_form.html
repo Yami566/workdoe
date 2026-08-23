@@ -38,7 +38,7 @@
 {% endif %}
 
 {% set field_errors = error_feedback.fields %}
-<form class="form-grid" method="post" enctype="multipart/form-data" aria-label="{{ page_title }}" {% if mode == 'new' %}data-project-composer data-project-initial-step="{{ 3 if form.service_slug else (2 if form.service_group_slug else 1) }}"{% endif %} {% if error_feedback.summary %}aria-describedby="job-form-errors"{% endif %}>
+<form class="form-grid" method="post" enctype="multipart/form-data" aria-label="{{ page_title }}" data-dialog-fragment {% if mode == 'new' %}data-project-composer data-project-initial-step="{{ 3 if form.service_slug else (2 if form.service_group_slug else 1) }}"{% endif %} {% if error_feedback.summary %}aria-describedby="job-form-errors"{% endif %}>
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
   {% if mode == "new" %}<input type="hidden" name="idempotency_key" value="{{ request.form.get('idempotency_key') or new_idempotency_key() }}">{% endif %}
   {% if mode == "new" and repeat_invitation %}

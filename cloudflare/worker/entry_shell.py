@@ -431,15 +431,16 @@ def selected_job_pill(row) -> str:
 
 def site_dialog_html() -> str:
     return """
-  <div class="site-dialog" data-site-dialog role="dialog" aria-modal="true" aria-labelledby="site-dialog-title" hidden>
+  <dialog class="site-dialog" data-site-dialog aria-labelledby="site-dialog-title">
     <section class="site-dialog-surface">
       <header class="site-dialog-header">
         <div><p class="eyebrow">Workdoe</p><h2 id="site-dialog-title" data-site-dialog-title>Continue</h2></div>
-        <button class="button secondary compact" type="button" data-site-dialog-close>Close</button>
+        <button class="icon-button" type="button" data-site-dialog-close aria-label="Close dialog" title="Close"><img src="/vendor/tabler-icons/x.svg" alt="" width="20" height="20"></button>
       </header>
-      <iframe class="site-dialog-frame" data-site-dialog-frame title="Workdoe account or project form" src="about:blank"></iframe>
+      <div class="site-dialog-status" data-site-dialog-status role="status" aria-live="polite">Loading...</div>
+      <div class="site-dialog-content" data-site-dialog-content></div>
     </section>
-  </div>"""
+  </dialog>"""
 
 
 def task_options(family_slug: str, selected: str = "") -> str:
@@ -523,7 +524,6 @@ def shell_csp(
     clerk_frontend_api_url: str,
     include_turnstile: bool = False,
     clerk_publishable_key: str = "",
-    allow_same_origin_frame: bool = False,
 ) -> str:
     clerk_origin = clerk_csp_origin(
         clerk_runtime_frontend_api_url(clerk_publishable_key, clerk_frontend_api_url)
@@ -545,7 +545,7 @@ def shell_csp(
             "default-src 'self'",
             "base-uri 'self'",
             "object-src 'none'",
-            "frame-ancestors 'self'" if allow_same_origin_frame else "frame-ancestors 'none'",
+            "frame-ancestors 'none'",
             "form-action 'self'",
             csp_sources(
                 "script-src 'self'",
@@ -581,7 +581,6 @@ def shell_headers(
     clerk_frontend_api_url: str,
     include_turnstile: bool = False,
     clerk_publishable_key: str = "",
-    allow_same_origin_frame: bool = False,
 ) -> dict[str, str]:
     return {
         "Content-Type": "text/html; charset=utf-8",
@@ -592,10 +591,9 @@ def shell_headers(
             clerk_frontend_api_url,
             include_turnstile=include_turnstile,
             clerk_publishable_key=clerk_publishable_key,
-            allow_same_origin_frame=allow_same_origin_frame,
         ),
         "X-Content-Type-Options": "nosniff",
-        "X-Frame-Options": "SAMEORIGIN" if allow_same_origin_frame else "DENY",
+        "X-Frame-Options": "DENY",
         "Referrer-Policy": "strict-origin-when-cross-origin",
         "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
         "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
@@ -806,7 +804,7 @@ def build_entry_shell_html(
       </aside>"""
     else:
         right_panel_html = f"""
-      <aside id="{escape(panel_id)}" class="market-detail-rail market-auth-rail" data-market-panel="details" aria-labelledby="entry-title">
+      <aside id="{escape(panel_id)}" class="market-detail-rail market-auth-rail" data-market-panel="details" data-dialog-fragment aria-labelledby="entry-title">
         <div class="market-auth-heading">
           <p class="eyebrow">{escape(eyebrow)}</p>
           <h2 id="entry-title">{escape(heading)}</h2>
@@ -821,7 +819,7 @@ def build_entry_shell_html(
       </aside>"""
     mobile_default = "details" if path in {"/login", "/start", "/create-account", "/post-project"} else "map"
     filter_count = len(map_payload["jobs"])
-    body_class = "market-entry-body dialog-frame-body" if embedded else "market-entry-body"
+    body_class = "market-entry-body dialog-fragment-body" if embedded else "market-entry-body"
     map_styles_html = "" if embedded else """  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="/vendor/leaflet-markercluster/MarkerCluster.css">
   <link rel="stylesheet" href="/vendor/leaflet-markercluster/MarkerCluster.Default.css">"""

@@ -106,7 +106,7 @@
 
   {% if clerk_entry_enabled() %}
     {% set start_clerk_proxy_url = clerk_proxy_url() %}
-    <section id="start-account" class="form-panel login-form-panel start-form-panel clerk-entry-panel" aria-labelledby="start-title">
+    <section id="start-account" class="form-panel login-form-panel start-form-panel clerk-entry-panel" aria-labelledby="start-title" data-dialog-fragment>
       <div>
         <p class="eyebrow">{{ account_eyebrow }}</p>
         <h2 id="start-title">{{ account_heading }}</h2>
@@ -168,7 +168,7 @@
       </noscript>
     </section>
   {% else %}
-    <form id="start-account" class="form-panel login-form-panel start-form-panel" method="post">
+    <form id="start-account" class="form-panel login-form-panel start-form-panel" method="post" data-dialog-fragment>
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
       {% if selected_job %}<input type="hidden" name="job_id" value="{{ selected_job.id }}">{% endif %}
       {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}

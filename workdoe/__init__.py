@@ -5503,15 +5503,14 @@ def enforce_post_safety() -> None:
 
 
 def add_security_headers(response):
-    allow_same_origin_frame = embedded_dialog_mode()
     response.headers.setdefault(
         "Content-Security-Policy",
-        content_security_policy(allow_same_origin_frame=allow_same_origin_frame),
+        content_security_policy(),
     )
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault(
         "X-Frame-Options",
-        "SAMEORIGIN" if allow_same_origin_frame else "DENY",
+        "DENY",
     )
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
@@ -5523,13 +5522,8 @@ def add_security_headers(response):
     return response
 
 
-def content_security_policy(allow_same_origin_frame: bool = False) -> str:
+def content_security_policy() -> str:
     directives = list(CONTENT_SECURITY_POLICY_DIRECTIVES)
-    if allow_same_origin_frame:
-        directives = [
-            "frame-ancestors 'self'" if directive.startswith("frame-ancestors ") else directive
-            for directive in directives
-        ]
     frame_sources: list[str] = []
     if turnstile_enabled():
         for source_directive in ("script-src", "connect-src"):
@@ -5582,12 +5576,7 @@ def content_security_policy(allow_same_origin_frame: bool = False) -> str:
 
 
 def embedded_dialog_mode() -> bool:
-    if request.args.get("embed") == "1":
-        return True
-    return (
-        request.headers.get("Sec-Fetch-Dest", "").lower() == "iframe"
-        and request.headers.get("Sec-Fetch-Site", "").lower() == "same-origin"
-    )
+    return request.args.get("embed") == "1"
 
 
 def add_csp_source(directive: str, directive_name: str, source: str) -> str:

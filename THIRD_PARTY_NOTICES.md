@@ -27,8 +27,9 @@ Workdoe repository. It is not a license for Workdoe's original source code.
 
 ### Tabler Icons 3.46.0
 
-- Purpose: the deer icon used in Workdoe's logo, six service-family icons, and
-  the task-level icons used by the guided project picker.
+- Purpose: the deer icon used in Workdoe's logo, six service-family icons,
+  the task-level icons used by the guided project picker, and the dialog close
+  icon.
 - License: MIT.
 - Source: https://github.com/tabler/tabler-icons/blob/v3.46.0/icons/outline/deer.svg
 - Picker icon sources:
@@ -62,6 +63,7 @@ artifacts on 2026-08-16. The test suite enforces the same values locally.
 | Tabler `tools.svg` | `aac6ae77bd7d24d3819ed1ccc7262ca1b57444b541fc3dc90ee837bbbe6a6e7c` |
 | Tabler `paint.svg` | `ab2b5b985830a0a673c0399b94420ecc7b477dc828509049d16d51eefc57672e` |
 | Tabler `bolt.svg` | `f18f1b4476d1f1ba018219131fee671f2a7ac286c9eb3aa83ea72274e17f34e5` |
+| Tabler `x.svg` | `c0ef7bfcae8b25bff75d060ec437054e2288af16d301e4d1ef5fb805666afc44` |
 | Tabler task-icon manifest (50 files) | `b52f6c73b3afb6b19df964190046fd51748cce40d15c090054909f7007e8fcfe` |
 
 ### Clerk JavaScript SDK and UI

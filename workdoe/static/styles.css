@@ -3112,19 +3112,30 @@ textarea:focus {
 }
 
 .site-dialog {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-  display: grid;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
   place-items: center;
   padding: 18px;
-  background: rgba(13, 19, 15, 0.68);
+  border: 0;
+  background: transparent;
   color: var(--ink);
-  backdrop-filter: blur(2px);
+  overflow: hidden;
 }
 
-.site-dialog[hidden] {
+.site-dialog:not([open]) {
   display: none;
+}
+
+.site-dialog[open] {
+  display: grid;
+}
+
+.site-dialog::backdrop {
+  background: rgba(13, 19, 15, 0.68);
+  backdrop-filter: blur(2px);
 }
 
 .has-site-dialog {
@@ -3133,7 +3144,7 @@ textarea:focus {
 
 .site-dialog-surface {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   width: min(720px, 100%);
   height: min(820px, calc(100dvh - 36px));
   border: 1px solid var(--line);
@@ -3166,11 +3177,74 @@ textarea:focus {
   font-size: 1.2rem;
 }
 
-.site-dialog-frame {
-  width: 100%;
-  height: 100%;
-  border: 0;
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
   background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  border-color: var(--ink);
+  background: var(--surface-strong);
+}
+
+.icon-button img {
+  display: block;
+}
+
+.site-dialog-status {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.site-dialog-status[hidden] {
+  display: none;
+}
+
+.site-dialog-content {
+  min-height: 0;
+  padding: 18px;
+  background: var(--surface);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.site-dialog-content > .form-panel,
+.site-dialog-content > .form-grid,
+.site-dialog-content > .auth-layout,
+.site-dialog-content > .market-auth-rail {
+  width: 100%;
+  margin: 0;
+}
+
+.site-dialog-content > .form-panel {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.site-dialog-content .login-form-panel > div:first-of-type > .eyebrow,
+.site-dialog-content .login-form-panel > div:first-of-type > h1,
+.site-dialog-content .login-form-panel > div:first-of-type > h2,
+.site-dialog-content .login-form-panel > div:first-of-type > .entry-shortcuts {
+  display: none;
+}
+
+.site-dialog-content > .market-auth-rail {
+  border: 0;
+  box-shadow: none;
 }
 
 .has-inline-dialog {
@@ -3318,23 +3392,23 @@ textarea:focus {
   font-weight: 800;
 }
 
-.dialog-frame-body .site-header,
-.dialog-frame-body .site-footer,
-.dialog-frame-body .skip-link,
-.dialog-frame-body .login-live-panel,
-.dialog-frame-body .start-live-panel,
-.dialog-frame-body.market-entry-body .market-header,
-.dialog-frame-body.market-entry-body .market-mobile-tabs,
-.dialog-frame-body.market-entry-body .market-filter-rail,
-.dialog-frame-body.market-entry-body .market-map-stage {
+.dialog-fragment-body .site-header,
+.dialog-fragment-body .site-footer,
+.dialog-fragment-body .skip-link,
+.dialog-fragment-body .login-live-panel,
+.dialog-fragment-body .start-live-panel,
+.dialog-fragment-body.market-entry-body .market-header,
+.dialog-fragment-body.market-entry-body .market-mobile-tabs,
+.dialog-fragment-body.market-entry-body .market-filter-rail,
+.dialog-fragment-body.market-entry-body .market-map-stage {
   display: none;
 }
 
-.dialog-frame-body.market-entry-body {
+.dialog-fragment-body.market-entry-body {
   overflow: auto;
 }
 
-.dialog-frame-body.market-entry-body .market-workspace {
+.dialog-fragment-body.market-entry-body .market-workspace {
   display: block;
   width: 100%;
   height: auto;
@@ -3342,7 +3416,7 @@ textarea:focus {
   padding: 0;
 }
 
-.dialog-frame-body.market-entry-body .market-detail-rail {
+.dialog-fragment-body.market-entry-body .market-detail-rail {
   display: block;
   width: 100%;
   min-height: 0;
@@ -3351,24 +3425,24 @@ textarea:focus {
   overflow: visible;
 }
 
-.dialog-frame-body main,
-.dialog-frame-body .flash-stack {
+.dialog-fragment-body main,
+.dialog-fragment-body .flash-stack {
   width: 100%;
   max-width: none;
 }
 
-.dialog-frame-body main {
+.dialog-fragment-body main {
   padding: 0 18px 24px;
 }
 
-.dialog-frame-body .login-market,
-.dialog-frame-body .start-market {
+.dialog-fragment-body .login-market,
+.dialog-fragment-body .start-market {
   display: block;
   margin: 0;
 }
 
-.dialog-frame-body .login-form-panel,
-.dialog-frame-body .start-form-panel {
+.dialog-fragment-body .login-form-panel,
+.dialog-fragment-body .start-form-panel {
   position: static;
   width: 100%;
   max-width: none;
@@ -3379,28 +3453,28 @@ textarea:focus {
   padding: 22px 0;
 }
 
-.dialog-frame-body .login-form-panel > div:first-of-type > .eyebrow,
-.dialog-frame-body .login-form-panel > div:first-of-type > h1,
-.dialog-frame-body .login-form-panel > div:first-of-type > .entry-shortcuts,
-.dialog-frame-body .start-form-panel > div:first-of-type > .eyebrow,
-.dialog-frame-body .start-form-panel > div:first-of-type > h2,
-.dialog-frame-body .start-form-panel > div:first-of-type > .entry-shortcuts {
+.dialog-fragment-body .login-form-panel > div:first-of-type > .eyebrow,
+.dialog-fragment-body .login-form-panel > div:first-of-type > h1,
+.dialog-fragment-body .login-form-panel > div:first-of-type > .entry-shortcuts,
+.dialog-fragment-body .start-form-panel > div:first-of-type > .eyebrow,
+.dialog-fragment-body .start-form-panel > div:first-of-type > h2,
+.dialog-fragment-body .start-form-panel > div:first-of-type > .entry-shortcuts {
   display: none;
 }
 
-.dialog-frame-body .page-header {
+.dialog-fragment-body .page-header {
   margin: 20px 0 14px;
 }
 
-.dialog-frame-body .page-header h1 {
+.dialog-fragment-body .page-header h1 {
   font-size: 2.15rem;
 }
 
-.dialog-frame-body .form-grid {
+.dialog-fragment-body .form-grid {
   margin: 16px 0 0;
 }
 
-.dialog-frame-body .project-composer-step {
+.dialog-fragment-body .project-composer-step {
   min-height: 390px;
 }
 
@@ -5263,20 +5337,23 @@ textarea:focus {
   }
 
   .site-dialog {
-    padding: 6px;
+    place-items: end center;
+    padding: 0;
   }
 
   .site-dialog-surface {
     width: 100%;
-    height: calc(100dvh - 12px);
+    height: min(92dvh, 820px);
+    border-width: 1px 0 0;
+    border-radius: 8px 8px 0 0;
   }
 
   .site-dialog-header {
     padding: 10px 12px;
   }
 
-  .dialog-frame-body main {
-    padding: 0 12px 18px;
+  .site-dialog-content {
+    padding: 12px;
   }
 
   .history-heading,

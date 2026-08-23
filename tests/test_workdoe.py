@@ -3453,6 +3453,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             "tools.svg": "aac6ae77bd7d24d3819ed1ccc7262ca1b57444b541fc3dc90ee837bbbe6a6e7c",
             "paint.svg": "ab2b5b985830a0a673c0399b94420ecc7b477dc828509049d16d51eefc57672e",
             "bolt.svg": "f18f1b4476d1f1ba018219131fee671f2a7ac286c9eb3aa83ea72274e17f34e5",
+            "x.svg": "c0ef7bfcae8b25bff75d060ec437054e2288af16d301e4d1ef5fb805666afc44",
         }
         for filename, expected in tabler_hashes.items():
             self.assertEqual(
@@ -4782,9 +4783,13 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(after["total"], before["total"])
 
 
-    def test_entry_and_project_forms_open_in_same_origin_dialogs(self):
+    def test_entry_and_project_forms_open_in_native_route_backed_dialogs(self):
         home = self.client.get("/")
         self.assertIn(b'data-site-dialog', home.data)
+        self.assertIn(b'<dialog class="site-dialog"', home.data)
+        self.assertIn(b'data-site-dialog-content', home.data)
+        self.assertNotIn(b'data-site-dialog-frame', home.data)
+        self.assertNotIn(b'<iframe class="site-dialog-frame"', home.data)
         self.assertIn(b'src="/static/site-dialogs.js?v=workdoe-overlay-dialog"', home.data)
 
         direct_login = self.client.get("/login")
@@ -4793,34 +4798,36 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         embedded_login = self.client.get("/login?embed=1")
         self.assertEqual(embedded_login.status_code, 200)
-        self.assertIn(b'<body class="dialog-frame-body">', embedded_login.data)
+        self.assertIn(b'<body class="dialog-fragment-body">', embedded_login.data)
         self.assertNotIn(b'data-site-dialog', embedded_login.data)
-        self.assertEqual(embedded_login.headers["X-Frame-Options"], "SAMEORIGIN")
-        self.assertIn("frame-ancestors 'self'", embedded_login.headers["Content-Security-Policy"])
-        self.assertNotIn("frame-ancestors 'none'", embedded_login.headers["Content-Security-Policy"])
+        self.assertIn(b'data-dialog-fragment', embedded_login.data)
+        self.assertEqual(embedded_login.headers["X-Frame-Options"], "DENY")
+        self.assertIn("frame-ancestors 'none'", embedded_login.headers["Content-Security-Policy"])
 
-        embedded_post = self.client.get(
-            "/post-project",
-            headers={"Sec-Fetch-Dest": "iframe", "Sec-Fetch-Site": "same-origin"},
-        )
+        embedded_post = self.client.get("/post-project?embed=1")
         self.assertEqual(embedded_post.status_code, 200)
-        self.assertIn(b'<body class="dialog-frame-body">', embedded_post.data)
+        self.assertIn(b'<body class="dialog-fragment-body">', embedded_post.data)
         self.assertNotIn(b"What needs doing?", embedded_post.data)
         self.assertNotIn(b'aria-label="Project draft steps"', embedded_post.data)
-        self.assertEqual(embedded_post.headers["X-Frame-Options"], "SAMEORIGIN")
+        self.assertIn(b'data-dialog-fragment', embedded_post.data)
+        self.assertEqual(embedded_post.headers["X-Frame-Options"], "DENY")
+        self.assertIn("frame-ancestors 'none'", embedded_post.headers["Content-Security-Policy"])
 
         script = (ROOT / "workdoe" / "static" / "site-dialogs.js").read_text(encoding="utf-8")
         self.assertIn('url.origin !== window.location.origin', script)
-        self.assertIn('modalPaths.indexOf(window.location.pathname) !== -1', script)
-        self.assertIn('url.searchParams.set("embed", "1")', script)
-        self.assertIn('modalPaths.indexOf(current.pathname) === -1', script)
+        self.assertIn('fetchUrl.searchParams.set("embed", "1")', script)
+        self.assertIn('dialog.showModal()', script)
+        self.assertIn('window.history.pushState', script)
+        self.assertIn('window.history.back()', script)
+        self.assertIn('window.addEventListener("popstate"', script)
+        self.assertIn('event.key === "Escape"', script)
+        self.assertIn('returnFocus.focus({ preventScroll: true })', script)
+        self.assertIn('fragmentFromDocument', script)
         self.assertIn('dialog.dataset.dialogKind = kindFor(url)', script)
         self.assertIn('delete dialog.dataset.dialogKind', script)
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
-        self.assertIn(
-            ".dialog-frame-body .login-form-panel > div:first-of-type > h1",
-            styles,
-        )
+        self.assertIn(".site-dialog::backdrop", styles)
+        self.assertIn(".site-dialog-content", styles)
         self.assertRegex(
             styles,
             r'\.site-dialog\[data-dialog-kind="auth"\] \.site-dialog-surface\s*\{[^}]*height: min\(520px, calc\(100dvh - 36px\)\);',
