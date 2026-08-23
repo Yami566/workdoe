@@ -41,7 +41,7 @@ to the policy set from the footer.
 | Contractor classification and licensing | Legal review required | Approved independent-business wording and service/zone-specific qualification rules |
 | Underage-use rule | Candidate says 18+ | Owner/legal approval and enforcement/escalation procedure |
 | Prohibited work | Candidate list exists | Operations/legal approval plus service-taxonomy enforcement review |
-| Source-code license | Missing | Owner selects and checks in the top-level Workdoe license |
+| Source-code posture | Proprietary owner direction recorded | Keep the top-level `LICENSE`, `THIRD_PARTY_NOTICES.md`, and `DEPENDENCY_PROVENANCE.json` aligned; do not market first-party Workdoe source as open source |
 
 ## Research basis
 

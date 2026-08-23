@@ -2,7 +2,9 @@
 
 Date: 2026-08-21
 
-Status: current evidence record; no deployment was performed during this review
+Status: historical evidence record; superseded by
+`docs/workdoe-stabilization-release-status-2026-08-23.md`. No deployment was
+performed during this review.
 
 ## State definitions
 
@@ -33,7 +35,7 @@ Status: current evidence record; no deployment was performed during this review
 | Cloudflare-managed production architecture | Implemented in source | Python Worker, immutable and chain-hashed D1 migrations verified against a blank Wrangler database, private R2, Images sanitizer, Queues, Email binding, Turnstile, rate limiter, custom domains, bounded JSON/form/webhook/upload request readers, and strict preflight | Deploy current Worker; prove Images, R2, queues, email, and rate limiter live |
 | Controlled GitHub-to-Cloudflare release | Implemented and intentionally manual | GitHub production environment check, dry-run deployment scripts, guarded workflow, launch-doctor coverage that recognizes the verified GitHub credential path without requiring a duplicate local token, and generated handoffs limited to current required actions | One owner-approved dispatch after all release evidence passes |
 | Competition, UX, monetization, and DMV launch research | Complete as a decision record | `docs/workdoe-dmv-gamified-marketplace-commercial-launch-study-2026-08-21.md` and cited public/official sources | Interview DMV consumers, contractors, and operators; counsel review is not replaced by desk research |
-| Open-source and code provenance controls | Dependency notices implemented; Workdoe license undecided | `THIRD_PARTY_NOTICES.md`, pinned vendored-asset hashes, `requirements-audit.txt`, `.secrets.baseline` | Owner selects MIT, Apache-2.0, or proprietary status for original Workdoe code |
+| Open-source dependency and proprietary-code provenance controls | Superseded: proprietary posture later recorded and dependency ledger added | `LICENSE`, `THIRD_PARTY_NOTICES.md`, `DEPENDENCY_PROVENANCE.json`, pinned vendored-asset hashes, exact requirement pins, `.secrets.baseline` | Follow the current stabilization release-status record |
 
 ## Verification run
 
@@ -92,12 +94,11 @@ Clerk proxy, restricted-sign-up, email-code-only, and legal-consent proof.
    to the Workdoe Terms and Privacy URLs, then record the non-secret proof.
 2. Name the legal operator and monitored support/privacy/security owner; approve
    age, prohibited-work, retention/deletion, contractor-status, and policy copy.
-3. Select Workdoe's own source license posture.
-4. Approve each service/jurisdiction pair with legal/safety evidence and at
+3. Approve each service/jurisdiction pair with legal/safety evidence and at
    least three eligible contractors plus an operational backup.
-5. Prove real production consumer, contractor, admin, email, media, queue,
+4. Prove real production consumer, contractor, admin, email, media, queue,
    backup/restore, rollback, incident, accessibility, and usability journeys.
-6. Run one guarded deployment, rerun strict production smoke, and retain the
+5. Run one guarded deployment, rerun strict production smoke, and retain the
    resulting evidence before inviting the controlled beta cohort.
 
 ## Commercial recommendation

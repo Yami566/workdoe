@@ -76,12 +76,21 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt
 
+      - name: Install Python quality gate
+        run: python -m pip install ruff==0.16.4
+
       - name: Install release security tools
         if: github.event_name == 'workflow_dispatch'
         run: python -m pip install -r requirements-audit.txt
 
       - name: Install Wrangler
         run: npm ci
+
+      - name: Verify dependency provenance
+        run: npm run provenance:verify
+
+      - name: Run full Python quality gate
+        run: npm run lint
 
       - name: Run release security gates
         if: github.event_name == 'workflow_dispatch'

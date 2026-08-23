@@ -1,6 +1,12 @@
 # Workdoe
 
-Workdoe is a local-first contractor lead board prototype for the DMV area. Clients post simple jobs with photos, contractors search leads and send mini bids, and approved matches open private message threads.
+Workdoe is a local project exchange for the DMV area. Consumers post projects
+with photos, contractors search leads and send mini bids, and approved matches
+open private message threads.
+
+Workdoe's first-party source, product copy, visual design, and original assets
+are proprietary under [LICENSE](LICENSE). Open-source dependencies retain their
+own licenses and notices; the repository itself is not an open-source project.
 
 ## Local Stack
 
@@ -12,7 +18,8 @@ Workdoe is a local-first contractor lead board prototype for the DMV area. Clien
 - Leaflet's BSD 2-Clause license is retained at `workdoe/static/vendor/leaflet/LICENSE`
 - Deer logo mark from Tabler Icons, an MIT-licensed open-source icon set
 - Third-party provenance and retained notices are documented in
-  `THIRD_PARTY_NOTICES.md`
+  `THIRD_PARTY_NOTICES.md` and the machine-checked
+  `DEPENDENCY_PROVENANCE.json` ledger
 
 ## Run Locally
 
@@ -71,6 +78,8 @@ python -m unittest discover -s tests
 
 ## Cloudflare Migration
 
+Start with [docs/README.md](docs/README.md) for the canonical documentation and
+the current release-status record.
 See [docs/cloudflare-migration.md](docs/cloudflare-migration.md).
 See [docs/cloudflare-automation-auth.md](docs/cloudflare-automation-auth.md) for the same-domain Clerk email-code login plan and Cloudflare automation targets.
 See [docs/workdoe-operations-runbook.md](docs/workdoe-operations-runbook.md)
@@ -187,8 +196,10 @@ npm run launch:smoke:strict
 ```
 
 GitHub Actions is wired through `.github/workflows/cloudflare-deploy.yml`.
-Pushes to `main` or `master` run tests and preflight only. Production deployment
-is manual-only through the `Workdoe Cloudflare Release` workflow and requires:
+Pushes to `main` or `master` and pull requests run full Ruff, dependency
+provenance verification, tests, Cloudflare preflight, Worker bundle validation,
+and a local Worker smoke test. Production deployment is manual-only through the
+`Workdoe Cloudflare Release` workflow and requires:
 
 - production environment secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`;
 - workflow dispatch from the `main` branch;

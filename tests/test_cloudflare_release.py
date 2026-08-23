@@ -8,6 +8,7 @@ import io
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -7585,20 +7586,45 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             workflow,
         )
 
-    def test_release_security_gate_pins_runtime_error_scan(self):
+    def test_release_quality_and_provenance_gates_are_pinned(self):
         package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
         audit_requirements = (ROOT / "requirements-audit.txt").read_text(
             encoding="utf-8"
         )
         notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github" / "workflows" / "cloudflare-deploy.yml").read_text(
+            encoding="utf-8"
+        )
+        provenance = json.loads(
+            (ROOT / "DEPENDENCY_PROVENANCE.json").read_text(encoding="utf-8")
+        )
+        license_notice = (ROOT / "LICENSE").read_text(encoding="utf-8")
 
         self.assertIn("ruff==0.16.4", audit_requirements)
-        self.assertIn(
-            "ruff check workdoe cloudflare/worker scripts tests --select E9,F401,F541,F63,F7,F82,F841,B033",
-            package["scripts"]["security:python"],
+        self.assertEqual(package["scripts"]["lint"], "ruff check .")
+        self.assertIn("ruff check .", package["scripts"]["security:python"])
+        self.assertEqual(
+            package["scripts"]["provenance:verify"],
+            "python scripts/verify_dependency_provenance.py",
         )
+        self.assertIn("python -m pip install ruff==0.16.4", workflow)
+        self.assertIn("npm run provenance:verify", workflow)
+        self.assertIn("npm run lint", workflow)
         self.assertIn("Ruff 0.16.4", notices)
         self.assertIn("Ruff is distributed under the MIT License", notices)
+        self.assertEqual(provenance["first_party"]["license_status"], "proprietary")
+        self.assertEqual(provenance["first_party"]["license_file"], "LICENSE")
+        self.assertIn("Workdoe Proprietary License Notice", license_notice)
+
+        completed = subprocess.run(
+            [sys.executable, "scripts/verify_dependency_provenance.py"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Dependency provenance verified.", completed.stdout)
 
     def test_github_release_status_validates_environment_policy_and_secret_names(self):
         module = load_github_release_status_script()

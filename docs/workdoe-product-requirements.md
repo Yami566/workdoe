@@ -395,8 +395,6 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
 
 ## Owner decisions still required
 
-- Is Workdoe's original source intended to be open source? If so, choose a
-  license such as MIT or Apache-2.0; otherwise document that it is proprietary.
 - What legal person/entity operates Workdoe and what contact details should
   appear in Privacy and Terms?
 - What minimum age, geographic eligibility, prohibited jobs, and contractor
@@ -408,3 +406,9 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
 - Which qualified counsel will review Workdoe's marketplace role and define the
   mandatory review trigger before payment, managed fulfillment, guarantees, or
   other additional control is introduced?
+
+## Resolved owner decisions
+
+- Workdoe's first-party source code, product copy, visual design, and original
+  assets are proprietary. The top-level `LICENSE`, third-party notices, and
+  machine-readable dependency provenance ledger record this posture.

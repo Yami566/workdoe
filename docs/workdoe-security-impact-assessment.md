@@ -1,6 +1,6 @@
 # Workdoe Security Impact Assessment
 
-Assessment date: 2026-08-17
+Assessment date: 2026-08-17; source-license finding reviewed 2026-08-23
 
 Scope: the local Flask reference app, Cloudflare Python Worker, D1 schema, R2
 media routes, Clerk same-domain email-code flow, Turnstile validation,
@@ -300,17 +300,14 @@ formal certification against OWASP ASVS or WCAG.
 4. OpenStreetMap's public tile service has an availability/usage-policy
    boundary. Attribution is present, but a production growth plan should avoid
    assuming unlimited capacity or an SLA.
-5. The repository lacks a top-level Workdoe source license. This is not a
-   runtime vulnerability, but it prevents a clean claim that the whole project
-   is open source and creates distribution ambiguity.
-6. Cloudflare Images now performs a managed decode and WebP re-encode before
+5. Cloudflare Images now performs a managed decode and WebP re-encode before
    R2 storage, with metadata removal, animation flattening, and fixed dimension
    bounds. This materially reduces parser and metadata exposure but is not a
    malware-scanning claim or a substitute for human content moderation. Keep
    uploads supervised during the controlled beta, enable the required Images
    Paid subscription, and complete a live invalid-file plus transformed-upload
    acceptance test before public uploads.
-7. Project creation, ordinary messages, reports, and media uploads now accept a
+6. Project creation, ordinary messages, reports, and media uploads now accept a
    durable 24-hour application idempotency key. The Worker browser client uses
    Web Crypto, D1/SQLite store only a SHA-256 hash plus generic resource
    references, completed retries replay the original resource, and concurrent

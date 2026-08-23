@@ -2,6 +2,9 @@
 
 This file records the principal third-party code and data services used by the
 Workdoe repository. It is not a license for Workdoe's original source code.
+Machine-readable versions, source locations, licenses, and integrity values are
+maintained in `DEPENDENCY_PROVENANCE.json` and checked by
+`scripts/verify_dependency_provenance.py`.
 
 ## Browser-distributed code and assets
 
@@ -82,17 +85,23 @@ artifacts on 2026-08-16. The test suite enforces the same values locally.
 - Purpose: local reference application and local prototype tests.
 - License: BSD 3-Clause.
 - Source: https://github.com/pallets/flask/releases/tag/3.1.3
-- Flask and its Python dependencies are installed from PyPI; they are not
-  vendored into this repository and are not part of the Cloudflare production
-  Worker bundle.
+- Flask and its complete local runtime dependency set are exactly pinned in
+  `requirements.txt`: Werkzeug 3.1.8, Jinja2 3.1.6, itsdangerous 2.2.0,
+  click 8.4.2, blinker 1.9.0, and MarkupSafe 3.0.3.
+- These packages are installed from PyPI; they are not vendored into this
+  repository and are not part of the Cloudflare production Worker bundle.
+- The packages use BSD 3-Clause licenses except blinker, which uses MIT.
+  Source-archive SHA-256 values and official PyPI pages are recorded in the
+  dependency provenance ledger.
 
 ### Wrangler 4.123.0
 
 - Purpose: Cloudflare Worker validation and deployment tooling.
+- License: MIT OR Apache-2.0.
 - Source: https://github.com/cloudflare/workers-sdk
 - Wrangler is a development dependency. `node_modules` is ignored and is not
-served to Workdoe visitors. Package-specific license metadata is retained in
-`package-lock.json` and installed package distributions.
+  served to Workdoe visitors. Package-specific license and integrity metadata
+  is retained in `package-lock.json` and the dependency provenance ledger.
 
 ### Local security audit tools
 
@@ -115,9 +124,10 @@ Cloudflare Workers, D1, R2, Email, Queues, Turnstile, DNS, and CDN are hosted
 services. Their service terms are separate from the licenses of source code in
 this repository.
 
-## Workdoe source license status
+## Workdoe first-party source
 
-No top-level Workdoe source-code license has been selected. Until the owner
-adds one, the repository's original code remains under default copyright and
-must not be described as an open-source project. Selecting a license is an
-owner/legal decision.
+Workdoe's first-party source code, product copy, visual design, and original
+assets are proprietary and are governed by the top-level `LICENSE`. The
+repository and first-party product must not be described as open source.
+Third-party components remain governed by the licenses and notices identified
+in this file and `DEPENDENCY_PROVENANCE.json`.
