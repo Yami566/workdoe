@@ -3103,6 +3103,10 @@ def register_routes(app: Flask) -> None:
             job=job,
             photos=photos,
             requests=requests,
+            approved_request=next(
+                (item for item in all_requests if item["status"] == "approved"),
+                None,
+            ),
             request_stats=request_stats,
             bid_comparison=comparison,
             bid_window=bidding,

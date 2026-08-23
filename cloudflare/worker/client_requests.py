@@ -183,6 +183,10 @@ def client_job_requests_payload(
     normalized_filter = normalize_credential_filter(credential_filter)
     all_requests = [client_request_card(row) for row in rows]
     visible_requests = filter_client_request_cards(all_requests, normalized_view)
+    approved_request = next(
+        (request for request in all_requests if request["status"] == "approved"),
+        None,
+    )
     bidding = bid_window(job, len(all_requests))
     comparison = bid_comparison(rows, normalized_view, normalized_filter)
     comparison["credential_filter_options"] = comparison_filter_links(
@@ -201,6 +205,7 @@ def client_job_requests_payload(
             "url": f"/client/jobs/{job_id}",
         },
         "requests": visible_requests,
+        "approved_request": approved_request,
         "comparison": comparison,
         "stats": client_request_stats(all_requests, visible_requests),
         "view_links": client_request_view_links(job_id, normalized_filter),

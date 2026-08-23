@@ -166,6 +166,26 @@ performance, identity-provider, or assistive-technology evidence.
   `docs/ux-audit/2026-08-23-current-journeys/`. The full suite passed 225 tests
   in 80.480 seconds after the contract was updated.
 
+## Completed-project lifecycle follow-up
+
+- Completed consumer projects now surface the approved contractor, verified
+  completion state, Message and Profile actions, and accepted price, timeline,
+  and availability directly below the project journey.
+- Closed and hidden projects no longer repeat a non-actionable bid-window band;
+  open projects retain the existing bid-capacity presentation.
+- The approved summary remains visible when the mini-bid list is filtered to a
+  different status. A completed approved match also prevents an incorrect
+  Reopen action when that filter hides the approved bid.
+- At 1280x720 and 390x844, the new summary stayed within the existing visual
+  system and produced no horizontal document overflow. The mobile message
+  composer was also adjusted so its Send button clears the fixed task
+  navigation by 16 measured pixels.
+- Current-run screenshots, same-state comparisons, findings, and screenshot
+  evidence limits are recorded in
+  `docs/ux-audit/2026-08-23-project-lifecycle/`.
+- The repeated full suite passed 225 tests in 82.538 seconds after the lifecycle
+  and responsive message corrections.
+
 ## Live gates not replaced by this check
 
 - A real screen-reader pass with VoiceOver, NVDA, or an equivalent remains

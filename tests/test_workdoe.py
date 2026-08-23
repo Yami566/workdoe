@@ -900,6 +900,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(detail.status_code, 200)
         self.assertIn(b">Close job</button>", detail.data)
         self.assertNotIn(b">Reopen job</button>", detail.data)
+        self.assertIn(b'aria-label="Bid availability"', detail.data)
         self.assertIn(b'class="job-facts"', detail.data)
         self.assertIn(b"<dt>Service</dt>", detail.data)
         self.assertIn(b"<dt>Area</dt>", detail.data)
@@ -914,6 +915,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(closed.status_code, 200)
         self.assertIn(b">Reopen job</button>", closed.data)
         self.assertNotIn(b">Close job</button>", closed.data)
+        self.assertNotIn(b'aria-label="Bid availability"', closed.data)
         self.assertIn(b"Plans changed", closed.data)
         closed_job = self.one(
             "SELECT close_reason, close_note, closed_at FROM jobs WHERE id = ?",
@@ -5378,6 +5380,14 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Verified complete", dashboard.data)
         detail = self.client.get(f"/client/jobs/{job['id']}")
         self.assertIn(b"Both participants confirmed this Workdoe project", detail.data)
+        self.assertIn(b'aria-labelledby="approved-match-title"', detail.data)
+        self.assertIn(b"<dt>Price</dt><dd>$400-$550</dd>", detail.data)
+        self.assertIn(b"<dt>Timeline</dt><dd>One day</dd>", detail.data)
+        self.assertIn(
+            f'href="/contractors/{contractor["id"]}">Profile</a>'.encode("ascii"),
+            detail.data,
+        )
+        self.assertNotIn(b'aria-label="Bid availability"', detail.data)
         self.assertNotIn(b">Reopen job<", detail.data)
 
         reopen = self.client.post(

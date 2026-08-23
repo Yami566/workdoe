@@ -4755,6 +4755,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "description": "Townhouse front steps.",
                     "desired_date": "2026-08-14",
                     "status": "open",
+                    "bid_window": {
+                        "state": "open",
+                        "availability_label": "2 bid spots open",
+                        "usage_label": "2 of 4 bids",
+                        "deadline_label": "Aug 30 at 5:00 PM UTC",
+                        "used": 2,
+                        "limit": 4,
+                        "is_expired": False,
+                        "can_extend": False,
+                    },
                 },
                 "photos": [{"id": 2, "url": "/media/jobs/2", "original_filename": "steps.jpg"}],
             },
@@ -4789,6 +4799,18 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "thread_url": "/messages/5",
                     },
                 ],
+                "approved_request": {
+                    "id": 32,
+                    "contractor_id": 10,
+                    "contractor_name": "Approved Crew",
+                    "price_range": "$300-$450",
+                    "timeline": "Friday",
+                    "availability": "Friday",
+                    "thread_url": "/messages/5",
+                    "profile_url": "/contractors/10",
+                    "completion_state": "awaiting",
+                    "completion_label": "Awaiting both confirmations",
+                },
                 "stats": {"pending": 1, "approved": 1, "total": 2},
                 "comparison": {
                     "order_label": "Received order",
@@ -4858,6 +4880,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', client_job_html)
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', client_job_html)
         self.assertIn("Job controls", client_job_html)
+        self.assertIn('aria-label="Bid availability"', client_job_html)
+        self.assertIn('aria-labelledby="approved-match-title"', client_job_html)
+        self.assertIn('href="/contractors/10">Profile</a>', client_job_html)
         self.assertIn('href="/client/jobs/12/edit"', client_job_html)
         self.assertIn('data-json-action="/api/jobs/12/close"', client_job_html)
         self.assertIn('aria-label="Close Power wash steps"', client_job_html)
@@ -5790,6 +5815,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         payload = module.client_job_requests_payload(job, rows, "pending")
         self.assertEqual(payload["view"], "pending")
         self.assertEqual(payload["job"]["url"], "/client/jobs/42")
+        self.assertEqual(
+            payload["approved_request"]["contractor_name"], "Alex Crew LLC"
+        )
+        self.assertEqual(payload["approved_request"]["thread_url"], "/messages/5")
+        self.assertNotIn("email", payload["approved_request"])
+        self.assertNotIn("phone", payload["approved_request"])
         self.assertEqual(
             payload["stats"],
             {
@@ -9975,12 +10006,61 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "completion_label": "Workdoe-completed",
                     }
                 ],
+                "approved_request": {
+                    "id": 41,
+                    "contractor_id": 22,
+                    "contractor_name": "Doe Exterior Care",
+                    "price_range": "$300-$400",
+                    "timeline": "One day",
+                    "availability": "This week",
+                    "thread_url": "/messages/5",
+                    "profile_url": "/contractors/22",
+                    "verified_at": "2026-08-17T12:00:00+00:00",
+                    "completion_state": "verified",
+                    "completion_label": "Workdoe-completed",
+                },
                 "reviews_by_request": {41: {}},
                 "stats": {"approved": 1, "verified": 1, "total": 1},
             },
         )
+        self.assertIn('aria-labelledby="approved-match-title"', client_html)
+        self.assertIn('href="/messages/5">Message</a>', client_html)
+        self.assertIn('href="/contractors/22">Profile</a>', client_html)
+        self.assertIn("<dt>Price</dt><dd>$300-$400</dd>", client_html)
+        self.assertIn("<dt>Timeline</dt><dd>One day</dd>", client_html)
+        self.assertNotIn('aria-label="Bid availability"', client_html)
         self.assertIn("Leave completed-work feedback", client_html)
         self.assertIn('data-json-action="/api/match-requests/41/review"', client_html)
+
+        filtered_closed_html = module.client_job_detail_html(
+            client,
+            {
+                "job": {
+                    "id": 31,
+                    "title": "Wash the front steps",
+                    "service_name": "Power washing",
+                    "area_label": "Washington, DC 20003",
+                    "status": "closed",
+                    "close_reason": "workdoe-match",
+                },
+                "photos": [],
+            },
+            {
+                "requests": [],
+                "approved_request": {
+                    "id": 41,
+                    "contractor_id": 22,
+                    "contractor_name": "Doe Exterior Care",
+                    "profile_url": "/contractors/22",
+                    "contractor_confirmed_at": "2026-08-17T11:00:00+00:00",
+                    "completion_state": "contractor-confirmed",
+                    "completion_label": "Contractor confirmed - confirm completion",
+                },
+                "stats": {"approved": 1, "verified": 0, "total": 1},
+            },
+        )
+        self.assertIn("Contractor confirmed - confirm completion", filtered_closed_html)
+        self.assertNotIn("Reopen job", filtered_closed_html)
 
         public_html = module.public_contractor_profile_html(
             client,

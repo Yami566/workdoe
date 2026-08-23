@@ -17,23 +17,46 @@
   <li{% if request_stats.verified %} class="is-complete"{% endif %}><span>04</span><strong>Complete</strong></li>
 </ol>
 
-<section class="bid-window bid-window-{{ bid_window.state }}" aria-label="Bid availability">
-  <div>
-    <span class="bid-window-kicker">Fair bid window</span>
-    <strong>{{ bid_window.availability_label }}</strong>
-  </div>
-  <div class="bid-window-status">
-    <span>{{ bid_window.usage_label }}</span>
-    <span>{% if bid_window.is_expired %}Closed{% else %}Closes{% endif %} {{ bid_window.deadline_label }}</span>
-  </div>
-  <progress value="{{ bid_window.used }}" max="{{ bid_window.limit }}">{{ bid_window.usage_label }}</progress>
-  {% if bid_window.can_extend %}
-    <form method="post" action="{{ url_for('extend_job_bids', job_id=job.id) }}">
-      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-      <button class="button secondary compact" type="submit">Add 7 days</button>
-    </form>
-  {% endif %}
-</section>
+{% if approved_request %}
+  {% set approved_contractor_name = approved_request.business_name or approved_request.company_name or approved_request.display_name %}
+  {% set approved_completion_state = approved_request|completion_state %}
+  <section class="project-match-context" aria-labelledby="approved-match-title">
+    <div class="project-match-heading">
+      <p class="eyebrow">Approved match</p>
+      <h2 id="approved-match-title">{{ approved_contractor_name }}</h2>
+      <span class="completion-chip{% if approved_completion_state == 'verified' %} verified{% else %} awaiting{% endif %}">{{ approved_request|completion_label('client') }}</span>
+    </div>
+    <div class="project-match-actions">
+      {% if approved_request.thread_id %}<a class="button compact" href="{{ url_for('thread_detail', thread_id=approved_request.thread_id) }}">Message</a>{% endif %}
+      <a class="button secondary compact" href="{{ url_for('contractor_public_profile', contractor_id=approved_request.contractor_id) }}">Profile</a>
+    </div>
+    <dl class="thread-match-facts">
+      <div><dt>Price</dt><dd>{{ approved_request.price_range or "Not provided" }}</dd></div>
+      <div><dt>Timeline</dt><dd>{{ approved_request.timeline or "Not provided" }}</dd></div>
+      <div><dt>Availability</dt><dd>{{ approved_request.availability or "Not provided" }}</dd></div>
+    </dl>
+  </section>
+{% endif %}
+
+{% if job.status == 'open' %}
+  <section class="bid-window bid-window-{{ bid_window.state }}" aria-label="Bid availability">
+    <div>
+      <span class="bid-window-kicker">Fair bid window</span>
+      <strong>{{ bid_window.availability_label }}</strong>
+    </div>
+    <div class="bid-window-status">
+      <span>{{ bid_window.usage_label }}</span>
+      <span>{% if bid_window.is_expired %}Closed{% else %}Closes{% endif %} {{ bid_window.deadline_label }}</span>
+    </div>
+    <progress value="{{ bid_window.used }}" max="{{ bid_window.limit }}">{{ bid_window.usage_label }}</progress>
+    {% if bid_window.can_extend %}
+      <form method="post" action="{{ url_for('extend_job_bids', job_id=job.id) }}">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <button class="button secondary compact" type="submit">Add 7 days</button>
+      </form>
+    {% endif %}
+  </section>
+{% endif %}
 
 {% if repeat_invitation %}
   <section class="repeat-invitation-banner compact-banner" aria-label="Repeat contractor invitation">

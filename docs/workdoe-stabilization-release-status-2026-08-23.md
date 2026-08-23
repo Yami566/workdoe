@@ -65,6 +65,14 @@ deployment has been performed during this stabilization pass.
   timeline, and availability come from the accepted mini bid; project links are
   role-correct; and the projection excludes exact address and contact fields.
   Flask and Worker adapters share the same message-context contract.
+- Carried that approved-match context into completed consumer project history.
+  Closed projects now prioritize the chosen contractor, completion state,
+  contact actions, and accepted terms instead of repeating an expired bid
+  window. The summary remains stable across bid-status filters in both Flask
+  and Worker adapters.
+- Corrected the 390x844 message-thread grid so the complete reply composer and
+  Send action clear the fixed mobile task navigation without adding script or
+  changing the desktop layout.
 
 ## Verification evidence
 
@@ -137,6 +145,21 @@ deployment has been performed during this stabilization pass.
   Same-state evidence is stored as captures `27` through `32`; Flask/Worker
   privacy and route contracts pass, and the full suite passed 225 tests in
   80.480 seconds.
+- A completed-project lifecycle pass at 390x844 and 1280x720 verified that the
+  approved contractor and accepted terms precede project scope, closed states
+  omit the expired bid window, and the corrected mobile Send action has 16
+  pixels of clearance above task navigation. Current-run before/after evidence
+  and limits are stored in
+  `docs/ux-audit/2026-08-23-project-lifecycle/`.
+- The repeated lifecycle release gate passed 225 tests in 82.538 seconds. The
+  full security command found no known Python or Node vulnerabilities, no
+  medium/high Bandit findings, no Ruff findings, no unreviewed detected secrets
+  across 463 non-ignored files, and no provenance drift.
+- Cloudflare preflight completed with no warnings. D1 query-plan verification
+  used `idx_jobs_open_geo` and the covering
+  `idx_job_photos_public_job` index without hot-table scans. Wrangler 4.125.0
+  dry-run packaging succeeded with 48 Python modules and 86 assets at 893.80
+  KiB / 163.74 KiB gzip.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

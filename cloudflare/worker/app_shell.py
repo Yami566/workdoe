@@ -3272,6 +3272,7 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
     job = detail_payload.get("job", {})
     repeat_invitation = detail_payload.get("repeat_invitation")
     requests = requests_payload.get("requests", [])
+    approved_request = requests_payload.get("approved_request")
     stats = requests_payload.get("stats", {})
     bidding = job.get("bid_window", requests_payload.get("job", {}).get("bid_window", {}))
     view_links = requests_payload.get("view_links", [])
@@ -3297,7 +3298,40 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
     completion_started = any(
         request.get("client_confirmed_at") or request.get("contractor_confirmed_at")
         for request in requests
+    ) or bool(
+        approved_request
+        and (
+            approved_request.get("client_confirmed_at")
+            or approved_request.get("contractor_confirmed_at")
+        )
     )
+    approved_match_html = ""
+    if approved_request:
+        approved_name = approved_request.get("contractor_name", "Contractor")
+        approved_state = approved_request.get("completion_state", "awaiting")
+        completion_class = "verified" if approved_state == "verified" else "awaiting"
+        message_action = (
+            f'<a class="button compact" href="{escape(approved_request.get("thread_url", ""))}">Message</a>'
+            if approved_request.get("thread_url")
+            else ""
+        )
+        approved_match_html = f"""
+    <section class="project-match-context" aria-labelledby="approved-match-title">
+      <div class="project-match-heading">
+        <p class="eyebrow">Approved match</p>
+        <h2 id="approved-match-title">{escape(approved_name)}</h2>
+        <span class="completion-chip {completion_class}">{escape(approved_request.get('completion_label', 'Awaiting completion'))}</span>
+      </div>
+      <div class="project-match-actions">
+        {message_action}
+        <a class="button secondary compact" href="{escape(approved_request.get('profile_url', ''))}">Profile</a>
+      </div>
+      <dl class="thread-match-facts">
+        <div><dt>Price</dt><dd>{escape(approved_request.get('price_range') or 'Not provided')}</dd></div>
+        <div><dt>Timeline</dt><dd>{escape(approved_request.get('timeline') or 'Not provided')}</dd></div>
+        <div><dt>Availability</dt><dd>{escape(approved_request.get('availability') or 'Not provided')}</dd></div>
+      </dl>
+    </section>"""
     invitation_banner = ""
     if repeat_invitation:
         invitation_action = ""
@@ -3351,7 +3385,7 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
     request_rows = []
     for request in requests:
         request_id = int(request.get("id", 0) or 0)
-        status = request.get("status", "")
+        request_status = request.get("status", "")
         actions = ""
         if request.get("can_approve"):
             contractor_name = request.get("contractor_name", "contractor")
@@ -3369,7 +3403,7 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
         elif request.get("thread_url"):
             actions = f'<a class="button secondary" href="{escape(request.get("thread_url", ""))}">Message</a>'
         if (
-            status == "approved"
+            request_status == "approved"
             and job.get("status") == "closed"
             and job.get("close_reason") == "workdoe-match"
             and not request.get("client_confirmed_at")
@@ -3380,7 +3414,7 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
             <p id="match-completion-{request_id}-status" class="help-text" data-form-status aria-live="polite"></p>
           </form>"""
         completion = ""
-        if status == "approved":
+        if request_status == "approved":
             completion_message = (
                 "Close the project after the work is finished to begin confirmation."
                 if job.get("status") != "closed"
@@ -3428,7 +3462,7 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
             f"""
       <article class="bid-card" aria-labelledby="bid-title-{request_id}">
         <div class="row-meta">
-          <span class="status {escape(status)}">{escape(status)}</span>
+          <span class="status {escape(request_status)}">{escape(request_status)}</span>
           <span>{escape(request.get('trades', 'Contractor profile'))}</span>
         </div>
         <h2 id="bid-title-{request_id}">{escape(request.get('contractor_name', 'Contractor'))}</h2>
@@ -3446,6 +3480,7 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
       </article>"""
         )
     requests_html = "\n".join(request_rows) if request_rows else empty_state("No mini bids yet", "/client/dashboard", "Back to dashboard")
+    bid_window_markup = bid_window_html(bidding, owner=True, job_id=job_id) if status == "open" else ""
     body = f"""
     <section class="dashboard-header">
       <div>
@@ -3461,7 +3496,8 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
       <li{' class="is-complete"' if int(stats.get('approved', 0)) else ''}><span>03</span><strong>Matched</strong></li>
       <li{' class="is-complete"' if int(stats.get('verified', 0)) else ''}><span>04</span><strong>Complete</strong></li>
     </ol>
-    {bid_window_html(bidding, owner=True, job_id=job_id)}
+    {approved_match_html}
+    {bid_window_markup}
     {invitation_banner}
     <section class="detail-grid">
       <article class="panel">
