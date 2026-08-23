@@ -2289,13 +2289,22 @@ def contractor_profile_html(
       </div>
       <a class="button secondary" href="/contractors/{contractor_id}">Preview</a>
     </section>
+    <nav class="profile-task-links" aria-label="Profile tasks">
+      <a href="#work-availability"><img src="/static/vendor/tabler-icons/home-up.svg" alt="">Availability</a>
+      <a href="#profile-details"><img src="/static/vendor/tabler-icons/tool.svg" alt="">Profile details</a>
+      <a href="#credential-claims"><img src="/static/vendor/tabler-icons/home-check.svg" alt="">Credentials</a>
+    </nav>
     <section class="profile-readiness" aria-labelledby="profile-readiness-title">
-      <div class="profile-readiness-head">
-        <div><p class="eyebrow">Storefront readiness</p><h2 id="profile-readiness-title">{readiness['complete_count']} of {readiness['total_count']} ready</h2></div>
-        <strong>{readiness['percent']}%</strong>
-      </div>
-      <progress value="{readiness['complete_count']}" max="{readiness['total_count']}">{readiness['percent']}%</progress>
-      <ol class="profile-readiness-steps">{readiness_steps}</ol>
+      <details{' open' if readiness['percent'] < 100 else ''}>
+        <summary class="profile-readiness-head">
+          <div><p class="eyebrow">Storefront readiness</p><h2 id="profile-readiness-title">{readiness['complete_count']} of {readiness['total_count']} ready</h2></div>
+          <strong>{readiness['percent']}%</strong>
+        </summary>
+        <div class="profile-readiness-body">
+          <progress value="{readiness['complete_count']}" max="{readiness['total_count']}">{readiness['percent']}%</progress>
+          <ol class="profile-readiness-steps">{readiness_steps}</ol>
+        </div>
+      </details>
     </section>
     <section id="work-availability" class="preference-band" aria-labelledby="work-availability-title">
       <div><p class="eyebrow">Work status</p><h2 id="work-availability-title">Availability</h2><p class="help-text">This self-reported status is shown on your contractor profile. Update it whenever your schedule changes.</p></div>
@@ -2306,7 +2315,21 @@ def contractor_profile_html(
         <span id="availability-form-status" class="sr-only" data-form-status aria-live="polite"></span>
       </form>
     </section>
-    <form class="form-grid" data-json-action="/api/contractor/profile" data-success-url-template="/contractor/profile" aria-label="Contractor profile" aria-describedby="profile-form-status">
+    <section id="credential-claims" class="detail-grid credential-management" aria-labelledby="credential-claims-title">
+      <form class="panel stack-form" data-json-action="/api/contractor/credentials" data-success-url-template="/contractor/profile#credential-claims" aria-label="Submit credential claim" aria-describedby="credential-claim-status">
+        <div><p class="eyebrow">Trust record</p><h2 id="credential-claims-title">Submit a credential claim</h2><p class="help-text">Workdoe shows a public label only after an administrator checks the linked source. This is not an endorsement of skill, safety, or legal eligibility.</p></div>
+        <label for="credential-type">Credential <select id="credential-type" name="credential_type" required><option value="">Choose one</option>{credential_type_options}</select></label>
+        <label for="credential-jurisdiction">Jurisdiction <select id="credential-jurisdiction" name="jurisdiction" required><option value="">Choose one</option>{credential_jurisdiction_options}</select></label>
+        <label for="credential-identifier">Record identifier <input id="credential-identifier" name="claimed_identifier" maxlength="{CREDENTIAL_IDENTIFIER_MAX_LENGTH}" autocomplete="off" spellcheck="false" required></label>
+        <label for="credential-name">Name on record (optional) <input id="credential-name" name="claimed_name" maxlength="{CREDENTIAL_NAME_MAX_LENGTH}" autocomplete="organization" autocapitalize="words"></label>
+        <label for="credential-source">Public source (optional) <input id="credential-source" name="source_url" type="url" maxlength="300" placeholder="https://..." autocomplete="url" autocapitalize="off" spellcheck="false"><span class="help-text">A regulator, insurer, or public registry page helps the review.</span></label>
+        <label for="credential-expiry">Expiration (optional) <input id="credential-expiry" name="expires_at" type="date"></label>
+        <button class="button" type="submit">Send for review</button>
+        <p id="credential-claim-status" class="help-text" data-form-status aria-live="polite"></p>
+      </form>
+      <section class="panel" aria-labelledby="credential-status-title"><h2 id="credential-status-title">Your claims</h2>{''.join(credential_rows)}</section>
+    </section>
+    <form id="profile-details" class="form-grid" data-json-action="/api/contractor/profile" data-success-url-template="/contractor/profile" aria-label="Contractor profile" aria-describedby="profile-form-status">
       <input type="hidden" name="market_fit_version" value="1">
       <label class="wide" for="profile-business-name">Business name <input id="profile-business-name" name="business_name" value="{escape(profile.get('business_name', ''))}" maxlength="120" autocomplete="organization" autocapitalize="words" spellcheck="false" enterkeyhint="next" required></label>
       <fieldset class="wide profile-service-selector" id="profile-trades">
@@ -2329,20 +2352,6 @@ def contractor_profile_html(
         <p id="profile-form-status" class="help-text" data-form-status aria-live="polite"></p>
       </div>
     </form>
-    <section id="credential-claims" class="detail-grid credential-management" aria-labelledby="credential-claims-title">
-      <form class="panel stack-form" data-json-action="/api/contractor/credentials" data-success-url-template="/contractor/profile#credential-claims" aria-label="Submit credential claim" aria-describedby="credential-claim-status">
-        <div><p class="eyebrow">Trust record</p><h2 id="credential-claims-title">Submit a credential claim</h2><p class="help-text">Workdoe shows a public label only after an administrator checks the linked source. This is not an endorsement of skill, safety, or legal eligibility.</p></div>
-        <label for="credential-type">Credential <select id="credential-type" name="credential_type" required><option value="">Choose one</option>{credential_type_options}</select></label>
-        <label for="credential-jurisdiction">Jurisdiction <select id="credential-jurisdiction" name="jurisdiction" required><option value="">Choose one</option>{credential_jurisdiction_options}</select></label>
-        <label for="credential-identifier">Record identifier <input id="credential-identifier" name="claimed_identifier" maxlength="{CREDENTIAL_IDENTIFIER_MAX_LENGTH}" autocomplete="off" spellcheck="false" required></label>
-        <label for="credential-name">Name on record (optional) <input id="credential-name" name="claimed_name" maxlength="{CREDENTIAL_NAME_MAX_LENGTH}" autocomplete="organization" autocapitalize="words"></label>
-        <label for="credential-source">Public source (optional) <input id="credential-source" name="source_url" type="url" maxlength="300" placeholder="https://..." autocomplete="url" autocapitalize="off" spellcheck="false"><span class="help-text">A regulator, insurer, or public registry page helps the review.</span></label>
-        <label for="credential-expiry">Expiration (optional) <input id="credential-expiry" name="expires_at" type="date"></label>
-        <button class="button" type="submit">Send for review</button>
-        <p id="credential-claim-status" class="help-text" data-form-status aria-live="polite"></p>
-      </form>
-      <section class="panel" aria-labelledby="credential-status-title"><h2 id="credential-status-title">Your claims</h2>{''.join(credential_rows)}</section>
-    </section>
     <section class="detail-grid">
       <form class="panel stack-form" data-file-action="/api/media/contractors/{contractor_id}/upload" data-success-url-template="/contractor/profile" enctype="multipart/form-data" aria-label="Upload portfolio photo" aria-describedby="profile-upload-status">
         <h2>Portfolio photo</h2>

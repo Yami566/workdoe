@@ -1968,7 +1968,16 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'max="100"', form.data)
         self.assertNotIn(b'type="tel"', form.data)
         self.assertIn(b"Storefront readiness", form.data)
+        self.assertIn(b"Profile setup", form.data)
+        self.assertNotIn(b"Help clients approve the right match.", form.data)
+        self.assertIn(b'class="profile-task-links" aria-label="Profile tasks"', form.data)
+        self.assertIn(b'href="#work-availability"', form.data)
+        self.assertIn(b'href="#profile-details"', form.data)
+        self.assertIn(b'href="#credential-claims"', form.data)
+        self.assertIn(b'<summary class="profile-readiness-head">', form.data)
+        self.assertIn(b"<details open>", form.data)
         self.assertIn(b'aria-label="Contractor profile"', form.data)
+        self.assertIn(b'id="profile-details"', form.data)
         self.assertIn(b'for="profile-business-name"', form.data)
         self.assertIn(b'id="profile-business-name"', form.data)
         self.assertIn(b'id="profile-trades"', form.data)
@@ -1976,6 +1985,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'enterkeyhint="next"', form.data)
         self.assertIn(b'id="profile-photos"', form.data)
         self.assertIn(b'aria-describedby="profile-photos-help"', form.data)
+        self.assertLess(
+            form.data.find(b'id="credential-claims"'),
+            form.data.find(b'id="profile-details"'),
+        )
+        self.assertEqual(form.data.count(b">Preview</a>"), 1)
 
         invalid = self.client.post(
             "/contractor/profile",
@@ -2039,6 +2053,8 @@ class WorkdoeFlowTests(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertIn(b"Contractor profile updated", updated.data)
+        self.assertIn(b"7 of 7 ready", updated.data)
+        self.assertNotIn(b"<details open>", updated.data)
         profile = self.one(
             "SELECT * FROM contractor_profiles WHERE user_id = ?",
             (contractor["id"],),

@@ -4482,6 +4482,17 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('autocomplete="url"', profile_html)
         self.assertIn("Storefront readiness", profile_html)
         self.assertIn("7 of 7 ready", profile_html)
+        self.assertIn('class="profile-task-links" aria-label="Profile tasks"', profile_html)
+        self.assertIn('href="#work-availability"', profile_html)
+        self.assertIn('href="#profile-details"', profile_html)
+        self.assertIn('href="#credential-claims"', profile_html)
+        self.assertIn('<summary class="profile-readiness-head">', profile_html)
+        self.assertNotIn("<details open>", profile_html)
+        self.assertIn('id="profile-details"', profile_html)
+        self.assertLess(
+            profile_html.find('id="credential-claims"'),
+            profile_html.find('id="profile-details"'),
+        )
         self.assertNotIn('id="profile-phone"', profile_html)
         self.assertIn('id="profile-intro"', profile_html)
         self.assertIn('enterkeyhint="done"', profile_html)

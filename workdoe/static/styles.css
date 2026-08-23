@@ -3204,9 +3204,47 @@ textarea:focus {
   font-weight: 750;
 }
 
-.page-header.profile-page-header h1 {
-  max-width: 920px;
-  font-size: 2.55rem;
+.profile-task-links {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  max-width: 620px;
+  margin: -8px 0 18px;
+}
+
+.profile-task-links a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 7px 9px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.profile-task-links a:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
+.profile-task-links img {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+}
+
+#work-availability,
+#credential-claims,
+#profile-details {
+  scroll-margin-top: 72px;
 }
 
 .profile-readiness {
@@ -3222,6 +3260,18 @@ textarea:focus {
   justify-content: space-between;
   gap: 18px;
   align-items: end;
+  cursor: pointer;
+  list-style: none;
+}
+
+.profile-readiness-head::-webkit-details-marker {
+  display: none;
+}
+
+.profile-readiness-body {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
 }
 
 .profile-readiness-head p,
@@ -5350,8 +5400,14 @@ textarea:focus {
     border-left-color: var(--accent);
   }
 
-  .page-header.profile-page-header h1 {
-    font-size: 2.05rem;
+  .profile-task-links {
+    gap: 6px;
+  }
+
+  .profile-task-links a {
+    gap: 5px;
+    padding-inline: 6px;
+    font-size: 0.74rem;
   }
 
   .profile-service-family,

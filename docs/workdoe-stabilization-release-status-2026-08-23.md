@@ -112,6 +112,11 @@ deployment has been performed during this stabilization pass.
   primary-first order, compact bid rows, and view-aware empty-state contract,
   while milestone points, source-checked credential signals, profile context,
   and completed-work history remain intact.
+- Reframed contractor profile setup around its three maintenance tasks.
+  Availability, profile details, and credentials now have compact direct links;
+  completed readiness details collapse; and credential claims precede the full
+  53-service editor. Flask and Worker adapters share the same native disclosure,
+  ordering, and anchor contract without changing credential review semantics.
 
 ## Verification evidence
 
@@ -286,6 +291,20 @@ deployment has been performed during this stabilization pass.
   improvement in first-bid position, and a one-viewport Pending zero state.
   The same-state comparison and evidence limits are recorded in
   `docs/ux-audit/2026-08-23-contractor-dashboard-friction/`.
+- The contractor-profile correction passed all 228 tests in 84.212 seconds.
+  The complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed secret
+  across 505 non-ignored files, and no dependency drift. Cloudflare preflight
+  remained warning-free; all 31 forward-only migrations and both expected D1
+  public indexes passed without a hot-table scan; and Wrangler 4.125.0 packaged
+  48 Python modules and 86 assets at 896.84 KiB / 164.71 KiB gzip without
+  deploying.
+- Current-run contractor-profile evidence at 390x844 and 1280x720 shows zero
+  horizontal overflow, all three task links fitting their stable columns,
+  completed-readiness disclosure collapsed, and credential setup moving from
+  5,834 to 868 pixels on mobile. The credential anchor clears the sticky app
+  bar by 72 pixels. Same-state comparison and evidence limits are recorded in
+  `docs/ux-audit/2026-08-23-contractor-profile-friction/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.
