@@ -2,7 +2,8 @@
 
 Date: 2026-08-23
 
-Status: local release candidate in progress; no GitHub push or Cloudflare
+Status: release candidate pushed for review on
+`codex/workdoe-stabilization-launch-2026-08-22`; no Cloudflare production
 deployment has been performed during this stabilization pass.
 
 ## Completed locally
@@ -247,9 +248,10 @@ performance, accessibility, and live gates run on the final commit.
    queue/email, rate-limit, accessibility, and agreed Core Web Vitals checks.
    Local asset/header evidence is not a substitute for production LCP, CLS, or
    INP measurements.
-4. Take the pre-deployment D1 backup, record rollback targets, make one reviewed
-   GitHub push, run one guarded Cloudflare deployment, and retain the deployed
-   SHA plus strict production smoke evidence.
+4. Review and promote the candidate branch to `main`, take the pre-deployment
+   D1 backup, record rollback targets, run one guarded Cloudflare deployment,
+   and retain the deployed SHA plus strict production smoke evidence. The
+   candidate branch push does not trigger the production deploy job.
 
 Workdoe is not yet approved for unrestricted public registration. The remaining
 operator/legal decisions and live-service proofs cannot be replaced by local
