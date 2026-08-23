@@ -9,38 +9,7 @@
   <a class="button" href="{{ url_for('new_job') }}">Post a project</a>
 </section>
 
-<section class="consumer-workspace-context" aria-label="Consumer profile summary">
-  <div>
-    <strong>{{ profile.organization_name }}</strong>
-    <span>{{ account_type_label(profile.account_type) }} - {{ saved_locations|length }} saved area{{ "" if saved_locations|length == 1 else "s" }} - {{ project_templates|length }} template{{ "" if project_templates|length == 1 else "s" }}</span>
-  </div>
-  <a class="button secondary compact" href="{{ url_for('client_profile') }}">Manage profile</a>
-</section>
-
-<section class="dashboard-metrics" aria-label="Client work queue">
-  <a class="metric-card metric-supporting" href="{{ url_for('new_job') }}">
-    <span>Post</span>
-    <strong>New project</strong>
-  </a>
-  <div class="metric-card">
-    <span>Open projects</span>
-    <strong>{{ stats.open_jobs }}</strong>
-  </div>
-  <div class="metric-card">
-    <span>Pending bids</span>
-    <strong>{{ stats.pending_requests }}</strong>
-  </div>
-  <div class="metric-card metric-supporting">
-    <span>Brief-ready</span>
-    <strong>{{ stats.brief_ready_jobs }}</strong>
-  </div>
-  <div class="metric-card metric-supporting">
-    <span>Total projects</span>
-    <strong>{{ stats.total_jobs }}</strong>
-  </div>
-</section>
-
-<nav class="work-view-tabs" aria-label="Client job status">
+<nav class="work-view-tabs client-job-tabs" aria-label="Client job status">
   {% for item in job_view_links %}
     {% set count = stats.total_jobs if item.value == "all" else (stats.review_jobs if item.value == "review" else (stats.open_jobs if item.value == "open" else stats.closed_jobs)) %}
     <a class="work-view-tab{% if job_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if job_view == item.value %}aria-current="page"{% endif %}>
@@ -50,7 +19,7 @@
   {% endfor %}
 </nav>
 
-<section id="jobs-list" class="job-list">
+<section id="jobs-list" class="job-list" aria-label="Client jobs">
   {% for job in jobs %}
     {% set needs_review = (job.pending_count or 0) > 0 %}
     {% set row_href = url_for('client_job_detail', job_id=job.id, bids='pending') ~ '#mini-bids' if needs_review else url_for('client_job_detail', job_id=job.id) %}
@@ -78,11 +47,11 @@
   {% else %}
     <div class="empty-state field-empty-state">
       <img class="empty-state-visual" src="{{ url_for('static', filename='field-doe.webp') }}" alt="" width="180" height="180">
-      <h2>{% if job_view == "review" %}No bids to review{% elif job_view == "open" %}No open jobs{% elif job_view == "closed" %}No closed jobs{% else %}No jobs yet{% endif %}</h2>
+      <h2>{% if job_view == "review" %}No bids to review{% elif job_view == "open" %}No open projects{% elif job_view == "closed" %}No closed projects{% else %}No projects yet{% endif %}</h2>
       {% if job_view == "all" %}
         <a class="button" href="{{ url_for('new_job') }}">Post a project</a>
       {% else %}
-        <a class="button secondary" href="{{ url_for('client_dashboard') }}">All jobs</a>
+        <a class="button secondary" href="{{ url_for('client_dashboard') }}">All projects</a>
       {% endif %}
     </div>
   {% endfor %}

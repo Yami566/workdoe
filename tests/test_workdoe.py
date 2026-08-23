@@ -11,9 +11,11 @@ import xml.etree.ElementTree as ET
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from werkzeug.security import generate_password_hash
 
+import workdoe
 from workdoe import (
     CLERK_PROXY_PATH,
     clerk_proxy_url,
@@ -2754,7 +2756,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Automation", admin.data)
         self.assertIn(b"No automation events yet.", admin.data)
 
-    def test_dashboards_show_compact_work_queue_metrics(self):
+    def test_dashboards_prioritize_role_work_queues(self):
         job = self.one("SELECT id FROM jobs WHERE status = 'open' ORDER BY id LIMIT 1")
 
         self.login("contractor@workdoe.local", "workdoe-contractor")
@@ -2818,17 +2820,30 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         self.logout()
         self.login("client@workdoe.local", "workdoe-client")
-        client_dashboard = self.client.get("/client/dashboard")
+        with patch.object(
+            workdoe,
+            "client_jobs_workspace",
+            wraps=workdoe.client_jobs_workspace,
+        ) as workspace:
+            client_dashboard = self.client.get("/client/dashboard")
+        workspace.assert_called_once()
+        self.assertEqual(workspace.call_args.args[1], "all")
         client_html = client_dashboard.data.decode("utf-8")
-        self.assertIn('class="dashboard-metrics" aria-label="Client work queue"', client_html)
+        self.assertNotIn('aria-label="Client work queue"', client_html)
+        self.assertNotIn('aria-label="Consumer profile summary"', client_html)
+        self.assertNotIn("Manage profile", client_html)
+        self.assertNotIn("metric-card metric-supporting", client_html)
+        self.assertRegex(client_html, r"<span>All</span>\s*<strong>3</strong>")
         self.assertRegex(client_html, r"<span>Open</span>\s*<strong>3</strong>")
-        self.assertRegex(client_html, r"<span>Pending bids</span>\s*<strong>1</strong>")
-        self.assertRegex(client_html, r"<span>Total projects</span>\s*<strong>3</strong>")
-        self.assertIn('class="work-view-tabs" aria-label="Client job status"', client_html)
+        self.assertRegex(client_html, r"<span>Closed</span>\s*<strong>0</strong>")
+        self.assertIn(
+            'class="work-view-tabs client-job-tabs" aria-label="Client job status"',
+            client_html,
+        )
+        self.assertIn('id="jobs-list" class="job-list" aria-label="Client jobs"', client_html)
         self.assertIn('href="/client/dashboard?view=review"', client_html)
-        self.assertRegex(client_html, r"<span>Needs review</span>\s*<strong>1</strong>")
+        self.assertRegex(client_html, r"<span>Review</span>\s*<strong>1</strong>")
         self.assertIn('href="/jobs/new"', client_html)
-        self.assertEqual(client_html.count("metric-card metric-supporting"), 3)
         self.assertIn(f'href="/client/jobs/{job["id"]}?bids=pending#mini-bids"', client_html)
         self.assertIn('class="job-row link-row needs-review"', client_html)
         self.assertIn('aria-label="Review pending bids for Power wash townhouse front steps"', client_html)
@@ -2841,6 +2856,14 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Power wash townhouse front steps", review_dashboard.data)
         self.assertNotIn(b"Replace damaged fence panel", review_dashboard.data)
         self.assertIn(f'href="/client/jobs/{job["id"]}?bids=pending#mini-bids"', review_html)
+
+        invalid_view_dashboard = self.client.get("/client/dashboard?view=invalid")
+        invalid_view_html = invalid_view_dashboard.data.decode("utf-8")
+        self.assertIn(
+            'href="/client/dashboard" aria-current="page"',
+            invalid_view_html,
+        )
+        self.assertIn(b"Replace damaged fence panel", invalid_view_dashboard.data)
 
     def test_security_headers_support_map_without_inline_scripts(self):
         response = self.client.get("/")

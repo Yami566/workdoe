@@ -4121,15 +4121,93 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "client_email": "private@example.com",
                     }
                 ],
-                "stats": {"open_jobs": 1, "pending_requests": 2, "total_jobs": 1},
+                "view": "all",
+                "view_links": [
+                    {"value": "all", "label": "All", "url": "/client/dashboard"},
+                    {
+                        "value": "review",
+                        "label": "Review",
+                        "url": "/client/dashboard?view=review",
+                    },
+                    {
+                        "value": "open",
+                        "label": "Open",
+                        "url": "/client/dashboard?view=open",
+                    },
+                    {
+                        "value": "closed",
+                        "label": "Closed",
+                        "url": "/client/dashboard?view=closed",
+                    },
+                ],
+                "stats": {
+                    "open_jobs": 1,
+                    "review_jobs": 1,
+                    "closed_jobs": 0,
+                    "pending_requests": 2,
+                    "total_jobs": 1,
+                },
             },
         )
         self.assertIn("Projects - Workdoe", client_html)
         self.assertIn("Consumer workspace", client_html)
+        self.assertIn(
+            '<nav class="work-view-tabs client-job-tabs" aria-label="Client job status">',
+            client_html,
+        )
+        self.assertIn(
+            '<a class="work-view-tab is-active" href="/client/dashboard" aria-current="page"><span>All</span><strong>1</strong></a>',
+            client_html,
+        )
+        self.assertIn(
+            '<a class="work-view-tab" href="/client/dashboard?view=review"><span>Review</span><strong>1</strong></a>',
+            client_html,
+        )
+        self.assertNotIn('aria-label="Client work queue"', client_html)
         self.assertIn("/client/jobs/12?bids=pending#mini-bids", client_html)
         self.assertIn('aria-label="Review pending bids for Power wash steps"', client_html)
         self.assertIn("Review bids", client_html)
         self.assertNotIn("private@example.com", client_html)
+
+        review_empty_html = module.client_dashboard_html(
+            client,
+            {
+                "jobs": [],
+                "view": "review",
+                "view_links": [
+                    {"value": "all", "label": "All", "url": "/client/dashboard"},
+                    {
+                        "value": "review",
+                        "label": "Review",
+                        "url": "/client/dashboard?view=review",
+                    },
+                    {
+                        "value": "open",
+                        "label": "Open",
+                        "url": "/client/dashboard?view=open",
+                    },
+                    {
+                        "value": "closed",
+                        "label": "Closed",
+                        "url": "/client/dashboard?view=closed",
+                    },
+                ],
+                "stats": {
+                    "open_jobs": 1,
+                    "review_jobs": 0,
+                    "closed_jobs": 0,
+                    "pending_requests": 0,
+                    "total_jobs": 1,
+                },
+            },
+        )
+        self.assertIn(
+            '<a class="work-view-tab is-active" href="/client/dashboard?view=review" '
+            'aria-current="page"><span>Review</span><strong>0</strong></a>',
+            review_empty_html,
+        )
+        self.assertIn("No bids to review", review_empty_html)
+        self.assertIn('href="/client/dashboard">All projects</a>', review_empty_html)
 
         request_inbox_html = module.client_request_inbox_html(
             client,
@@ -9620,6 +9698,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "all",
         )
         self.assertEqual(len(client_payload["history"]), 1)
+        self.assertEqual(client_payload["view"], "all")
+        self.assertEqual(
+            [item["value"] for item in client_payload["view_links"]],
+            ["all", "review", "open", "closed"],
+        )
         self.assertEqual(client_payload["history"][0]["repeat_url"], "/jobs/new?repeat=12")
         client_html = app_shell.client_dashboard_html(client, client_payload)
         self.assertIn("Project history", client_html)

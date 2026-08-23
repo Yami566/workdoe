@@ -99,6 +99,12 @@ deployment has been performed during this stabilization pass.
   other participant, and the validated server-side filter preserves private
   read markers and aggregate analytics. Flask and Worker adapters share the
   same role-aware behavior and invalid values safely return to All.
+- Reframed the consumer dashboard around the project queue. All, Review, Open,
+  and Closed views now fit in one mobile row; the first project begins 274
+  pixels earlier in the measured 390x844 state; and Flask derives filtered
+  jobs, counts, and history from one workspace query instead of repeating the
+  query and loading unused profile context. The Worker exposes the same view
+  and empty-state contract.
 
 ## Verification evidence
 
@@ -247,6 +253,19 @@ deployment has been performed during this stabilization pass.
   one-viewport empty state. The same-state mobile comparison and evidence
   limits are recorded in
   `docs/ux-audit/2026-08-23-message-inbox-friction/`.
+- The consumer-dashboard correction passed all 228 tests in 81.598 seconds.
+  The complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed secret
+  across 493 non-ignored files, and no dependency drift. Cloudflare preflight
+  remained warning-free; all 31 forward-only migrations and both expected D1
+  public indexes passed without a hot-table scan; and Wrangler 4.125.0 packaged
+  48 Python modules and 86 assets at 896.76 KiB / 164.53 KiB gzip without
+  deploying.
+- Current-run consumer-dashboard evidence at 390x844 and 1280x720 shows zero
+  horizontal overflow, all four project states in one mobile row, a 274-pixel
+  improvement in first-project position, and a one-viewport Review zero state.
+  The same-state comparison and evidence limits are recorded in
+  `docs/ux-audit/2026-08-23-consumer-dashboard-friction/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

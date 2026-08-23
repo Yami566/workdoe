@@ -817,6 +817,37 @@ def client_dashboard_html(user, payload: dict) -> str:
     jobs = payload.get("jobs", [])
     history = payload.get("history", [])
     stats = payload.get("stats", {})
+    job_view = payload.get("view", "all")
+    view_links = payload.get("view_links") or [
+        {"value": "all", "label": "All", "url": "/client/dashboard"},
+        {
+            "value": "review",
+            "label": "Review",
+            "url": "/client/dashboard?view=review",
+        },
+        {"value": "open", "label": "Open", "url": "/client/dashboard?view=open"},
+        {
+            "value": "closed",
+            "label": "Closed",
+            "url": "/client/dashboard?view=closed",
+        },
+    ]
+    view_counts = {
+        "all": int(stats.get("total_jobs", 0) or 0),
+        "review": int(stats.get("review_jobs", 0) or 0),
+        "open": int(stats.get("open_jobs", 0) or 0),
+        "closed": int(stats.get("closed_jobs", 0) or 0),
+    }
+    view_tabs_html = "".join(
+        (
+            f'<a class="work-view-tab{" is-active" if job_view == item.get("value") else ""}" '
+            f'href="{escape(item.get("url", "/client/dashboard"))}"'
+            f'{" aria-current=\"page\"" if job_view == item.get("value") else ""}>'
+            f'<span>{escape(item.get("label", "All"))}</span>'
+            f'<strong>{view_counts.get(item.get("value"), 0)}</strong></a>'
+        )
+        for item in view_links
+    )
     rows = []
     for job in jobs:
         row_label = (
@@ -844,7 +875,16 @@ def client_dashboard_html(user, payload: dict) -> str:
       </div>
     </a>"""
         )
-    job_html = "\n".join(rows) if rows else empty_state("No projects yet", "/jobs/new", "Post a project")
+    empty_titles = {
+        "review": "No bids to review",
+        "open": "No open projects",
+        "closed": "No closed projects",
+    }
+    job_html = "\n".join(rows) if rows else empty_state(
+        empty_titles.get(job_view, "No projects yet"),
+        "/client/dashboard" if job_view != "all" else "/jobs/new",
+        "All projects" if job_view != "all" else "Post a project",
+    )
     history_rows = []
     for job in history:
         completion_chip = ""
@@ -885,12 +925,7 @@ def client_dashboard_html(user, payload: dict) -> str:
       </div>
       <a class="button" href="/jobs/new">Post a project</a>
     </section>
-    <section class="dashboard-metrics" aria-label="Client work queue">
-      <div class="metric-card"><span>Open projects</span><strong>{int(stats.get('open_jobs', 0))}</strong></div>
-      <div class="metric-card"><span>Pending bids</span><strong>{int(stats.get('pending_requests', 0))}</strong></div>
-      <div class="metric-card"><span>Brief-ready</span><strong>{int(stats.get('brief_ready_jobs', 0))}</strong></div>
-      <div class="metric-card"><span>Total projects</span><strong>{int(stats.get('total_jobs', 0))}</strong></div>
-    </section>
+    <nav class="work-view-tabs client-job-tabs" aria-label="Client job status">{view_tabs_html}</nav>
     <section class="job-list" aria-label="Client jobs">
 {job_html}
     </section>

@@ -144,7 +144,7 @@ def client_job_view_links() -> list[dict[str, str]]:
             "label": labels[value],
             "url": "/client/dashboard" + (f"?view={value}" if value != "all" else ""),
         }
-        for value in ("all", "open", "review", "closed")
+        for value in ("all", "review", "open", "closed")
     ]
 
 

@@ -50,7 +50,6 @@ from .client_profiles import (
     SAVED_LOCATION_LIMIT,
     ClientProfileError,
     SavedLocationError,
-    account_type_label,
     client_profile_payload,
     client_profile_response,
     saved_location_payload,
@@ -301,7 +300,7 @@ LEAD_VIEW_OPTIONS = (
 )
 CLIENT_JOB_VIEW_OPTIONS = (
     ("all", "All"),
-    ("review", "Needs review"),
+    ("review", "Review"),
     ("open", "Open"),
     ("closed", "Closed"),
 )
@@ -2433,11 +2432,7 @@ def register_routes(app: Flask) -> None:
     @role_required("client")
     def client_dashboard():
         job_view = normalize_client_job_view(request.args.get("view"))
-        jobs, stats = client_jobs_workspace(g.user["id"], job_view)
-        project_history, _ = client_jobs_workspace(g.user["id"], "closed")
-        profile = ensure_client_profile(g.user)
-        saved_locations = client_saved_locations(g.user["id"])
-        templates = client_project_templates(g.user["id"])
+        jobs, stats, project_history = client_jobs_workspace(g.user["id"], job_view)
         return render_template(
             "client_dashboard.html",
             jobs=jobs,
@@ -2445,10 +2440,6 @@ def register_routes(app: Flask) -> None:
             stats=stats,
             job_view=job_view,
             job_view_links=client_job_view_links(),
-            profile=client_profile_response(profile),
-            account_type_label=account_type_label,
-            saved_locations=saved_locations,
-            project_templates=templates,
         )
 
     @app.route("/client/profile", methods=("GET", "POST"))
@@ -2676,7 +2667,7 @@ def register_routes(app: Flask) -> None:
     @app.route("/client/requests")
     @role_required("client")
     def client_requests():
-        jobs, stats = client_jobs_workspace(g.user["id"], "review")
+        jobs, stats, _history = client_jobs_workspace(g.user["id"], "review")
         return render_template("client_requests.html", jobs=jobs, stats=stats)
 
     @app.route("/jobs/new", methods=("GET", "POST"))
@@ -7899,7 +7890,10 @@ def filter_client_jobs_by_view(jobs, job_view: str) -> list[dict]:
     return list(jobs)
 
 
-def client_jobs_workspace(client_id: int, job_view: str) -> tuple[list[dict], dict[str, int]]:
+def client_jobs_workspace(
+    client_id: int,
+    job_view: str,
+) -> tuple[list[dict], dict[str, int], list[dict]]:
     rows = get_db().execute(
         """
         SELECT jobs.*,
@@ -7977,7 +7971,8 @@ def client_jobs_workspace(client_id: int, job_view: str) -> tuple[list[dict], di
             1 for job in all_jobs if job["brief_readiness"]["state"] == "ready"
         ),
     }
-    return jobs, stats
+    history = [job for job in all_jobs if job["status"] == "closed"]
+    return jobs, stats, history
 
 
 def repeat_invitation_source_record(
