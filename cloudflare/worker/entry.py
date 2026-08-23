@@ -1746,6 +1746,11 @@ class Default(WorkerEntrypoint):
             view = normalize_contractor_bid_view(first_query_value(params, "bids"))
             rows = await contractor_bids_for_user(self.env, row_value(user, "id"))
             dashboard_payload = contractor_bids_payload(rows, view)
+            profile = await contractor_profile_for_user(
+                self.env,
+                row_value(user, "id"),
+            )
+            dashboard_payload["profile"] = contractor_profile_response(profile or {})
             dashboard_payload["repeat_invitations"] = await contractor_repeat_invitations(
                 self.env,
                 row_value(user, "id"),

@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workdoe stabilization reference board</title>
+  <script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172019;
+      --muted: #5c675f;
+      --line: #ccd3cd;
+      --surface: #ffffff;
+      --canvas: #eef2ee;
+      --accent: #3e654b;
+      --signal: #b75d37;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: Inter, Arial, sans-serif;
+    }
+    main {
+      width: 1440px;
+      min-height: 2160px;
+      padding: 56px;
+    }
+    header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 40px;
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: 24px;
+    }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 42px; line-height: 1.05; }
+    h2 { font-size: 25px; }
+    h3 { font-size: 17px; }
+    p { color: var(--muted); font-size: 15px; line-height: 1.45; }
+    .eyebrow {
+      color: var(--signal);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .release-note {
+      max-width: 420px;
+      border-left: 3px solid var(--signal);
+      padding-left: 16px;
+    }
+    section { margin-top: 42px; }
+    .section-heading {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 18px;
+    }
+    .reference-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+    article {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+    article img {
+      display: block;
+      width: 100%;
+      height: 260px;
+      object-fit: contain;
+      object-position: top center;
+      background: #f8faf8;
+      border-bottom: 1px solid var(--line);
+    }
+    article div { padding: 16px; }
+    article p { margin-top: 7px; }
+    .direction-list {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border-block: 1px solid var(--line);
+    }
+    .direction-list div {
+      min-height: 124px;
+      padding: 18px;
+      border-left: 1px solid var(--line);
+    }
+    .direction-list div:first-child { border-left: 0; }
+    .direction-list strong { display: block; margin-bottom: 7px; }
+    .target-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 0.68fr;
+      align-items: start;
+      gap: 20px;
+    }
+    .target-grid article img { height: auto; max-height: 650px; }
+    .target-grid article:nth-child(2) img { max-height: 680px; }
+    .target-grid article:nth-child(3) img { max-height: 680px; }
+    .acceptance {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .acceptance div {
+      border-top: 3px solid var(--accent);
+      background: var(--surface);
+      padding: 18px;
+    }
+    .acceptance strong { display: block; margin-bottom: 7px; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">Workdoe stabilization</p>
+        <h1>Reference and responsive target board</h1>
+      </div>
+      <p class="release-note">Adapt product discipline and release governance from prior work. Do not copy PTOwl or NuTs source, branding, or protected product expression.</p>
+    </header>
+
+    <section aria-labelledby="references-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Captured evidence</p>
+          <h2 id="references-title">What informed the Workdoe system</h2>
+        </div>
+        <p>Real screenshots from the 2026-08-15 audit</p>
+      </div>
+      <div class="reference-grid">
+        <article>
+          <img src="../2026-08-15/01-current-entry-desktop.png" alt="Earlier Workdoe entry screen">
+          <div><h3>Earlier Workdoe</h3><p>Keep the real project map and direct entry. Reduce explanatory copy and make each role’s next task obvious.</p></div>
+        </article>
+        <article>
+          <img src="../2026-08-15/02-ptowl-reference-desktop.png" alt="PTOwl product reference">
+          <div><h3>PTOwl reference</h3><p>Adapt compact workflow framing, strong form hierarchy, and visible operational status. No source code or branded expression is copied.</p></div>
+        </article>
+        <article>
+          <img src="../2026-08-15/03-nutstracker-reference-desktop.png" alt="NuTs product reference">
+          <div><h3>NuTs reference</h3><p>Adapt evidence-led QA, quiet density, and release documentation. NuTs remains proprietary reference material only.</p></div>
+        </article>
+      </div>
+    </section>
+
+    <section aria-labelledby="direction-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Design contract</p>
+          <h2 id="direction-title">Carry forward</h2>
+        </div>
+      </div>
+      <div class="direction-list">
+        <div><strong>Task focus</strong><p>Explore, Post, Messages, Profile. Keep account utilities in overflow.</p></div>
+        <div><strong>Map first</strong><p>Keep approximate project locations visible and synchronize map, list, and selected project.</p></div>
+        <div><strong>Structured work</strong><p>Preserve six service families, deterministic service keys, and six-step project briefs.</p></div>
+        <div><strong>Trust signals</strong><p>Show policy advisories, bid state, verified completion, and location privacy without technical marketing copy.</p></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="targets-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Accepted implementation targets</p>
+          <h2 id="targets-title">Desktop, tablet, and mobile</h2>
+        </div>
+        <p>Captured from the signed-in local Flask runtime</p>
+      </div>
+      <div class="target-grid">
+        <article>
+          <img src="contractor-dashboard-1280x720.png" alt="Workdoe contractor dashboard at 1280 by 720">
+          <div><h3>Desktop / 1280x720</h3><p>One-line task navigation, compact identity band, status tabs, and scannable bid rows.</p></div>
+        </article>
+        <article>
+          <img src="contractor-dashboard-820x1180.png" alt="Workdoe contractor dashboard at 820 by 1180">
+          <div><h3>Tablet / 820x1180</h3><p>Header tasks remain visible while queue metrics and project rows reflow without horizontal overflow.</p></div>
+        </article>
+        <article>
+          <img src="contractor-dashboard-390x844.png" alt="Workdoe contractor dashboard at 390 by 844">
+          <div><h3>Mobile / 390x844</h3><p>Icon-led bottom navigation, sticky app bar, and the bid queue entering the first viewport.</p></div>
+        </article>
+      </div>
+    </section>
+
+    <section aria-labelledby="acceptance-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Release acceptance</p>
+          <h2 id="acceptance-title">Interaction and privacy gates</h2>
+        </div>
+      </div>
+      <div class="acceptance">
+        <div><strong>Same-page flows</strong><p>Login and project composition use native dialogs with canonical full-page fallbacks and focus restoration.</p></div>
+        <div><strong>Approximate location</strong><p>Public list, map, and API states expose city-level or rounded coordinates only.</p></div>
+        <div><strong>Role clarity</strong><p>Consumer and contractor accounts retain separate project and fulfillment capabilities.</p></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

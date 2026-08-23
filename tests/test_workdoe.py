@@ -843,7 +843,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         html = inbox.data.decode("utf-8")
         self.assertEqual(inbox.status_code, 200)
         self.assertIn("Bid requests", html)
-        self.assertIn('href="/client/requests" aria-current="page"', html)
+        self.assertIn(
+            'href="/client/dashboard" aria-current="page">Profile</a>',
+            html,
+        )
         self.assertIn(f'href="/client/jobs/{job["id"]}?bids=pending#mini-bids"', html)
         self.assertIn("1 pending", html)
 
@@ -2656,6 +2659,14 @@ class WorkdoeFlowTests(unittest.TestCase):
         contractor_dashboard = self.client.get("/contractor/dashboard")
         contractor_html = contractor_dashboard.data.decode("utf-8")
         self.assertIn('class="dashboard-metrics" aria-label="Contractor work queue"', contractor_html)
+        self.assertIn(
+            'class="contractor-workspace-context" aria-label="Contractor profile summary"',
+            contractor_html,
+        )
+        self.assertIn(
+            'class="work-history contractor-bid-workspace"',
+            contractor_html,
+        )
         self.assertRegex(contractor_html, r"<span>Open projects</span>\s*<strong>3</strong>")
         self.assertRegex(contractor_html, r"<span>Pending bids</span>\s*<strong>1</strong>")
         self.assertRegex(contractor_html, r"<span>Approved</span>\s*<strong>0</strong>")
@@ -2853,7 +2864,14 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.login("contractor@workdoe.local", "workdoe-contractor")
         leads = self.client.get("/leads")
         self.assertEqual(leads.status_code, 200)
-        self.assertIn(b'href="/leads" aria-current="page">Find work</a>', leads.data)
+        self.assertIn(b'href="/leads" aria-current="page">Explore</a>', leads.data)
+        self.assertIn(b'<nav class="mobile-task-nav" aria-label="Primary tasks">', leads.data)
+        self.assertIn(b'<span>Explore</span>', leads.data)
+        self.assertIn(b'<span>Bids</span>', leads.data)
+        self.assertIn(b'<span>Messages</span>', leads.data)
+        self.assertIn(b'<span>Profile</span>', leads.data)
+        self.assertIn(b'<details class="account-menu">', leads.data)
+        self.assertIn(b'href="/account" >Account settings</a>', leads.data)
 
     def test_shared_accessibility_contract_is_present_on_local_pages(self):
         for path in ("/", "/login", "/create-account", "/post-project", "/safety"):
@@ -2907,6 +2925,14 @@ class WorkdoeFlowTests(unittest.TestCase):
             r"\.lead-map-panel,\s*\.lead-map-panel #lead-map\s*\{[^}]*min-height: 300px;",
         )
         self.assertRegex(body, r"\.lead-map-panel #lead-map\s*\{[^}]*height: 300px;")
+        self.assertRegex(
+            body,
+            r"\.mobile-task-nav\s*\{[^}]*position: fixed;[^}]*grid-auto-columns: minmax\(0, 1fr\);[^}]*grid-auto-flow: column;",
+        )
+        self.assertRegex(
+            body,
+            r"body:not\(\.dialog-fragment-body\)\s*\{[^}]*padding-bottom: calc\(68px \+ env\(safe-area-inset-bottom\)\);",
+        )
 
     def test_login_returns_to_safe_next_after_permission_gate(self):
         job = self.one("SELECT id FROM jobs WHERE status = 'open' ORDER BY id LIMIT 1")

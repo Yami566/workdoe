@@ -47,27 +47,35 @@
         </span>
       </a>
       <nav class="main-nav" aria-label="Main navigation">
-        <a href="{{ url_for('safety') }}" {% if request.endpoint == 'safety' %}aria-current="page"{% endif %}>Safety</a>
         {% if g.user %}
           {% if g.user.role == 'contractor' %}
-            <a href="{{ url_for('leads') }}" {% if request.endpoint in ['leads', 'contractor_job_detail'] %}aria-current="page"{% endif %}>Find work</a>
+            <a href="{{ url_for('leads') }}" {% if request.endpoint in ['leads', 'contractor_job_detail'] %}aria-current="page"{% endif %}>Explore</a>
+            <a href="{{ url_for('contractor_dashboard') }}" {% if request.endpoint == 'contractor_dashboard' %}aria-current="page"{% endif %}>Bids</a>
+            <a href="{{ url_for('message_threads') }}" {% if request.endpoint in ['message_threads', 'thread_detail'] %}aria-current="page"{% endif %}>Messages</a>
             <a href="{{ url_for('contractor_profile') }}" {% if request.endpoint in ['contractor_profile', 'contractor_public_profile'] %}aria-current="page"{% endif %}>Profile</a>
-            <a href="{{ url_for('message_threads') }}" {% if request.endpoint in ['message_threads', 'thread_detail'] %}aria-current="page"{% endif %}>Messages</a>
           {% elif g.user.role == 'client' %}
-            <a href="{{ url_for('client_dashboard') }}" {% if request.endpoint in ['client_dashboard', 'client_job_detail', 'edit_job'] %}aria-current="page"{% endif %}>Projects</a>
-            <a href="{{ url_for('client_requests') }}" {% if request.endpoint == 'client_requests' %}aria-current="page"{% endif %}>Requests</a>
+            <a href="{{ url_for('home') }}" {% if request.endpoint == 'home' %}aria-current="page"{% endif %}>Explore</a>
             <a href="{{ url_for('new_job') }}" {% if request.endpoint == 'new_job' %}aria-current="page"{% endif %}>Post project</a>
-            <a href="{{ url_for('client_profile') }}" {% if request.endpoint in ['client_profile', 'add_client_saved_location', 'delete_client_saved_location'] %}aria-current="page"{% endif %}>Profile</a>
             <a href="{{ url_for('message_threads') }}" {% if request.endpoint in ['message_threads', 'thread_detail'] %}aria-current="page"{% endif %}>Messages</a>
+            <a href="{{ url_for('client_dashboard') }}" {% if request.endpoint in ['client_dashboard', 'client_job_detail', 'edit_job', 'client_requests'] %}aria-current="page"{% endif %}>Profile</a>
           {% elif g.user.role == 'admin' %}
+            <a href="{{ url_for('home') }}" {% if request.endpoint == 'home' %}aria-current="page"{% endif %}>Explore</a>
             <a href="{{ url_for('admin_dashboard') }}" {% if request.endpoint == 'admin_dashboard' %}aria-current="page"{% endif %}>Admin</a>
           {% endif %}
-          <a href="{{ url_for('account') }}" {% if request.endpoint == 'account' %}aria-current="page"{% endif %}>Account</a>
-          <form class="nav-action-form" method="post" action="{{ url_for('logout') }}">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <button class="nav-link-button" type="submit">Sign out</button>
-          </form>
+          <details class="account-menu">
+            <summary aria-label="Account menu" title="Account menu"><img src="{{ url_for('static', filename='vendor/tabler-icons/dots.svg') }}" alt="" width="22" height="22"></summary>
+            <div class="account-menu-panel">
+              <a href="{{ url_for('safety') }}" {% if request.endpoint == 'safety' %}aria-current="page"{% endif %}>Safety</a>
+              {% if g.user.role == 'client' %}<a href="{{ url_for('client_profile') }}">Edit profile</a>{% endif %}
+              <a href="{{ url_for('account') }}" {% if request.endpoint == 'account' %}aria-current="page"{% endif %}>Account settings</a>
+              <form class="nav-action-form" method="post" action="{{ url_for('logout') }}">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <button class="nav-link-button" type="submit">Sign out</button>
+              </form>
+            </div>
+          </details>
         {% else %}
+          <a href="{{ url_for('home') }}" {% if request.endpoint == 'home' %}aria-current="page"{% endif %}>Explore</a>
           <a href="{{ url_for('post_project') }}" {% if request.endpoint == 'post_project' %}aria-current="page"{% endif %}>Post project</a>
           <a href="{{ url_for('login') }}" {% if request.endpoint == 'login' %}aria-current="page"{% endif %}>Sign in</a>
           <a class="button compact" href="{{ url_for('create_account') }}" {% if request.endpoint in ['start', 'create_account', 'verify_start'] %}aria-current="page"{% endif %}>Create account</a>
@@ -99,6 +107,7 @@
       <span>Serving DC, Maryland &amp; Virginia</span>
     </footer>
     {% if not embedded_dialog_mode() %}
+      {% include "_mobile_nav.html" %}
       {% include "_site_dialog.html" %}
       <script defer src="{{ url_for('static', filename='site-dialogs.js') }}?v=workdoe-overlay-dialog"></script>
     {% endif %}

@@ -431,42 +431,109 @@ def dmv_zip_options_html() -> str:
     )
 
 
-def nav_links(user, active_path: str) -> str:
-    role = row_value(user, "role")
-    links: list[tuple[str, str]] = []
+def nav_path_is_current(href: str, active_path: str, role: str = "") -> bool:
+    if href == "/":
+        return active_path == "/"
+    if href == "/leads":
+        return active_path == "/leads" or active_path.startswith("/jobs/")
+    if href == "/client/dashboard":
+        return active_path.startswith("/client/") and active_path != "/client/profile"
+    if href == "/contractor/dashboard":
+        return active_path == "/contractor/dashboard"
+    if href == "/messages":
+        return active_path == "/messages" or active_path.startswith("/messages/")
+    if href == "/client/profile":
+        return active_path == "/client/profile"
+    if href == "/contractor/profile":
+        return active_path.startswith("/contractor/profile")
+    if href == "/jobs/new":
+        return active_path == "/jobs/new"
+    if href == "/post-project":
+        return active_path == "/post-project"
+    if role == "admin" and href == "/admin":
+        return active_path.startswith("/admin")
+    return href == active_path
+
+
+def task_nav_items(user) -> list[tuple[str, str, str]]:
+    role = str(row_value(user, "role", "") or "")
     if role == "client":
-        links = [
-            ("/client/dashboard", "Projects"),
-            ("/client/requests", "Requests"),
-            ("/jobs/new", "Post project"),
-            ("/client/profile", "Profile"),
-            ("/messages", "Messages"),
-            ("/account", "Account"),
+        return [
+            ("/", "Explore", "layout-board-split.svg"),
+            ("/jobs/new", "Post project", "home-up.svg"),
+            ("/messages", "Messages", "dots.svg"),
+            ("/client/dashboard", "Profile", "home-check.svg"),
         ]
-    elif role == "contractor":
-        links = [("/leads", "Find work"), ("/contractor/dashboard", "Bids"), ("/contractor/profile", "Profile"), ("/messages", "Messages"), ("/account", "Account")]
-    elif role == "admin":
-        links = [("/admin", "Admin"), ("/account", "Account")]
-    else:
-        links = [
-            ("/", "Browse projects"),
-            ("/post-project", "Post project"),
-            ("/safety", "Safety"),
-            ("/login", "Sign in"),
-            ("/create-account", "Create account"),
+    if role == "contractor":
+        return [
+            ("/leads", "Explore", "layout-board-split.svg"),
+            ("/contractor/dashboard", "Bids", "tool.svg"),
+            ("/messages", "Messages", "dots.svg"),
+            ("/contractor/profile", "Profile", "home-check.svg"),
         ]
-    rendered = [
-        f'<a href="{escape(href)}"{" aria-current=\"page\"" if href == active_path else ""}>{escape(label)}</a>'
-        for href, label in links
+    if role == "admin":
+        return [
+            ("/", "Explore", "layout-board-split.svg"),
+            ("/admin", "Admin", "lock.svg"),
+            ("/account", "Account", "home-check.svg"),
+        ]
+    return [
+        ("/", "Explore", "layout-board-split.svg"),
+        ("/post-project", "Post project", "home-up.svg"),
+        ("/login", "Sign in", "lock.svg"),
+        ("/create-account", "Create account", "sparkles.svg"),
     ]
-    if role in {"client", "contractor", "admin"}:
-        rendered.append(
-            """<form class="nav-action-form" data-json-action="/api/auth/logout" data-success-url-template="/" aria-label="Sign out">
-        <button class="nav-link-button" type="submit">Sign out</button>
-        <span class="sr-only" data-form-status aria-live="polite"></span>
-      </form>"""
-        )
+
+
+def account_menu_html(user, active_path: str) -> str:
+    role = str(row_value(user, "role", "") or "")
+    if role not in {"client", "contractor", "admin"}:
+        return ""
+    edit_profile = (
+        '<a href="/client/profile">Edit profile</a>' if role == "client" else ""
+    )
+    return f"""<details class="account-menu">
+        <summary aria-label="Account menu" title="Account menu"><img src="/vendor/tabler-icons/dots.svg" alt="" width="22" height="22"></summary>
+        <div class="account-menu-panel">
+          <a href="/safety"{" aria-current=\"page\"" if active_path == "/safety" else ""}>Safety</a>
+          {edit_profile}
+          <a href="/account"{" aria-current=\"page\"" if active_path == "/account" else ""}>Account settings</a>
+          <form class="nav-action-form" data-json-action="/api/auth/logout" data-success-url-template="/" aria-label="Sign out">
+            <button class="nav-link-button" type="submit">Sign out</button>
+            <span class="sr-only" data-form-status aria-live="polite"></span>
+          </form>
+        </div>
+      </details>"""
+
+
+def nav_links(user, active_path: str) -> str:
+    role = str(row_value(user, "role", "") or "")
+    rendered = [
+        f'<a href="{escape(href)}"{" aria-current=\"page\"" if nav_path_is_current(href, active_path, role) else ""}>{escape(label)}</a>'
+        for href, label, _icon in task_nav_items(user)
+    ]
+    menu = account_menu_html(user, active_path)
+    if menu:
+        rendered.append(menu)
     return "\n".join(rendered)
+
+
+def mobile_task_nav_html(user, active_path: str) -> str:
+    role = str(row_value(user, "role", "") or "")
+    items = []
+    for href, label, icon in task_nav_items(user):
+        mobile_label = {"Post project": "Post", "Create account": "Join"}.get(
+            label, label
+        )
+        current = (
+            ' aria-current="page"'
+            if nav_path_is_current(href, active_path, role)
+            else ""
+        )
+        items.append(
+            f'<a href="{escape(href)}"{current}><img src="/vendor/tabler-icons/{escape(icon)}" alt=""><span>{escape(mobile_label)}</span></a>'
+        )
+    return '<nav class="mobile-task-nav" aria-label="Primary tasks">' + "".join(items) + "</nav>"
 
 
 def site_dialog_html() -> str:
@@ -540,6 +607,7 @@ def layout(
         scripts.append('<script defer src="/site-dialogs.js?v=workdoe-overlay-dialog"></script>')
     script_html = "\n  ".join(scripts)
     dialog_html = "" if embedded else site_dialog_html()
+    mobile_nav_html = "" if embedded else mobile_task_nav_html(user, active_path)
     canonical_path = active_path if active_path in {"/safety", "/privacy", "/terms"} else "/"
     canonical_url = f"https://workdoe.com{canonical_path}"
     return f"""<!doctype html>
@@ -600,6 +668,7 @@ def layout(
     </nav>
     <span>Serving DC, Maryland &amp; Virginia</span>
   </footer>
+  {mobile_nav_html}
 {dialog_html}
 </body>
 </html>
@@ -1049,12 +1118,15 @@ Policy: https://workdoe.com/safety
 
 def contractor_dashboard_html(user, payload: dict) -> str:
     bids = payload.get("bids", [])
+    profile = payload.get("profile", {})
     completed_work = payload.get("completed_work", [])
     repeat_invitations = payload.get("repeat_invitations", [])
     proposal_templates = payload.get("proposal_templates", [])
     proposal_template_limit = int(payload.get("proposal_template_limit", 6) or 6)
     stats = payload.get("stats", {})
     reviews_by_request = payload.get("reviews_by_request", {})
+    bid_view = str(payload.get("view", "all") or "all")
+    bid_view_links = payload.get("view_links", [])
     rows = []
     for bid in bids:
         row_cue = str(bid.get("row_cue", "View") or "View")
@@ -1173,6 +1245,30 @@ def contractor_dashboard_html(user, payload: dict) -> str:
         if proposal_template_rows
         else '<p class="empty history-empty">After sending a mini bid, save its reusable wording here.</p>'
     )
+    business_name = (
+        profile.get("business_name")
+        or row_value(user, "company_name")
+        or row_value(user, "display_name")
+        or "Contractor profile"
+    )
+    profile_intro = profile.get("intro") or (
+        "Complete your profile so clients can understand your services before approving a match."
+    )
+    bid_tabs = []
+    for item in bid_view_links:
+        value = str(item.get("value", "") or "")
+        count = {
+            "all": int(stats.get("total_requests", 0)),
+            "pending": int(stats.get("pending_requests", 0)),
+            "approved": int(stats.get("approved_requests", 0)),
+            "rejected": int(stats.get("rejected_requests", 0)),
+        }.get(value, 0)
+        current = ' aria-current="page"' if value == bid_view else ""
+        active_class = " is-active" if value == bid_view else ""
+        bid_tabs.append(
+            f'<a class="work-view-tab{active_class}" href="{escape(item.get("url", "/contractor/dashboard"))}"{current}><span>{escape(item.get("label", value.title()))}</span><strong>{count}</strong></a>'
+        )
+    bid_tabs_html = "".join(bid_tabs)
     body = f"""
     <section class="dashboard-header">
       <div>
@@ -1194,8 +1290,25 @@ def contractor_dashboard_html(user, payload: dict) -> str:
         + invitation_html
         + '</div></section>'
     ) if invitation_html else ''}
-    <section class="job-list" aria-label="Contractor mini bids">
+    <section class="contractor-workspace-context" aria-label="Contractor profile summary">
+      <div class="contractor-workspace-identity">
+        <p class="eyebrow">Profile signal</p>
+        <h2>{escape(business_name)}</h2>
+        <p>{escape(profile_intro)}</p>
+      </div>
+      <dl class="contractor-snapshot-facts">
+        <div><dt>Trades</dt><dd>{escape(profile.get('trades') or 'Not set')}</dd></div>
+        <div><dt>Service area</dt><dd>{escape(profile.get('service_area') or 'DMV area')}</dd></div>
+        <div><dt>Insurance</dt><dd>{escape(profile.get('insurance_status') or 'Not set')}</dd></div>
+      </dl>
+      <a class="button secondary compact" href="/contractor/profile">Edit profile</a>
+    </section>
+    <section class="work-history contractor-bid-workspace" aria-labelledby="contractor-bid-status-title">
+      <div class="section-heading history-heading"><div><p class="eyebrow">Response queue</p><h2 id="contractor-bid-status-title">Mini bid status</h2></div><span class="count-pill">{int(stats.get('visible_requests', len(bids)))} showing</span></div>
+      <nav class="work-view-tabs bid-view-tabs" aria-label="Contractor mini bid status">{bid_tabs_html}</nav>
+      <div class="job-list compact-list" aria-label="Contractor mini bids">
 {bid_html}
+      </div>
     </section>
     <section id="proposal-templates" class="work-history" aria-labelledby="proposal-templates-title">
       <div class="section-heading history-heading"><div><p class="eyebrow">Faster responses</p><h2 id="proposal-templates-title">Proposal templates</h2></div><span class="count-pill">{len(proposal_templates)}/{proposal_template_limit}</span></div>

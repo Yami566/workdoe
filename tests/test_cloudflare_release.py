@@ -3864,10 +3864,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertNotIn('href="/jobs/new">Post project</a>', anonymous_nav)
         client_nav = module.nav_links(client, "/client/dashboard")
-        self.assertIn('href="/account">Account</a>', client_nav)
+        self.assertIn('href="/client/dashboard" aria-current="page">Profile</a>', client_nav)
+        self.assertIn('<details class="account-menu">', client_nav)
+        self.assertIn('href="/account">Account settings</a>', client_nav)
         self.assertIn('data-json-action="/api/auth/logout"', client_nav)
         self.assertIn('class="nav-link-button"', client_nav)
         self.assertNotIn('href="/logout"', client_nav)
+        contractor_mobile_nav = module.mobile_task_nav_html(contractor, "/leads")
+        self.assertIn('aria-label="Primary tasks"', contractor_mobile_nav)
+        self.assertIn('href="/leads" aria-current="page"', contractor_mobile_nav)
+        self.assertIn("<span>Explore</span>", contractor_mobile_nav)
+        self.assertIn("<span>Bids</span>", contractor_mobile_nav)
+        self.assertIn("<span>Messages</span>", contractor_mobile_nav)
+        self.assertIn("<span>Profile</span>", contractor_mobile_nav)
         self.assertEqual(module.parse_app_client_job_edit_id("/client/jobs/12/edit"), 12)
         self.assertEqual(module.parse_app_client_job_edit_id("/client/jobs/12"), 0)
 
@@ -3946,13 +3955,23 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             },
         )
         self.assertIn("Bid Requests - Workdoe", request_inbox_html)
-        self.assertIn('href="/client/requests" aria-current="page"', request_inbox_html)
+        self.assertIn(
+            'href="/client/dashboard" aria-current="page">Profile</a>',
+            request_inbox_html,
+        )
         self.assertIn("2 pending", request_inbox_html)
         self.assertIn("/client/jobs/12?bids=pending#mini-bids", request_inbox_html)
 
         contractor_dashboard_html = module.contractor_dashboard_html(
             contractor,
             {
+                "profile": {
+                    "business_name": "Rivera Exterior Care",
+                    "trades": "Power washing",
+                    "service_area": "DMV area",
+                    "insurance_status": "Available on request",
+                    "intro": "Exterior maintenance for local homes.",
+                },
                 "bids": [
                     {
                         "title": "Power wash steps",
@@ -3965,9 +3984,27 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "status": "approved",
                     }
                 ],
-                "stats": {"pending_requests": 0, "approved_requests": 1, "total_requests": 1},
+                "view": "all",
+                "view_links": [
+                    {"value": "all", "label": "All", "url": "/contractor/dashboard"},
+                    {
+                        "value": "approved",
+                        "label": "Approved",
+                        "url": "/contractor/dashboard?bids=approved",
+                    },
+                ],
+                "stats": {
+                    "visible_requests": 1,
+                    "pending_requests": 0,
+                    "approved_requests": 1,
+                    "total_requests": 1,
+                },
             },
         )
+        self.assertIn("Rivera Exterior Care", contractor_dashboard_html)
+        self.assertIn('aria-label="Contractor profile summary"', contractor_dashboard_html)
+        self.assertIn('aria-label="Contractor mini bid status"', contractor_dashboard_html)
+        self.assertIn('href="/contractor/dashboard" aria-current="page"', contractor_dashboard_html)
         self.assertIn('aria-label="Message about Power wash steps"', contractor_dashboard_html)
         self.assertIn('<span class="row-cue">Message</span>', contractor_dashboard_html)
 
