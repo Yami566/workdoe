@@ -33,10 +33,10 @@ to the policy set from the footer.
 | Decision | Current state | Evidence required before public approval |
 | --- | --- | --- |
 | Legal operator and data controller | Missing | Legal name, business address/jurisdiction, and approved public display format |
-| Monitored contact ownership | Unverified | Named owner, monitored inbox proof, and response target for account, privacy, safety, and security requests |
+| Monitored contact ownership | `admin@workdoe.com` actively routes to the account's verified owner destination; receipt and operating ownership are unverified | Received-message proof, named monitor, and response target for account, privacy, safety, and security requests |
 | Retention and deletion schedule | Missing | Record-class schedule for accounts, projects, messages, media, reports, auth/audit records, backups, and deletion exceptions |
 | Consumer data-rights workflow | Procedure drafted only | Completed export/deletion test, identity-verification rule, denial/appeal path, and request log |
-| Terms acceptance | Clerk express-consent release gate implemented; live setting, policy approval, and versioned Workdoe acceptance record remain unverified/not implemented | Enable Clerk's express-consent setting for `https://workdoe.com/terms` and `https://workdoe.com/privacy`, retain operator proof, approve a version/change-notice rule, and define whether Workdoe needs its own acceptance event plus when existing users must re-accept |
+| Terms acceptance | Clerk production express consent is enabled and evidenced for `https://workdoe.com/terms` and `https://workdoe.com/privacy`; policy approval and a versioned Workdoe acceptance record remain unverified/not implemented | Retain operator proof, approve a version/change-notice rule, and define whether Workdoe needs its own acceptance event plus when existing users must re-accept |
 | Marketplace liability/dispute language | Legal review required | Approved venue, governing law, warranty/liability, indemnity, dispute, and notice terms appropriate to the operator |
 | Contractor classification and licensing | Legal review required | Approved independent-business wording and service/zone-specific qualification rules |
 | Underage-use rule | Candidate says 18+ | Owner/legal approval and enforcement/escalation procedure |

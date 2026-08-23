@@ -209,25 +209,39 @@ performance, accessibility, and live gates run on the final commit.
   value-free Clerk proof and secret-name evidence pass the release evidence
   check; the deployment plan reports no strict blockers; and the live launch
   doctor reports all pre-deployment phases ready.
-- Clerk still reports its three email DNS records as unverified:
-  `clkmail.workdoe.com`, `clk._domainkey.workdoe.com`, and
-  `clk2._domainkey.workdoe.com`. Cloudflare authorization and a real Workdoe
-  email-code journey remain required before public invitations.
+- Authorized Clerk's Cloudflare Domain Connect request after reviewing all five
+  proposed CNAMEs. Clerk now reports the primary domain, same-domain proxy, and
+  all three email records as verified. Public DNS resolves `clerk`, `accounts`,
+  `clkmail`, `clk._domainkey`, and `clk2._domainkey` to the expected Clerk
+  service hosts; no apex or Worker routing record was changed.
+- Enabled Cloudflare Email Routing for `workdoe.com`, added the required MX,
+  SPF, and DKIM records, and created an active `admin@workdoe.com` route to the
+  account's existing verified owner destination. Public DNS resolves all three
+  Cloudflare MX records. A received-message check and the owner's monitoring
+  and response target are still operational acceptance gates.
+- Confirmed in the Cloudflare dashboard that Hosted Images does not have the
+  required paid subscription. Production photo upload sanitization is designed
+  to fail closed until Images Paid is enabled and tested.
 
 ## Remaining production gates
 
 1. Record owner/legal approval of the advisory-only service model, legal
    operator identity, policy copy, retention/deletion rules, and monitored
-   support/privacy/security ownership.
-2. Authorize Clerk's three email DNS records in Cloudflare, wait for Clerk to
-   verify them, and prove real email-code delivery through Workdoe. Production
-   instance, same-domain proxy, restricted access, email-code-only settings,
-   disabled passwords, express legal consent, JWT verification, and webhook
-   configuration are already evidenced above.
-3. Repeat dependency, secret, Bandit, migration, query-plan, and Worker checks
-   on the final commit; complete live private-media, queue/email, rate-limit,
-   accessibility, and agreed Core Web Vitals checks. Local asset/header evidence
-   is not a substitute for production LCP, CLS, or INP measurements.
+   support/privacy/security ownership. The `admin@workdoe.com` route now exists,
+   but received-mail evidence, a named monitor, and a response target remain.
+2. Create or invite one real controlled-beta application user and prove the
+   complete Workdoe-hosted email-code journey. The Clerk dashboard currently
+   has no production application users. Its header-level Invite control is for
+   dashboard collaborators, so it was not used as an application invitation.
+   The production instance, verified domain and mail DNS, same-domain proxy,
+   restricted access, email-code-only settings, disabled passwords, express
+   legal consent, JWT verification, and webhook configuration are evidenced.
+3. Enable Cloudflare Images Paid and prove one valid sanitized upload plus one
+   invalid upload rejection. Then repeat dependency, secret, Bandit, migration,
+   query-plan, and Worker checks on the final commit; complete live private-media,
+   queue/email, rate-limit, accessibility, and agreed Core Web Vitals checks.
+   Local asset/header evidence is not a substitute for production LCP, CLS, or
+   INP measurements.
 4. Take the pre-deployment D1 backup, record rollback targets, make one reviewed
    GitHub push, run one guarded Cloudflare deployment, and retain the deployed
    SHA plus strict production smoke evidence.
