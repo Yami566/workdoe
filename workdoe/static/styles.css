@@ -5027,9 +5027,20 @@ textarea:focus {
   }
 
   .market-workspace[data-mobile-panel="filters"] > [data-market-panel="filters"],
-  .market-workspace[data-mobile-panel="map"] > [data-market-panel="map"],
   .market-workspace[data-mobile-panel="details"] > [data-market-panel="details"] {
+    display: block;
+  }
+
+  .market-workspace[data-mobile-panel="map"] > [data-market-panel="map"] {
     display: grid;
+  }
+
+  .market-filter-rail .service-family-filter-link {
+    min-height: 58px;
+  }
+
+  .market-filter-rail .service-family-filter-copy small {
+    display: none;
   }
 
   .market-filter-rail,

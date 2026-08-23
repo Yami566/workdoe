@@ -34,7 +34,7 @@
     {% endif %}
     {% block head %}{% endblock %}
   </head>
-  <body{% if embedded_dialog_mode() %} class="dialog-fragment-body"{% endif %}>
+  <body{% if request.endpoint == 'leads' %} class="app-market-body"{% elif embedded_dialog_mode() %} class="dialog-fragment-body"{% endif %}>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <header class="site-header">
       <a class="brand" href="{{ url_for('home') }}" aria-label="Workdoe home" title="Workdoe home">
@@ -93,7 +93,7 @@
       {% endif %}
     {% endwith %}
 
-    <main id="main-content" tabindex="-1">
+    <main id="main-content"{% if request.endpoint == 'leads' %} class="app-market-main"{% endif %} tabindex="-1">
       {% block content %}{% endblock %}
     </main>
 

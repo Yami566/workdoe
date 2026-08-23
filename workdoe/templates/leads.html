@@ -4,144 +4,163 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
 {% endblock %}
 {% block content %}
-<section class="dashboard-header">
+<div class="market-mobile-tabs" role="tablist" aria-label="Marketplace view" aria-orientation="horizontal">
+  <button type="button" role="tab" data-mobile-panel-target="filters" aria-controls="market-projects-panel" aria-selected="false" tabindex="-1">Projects</button>
+  <button type="button" role="tab" data-mobile-panel-target="map" aria-controls="market-map-panel" aria-selected="true">Map</button>
+  <button type="button" role="tab" data-mobile-panel-target="details" aria-controls="market-details-panel" aria-selected="false" tabindex="-1">Details</button>
+</div>
+
+<section class="signed-in-market-heading">
   <div>
     <p class="eyebrow">Area scan // DMV</p>
     <h1>Work near you</h1>
-    <p>Locations stay approximate until a match is approved.</p>
   </div>
 </section>
 
-<section class="dashboard-metrics lead-metrics" aria-label="Lead board summary">
-  <div class="metric-card">
-    <span>Showing</span>
-    <strong>{{ stats.visible_jobs }}</strong>
-  </div>
-  <div class="metric-card">
-    <span>New</span>
-    <strong>{{ stats.new_jobs }}</strong>
-  </div>
-  <a class="metric-card" href="{{ url_for('contractor_dashboard') }}">
-    <span>Bids sent</span>
-    <strong>{{ stats.sent_bids }}</strong>
-  </a>
-</section>
+<section class="market-workspace signed-in-market-workspace" data-market-workspace data-mobile-panel="map">
+  <aside id="market-projects-panel" class="market-filter-rail" data-market-panel="filters" aria-label="Project search and filters">
+    <div class="market-rail-heading">
+      <h2>Available projects</h2>
+      <p>Approximate locations until a client approves your bid.</p>
+    </div>
 
-<nav class="lead-view-tabs" aria-label="Lead status">
-  {% for item in lead_view_links %}
-    {% set count = stats.all_jobs if item.value == "all" else (stats.new_jobs if item.value == "new" else stats.sent_bids) %}
-    <a class="lead-view-tab{% if lead_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if lead_view == item.value %}aria-current="page"{% endif %}>
-      <span>{{ item.label }}</span>
-      <strong>{{ count }}</strong>
-    </a>
-  {% endfor %}
-</nav>
+    <nav class="lead-view-tabs" aria-label="Lead status">
+      {% for item in lead_view_links %}
+        {% set count = stats.all_jobs if item.value == "all" else (stats.new_jobs if item.value == "new" else stats.sent_bids) %}
+        <a class="lead-view-tab{% if lead_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if lead_view == item.value %}aria-current="page"{% endif %}>
+          <span>{{ item.label }}</span>
+          <strong>{{ count }}</strong>
+        </a>
+      {% endfor %}
+    </nav>
 
-{% set family_filter_label = "Filter contractor leads by work family" %}
-{% include "_service_family_filter.html" %}
+    {% set family_filter_label = "Filter contractor leads by work family" %}
+    {% include "_service_family_filter.html" %}
 
-<form class="filter-bar lead-filter" method="get" role="search" aria-label="Filter contractor leads" aria-controls="lead-results lead-map" data-market-filters>
-  {% if lead_view != "all" %}
-    <input type="hidden" name="view" value="{{ lead_view }}">
-  {% endif %}
-  {% if filters.family %}<input type="hidden" name="family" value="{{ filters.family }}">{% endif %}
-  {% if selected_family %}
-    <label class="category-field" for="lead-service">
-      Task
-      <select id="lead-service" name="service" data-market-service>
-        <option value="">All {{ selected_family.name|lower }} tasks</option>
-        {% for service_slug, service_name, _category in selected_family.services %}
-          <option value="{{ service_slug }}" {% if filters.service == service_slug %}selected{% endif %}>{{ service_name }}</option>
+    <form class="market-filter-form" method="get" action="{{ url_for('leads') }}" role="search" aria-label="Filter contractor leads" aria-controls="lead-results lead-map" data-market-filters>
+      {% if lead_view != "all" %}<input type="hidden" name="view" value="{{ lead_view }}">{% endif %}
+      {% if filters.family %}<input type="hidden" name="family" value="{{ filters.family }}">{% endif %}
+      <label for="lead-search">Search projects</label>
+      <input id="lead-search" name="q" type="search" enterkeyhint="search" value="{{ filters.q }}" placeholder="Try painting or Arlington" maxlength="{{ filter_query_max }}" autocomplete="off" data-market-search>
+      {% if selected_family %}
+        <label for="lead-service">Task</label>
+        <select id="lead-service" name="service" data-market-service>
+          <option value="">All {{ selected_family.name|lower }} tasks</option>
+          {% for service_slug, service_name, _category in selected_family.services %}
+            <option value="{{ service_slug }}" {% if filters.service == service_slug %}selected{% endif %}>{{ service_name }}</option>
+          {% endfor %}
+        </select>
+      {% endif %}
+      <label for="lead-sort">Sort</label>
+      <select id="lead-sort" name="sort" data-market-sort>
+        {% for value, label in job_sort_options %}
+          <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
-    </label>
-  {% endif %}
-  <label class="search-field" for="lead-search">
-    Search DMV area
-    <input id="lead-search" name="q" type="search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, state, ZIP, or title" maxlength="{{ filter_query_max }}" data-market-search>
-  </label>
-  <label class="sort-field" for="lead-sort">
-    Sort
-    <select id="lead-sort" name="sort" data-market-sort>
-      {% for value, label in job_sort_options %}
-        <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <div class="filter-actions">
-    <button class="button" type="submit">Filter</button>
-    {% if has_filters %}
-      <a class="button secondary" href="{{ url_for('leads') }}">Clear</a>
-    {% endif %}
-  </div>
-</form>
-
-<div id="saved-lead-alerts" class="saved-lead-toolbar" aria-label="Saved lead view and alerts">
-  <form method="post" action="{{ url_for('contractor_saved_lead_view_update') }}">
-    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="saved_service_group_slug" value="{{ filters.family }}">
-    <input type="hidden" name="saved_service_slug" value="{{ filters.service }}">
-    <input type="hidden" name="saved_category" value="{{ filters.category }}">
-    <input type="hidden" name="saved_query" value="{{ filters.q }}">
-    <input type="hidden" name="saved_sort" value="{{ filters.sort }}">
-    <fieldset class="lead-alert-choice">
-      <legend>New matching projects</legend>
-      <div class="lead-alert-options">
-        {% for value, label in lead_alert_options %}
-          <label>
-            <input type="radio" name="lead_alert_preference" value="{{ value }}" {% if preferences.lead_alert_preference == value %}checked{% endif %} required>
-            <span>{{ label }}</span>
-          </label>
-        {% endfor %}
+      <div class="filter-actions">
+        <button class="button compact" type="submit">Filter</button>
+        <a class="button secondary compact" href="{{ url_for('leads') }}" data-clear-market-filters>Clear</a>
       </div>
-      <small>Email uses this saved view plus your selected services and DMV zones. Change it here at any time.</small>
-    </fieldset>
-    <button class="button secondary compact" type="submit">Save this view</button>
-  </form>
-  {% if preferences.has_saved_lead_view %}
-    <a class="button secondary compact" href="{{ saved_lead_view_url }}">Use saved view</a>
-    <span>{{ preferences.saved_service_label or preferences.saved_family_label or preferences.saved_category or "All work" }}{% if preferences.saved_query %} near “{{ preferences.saved_query }}”{% endif %} · {{ preferences.saved_sort|capitalize }}{% if preferences.lead_alert_enabled %} · Email alerts on{% endif %}</span>
-  {% else %}
-    <span>Keep a useful task, area, or sort for your next visit.</span>
-  {% endif %}
-</div>
+    </form>
 
-<section class="lead-layout">
-  <div id="lead-results" class="job-list lead-job-list" aria-label="Open leads" {% if jobs %}role="list"{% endif %} data-project-results>
-    {% for job in jobs %}
-      {% set row_cue = "Sent" if job.request_status else "View" %}
-      {% set row_label = "Open sent bid for " ~ job.title if job.request_status else "View " ~ job.title %}
-      <a class="job-row link-row" role="listitem" data-job-id="{{ job.id }}" href="{{ url_for('contractor_job_detail', job_id=job.id) }}" aria-label="{{ row_label }}">
-        <div>
-          <div class="row-meta">
+    <div id="saved-lead-alerts" class="saved-lead-toolbar" aria-label="Saved lead view and alerts">
+      <form method="post" action="{{ url_for('contractor_saved_lead_view_update') }}">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="saved_service_group_slug" value="{{ filters.family }}">
+        <input type="hidden" name="saved_service_slug" value="{{ filters.service }}">
+        <input type="hidden" name="saved_category" value="{{ filters.category }}">
+        <input type="hidden" name="saved_query" value="{{ filters.q }}">
+        <input type="hidden" name="saved_sort" value="{{ filters.sort }}">
+        <fieldset class="lead-alert-choice">
+          <legend>New matching projects</legend>
+          <div class="lead-alert-options">
+            {% for value, label in lead_alert_options %}
+              <label>
+                <input type="radio" name="lead_alert_preference" value="{{ value }}" {% if preferences.lead_alert_preference == value %}checked{% endif %} required>
+                <span>{{ label }}</span>
+              </label>
+            {% endfor %}
+          </div>
+          <small>Email uses this view plus your services and DMV zones.</small>
+        </fieldset>
+        <button class="button secondary compact" type="submit">Save view</button>
+      </form>
+      {% if preferences.has_saved_lead_view %}
+        <a class="button secondary compact" href="{{ saved_lead_view_url }}">Use saved view</a>
+        <span>{{ preferences.saved_service_label or preferences.saved_family_label or preferences.saved_category or "All work" }}{% if preferences.saved_query %} near “{{ preferences.saved_query }}”{% endif %}{% if preferences.lead_alert_enabled %} · Email alerts on{% endif %}</span>
+      {% else %}
+        <span>Save a useful task or area for next time.</span>
+      {% endif %}
+    </div>
+
+    <div class="project-results-heading">
+      <strong data-project-result-count>{{ jobs|length }} project{{ "" if jobs|length == 1 else "s" }}</strong>
+      <span>Ready to review</span>
+    </div>
+    <div id="lead-results" class="project-results" data-project-results aria-label="Open leads" {% if jobs %}role="list"{% endif %}>
+      {% for job in jobs %}
+        {% set row_cue = "Sent" if job.request_status else "View" %}
+        {% set row_label = "Open sent bid for " ~ job.title if job.request_status else "View " ~ job.title %}
+        <a class="project-result{% if selected_job and job.id == selected_job.id %} is-map-active{% endif %}" role="listitem" data-job-id="{{ job.id }}" href="{{ url_for('contractor_job_detail', job_id=job.id) }}" aria-label="{{ row_label }}" {% if selected_job and job.id == selected_job.id %}aria-current="true"{% endif %}>
+          <span class="project-result-topline">
             {% if job.fit_label %}<span class="lead-fit fit-{{ job.fit_score }}">{{ job.fit_label }}</span>{% endif %}
             <span class="job-service-chip"><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(job.service_slug or job.category)) }}" alt="" width="16" height="16">{{ job.service_slug|service_name(job.category) }}</span>
+            {% if job.request_status %}<span class="status {{ job.request_status }}">Bid {{ job.request_status }}</span>{% endif %}
+          </span>
+          <strong>{{ job.title }}</strong>
+          <span class="project-result-facts">
             <span>{{ job.city }}, {{ job.state }}</span>
-            {% if job.desired_date %}<span>Target <time datetime="{{ job.desired_date }}">{{ job.desired_date|date_label }}</time></span>{% endif %}
-            <span>{{ job|budget_label }}</span>
+            <span>{{ job.bid_window.availability_label }}</span>
             <span>{{ job.photo_count|photo_count_label }}</span>
-            <span class="brief-pill {{ job.brief_readiness.state }}">{{ job.brief_readiness.label }}</span>
-            <span class="bid-availability {{ job.bid_window.state }}">{{ job.bid_window.availability_label }}</span>
-            {% if job.request_status %}<span class="status {{ job.request_status }}">bid {{ job.request_status }}</span>{% endif %}
-          </div>
-          <h2>{{ job.title }}</h2>
-          <p class="job-summary">{{ job.description }}</p>
+            <span>{{ job.brief_readiness.label }}</span>
+            <span>{{ row_cue }}</span>
+          </span>
+        </a>
+      {% else %}
+        <div class="market-list-empty">
+          <strong>{% if lead_view == "sent" %}No bids sent yet{% elif lead_view == "new" %}No new leads{% else %}No leads match this search{% endif %}</strong>
+          <span>Widen the view to find more local work.</span>
+          <a class="button secondary compact" href="{{ url_for('leads') }}">{% if lead_view != "all" and not has_query_filters %}Show all leads{% else %}Clear filters{% endif %}</a>
         </div>
-        <span class="row-cue">{{ row_cue }}</span>
-      </a>
+      {% endfor %}
+    </div>
+  </aside>
+
+  <section id="market-map-panel" class="market-map-stage" data-market-panel="map" aria-label="Project map workspace">
+    <div class="map-stage-toolbar">
+      <div><span class="map-live-indicator" aria-hidden="true"></span><strong data-map-result-count>{{ map_jobs|length }} project{{ "" if map_jobs|length == 1 else "s" }} mapped</strong></div>
+      <span>Approximate pins</span>
+    </div>
+    <div class="market-map-frame">
+      {% with map_label="Approximate DMV job map" %}
+        {% include "_lead_map.html" %}
+      {% endwith %}
+    </div>
+  </section>
+
+  <aside id="market-details-panel" class="market-detail-rail" data-market-panel="details" aria-label="Selected project">
+    {% if selected_job %}
+      <article class="market-project-detail" data-project-detail-content data-job-id="{{ selected_job.id }}">
+        <div class="project-detail-heading"><span class="live-badge">Open project</span><span>{{ selected_job.service_slug|service_name(selected_job.category) }}</span></div>
+        <h2>{{ selected_job.title }}</h2>
+        <p class="project-detail-location">{{ selected_job.city }}, {{ selected_job.state }}</p>
+        <dl class="project-facts">
+          <div><dt>Estimated budget</dt><dd>{{ selected_job|budget_label }}</dd></div>
+          <div><dt>Desired date</dt><dd>{% if selected_job.desired_date %}{{ selected_job.desired_date|date_label }}{% else %}Flexible{% endif %}</dd></div>
+          <div><dt>Mini bids</dt><dd>{{ selected_job.bid_window.usage_label }}</dd></div>
+        </dl>
+        <div class="project-description"><h3>Field brief</h3><p>{{ selected_job.description }}</p></div>
+        <p class="project-privacy-note">Location stays approximate until a match is approved.</p>
+        <div class="project-detail-actions"><a class="button" href="{{ url_for('contractor_job_detail', job_id=selected_job.id) }}">View and send bid</a></div>
+      </article>
     {% else %}
-      <div class="empty-state field-empty-state">
-        <img class="empty-state-visual" src="{{ url_for('static', filename='field-doe.webp') }}" alt="" width="180" height="180">
-        <h2>{% if lead_view == "sent" %}No bids sent yet{% elif lead_view == "new" %}No new leads{% else %}No leads match this search{% endif %}</h2>
-        <a class="button secondary" href="{{ url_for('leads') }}">{% if lead_view != "all" and not has_query_filters %}Show all leads{% else %}Clear filters{% endif %}</a>
+      <div class="market-detail-empty" data-project-detail-content>
+        <img src="{{ url_for('static', filename='field-doe.webp') }}" alt="" width="160" height="160">
+        <h2>No projects match</h2>
+        <p>Adjust the filters to widen the map.</p>
       </div>
-    {% endfor %}
-  </div>
-  <div class="map-panel lead-map-panel">
-    {% with map_label="Approximate DMV job map" %}
-      {% include "_lead_map.html" %}
-    {% endwith %}
-  </div>
+    {% endif %}
+  </aside>
 </section>
 
 <script id="map-jobs-data" type="application/json">{{ map_jobs|tojson }}</script>

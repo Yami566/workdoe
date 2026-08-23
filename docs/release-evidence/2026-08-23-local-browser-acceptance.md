@@ -83,6 +83,30 @@ performance, identity-provider, or assistive-technology evidence.
 - Opening the unread thread removed the global badge in the same rendered
   response. The final automated suite passed 223 tests in 79.210 seconds.
 
+## Contractor map-first follow-up
+
+- The previous contractor lead board was captured at 390x844 before the change;
+  metrics, family cards, and filters filled the first viewport while the map and
+  project rows remained below it.
+- The accepted 390x844 state opens on a full-height map with Projects, Map, and
+  Details tabs plus the existing bottom task navigation. The document width
+  matched the viewport with no horizontal overflow.
+- The Projects panel preserves family/task filters, saved-view controls,
+  contractor fit, bid state, bid capacity, photo count, brief readiness, and a
+  direct row action without stacking that content above the map.
+- Selecting a project changed the URL to `/leads?job_id=4`, selected Details,
+  and displayed the expected project title and `View and send bid` action. The
+  structured ZIP and client email were absent from the rendered workspace.
+- Arrow Right moved tab focus and selection from Projects to Map. The tablist
+  exposes explicit panel relationships and roving `tabindex`; project rows keep
+  Arrow Up/Down/Home/End navigation.
+- At 1280x720, filters/results, map, and selected details render together. At
+  820x1180, the map remains full height with Search this area visible and no
+  horizontal overflow.
+- Before/after and accepted responsive evidence is stored in
+  `docs/ux-audit/2026-08-23-current-journeys/`. The final automated suite passed
+  225 tests in 83.321 seconds.
+
 ## Live gates not replaced by this check
 
 - A real screen-reader pass with VoiceOver, NVDA, or an equivalent remains

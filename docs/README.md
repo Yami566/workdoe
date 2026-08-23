@@ -32,6 +32,8 @@ the current requirements, policy gates, or release status.
   navigation/dashboard captures plus the editable Figma reference board.
 - `ux-audit/2026-08-22-service-policy/`: advisory acknowledgement evidence.
 - `ux-audit/2026-08-22-stabilization/`: map, dialog, and stabilization evidence.
+- `ux-audit/2026-08-23-current-journeys/`: current consumer, contractor,
+  messaging, and accepted contractor map-first workspace evidence.
 - `release-evidence/2026-08-23-d1-worker-verification.md`: indexed D1 query
   plan, local Worker runtime, and rows-read telemetry evidence.
 - `release-evidence/2026-08-23-local-browser-acceptance.md`: repeated mobile

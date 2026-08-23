@@ -1095,14 +1095,18 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         board = self.client.get("/leads")
         board_html = board.data.decode("utf-8")
-        self.assertIn('class="dashboard-metrics lead-metrics" aria-label="Lead board summary"', board_html)
+        self.assertIn('class="market-workspace signed-in-market-workspace"', board_html)
         self.assertIn('class="lead-view-tabs" aria-label="Lead status"', board_html)
         self.assertIn('href="/leads?view=sent"', board_html)
         self.assertRegex(board_html, r"<span>New</span>\s*<strong>2</strong>")
         self.assertRegex(board_html, r"<span>Bids sent</span>\s*<strong>1</strong>")
-        self.assertIn('<span class="status pending">bid pending</span>', board_html)
+        self.assertIn('<span class="status pending">Bid pending</span>', board_html)
         self.assertIn('aria-label="Open sent bid for Power wash townhouse front steps"', board_html)
-        self.assertIn('<span class="row-cue">Sent</span>', board_html)
+        self.assertRegex(
+            board_html,
+            r"3 bid slots left</span>\s*<span>0 photos</span>\s*"
+            r"<span>Brief 3 of 6</span>\s*<span>Sent</span>",
+        )
 
         sent_board = self.client.get("/leads?view=sent")
         sent_html = sent_board.data.decode("utf-8")
@@ -3733,23 +3737,32 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.login("contractor@workdoe.local", "workdoe-contractor")
         board = self.client.get("/leads")
         self.assertEqual(board.status_code, 200)
-        self.assertIn(b'class="dashboard-metrics lead-metrics"', board.data)
-        self.assertIn(b'class="filter-bar lead-filter"', board.data)
+        self.assertIn(b'<body class="app-market-body">', board.data)
+        self.assertIn(b'<main id="main-content" class="app-market-main"', board.data)
+        self.assertIn(b'class="market-mobile-tabs" role="tablist"', board.data)
+        self.assertIn(b'aria-orientation="horizontal"', board.data)
+        self.assertIn(
+            b'data-mobile-panel-target="map" aria-controls="market-map-panel" aria-selected="true"',
+            board.data,
+        )
+        self.assertIn(b'class="market-workspace signed-in-market-workspace"', board.data)
+        self.assertIn(b'class="market-filter-form"', board.data)
         self.assertEqual(board.data.count(b'class="service-family-filter-link'), 7)
         self.assertIn(b'/static/vendor/tabler-icons/trees.svg', board.data)
         self.assertIn(b'role="search" aria-label="Filter contractor leads"', board.data)
         self.assertIn(b'aria-controls="lead-results lead-map"', board.data)
         self.assertNotIn(b'for="lead-category"', board.data)
         self.assertNotIn(b'id="lead-category" name="category"', board.data)
-        self.assertIn(b'class="search-field"', board.data)
         self.assertIn(b'for="lead-search"', board.data)
-        self.assertIn(b'id="lead-results" class="job-list lead-job-list" aria-label="Open leads" role="list"', board.data)
-        self.assertIn(b'class="map-panel lead-map-panel"', board.data)
-        self.assertLess(board.data.find(b"lead-job-list"), board.data.find(b"lead-map-panel"))
-        self.assertIn(b'class="job-row link-row" role="listitem" data-job-id="', board.data)
+        self.assertIn(b'id="lead-results" class="project-results" data-project-results aria-label="Open leads" role="list"', board.data)
+        self.assertIn(b'id="market-map-panel" class="market-map-stage" data-market-panel="map"', board.data)
+        self.assertIn(b'id="market-details-panel" class="market-detail-rail" data-market-panel="details"', board.data)
+        self.assertIn(b'class="project-result is-map-active" role="listitem" data-job-id="', board.data)
         self.assertIn(b'class="job-service-chip"', board.data)
         self.assertIn(b'/static/vendor/tabler-icons/wash.svg', board.data)
-        self.assertIn(b"row-cue", board.data)
+        self.assertIn(b'data-project-detail-content data-job-id="', board.data)
+        self.assertIn(b"View and send bid", board.data)
+        self.assertIn(b"Location stays approximate until a match is approved.", board.data)
         self.assertIn(b'data-jobs-api="/api/jobs/open?limit=50"', board.data)
         self.assertIn(b'id="lead-search" name="q" type="search" enterkeyhint="search"', board.data)
         self.assertIn(b'maxlength="80"', board.data)
@@ -3822,6 +3835,40 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(capped.status_code, 200)
         self.assertIn(f'value="{"A" * 80}"'.encode("ascii"), capped.data)
         self.assertNotIn(long_query.encode("ascii"), capped.data)
+
+    def test_contractor_lead_workspace_selects_requested_job_and_hides_private_location(self):
+        self.login("contractor@workdoe.local", "workdoe-contractor")
+        jobs = self.all(
+            "SELECT jobs.*, users.email AS client_email FROM jobs "
+            "JOIN users ON users.id = jobs.client_id "
+            "WHERE jobs.status = 'open' ORDER BY jobs.created_at DESC, jobs.id DESC"
+        )
+        self.assertGreaterEqual(len(jobs), 2)
+        requested = jobs[1]
+
+        selected = self.client.get(f"/leads?job_id={requested['id']}")
+        self.assertEqual(selected.status_code, 200)
+        self.assertIn(
+            f'data-project-detail-content data-job-id="{requested["id"]}"'.encode(),
+            selected.data,
+        )
+        self.assertIn(
+            f'data-job-id="{requested["id"]}" href="/jobs/{requested["id"]}" aria-label="'.encode(),
+            selected.data,
+        )
+        self.assertIn(b'aria-current="true"', selected.data)
+        self.assertNotIn(requested["zip_code"].encode(), selected.data)
+        self.assertNotIn(requested["client_email"].encode(), selected.data)
+        self.assertNotIn(b'"zip_code"', selected.data)
+        self.assertIn(b"Location stays approximate until a match is approved.", selected.data)
+
+        baseline = self.client.get("/leads")
+        invalid = self.client.get("/leads?job_id=999999")
+        selected_pattern = rb'data-project-detail-content data-job-id="(\d+)"'
+        self.assertEqual(
+            re.search(selected_pattern, baseline.data).group(1),
+            re.search(selected_pattern, invalid.data).group(1),
+        )
 
     def test_task_filtered_lead_intent_survives_sign_in(self):
         gated = self.client.get(
@@ -4388,6 +4435,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn("map.getBounds()", script)
         self.assertIn("window.history.replaceState", script)
         self.assertIn('setOptionalParam(url, "job_id", activeJobId)', script)
+        self.assertIn("mergeJobPayload", script)
+        self.assertIn('"request_status", "bid_window", "brief_readiness"', script)
+        self.assertIn("Object.prototype.hasOwnProperty.call(current, field)", script)
+        self.assertIn('event.key === "ArrowRight"', script)
+        self.assertIn('event.key === "ArrowLeft"', script)
+        self.assertIn("buttons[nextIndex].focus()", script)
         self.assertIn("https://tile.openstreetmap.org/{z}/{x}/{y}.png", script)
         self.assertIn("if (!detailContent)", script)
 

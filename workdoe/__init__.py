@@ -4110,6 +4110,31 @@ def register_routes(app: Flask) -> None:
         all_jobs = jobs
         jobs = filter_jobs_by_lead_view(all_jobs, lead_view)
         map_jobs = filter_map_jobs_by_jobs(map_jobs, jobs)
+        jobs_by_id = {job["id"]: job for job in jobs}
+        for map_job in map_jobs:
+            card = jobs_by_id.get(map_job["id"])
+            if not card:
+                continue
+            detail_url = url_for("contractor_job_detail", job_id=card["id"])
+            map_job.update(
+                {
+                    "description": card["description"],
+                    "request_status": card["request_status"],
+                    "bid_window": card["bid_window"],
+                    "brief_readiness": card["brief_readiness"],
+                    "fit_score": card["fit_score"],
+                    "fit_label": card["fit_label"],
+                    "row_cue": "Sent" if card["request_status"] else "View",
+                    "action_label": "View and send bid",
+                    "url": detail_url,
+                    "detail_url": detail_url,
+                }
+            )
+        requested_job_id = request.args.get("job_id", type=int)
+        selected_job = next(
+            (job for job in jobs if job["id"] == requested_job_id),
+            jobs[0] if jobs else None,
+        )
         stats = {
             "visible_jobs": len(jobs),
             "all_jobs": len(all_jobs),
@@ -4124,6 +4149,7 @@ def register_routes(app: Flask) -> None:
             jobs=jobs,
             filters=filters,
             selected_family=selected_family,
+            selected_job=selected_job,
             map_jobs=map_jobs,
             map_jobs_api_url=map_jobs_api_url(
                 filters,

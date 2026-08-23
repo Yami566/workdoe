@@ -45,11 +45,16 @@ deployment has been performed during this stabilization pass.
 - Extended production smoke testing to require direct HTTP-to-HTTPS redirects
   for both the public entry page and a static stylesheet, preventing the asset
   optimization from weakening the HTTPS launch contract.
+- Reconciled the Flask contractor lead board with the existing Worker
+  map-first workspace. Contractors now get synchronized Projects, Map, and
+  Details views, responsive mobile tabs, URL-preserved selection, retained
+  private fit/bid/readiness signals after public map refreshes, and a direct
+  bid action without reintroducing the former long-scroll dashboard.
 
 ## Verification evidence
 
-- Full suite: 224 tests passed in 78.461 seconds after the static-asset routing
-  and HTTP-to-HTTPS smoke-test work.
+- Full suite: 225 tests passed in 83.321 seconds after the contractor map-first
+  parity and privacy-test work.
 - Full Ruff baseline and the ordinary CI quality command passed.
 - Dependency provenance passed locally and against all recorded upstream Python
   source archives on 2026-08-23.
@@ -94,6 +99,16 @@ deployment has been performed during this stabilization pass.
   navigation badge in both responsive states, exact `Messages, 2 unread`
   labeling, zero horizontal overflow, and immediate badge removal after opening
   the unread thread. The temporary visual-check message was removed afterward.
+- A contractor discovery pass at 390x844, 820x1180, and 1280x720 verified the
+  map-first workspace, mobile tab focus/selection, selected-job URL state,
+  direct bid action, deterministic fallback selection, photo counts, and the
+  absence of structured ZIP/client-email fields. Evidence is stored in
+  `docs/ux-audit/2026-08-23-current-journeys/`.
+- The final local security pass found no known Python or Node vulnerabilities,
+  no medium/high Bandit issues, no Ruff findings, no unreviewed detected
+  secrets across 434 non-ignored files, and no dependency-provenance drift.
+  Cloudflare preflight, D1 query-plan verification, and the Wrangler 4.125.0
+  48-module/86-asset dry run also passed.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

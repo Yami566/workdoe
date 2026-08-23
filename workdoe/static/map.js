@@ -185,7 +185,7 @@
           if (requestId !== requestSequence || !payload || !Array.isArray(payload.jobs)) {
             return;
           }
-          allJobs = payload.jobs;
+          allJobs = mergeJobPayload(payload);
           activeViewport = payload.viewport || viewport || null;
           if (!findJob(activeJobId)) {
             activeJobId = initialJobId(allJobs);
@@ -267,13 +267,46 @@
     function projectRowHtml(job) {
       var active = String(job.id) === String(activeJobId);
       var sample = job.is_demo ? '<span class="sample-badge">Sample</span>' : "";
+      var fit = job.fit_label ? '<span class="lead-fit fit-' + escapeAttribute(job.fit_score || 0) + '">' + escapeHtml(job.fit_label) + "</span>" : "";
+      var status = job.request_status ? '<span class="status ' + escapeAttribute(job.request_status) + '">Bid ' + escapeHtml(job.request_status) + "</span>" : "";
+      var bidding = job.bid_window || {};
+      var readiness = job.brief_readiness || {};
+      var availability = bidding.availability_label || job.budget || "Budget not provided";
+      var photoCount = Number(job.photo_count || 0);
+      var photoLabel = photoCount + (photoCount === 1 ? " photo" : " photos");
+      var cue = job.row_cue || job.action_label || "View";
+      var readinessFact = readiness.label ? "<span>" + escapeHtml(readiness.label) + "</span>" : "";
       return (
-        '<a class="project-result' + (active ? " is-map-active" : "") + '" role="listitem" data-job-id="' + escapeAttribute(job.id) + '" href="' + escapeAttribute(job.detail_url || "#") + '"' + (active ? ' aria-current="true"' : "") + ">" +
-          '<span class="project-result-topline"><span>' + escapeHtml(job.service_name || job.category || "Project") + "</span>" + sample + "</span>" +
+        '<a class="project-result' + (active ? " is-map-active" : "") + '" role="listitem" data-job-id="' + escapeAttribute(job.id) + '" href="' + escapeAttribute(job.detail_url || job.url || "#") + '"' + (active ? ' aria-current="true"' : "") + ">" +
+          '<span class="project-result-topline">' + fit + '<span class="job-service-chip">' + escapeHtml(job.service_name || job.category || "Project") + "</span>" + status + sample + "</span>" +
           "<strong>" + escapeHtml(job.title || "Open project") + "</strong>" +
-          '<span class="project-result-facts"><span>' + escapeHtml(placeLabel(job)) + "</span><span>" + escapeHtml(job.budget || "Budget not provided") + "</span></span>" +
+          '<span class="project-result-facts"><span>' + escapeHtml(placeLabel(job)) + "</span><span>" + escapeHtml(availability) + "</span><span>" + escapeHtml(photoLabel) + "</span>" + readinessFact + "<span>" + escapeHtml(cue) + "</span></span>" +
         "</a>"
       );
+    }
+
+    function mergeJobPayload(payload) {
+      var incoming = Array.isArray(payload.map_jobs) && payload.map_jobs.length
+        ? payload.map_jobs
+        : payload.jobs;
+      var currentById = {};
+      var contractorFields = [
+        "description", "request_status", "bid_window", "brief_readiness",
+        "fit_score", "fit_label", "row_cue", "action_label", "url", "detail_url"
+      ];
+      allJobs.forEach(function (job) {
+        currentById[String(job.id)] = job;
+      });
+      return incoming.map(function (job) {
+        var current = currentById[String(job.id)] || {};
+        var merged = Object.assign({}, current, job);
+        contractorFields.forEach(function (field) {
+          if (Object.prototype.hasOwnProperty.call(current, field)) {
+            merged[field] = current[field];
+          }
+        });
+        return merged;
+      });
     }
 
     function bindExistingRows() {
@@ -399,13 +432,15 @@
         return;
       }
       var sample = job.is_demo ? '<span class="sample-badge">Demonstration project</span>' : '<span class="live-badge">Open project</span>';
+      var bidding = job.bid_window || {};
+      var biddingFact = bidding.usage_label ? "<div><dt>Mini bids</dt><dd>" + escapeHtml(bidding.usage_label) + "</dd></div>" : "";
       detailContent.outerHTML = (
         '<article class="market-project-detail" data-project-detail-content data-job-id="' + escapeAttribute(job.id) + '">' +
           '<div class="project-detail-heading">' + sample + "<span>" + escapeHtml(job.service_name || job.category || "Project") + "</span></div>" +
           "<h2>" + escapeHtml(job.title || "Open project") + "</h2>" +
           '<p class="project-detail-location">' + escapeHtml(placeLabel(job)) + "</p>" +
           '<dl class="project-facts"><div><dt>Estimated budget</dt><dd>' + escapeHtml(job.budget || "Budget not provided") + "</dd></div>" +
-          "<div><dt>Desired date</dt><dd>" + escapeHtml(job.desired_date || "Flexible") + "</dd></div></dl>" +
+          "<div><dt>Desired date</dt><dd>" + escapeHtml(job.desired_date || "Flexible") + "</dd></div>" + biddingFact + "</dl>" +
           '<div class="project-description"><h3>Project overview</h3><p>' + escapeHtml(job.description || "Project details are available after sign-in.") + "</p></div>" +
           '<p class="project-privacy-note">Location is intentionally approximate until a match is approved.</p>' +
           '<div class="project-detail-actions"><a class="button primary" href="' + escapeAttribute(job.url || "/start") + '">' + escapeHtml(job.action_label || "Join to respond") + "</a>" +
@@ -466,9 +501,33 @@
     }
 
     function bindMobileTabs() {
-      document.querySelectorAll("[data-mobile-panel-target]").forEach(function (button) {
+      var buttons = Array.prototype.slice.call(
+        document.querySelectorAll("[data-mobile-panel-target]")
+      );
+      buttons.forEach(function (button) {
         button.addEventListener("click", function () {
           setMobilePanel(button.getAttribute("data-mobile-panel-target"));
+        });
+        button.addEventListener("keydown", function (event) {
+          if (event.altKey || event.ctrlKey || event.metaKey) {
+            return;
+          }
+          var currentIndex = buttons.indexOf(button);
+          var nextIndex = currentIndex;
+          if (event.key === "ArrowRight") {
+            nextIndex = (currentIndex + 1) % buttons.length;
+          } else if (event.key === "ArrowLeft") {
+            nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
+          } else if (event.key === "Home") {
+            nextIndex = 0;
+          } else if (event.key === "End") {
+            nextIndex = buttons.length - 1;
+          } else {
+            return;
+          }
+          event.preventDefault();
+          setMobilePanel(buttons[nextIndex].getAttribute("data-mobile-panel-target"));
+          buttons[nextIndex].focus();
         });
       });
       if (workspace) {
