@@ -43,6 +43,12 @@ OPTIONAL_DISCOVERY_PATHS = (
 CLERK_PUBLISHABLE_KEY_PATTERN = re.compile(
     r'data-clerk-publishable-key=["\']([^"\']+)["\']'
 )
+HTTPS_REDIRECT_PATHS = ("/", "/styles.css")
+
+
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *_args, **_kwargs):
+        return None
 
 
 @dataclass
@@ -97,15 +103,21 @@ def fetch_url(
     method: str = "GET",
     timeout: float = DEFAULT_TIMEOUT,
     body_limit: int = 20000,
+    follow_redirects: bool = True,
 ) -> FetchResult:
     request = urllib.request.Request(
         url,
         method=method,
         headers={"User-Agent": "workdoe-production-smoke/1.0"},
     )
+    opener = (
+        urllib.request.build_opener()
+        if follow_redirects
+        else urllib.request.build_opener(NoRedirectHandler())
+    )
     started = time.perf_counter()
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
+        with opener.open(request, timeout=timeout) as response:  # nosec B310
             body = ""
             if method != "HEAD":
                 body = response.read(body_limit).decode("utf-8", errors="replace")
@@ -136,6 +148,48 @@ def fetch_url(
     except (OSError, urllib.error.URLError) as exc:
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         return FetchResult(ok=False, error=str(exc), elapsed_ms=elapsed_ms)
+
+
+def https_redirect_check(domain: str, timeout: float) -> SmokeCheck:
+    failures = []
+    elapsed_ms = 0
+    redirect_statuses = []
+    redirect_hosts = (domain,) if domain.startswith("www.") else (domain, f"www.{domain}")
+    for host in redirect_hosts:
+        for path in HTTPS_REDIRECT_PATHS:
+            http_url = f"http://{host}{path}"
+            expected_location = f"https://{host}{path}"
+            result = fetch_url(
+                http_url,
+                method="HEAD",
+                timeout=timeout,
+                follow_redirects=False,
+            )
+            elapsed_ms += result.elapsed_ms
+            location = header_value(result.headers, "Location")
+            if result.status_code not in {301, 302, 307, 308} or location != expected_location:
+                failures.append(
+                    f"{host}{path} returned HTTP {result.status_code or 'error'} "
+                    f"with Location {location or 'missing'}"
+                )
+            else:
+                redirect_statuses.append(result.status_code)
+    if failures:
+        return SmokeCheck(
+            name="http-to-https",
+            status="failed",
+            summary="HTTP does not redirect consistently to HTTPS: " + "; ".join(failures),
+            url=f"http://{domain}/",
+            elapsed_ms=elapsed_ms,
+        )
+    return SmokeCheck(
+        name="http-to-https",
+        status="ready",
+        summary="Apex and www HTTP entry and static asset requests redirect directly to HTTPS.",
+        url=f"http://{domain}/",
+        status_code=redirect_statuses[0],
+        elapsed_ms=elapsed_ms,
+    )
 
 
 def header_value(headers: dict[str, str] | None, name: str) -> str:
@@ -508,6 +562,7 @@ def build_smoke_payload(
             ),
         ),
     ]
+    checks.append(https_redirect_check(domain, timeout))
     root_url = check_url(base_url, "/")
     checks.append(
         response_check(

@@ -39,11 +39,17 @@ deployment has been performed during this stabilization pass.
   navigation. The projection does not include message bodies, caps the visible
   badge at `99+`, exposes the exact count to assistive technology, and clears
   on the same response after a participant reads a thread.
+- Configured matching static assets to bypass the Python Worker and use
+  Cloudflare's static asset layer directly. Dynamic pages, APIs, same-domain
+  Clerk proxy routes, and private media remain Worker-controlled.
+- Extended production smoke testing to require direct HTTP-to-HTTPS redirects
+  for both the public entry page and a static stylesheet, preventing the asset
+  optimization from weakening the HTTPS launch contract.
 
 ## Verification evidence
 
-- Full suite: 223 tests passed in 79.210 seconds after the global unread
-  navigation, D1 index, and release-preflight work.
+- Full suite: 224 tests passed in 78.461 seconds after the static-asset routing
+  and HTTP-to-HTTPS smoke-test work.
 - Full Ruff baseline and the ordinary CI quality command passed.
 - Dependency provenance passed locally and against all recorded upstream Python
   source archives on 2026-08-23.
@@ -62,6 +68,12 @@ deployment has been performed during this stabilization pass.
   assets at 889.92 KiB / 163.07 KiB gzip. Runtime smoke returned 200 for
   health, home, and public jobs and emitted a privacy-safe D1 event with
   `rows_read: 2`.
+- A second local Worker pass served `styles.css` and pinned Leaflet JavaScript
+  from the Cloudflare asset layer with ETags and `CF-Cache-Status: HIT`, while
+  `/health` remained Worker-controlled with HSTS. The live pre-release domain
+  currently redirects the entry and stylesheet paths on both the apex and
+  `www` hosts directly to HTTPS; this check must be repeated after deployment
+  because the production Worker is still the older release.
 - Responsive browser evidence is stored in
   `docs/ux-audit/2026-08-23-task-navigation/` at 390x844, 820x1180, and
   1280x720.
@@ -96,7 +108,8 @@ performance, accessibility, and live gates run on the final commit.
    webhook secret, and real code delivery.
 3. Repeat dependency, secret, Bandit, migration, query-plan, and Worker checks
    on the final commit; complete live private-media, queue/email, rate-limit,
-   accessibility, and agreed performance checks.
+   accessibility, and agreed Core Web Vitals checks. Local asset/header evidence
+   is not a substitute for production LCP, CLS, or INP measurements.
 4. Take the pre-deployment D1 backup, record rollback targets, make one reviewed
    GitHub push, run one guarded Cloudflare deployment, and retain the deployed
    SHA plus strict production smoke evidence.

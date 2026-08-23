@@ -1119,7 +1119,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 ],
             )
             self.assertEqual(wrangler["assets"]["binding"], "ASSETS")
-            self.assertTrue(wrangler["assets"]["run_worker_first"])
+            self.assertFalse(wrangler["assets"]["run_worker_first"])
             self.assertEqual(
                 {producer["binding"] for producer in wrangler["queues"]["producers"]},
                 {"EMAIL_QUEUE", "MEDIA_QUEUE"},
@@ -8427,11 +8427,21 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "",
             )
 
-            def fake_fetch(url, *, method="GET", timeout=module.DEFAULT_TIMEOUT, body_limit=20000):
+            def fake_fetch(
+                url,
+                *,
+                method="GET",
+                timeout=module.DEFAULT_TIMEOUT,
+                body_limit=20000,
+                follow_redirects=True,
+            ):
                 headers = {}
                 body = ""
                 status_code = 200
-                if url.endswith("/login"):
+                if url.startswith("http://"):
+                    status_code = 308
+                    headers = {"Location": url.replace("http://", "https://", 1)}
+                elif url.endswith("/login"):
                     body = '<div data-clerk-publishable-key="pk_live_workdoe"></div>'
                     headers = {"Content-Type": "text/html; charset=utf-8"}
                 elif url.endswith("/start"):
@@ -8510,6 +8520,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(payload["failures"], [])
         checks = {check["name"]: check for check in payload["checks"]}
         self.assertEqual(checks["dns"]["status"], "ready")
+        self.assertEqual(checks["http-to-https"]["status"], "ready")
         self.assertEqual(checks["https-entry"]["status"], "ready")
         self.assertEqual(checks["health-json"]["status"], "ready")
         self.assertEqual(checks["public-jobs-api"]["status"], "ready")
@@ -8519,6 +8530,33 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(checks["public-discovery-files"]["status"], "ready")
         self.assertEqual(checks["clerk-production-key"]["status"], "ready")
         self.assertEqual(checks["clerk-same-domain-proxy"]["status"], "ready")
+
+    def test_workdoe_production_smoke_rejects_static_asset_without_https_redirect(self):
+        module = load_workdoe_production_smoke_script()
+        original_fetch_url = module.fetch_url
+        try:
+            def fake_fetch(url, **kwargs):
+                if url.endswith("/styles.css"):
+                    return module.FetchResult(
+                        ok=True,
+                        status_code=200,
+                        headers={"Content-Type": "text/css"},
+                        elapsed_ms=4,
+                    )
+                return module.FetchResult(
+                    ok=False,
+                    status_code=308,
+                    headers={"Location": url.replace("http://", "https://", 1)},
+                    elapsed_ms=4,
+                )
+
+            module.fetch_url = fake_fetch
+            check = module.https_redirect_check("workdoe.com", module.DEFAULT_TIMEOUT)
+        finally:
+            module.fetch_url = original_fetch_url
+
+        self.assertEqual(check.status, "failed")
+        self.assertIn("workdoe.com/styles.css returned HTTP 200", check.summary)
 
     def test_workdoe_production_smoke_rejects_missing_public_trust_page(self):
         module = load_workdoe_production_smoke_script()

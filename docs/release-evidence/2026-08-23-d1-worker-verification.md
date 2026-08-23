@@ -45,6 +45,10 @@ read rather than only rows returned:
 - Local D1: migrations through `0031_thread_nav_indexes.sql` applied.
 - Worker dry run: 48 Python modules and 86 assets, 889.92 KiB upload / 163.07
   KiB gzip, with all configured bindings resolved and no config warnings.
+- Static delivery: `run_worker_first` is false, so matching public assets use
+  Cloudflare's static asset layer without invoking the Python Worker. Local
+  requests for `styles.css` and pinned Leaflet JavaScript returned 200, ETags,
+  and `CF-Cache-Status: HIT`; dynamic routes still enter the Worker.
 - `GET /health`: 200 with HSTS.
 - `GET /`: 200 with HSTS and CSP.
 - Bounded `GET /api/jobs/open`: 200 with `Cache-Control: no-store` and normalized
@@ -71,3 +75,23 @@ Search text and viewport coordinates are deliberately excluded from logs.
 Production rows-read monitoring remains a live-acceptance gate. Cloudflare D1
 exposes per-query row counts through result metadata and account analytics:
 <https://developers.cloudflare.com/d1/observability/metrics-analytics/>.
+
+## HTTPS release guard
+
+The production smoke helper now disables automatic redirect following for four
+plain-HTTP probes and requires each response to redirect directly to its exact
+HTTPS URL:
+
+- `http://workdoe.com/`
+- `http://workdoe.com/styles.css`
+- `http://www.workdoe.com/`
+- `http://www.workdoe.com/styles.css`
+
+This covers both the Worker-controlled application entry and the asset path
+that will bypass the Worker. All four probes pass against the currently
+deployed pre-release service. They must pass again after the reviewed release
+because the production service has not yet received this configuration.
+
+Core Web Vitals were not measured in this pass because no compatible Chrome
+performance-trace integration was available. Production LCP, CLS, and INP
+remain explicit acceptance gates rather than inferred claims.

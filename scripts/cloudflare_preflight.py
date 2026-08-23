@@ -1186,11 +1186,11 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "Wrangler static assets path exists",
             )
         require(
-            wrangler.get("assets", {}).get("run_worker_first") is True,
+            wrangler.get("assets", {}).get("run_worker_first") is False,
             errors,
-            "Wrangler must route all asset requests through the Worker so HTTPS enforcement applies consistently.",
+            "Wrangler must serve matching static assets directly from Cloudflare's asset layer.",
             checks,
-            "Wrangler routes asset requests through the Worker",
+            "Wrangler bypasses the Worker for matching static assets",
         )
 
     if dev_vars:
