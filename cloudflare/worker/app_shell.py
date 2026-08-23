@@ -310,7 +310,7 @@ def app_shell_csp(
         connect_sources.append("https://challenges.cloudflare.com")
     img_sources = ["'self'", "data:"]
     if include_map:
-        img_sources.append("https://*.tile.openstreetmap.org")
+        img_sources.append("https://tile.openstreetmap.org")
     if include_clerk:
         runtime_url = clerk_runtime_frontend_api_url(
             clerk_publishable_key,
@@ -1375,7 +1375,7 @@ def lead_board_html(user, payload: dict) -> str:
           <input id="market-search" name="q" type="search" value="{escape(filters.get('q', ''))}" maxlength="80" placeholder="Try painting or Arlington" autocomplete="off" data-market-search>
           {task_filter_html}
           <label for="market-sort">Sort</label>
-          <select id="market-sort" name="sort">{sort_options}</select>
+          <select id="market-sort" name="sort" data-market-sort>{sort_options}</select>
           <div class="filter-actions"><button class="button compact" type="submit">Filter</button><a class="button secondary compact" href="/leads" data-clear-market-filters>Clear</a></div>
         </form>
         <div id="saved-lead-alerts" class="saved-lead-toolbar" aria-label="Saved lead view and alerts">
@@ -1403,7 +1403,7 @@ def lead_board_html(user, payload: dict) -> str:
       <section class="market-map-stage" data-market-panel="map" aria-label="Project map workspace">
         <div class="map-stage-toolbar"><div><span class="map-live-indicator" aria-hidden="true"></span><strong data-map-result-count>{len(map_jobs)} projects mapped</strong></div><span>Approximate pins</span></div>
         <div class="market-map-frame">
-          <div id="lead-map" data-map data-map-workspace role="region" tabindex="0" aria-label="Approximate DMV job map" aria-describedby="lead-map-status">
+          <div id="lead-map" data-map data-map-workspace data-tile-url="https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png" data-tile-attribution='&amp;copy; &lt;a href="https://www.openstreetmap.org/copyright"&gt;OpenStreetMap&lt;/a&gt;' role="region" tabindex="0" aria-label="Approximate DMV job map" aria-describedby="lead-map-status">
             <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Map loading. Project list is ready.</p>
             <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Map loading. Project list is ready.</p>
           </div>

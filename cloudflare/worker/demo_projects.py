@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from public_job_query import public_viewport_contains
 from service_taxonomy import service_selection
 
 DEMO_PROJECTS = [
@@ -205,7 +206,10 @@ def compact_spaces(value: str | None) -> str:
     return " ".join(str(value or "").strip().split())
 
 
-def demo_projects_for_filters(filters: dict[str, str] | None = None) -> list[dict]:
+def demo_projects_for_filters(
+    filters: dict[str, str] | None = None,
+    viewport: dict[str, float] | None = None,
+) -> list[dict]:
     active = filters or {}
     category = compact_spaces(active.get("category"))
     family = compact_spaces(active.get("family"))
@@ -248,6 +252,14 @@ def demo_projects_for_filters(filters: dict[str, str] | None = None) -> list[dic
                 )
             ).lower()
         ]
+    if viewport:
+        projects = [
+            project
+            for project in projects
+            if public_viewport_contains(
+                viewport, project.get("approx_lat"), project.get("approx_lng")
+            )
+        ]
     sort = active.get("sort", "newest")
     if sort == "soonest":
         projects.sort(key=lambda project: (project["desired_date"], project["title"]))
@@ -262,9 +274,11 @@ def guest_project_rows(
     rows: list,
     filters: dict[str, str] | None = None,
     limit: int | None = None,
+    viewport: dict[str, float] | None = None,
+    include_demo: bool = True,
 ) -> list:
     live_rows = list(rows)
-    demo_rows = demo_projects_for_filters(filters)
+    demo_rows = demo_projects_for_filters(filters, viewport) if include_demo else []
     if limit is None:
         return live_rows + demo_rows
     capped_limit = max(0, int(limit))

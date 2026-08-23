@@ -1137,7 +1137,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
     def test_fresh_d1_database_accepts_complete_migration_chain(self):
         migrations_dir = ROOT / "cloudflare" / "d1" / "migrations"
         migration_paths = sorted(migrations_dir.glob("[0-9][0-9][0-9][0-9]_*.sql"))
-        self.assertEqual(len(migration_paths), 26)
+        self.assertEqual(len(migration_paths), 27)
 
         connection = sqlite3.connect(":memory:")
         try:
@@ -3299,7 +3299,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(job["action_label"], "Sign in")
         self.assertEqual(job["url"], "/login?next=/jobs/9")
         self.assertNotIn("zip_code", job)
-        self.assertEqual(job["description"], "Project details are available after sign-in.")
+        self.assertNotIn("description", job)
         self.assertNotIn("client_email", job)
         self.assertEqual(job["service_group_slug"], "remodel-finish")
         self.assertEqual(job["service_name"], "Interior painting")
@@ -3689,7 +3689,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             headers["Content-Security-Policy"],
         )
         self.assertIn(
-            "https://*.tile.openstreetmap.org",
+            "https://tile.openstreetmap.org",
             headers["Content-Security-Policy"],
         )
         proxy_headers = module.shell_headers(
@@ -4616,7 +4616,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             headers["Strict-Transport-Security"],
             "max-age=31536000; includeSubDomains",
         )
-        self.assertIn("https://*.tile.openstreetmap.org", headers["Content-Security-Policy"])
+        self.assertIn("https://tile.openstreetmap.org", headers["Content-Security-Policy"])
         self.assertIn("https://challenges.cloudflare.com", headers["Content-Security-Policy"])
 
         account_html = module.account_security_html(

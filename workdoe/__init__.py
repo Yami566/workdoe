@@ -153,6 +153,13 @@ from .project_settings import (
     normalize_project_setting,
     project_setting_label,
 )
+from .public_job_query import (
+    PublicJobQueryError,
+    encode_public_cursor,
+    parse_public_cursor,
+    parse_public_viewport,
+    public_viewport_sql,
+)
 from .repeat_provider_invitations import (
     RepeatProviderInvitationError,
     repeat_invitation_response,
@@ -346,7 +353,7 @@ CONTENT_SECURITY_POLICY_DIRECTIVES = [
     "style-src 'self'",
     "style-src-elem 'self'",
     "style-src-attr 'unsafe-inline'",
-    "img-src 'self' data: https://*.tile.openstreetmap.org",
+    "img-src 'self' data: https://tile.openstreetmap.org",
     "connect-src 'self'",
     "font-src 'self'",
     "media-src 'self'",
@@ -399,6 +406,13 @@ def create_app(test_config: dict | None = None) -> Flask:
         TURNSTILE_SECRET_KEY=os.environ.get("WORKDOE_TURNSTILE_SECRET_KEY", ""),
         TURNSTILE_VERIFY_URL=os.environ.get("WORKDOE_TURNSTILE_VERIFY_URL", TURNSTILE_VERIFY_URL),
         TURNSTILE_TEST_TOKENS=(),
+        MAP_TILE_URL=os.environ.get(
+            "WORKDOE_MAP_TILE_URL",
+            "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        ),
+        MAP_TILE_ATTRIBUTION=(
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        ),
         SHOW_LOCAL_LOGIN_CODE=not is_production,
         ENFORCE_SERVICE_ACTIVATION=is_production
         or enabled_flag(os.environ.get("WORKDOE_ENFORCE_SERVICE_ACTIVATION")),
@@ -1738,15 +1752,37 @@ def register_routes(app: Flask) -> None:
         filters = public_job_filters()
         target = normalize_public_job_target(request.args.get("target"))
         lead_view = normalize_lead_view(request.args.get("view"))
-        jobs, map_jobs = public_open_jobs(limit=limit, filters=filters, target=target)
+        try:
+            viewport = parse_public_viewport(request.args)
+            cursor_offset = parse_public_cursor(request.args.get("cursor"))
+        except PublicJobQueryError as exc:
+            response = jsonify({"ok": False, "error": str(exc)})
+            response.status_code = 400
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        jobs, map_jobs, has_more = public_open_jobs_page(
+            limit=limit,
+            filters=filters,
+            target=target,
+            viewport=viewport,
+            offset=cursor_offset,
+        )
+        page_count = len(jobs)
         if lead_view != "all" and g.user and g.user["role"] == "contractor":
             jobs = attach_contractor_request_status(jobs, g.user["id"])
             jobs = filter_jobs_by_lead_view(jobs, lead_view)
             map_jobs = filter_map_jobs_by_jobs(map_jobs, jobs)
+        next_cursor = (
+            encode_public_cursor(cursor_offset + page_count) if has_more else ""
+        )
         response = jsonify(
             {
                 "count": len(map_jobs),
+                "result_count": len(map_jobs),
                 "jobs": map_jobs,
+                "next_cursor": next_cursor,
+                "truncated": has_more,
+                "viewport": viewport,
                 "filters": filters,
                 "view": lead_view if g.user and g.user["role"] == "contractor" else "all",
                 "location_privacy": "Approximate city or ZIP-level pins only.",
@@ -7709,6 +7745,21 @@ def public_open_jobs(
     filters: dict[str, str] | None = None,
     target: str = "start",
 ):
+    jobs, map_jobs, _has_more = public_open_jobs_page(
+        limit=limit,
+        filters=filters,
+        target=target,
+    )
+    return jobs, map_jobs
+
+
+def public_open_jobs_page(
+    limit: int = 8,
+    filters: dict[str, str] | None = None,
+    target: str = "start",
+    viewport: dict[str, float] | None = None,
+    offset: int = 0,
+):
     active_filters = filters or {
         "category": "",
         "family": "",
@@ -7748,6 +7799,10 @@ def public_open_jobs(
             "AND (jobs.city LIKE ? OR jobs.state LIKE ? OR jobs.zip_code LIKE ? OR jobs.title LIKE ?)"
         )
         params.extend([like, like, like, like])
+    viewport_clause, viewport_params = public_viewport_sql(viewport)
+    if viewport_clause:
+        sql.append(viewport_clause)
+        params.extend(viewport_params)
     sort_order = normalize_job_sort(active_filters.get("sort"))
     order_clauses = {
         "newest": "jobs.created_at DESC, jobs.id DESC",
@@ -7757,9 +7812,13 @@ def public_open_jobs(
         ),
         "city": "jobs.city COLLATE NOCASE ASC, jobs.created_at DESC, jobs.id DESC",
     }
-    sql.append(f"GROUP BY jobs.id ORDER BY {order_clauses[sort_order]} LIMIT ?")
-    params.append(limit)
-    jobs = get_db().execute("\n".join(sql), params).fetchall()
+    sql.append(
+        f"GROUP BY jobs.id ORDER BY {order_clauses[sort_order]} LIMIT ? OFFSET ?"
+    )
+    params.extend([limit + 1, max(0, offset)])
+    page_rows = get_db().execute("\n".join(sql), params).fetchall()
+    has_more = len(page_rows) > limit
+    jobs = page_rows[:limit]
     if g.user and g.user["role"] in {"contractor", "admin"}:
         make_url = lambda row: url_for("contractor_job_detail", job_id=row["id"])
         action_label = "View"
@@ -7783,16 +7842,21 @@ def public_open_jobs(
             "service_name": service_label(row["service_slug"], row["category"]),
             "city": row["city"],
             "state": row["state"],
+            "desired_date": row["desired_date"] or "",
+            "photo_count": int(row["photo_count"] or 0),
             "lat": row["approx_lat"],
             "lng": row["approx_lng"],
             "url": make_url(row),
+            "detail_url": make_url(row),
             "action_label": action_label,
             "budget": budget_label(row),
+            "is_demo": False,
+            "sample_label": "Open project",
         }
         for row in jobs
         if row["approx_lat"] and row["approx_lng"]
     ]
-    return jobs, map_jobs
+    return jobs, map_jobs, has_more
 
 
 def ensure_thread_for_match(match) -> int:

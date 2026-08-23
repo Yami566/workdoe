@@ -24,7 +24,7 @@
     {% endif %}
     {% set family_filter_label = "Filter projects while starting by work family" %}
     {% include "_service_family_filter.html" %}
-    <form class="filter-bar compact-filter entry-filter" method="get" role="search" aria-label="Filter open jobs while starting" aria-controls="start-open-jobs lead-map">
+    <form class="filter-bar compact-filter entry-filter" method="get" role="search" aria-label="Filter open jobs while starting" aria-controls="start-open-jobs lead-map" data-market-filters>
       <input type="hidden" name="intent" value="{{ intent }}">
       {% if selected_job %}<input type="hidden" name="job_id" value="{{ selected_job.id }}">{% endif %}
       {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
@@ -32,7 +32,7 @@
       {% if selected_family %}
       <label for="start-service">
         Task
-        <select name="service" id="start-service">
+        <select name="service" id="start-service" data-market-service>
           <option value="">All {{ selected_family.name|lower }} tasks</option>
           {% for service_slug, service_name, legacy_category in selected_family.services %}
             <option value="{{ service_slug }}" {% if filters.service == service_slug %}selected{% endif %}>{{ service_name }}</option>
@@ -42,11 +42,11 @@
       {% endif %}
       <label for="start-search">
         Search
-        <input name="q" type="search" id="start-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}">
+        <input name="q" type="search" id="start-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}" data-market-search>
       </label>
       <label for="start-sort">
         Sort
-        <select name="sort" id="start-sort">
+        <select name="sort" id="start-sort" data-market-sort>
           {% for value, label in job_sort_options %}
             <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
@@ -65,7 +65,7 @@
           {% include "_lead_map.html" %}
         {% endwith %}
       </div>
-      <div id="start-open-jobs" class="job-list login-job-list" aria-label="Open jobs while starting account" {% if open_jobs %}role="list"{% endif %}>
+      <div id="start-open-jobs" class="job-list login-job-list" aria-label="Open jobs while starting account" {% if open_jobs %}role="list"{% endif %} data-project-results>
         {% for job in open_jobs %}
           {% set is_selected = selected_job and selected_job.id == job.id %}
           {% set row_cue = "Selected" if is_selected else "Find work" %}

@@ -59,12 +59,12 @@
     {% endwith %}
   </div>
   <div id="home-open-jobs" class="job-list">
-    <form class="filter-bar compact-filter" method="get" role="search" aria-label="Filter open jobs" aria-controls="home-open-job-results lead-map">
+    <form class="filter-bar compact-filter" method="get" role="search" aria-label="Filter open jobs" aria-controls="home-open-job-results lead-map" data-market-filters>
       {% if filters.family %}<input type="hidden" name="family" value="{{ filters.family }}">{% endif %}
       {% if selected_family %}
       <label for="home-service">
         Task
-        <select name="service" id="home-service">
+        <select name="service" id="home-service" data-market-service>
           <option value="">All {{ selected_family.name|lower }} tasks</option>
           {% for service_slug, service_name, legacy_category in selected_family.services %}
             <option value="{{ service_slug }}" {% if filters.service == service_slug %}selected{% endif %}>{{ service_name }}</option>
@@ -74,11 +74,11 @@
       {% endif %}
       <label for="home-search">
         Search
-        <input name="q" type="search" id="home-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}">
+        <input name="q" type="search" id="home-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}" data-market-search>
       </label>
       <label for="home-sort">
         Sort
-        <select name="sort" id="home-sort">
+        <select name="sort" id="home-sort" data-market-sort>
           {% for value, label in job_sort_options %}
             <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
@@ -95,7 +95,7 @@
       <p class="eyebrow">Open projects</p>
       <h2>{{ open_jobs|length }} near DC, Maryland, and Virginia</h2>
     </div>
-    <div id="home-open-job-results" class="job-result-list" aria-label="Open job results" {% if open_jobs %}role="list"{% endif %}>
+    <div id="home-open-job-results" class="job-result-list" aria-label="Open job results" {% if open_jobs %}role="list"{% endif %} data-project-results>
       {% for job in open_jobs %}
         {% set job_href = url_for('contractor_job_detail', job_id=job.id) if g.user and g.user.role in ['contractor', 'admin'] else (url_for('dashboard') if g.user else url_for('login', next=url_for('contractor_job_detail', job_id=job.id))) %}
         {% set row_cue = "View" if g.user and g.user.role in ['contractor', 'admin'] else ("Dashboard" if g.user else "Sign in") %}

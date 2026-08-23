@@ -2096,7 +2096,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "No password needed. Your one-time code arrives by email.",
                 "Content-Security-Policy",
                 "Cache-Control",
-                "https://*.tile.openstreetmap.org",
+                "https://tile.openstreetmap.org",
             )
             if marker not in combined_entry_shell_source
         ]
@@ -2284,7 +2284,8 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "/api/jobs/open",
                 "public_open_jobs",
                 "public_jobs_payload",
-                "guest_project_rows(rows_from(result), filters, limit=limit)",
+                "public_viewport_sql(viewport)",
+                "next_cursor=next_cursor",
                 "jobs.status = 'open'",
                 "jobs.zip_code LIKE ?",
                 "Approximate city or ZIP-level pins only.",

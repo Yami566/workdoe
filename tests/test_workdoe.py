@@ -2698,7 +2698,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn("style-src 'self'", csp)
         self.assertIn("style-src-elem 'self'", csp)
         self.assertIn("style-src-attr 'unsafe-inline'", csp)
-        self.assertIn("img-src 'self' data: https://*.tile.openstreetmap.org", csp)
+        self.assertIn("img-src 'self' data: https://tile.openstreetmap.org", csp)
         self.assertIn("connect-src 'self'", csp)
         self.assertIn("frame-ancestors 'none'", csp)
         self.assertNotIn("unpkg.com", csp)
@@ -3243,7 +3243,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         csp = login.headers["Content-Security-Policy"]
         self.assertIn("script-src 'self' https://clerk.workdoe.com", csp)
         self.assertIn("connect-src 'self' https://clerk.workdoe.com", csp)
-        self.assertIn("img-src 'self' data: https://*.tile.openstreetmap.org https://clerk.workdoe.com", csp)
+        self.assertIn("img-src 'self' data: https://tile.openstreetmap.org https://clerk.workdoe.com", csp)
         self.assertIn(
             "style-src-elem 'self' 'unsafe-inline' https://clerk.workdoe.com",
             csp,
@@ -4076,6 +4076,41 @@ class WorkdoeFlowTests(unittest.TestCase):
         invalid_sort = self.client.get("/api/jobs/open?sort=random").get_json()
         self.assertEqual(invalid_sort["filters"]["sort"], "newest")
 
+    def test_open_jobs_api_validates_bounds_and_pages_with_opaque_cursors(self):
+        bounded = self.client.get(
+            "/api/jobs/open?north=38.9&south=38.87&east=-77.08&west=-77.12"
+        )
+        self.assertEqual(bounded.status_code, 200)
+        bounded_payload = bounded.get_json()
+        self.assertEqual(bounded_payload["result_count"], 1)
+        self.assertEqual(bounded_payload["jobs"][0]["city"], "Arlington")
+        self.assertEqual(
+            bounded_payload["viewport"],
+            {"north": 38.9, "south": 38.87, "east": -77.08, "west": -77.12},
+        )
+        for private_key in ("zip_code", "description", "address", "email", "phone"):
+            self.assertNotIn(private_key, bounded_payload["jobs"][0])
+
+        first_page = self.client.get("/api/jobs/open?limit=1").get_json()
+        self.assertEqual(first_page["result_count"], 1)
+        self.assertTrue(first_page["truncated"])
+        self.assertTrue(first_page["next_cursor"])
+        second_page = self.client.get(
+            f'/api/jobs/open?limit=1&cursor={first_page["next_cursor"]}'
+        ).get_json()
+        self.assertNotEqual(first_page["jobs"][0]["id"], second_page["jobs"][0]["id"])
+
+        for query in (
+            "north=39",
+            "north=outside&south=38&east=-76&west=-77",
+            "north=10&south=9&east=10&west=9",
+            "cursor=not-a-cursor",
+        ):
+            with self.subTest(query=query):
+                invalid = self.client.get(f"/api/jobs/open?{query}")
+                self.assertEqual(invalid.status_code, 400)
+                self.assertFalse(invalid.get_json()["ok"])
+
     def test_map_script_announces_results_and_active_rows(self):
         script = (ROOT / "workdoe" / "static" / "map.js").read_text()
         self.assertIn("setMapStatus", script)
@@ -4096,6 +4131,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('event.key === "End"', script)
         self.assertIn("preventScroll: false", script)
         self.assertIn("No matching projects", script)
+        self.assertIn("Search this area", script)
+        self.assertIn("map.getBounds()", script)
+        self.assertIn("window.history.replaceState", script)
+        self.assertIn('setOptionalParam(url, "job_id", activeJobId)', script)
+        self.assertIn("https://tile.openstreetmap.org/{z}/{x}/{y}.png", script)
+        self.assertIn("if (!detailContent)", script)
 
     def test_local_password_reset_token_flow(self):
         reset_form = self.client.get("/forgot-password")

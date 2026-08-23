@@ -335,6 +335,13 @@ from moderation_reports import (
     report_target_query,
 )
 from pilot_metrics import pilot_cell_metrics
+from public_job_query import (
+    PublicJobQueryError,
+    encode_public_cursor,
+    parse_public_cursor,
+    parse_public_viewport,
+    public_viewport_sql,
+)
 from public_jobs import (
     first_query_value,
     normalize_public_target,
@@ -2183,6 +2190,15 @@ class Default(WorkerEntrypoint):
         limit = parse_public_limit(first_query_value(params, "limit"))
         filters = public_job_filters_from_query(params)
         target = normalize_public_target(first_query_value(params, "target"))
+        try:
+            viewport = parse_public_viewport(params)
+            cursor_offset = parse_public_cursor(first_query_value(params, "cursor"))
+        except PublicJobQueryError as exc:
+            return json_response(
+                {"ok": False, "error": str(exc)},
+                status=400,
+                headers={"Cache-Control": "no-store"},
+            )
         sql = [
             """
             SELECT
@@ -2222,8 +2238,15 @@ class Default(WorkerEntrypoint):
                 "AND (jobs.city LIKE ? OR jobs.state LIKE ? OR jobs.zip_code LIKE ? OR jobs.title LIKE ?)"
             )
             bindings.extend([like, like, like, like])
-        sql.append(f"GROUP BY jobs.id ORDER BY {public_job_order_clause(filters['sort'])} LIMIT ?")
-        bindings.append(limit)
+        viewport_clause, viewport_bindings = public_viewport_sql(viewport)
+        if viewport_clause:
+            sql.append(viewport_clause)
+            bindings.extend(viewport_bindings)
+        sql.append(
+            f"GROUP BY jobs.id ORDER BY {public_job_order_clause(filters['sort'])} "
+            "LIMIT ? OFFSET ?"
+        )
+        bindings.extend([limit + 1, cursor_offset])
 
         try:
             result = await db_run(self.env, "\n".join(sql), *bindings)
@@ -2237,9 +2260,29 @@ class Default(WorkerEntrypoint):
                 headers={"Cache-Control": "no-store"},
             )
 
-        rows = guest_project_rows(rows_from(result), filters, limit=limit)
+        live_rows = rows_from(result)
+        has_more = len(live_rows) > limit
+        live_rows = live_rows[:limit]
+        rows = guest_project_rows(
+            live_rows,
+            filters,
+            limit=limit,
+            viewport=viewport,
+            include_demo=cursor_offset == 0,
+        )
+        next_cursor = (
+            encode_public_cursor(cursor_offset + len(live_rows)) if has_more else ""
+        )
         return json_response(
-            public_jobs_payload(rows, filters=filters, target=target, view="all"),
+            public_jobs_payload(
+                rows,
+                filters=filters,
+                target=target,
+                view="all",
+                viewport=viewport,
+                next_cursor=next_cursor,
+                truncated=has_more,
+            ),
             headers={"Cache-Control": "no-store"},
         )
 

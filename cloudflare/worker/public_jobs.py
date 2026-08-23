@@ -116,12 +116,7 @@ def public_job_payload(row, target: str = "start") -> dict:
     job_id = row_value(row, "id")
     is_demo = bool(row_value(row, "is_demo", False))
     action_label = "Sign in" if normalize_public_target(target) == "login" else "Create account to respond"
-    description = (
-        row_value(row, "description", "")
-        if is_demo
-        else "Project details are available after sign-in."
-    )
-    return {
+    payload = {
         "id": job_id,
         "title": row_value(row, "title", ""),
         "category": row_value(row, "category", ""),
@@ -132,7 +127,6 @@ def public_job_payload(row, target: str = "start") -> dict:
         ),
         "city": row_value(row, "city", ""),
         "state": row_value(row, "state", ""),
-        "description": description or "Project details are available after sign-in.",
         "budget": budget_label(row),
         "desired_date": row_value(row, "desired_date", "") or "",
         "photo_count": int(row_value(row, "photo_count", 0) or 0),
@@ -144,6 +138,9 @@ def public_job_payload(row, target: str = "start") -> dict:
         "is_demo": is_demo,
         "sample_label": "Sample project" if is_demo else "Open project",
     }
+    if is_demo:
+        payload["description"] = row_value(row, "description", "")
+    return payload
 
 
 def public_jobs_payload(
@@ -151,6 +148,10 @@ def public_jobs_payload(
     filters: dict[str, str],
     target: str = "start",
     view: str = "all",
+    *,
+    viewport: dict[str, float] | None = None,
+    next_cursor: str = "",
+    truncated: bool = False,
 ) -> dict:
     map_jobs = [
         public_job_payload(row, target=target)
@@ -160,7 +161,11 @@ def public_jobs_payload(
     demo_count = sum(1 for job in map_jobs if job["is_demo"])
     return {
         "count": len(map_jobs),
+        "result_count": len(map_jobs),
         "jobs": map_jobs,
+        "next_cursor": next_cursor,
+        "truncated": bool(truncated),
+        "viewport": viewport,
         "demo_count": demo_count,
         "live_count": len(map_jobs) - demo_count,
         "filters": filters,

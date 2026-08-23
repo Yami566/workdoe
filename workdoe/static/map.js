@@ -13,109 +13,203 @@
     var searchInput = document.querySelector("[data-market-search]");
     var categorySelect = document.querySelector("[data-market-category]");
     var serviceSelect = document.querySelector("[data-market-service]");
+    var sortSelect = document.querySelector("[data-market-sort]");
+    var filterForm = document.querySelector("[data-market-filters]");
     var clearButton = document.querySelector("[data-clear-market-filters]");
+    var searchAreaButton = document.querySelector("[data-search-map-area]");
     var resultCount = document.querySelector("[data-project-result-count]");
     var mapResultCount = document.querySelector("[data-map-result-count]");
     var detailContent = document.querySelector("[data-project-detail-content]");
+    var jobsApi = mapElement.getAttribute("data-jobs-api") || "";
+    var tileUrl = mapElement.getAttribute("data-tile-url") || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+    var tileAttribution = mapElement.getAttribute("data-tile-attribution") || '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
     var map = window.L.map(mapElement, {
       scrollWheelZoom: false,
       zoomControl: true,
       maxZoom: 18
     }).setView([38.9072, -77.0369], 9);
-    var markerLayer = window.L.layerGroup();
-    if (window.L.markerClusterGroup) {
-      try {
-        markerLayer = window.L.markerClusterGroup({
-          showCoverageOnHover: false,
-          spiderfyOnMaxZoom: true,
-          maxClusterRadius: 46
-        });
-        markerLayer.addTo(map);
-      } catch (clusterError) {
-        markerLayer = window.L.layerGroup().addTo(map);
-      }
-    } else {
-      markerLayer.addTo(map);
-    }
+    var markerLayer = createMarkerLayer(map);
     var markerByJobId = {};
     var allJobs = readSeedJobs();
     var visibleJobs = [];
     var activeJobId = initialJobId(allJobs);
+    var activeViewport = readViewportFromUrl();
+    var ignoreNextMoveEnd = false;
+    var requestSequence = 0;
 
     mapElement.classList.add("map-ready");
-    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    window.L.tileLayer(tileUrl, {
       maxZoom: 18,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+      attribution: tileAttribution
     }).addTo(map);
 
     bindFilters();
     bindMobileTabs();
-    applyFilters(true);
+    bindMapSearch();
+    if (activeViewport) {
+      moveMap(function () {
+        map.fitBounds(viewportBounds(activeViewport), { padding: [28, 28], maxZoom: 13 });
+      });
+      applyFilters(false);
+      loadJobs(activeViewport, false);
+    } else {
+      applyFilters(true);
+      if (jobsApi && window.fetch) {
+        loadJobs(null, true);
+      }
+    }
 
-    var jobsApi = mapElement.getAttribute("data-jobs-api");
-    if (jobsApi && window.fetch) {
-      window.fetch(jobsApi, {
-        headers: { Accept: "application/json" },
-        credentials: "same-origin"
-      })
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error("Project map request failed");
-          }
-          return response.json();
-        })
-        .then(function (payload) {
-          if (payload && Array.isArray(payload.jobs)) {
-            allJobs = payload.jobs;
-            if (!findJob(activeJobId)) {
-              activeJobId = initialJobId(allJobs);
-            }
-            applyFilters(true);
-          }
-        })
-        .catch(function () {
-          setMapStatus("The live map could not refresh. The available project list is still ready.");
-        });
+    function createMarkerLayer(leafletMap) {
+      var layer = window.L.layerGroup();
+      if (window.L.markerClusterGroup) {
+        try {
+          layer = window.L.markerClusterGroup({
+            showCoverageOnHover: false,
+            spiderfyOnMaxZoom: true,
+            maxClusterRadius: 46
+          });
+          layer.addTo(leafletMap);
+          return layer;
+        } catch (clusterError) {
+          layer = window.L.layerGroup();
+        }
+      }
+      layer.addTo(leafletMap);
+      return layer;
     }
 
     function bindFilters() {
       if (searchInput) {
         searchInput.addEventListener("input", function () {
           applyFilters(false);
+          updateUrlState();
         });
       }
-      if (categorySelect) {
-        categorySelect.addEventListener("change", function () {
-          applyFilters(true);
+      [categorySelect, serviceSelect, sortSelect].forEach(function (control) {
+        if (!control) {
+          return;
+        }
+        control.addEventListener("change", function () {
+          applyFilters(false);
+          updateUrlState();
         });
-      }
-      if (serviceSelect) {
-        serviceSelect.addEventListener("change", function () {
-          applyFilters(true);
+      });
+      if (filterForm) {
+        filterForm.addEventListener("submit", function (event) {
+          if (!jobsApi || !window.fetch) {
+            return;
+          }
+          event.preventDefault();
+          loadJobs(activeViewport, false);
         });
       }
       if (clearButton) {
-        clearButton.addEventListener("click", function () {
+        clearButton.addEventListener("click", function (event) {
           var clearUrl = clearButton.getAttribute("data-clear-market-url");
           if (clearUrl) {
-            window.location.assign(clearUrl);
             return;
           }
+          event.preventDefault();
           if (searchInput) {
             searchInput.value = "";
           }
-          if (categorySelect) {
-            categorySelect.value = "";
+          [categorySelect, serviceSelect].forEach(function (control) {
+            if (control) {
+              control.value = "";
+            }
+          });
+          if (sortSelect) {
+            sortSelect.value = "newest";
           }
-          if (serviceSelect) {
-            serviceSelect.value = "";
-          }
+          activeViewport = null;
           applyFilters(true);
+          updateUrlState();
+          if (jobsApi && window.fetch) {
+            loadJobs(null, true);
+          }
           if (searchInput) {
             searchInput.focus();
           }
         });
       }
+    }
+
+    function bindMapSearch() {
+      map.on("moveend", function () {
+        if (ignoreNextMoveEnd) {
+          ignoreNextMoveEnd = false;
+          return;
+        }
+        if (searchAreaButton && jobsApi) {
+          searchAreaButton.hidden = false;
+          searchAreaButton.disabled = false;
+        }
+      });
+      if (searchAreaButton) {
+        searchAreaButton.addEventListener("click", function () {
+          loadJobs(viewportFromBounds(map.getBounds()), false);
+        });
+      }
+    }
+
+    function loadJobs(viewport, fitMap) {
+      if (!jobsApi || !window.fetch) {
+        return;
+      }
+      var requestId = ++requestSequence;
+      var requestUrl = jobsRequestUrl(viewport);
+      setLoading(true);
+      window.fetch(requestUrl, {
+        headers: { Accept: "application/json" },
+        credentials: "same-origin"
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            return response.json().catch(function () { return {}; }).then(function (payload) {
+              throw new Error(payload.error || "Project map request failed");
+            });
+          }
+          return response.json();
+        })
+        .then(function (payload) {
+          if (requestId !== requestSequence || !payload || !Array.isArray(payload.jobs)) {
+            return;
+          }
+          allJobs = payload.jobs;
+          activeViewport = payload.viewport || viewport || null;
+          if (!findJob(activeJobId)) {
+            activeJobId = initialJobId(allJobs);
+          }
+          applyFilters(Boolean(fitMap && !activeViewport));
+          updateUrlState();
+          if (searchAreaButton) {
+            searchAreaButton.hidden = true;
+          }
+          var suffix = payload.truncated ? " More projects are available beyond this page." : "";
+          setMapStatus((payload.result_count || payload.count || allJobs.length) + " projects loaded." + suffix);
+        })
+        .catch(function (error) {
+          if (requestId !== requestSequence) {
+            return;
+          }
+          setMapStatus(error.message || "The live map could not refresh. The project list is still ready.");
+        })
+        .then(function () {
+          if (requestId === requestSequence) {
+            setLoading(false);
+          }
+        });
+    }
+
+    function jobsRequestUrl(viewport) {
+      var url = new URL(jobsApi, window.location.href);
+      setOptionalParam(url, "q", searchInput && searchInput.value.trim());
+      setOptionalParam(url, "category", categorySelect && categorySelect.value);
+      setOptionalParam(url, "service", serviceSelect && serviceSelect.value);
+      setOptionalParam(url, "sort", sortSelect && sortSelect.value !== "newest" ? sortSelect.value : "");
+      url.searchParams.delete("cursor");
+      setViewportParams(url, viewport);
+      return url.pathname + url.search;
     }
 
     function applyFilters(fitMap) {
@@ -153,7 +247,7 @@
         return;
       }
       if (!visibleJobs.length) {
-        resultContainer.innerHTML = '<div class="market-list-empty"><strong>No matching projects</strong><span>Try another category or a broader search.</span></div>';
+        resultContainer.innerHTML = '<div class="market-list-empty"><strong>No matching projects</strong><span>Move the map or broaden the filters.</span></div>';
         return;
       }
       resultContainer.innerHTML = visibleJobs.map(projectRowHtml).join("");
@@ -173,7 +267,7 @@
     }
 
     function bindExistingRows() {
-      document.querySelectorAll(".project-result[data-job-id]").forEach(function (row) {
+      document.querySelectorAll(".project-result[data-job-id], .job-row[data-job-id]").forEach(function (row) {
         if (row.dataset.mapBound === "true") {
           return;
         }
@@ -181,6 +275,10 @@
         row.setAttribute("aria-keyshortcuts", "ArrowUp ArrowDown Home End");
         row.addEventListener("click", function (event) {
           if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+            return;
+          }
+          if (!detailContent) {
+            activateJob(row.getAttribute("data-job-id"), true, false);
             return;
           }
           event.preventDefault();
@@ -209,10 +307,7 @@
           return;
         }
         var label = markerLabel(job);
-        var marker = window.L.marker([lat, lng], {
-          alt: label,
-          title: label
-        });
+        var marker = window.L.marker([lat, lng], { alt: label, title: label });
         marker.bindPopup(
           '<div class="map-popup">' +
             (job.is_demo ? '<span class="sample-badge">Sample</span>' : "") +
@@ -236,10 +331,22 @@
       });
       updateResultStatus(visibleJobs.length, bounds.length);
       if (fitMap && bounds.length > 1) {
-        map.fitBounds(bounds, { padding: [42, 42], maxZoom: 11 });
+        moveMap(function () {
+          map.fitBounds(bounds, { padding: [42, 42], maxZoom: 11 });
+        });
       } else if (fitMap && bounds.length === 1) {
-        map.setView(bounds[0], 12);
+        moveMap(function () {
+          map.setView(bounds[0], 12);
+        });
       }
+    }
+
+    function moveMap(action) {
+      ignoreNextMoveEnd = true;
+      action();
+      window.setTimeout(function () {
+        ignoreNextMoveEnd = false;
+      }, 700);
     }
 
     function activateJob(jobId, panMap, revealDetails) {
@@ -251,21 +358,17 @@
       var marker = markerByJobId[activeJobId];
       if (marker) {
         if (panMap) {
-          map.panTo(marker.getLatLng(), { animate: true, duration: 0.25 });
+          moveMap(function () {
+            map.panTo(marker.getLatLng(), { animate: true, duration: 0.25 });
+          });
         }
         if (window.L.markerClusterGroup && markerLayer.zoomToShowLayer) {
-          markerLayer.zoomToShowLayer(marker, function () {
-            marker.openPopup();
-          });
+          markerLayer.zoomToShowLayer(marker, function () { marker.openPopup(); });
         } else {
           marker.openPopup();
         }
       }
-      if (job && window.history && document.body.classList.contains("market-entry-body")) {
-        var nextUrl = new URL(window.location.href);
-        nextUrl.searchParams.set("job_id", String(job.id));
-        window.history.replaceState({}, "", nextUrl.pathname + nextUrl.search);
-      }
+      updateUrlState();
       if (revealDetails && window.matchMedia("(max-width: 900px)").matches) {
         setMobilePanel("details");
       }
@@ -276,13 +379,11 @@
         return;
       }
       if (!job) {
-        detailContent.outerHTML = '<div class="market-detail-empty" data-project-detail-content><img src="/field-doe.webp" alt="" width="160" height="160"><h2>No projects match</h2><p>Adjust the filters to widen the map.</p></div>';
+        detailContent.outerHTML = '<div class="market-detail-empty" data-project-detail-content><img src="/field-doe.webp" alt="" width="160" height="160"><h2>No projects match</h2><p>Move the map or adjust the filters.</p></div>';
         detailContent = document.querySelector("[data-project-detail-content]");
         return;
       }
-      var sample = job.is_demo
-        ? '<span class="sample-badge">Demonstration project</span>'
-        : '<span class="live-badge">Open project</span>';
+      var sample = job.is_demo ? '<span class="sample-badge">Demonstration project</span>' : '<span class="live-badge">Open project</span>';
       detailContent.outerHTML = (
         '<article class="market-project-detail" data-project-detail-content data-job-id="' + escapeAttribute(job.id) + '">' +
           '<div class="project-detail-heading">' + sample + "<span>" + escapeHtml(job.service_name || job.category || "Project") + "</span></div>" +
@@ -310,7 +411,10 @@
     }
 
     function highlightJobRows(jobId) {
-      document.querySelectorAll(".project-result[data-job-id]").forEach(function (row) {
+      document.querySelectorAll("[data-job-id]").forEach(function (row) {
+        if (!row.matches(".project-result, .job-row")) {
+          return;
+        }
         var active = row.getAttribute("data-job-id") === String(jobId);
         row.classList.toggle("is-map-active", active);
         if (active) {
@@ -325,7 +429,7 @@
       if (event.altKey || event.ctrlKey || event.metaKey) {
         return;
       }
-      var rows = Array.prototype.slice.call(document.querySelectorAll(".project-result[data-job-id]"));
+      var rows = Array.prototype.slice.call(document.querySelectorAll(".project-result[data-job-id], .job-row[data-job-id]"));
       var index = rows.indexOf(row);
       var nextIndex = index;
       if (event.key === "ArrowDown") {
@@ -368,9 +472,71 @@
         button.tabIndex = selected ? 0 : -1;
       });
       if (panel === "map") {
-        window.setTimeout(function () {
-          map.invalidateSize({ pan: false });
-        }, 50);
+        window.setTimeout(function () { map.invalidateSize({ pan: false }); }, 50);
+      }
+    }
+
+    function updateUrlState() {
+      if (!window.history || !window.URL) {
+        return;
+      }
+      var url = new URL(window.location.href);
+      setOptionalParam(url, "q", searchInput && searchInput.value.trim());
+      setOptionalParam(url, "category", categorySelect && categorySelect.value);
+      setOptionalParam(url, "service", serviceSelect && serviceSelect.value);
+      setOptionalParam(url, "sort", sortSelect && sortSelect.value !== "newest" ? sortSelect.value : "");
+      setOptionalParam(url, "job_id", activeJobId);
+      setViewportParams(url, activeViewport);
+      url.searchParams.delete("cursor");
+      window.history.replaceState({ workdoeMap: true }, "", url.pathname + url.search + url.hash);
+    }
+
+    function setOptionalParam(url, key, value) {
+      if (value) {
+        url.searchParams.set(key, String(value));
+      } else {
+        url.searchParams.delete(key);
+      }
+    }
+
+    function setViewportParams(url, viewport) {
+      ["north", "south", "east", "west"].forEach(function (key) {
+        if (viewport && Number.isFinite(Number(viewport[key]))) {
+          url.searchParams.set(key, Number(viewport[key]).toFixed(6));
+        } else {
+          url.searchParams.delete(key);
+        }
+      });
+    }
+
+    function readViewportFromUrl() {
+      var url = new URL(window.location.href);
+      var viewport = {};
+      var valid = ["north", "south", "east", "west"].every(function (key) {
+        viewport[key] = Number(url.searchParams.get(key));
+        return Number.isFinite(viewport[key]);
+      });
+      return valid && viewport.north > viewport.south && viewport.east > viewport.west ? viewport : null;
+    }
+
+    function viewportFromBounds(bounds) {
+      return {
+        north: Number(bounds.getNorth().toFixed(6)),
+        south: Number(bounds.getSouth().toFixed(6)),
+        east: Number(bounds.getEast().toFixed(6)),
+        west: Number(bounds.getWest().toFixed(6))
+      };
+    }
+
+    function viewportBounds(viewport) {
+      return [[viewport.south, viewport.west], [viewport.north, viewport.east]];
+    }
+
+    function setLoading(loading) {
+      mapElement.setAttribute("aria-busy", loading ? "true" : "false");
+      if (searchAreaButton) {
+        searchAreaButton.disabled = loading;
+        searchAreaButton.textContent = loading ? "Loading projects" : "Search this area";
       }
     }
 
@@ -383,7 +549,11 @@
     }
 
     function initialJobId(jobs) {
-      var activeRow = document.querySelector("[data-job-id].is-map-active");
+      var requested = new URL(window.location.href).searchParams.get("job_id");
+      if (requested && jobs.some(function (job) { return String(job.id) === requested; })) {
+        return requested;
+      }
+      var activeRow = document.querySelector("[data-job-id].is-map-active, [data-job-id].is-selected");
       if (activeRow) {
         return activeRow.getAttribute("data-job-id") || "";
       }

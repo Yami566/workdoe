@@ -40,7 +40,7 @@
 {% set family_filter_label = "Filter contractor leads by work family" %}
 {% include "_service_family_filter.html" %}
 
-<form class="filter-bar lead-filter" method="get" role="search" aria-label="Filter contractor leads" aria-controls="lead-results lead-map">
+<form class="filter-bar lead-filter" method="get" role="search" aria-label="Filter contractor leads" aria-controls="lead-results lead-map" data-market-filters>
   {% if lead_view != "all" %}
     <input type="hidden" name="view" value="{{ lead_view }}">
   {% endif %}
@@ -58,11 +58,11 @@
   {% endif %}
   <label class="search-field" for="lead-search">
     Search DMV area
-    <input id="lead-search" name="q" type="search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, state, ZIP, or title" maxlength="{{ filter_query_max }}">
+    <input id="lead-search" name="q" type="search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, state, ZIP, or title" maxlength="{{ filter_query_max }}" data-market-search>
   </label>
   <label class="sort-field" for="lead-sort">
     Sort
-    <select id="lead-sort" name="sort">
+    <select id="lead-sort" name="sort" data-market-sort>
       {% for value, label in job_sort_options %}
         <option value="{{ value }}" {% if filters.sort == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
@@ -107,7 +107,7 @@
 </div>
 
 <section class="lead-layout">
-  <div id="lead-results" class="job-list lead-job-list" aria-label="Open leads" {% if jobs %}role="list"{% endif %}>
+  <div id="lead-results" class="job-list lead-job-list" aria-label="Open leads" {% if jobs %}role="list"{% endif %} data-project-results>
     {% for job in jobs %}
       {% set row_cue = "Sent" if job.request_status else "View" %}
       {% set row_label = "Open sent bid for " ~ job.title if job.request_status else "View " ~ job.title %}

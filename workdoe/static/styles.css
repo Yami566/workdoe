@@ -3063,6 +3063,30 @@ textarea:focus {
   height: 420px;
 }
 
+.map-search-area {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 720;
+  width: auto;
+  min-height: 38px;
+  border-color: var(--accent-dark);
+  background: #fff;
+  color: var(--accent-dark);
+  box-shadow: 0 5px 16px rgba(18, 38, 24, 0.18);
+  transform: translateX(-50%);
+}
+
+.map-search-area:hover,
+.map-search-area:focus-visible {
+  background: var(--accent-dark);
+  color: #fff;
+}
+
+.map-search-area[hidden] {
+  display: none;
+}
+
 .map-fallback {
   position: absolute;
   inset: 0;

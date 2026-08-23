@@ -485,7 +485,7 @@ def project_detail_html(row, target: str) -> str:
           </dl>
           <div class="project-description">
             <h3>Field brief</h3>
-            <p>{escape(project['description'])}</p>
+            <p>{escape(project.get('description') or 'Project details are available after sign-in.')}</p>
           </div>
           <p class="project-privacy-note">Location is intentionally approximate until a match is approved.</p>
           <div class="project-detail-actions">
@@ -557,7 +557,7 @@ def shell_csp(
             csp_sources("style-src-elem 'self' 'unsafe-inline'", clerk_origin),
             "style-src-attr 'unsafe-inline'",
             csp_sources(
-                "img-src 'self' data: https://*.tile.openstreetmap.org",
+                "img-src 'self' data: https://tile.openstreetmap.org",
                 CLERK_IMAGE_ORIGIN if clerk_enabled else "",
             ),
             csp_sources(
@@ -643,6 +643,14 @@ def build_entry_shell_html(
         <select id="market-service" data-market-service>
 {task_options(selected_family["slug"], filters.get("service", ""))}
         </select>"""
+    sort_options = "".join(
+        f'<option value="{value}"{" selected" if filters.get("sort", "newest") == value else ""}>{label}</option>'
+        for value, label in (
+            ("newest", "Newest"),
+            ("soonest", "Soonest"),
+            ("city", "City"),
+        )
+    )
     proxy_url = (
         ""
         if native_email_code or development_frontend_api_url
@@ -888,6 +896,8 @@ def build_entry_shell_html(
         <label for="market-search">Search projects</label>
         <input id="market-search" type="search" value="{escape(filters.get('q', ''))}" placeholder="Try painting or Arlington" autocomplete="off" data-market-search>
 {task_filter_html}
+        <label for="market-sort">Sort</label>
+        <select id="market-sort" data-market-sort>{sort_options}</select>
         <div class="filter-actions">
           <button class="button secondary compact" type="button" data-clear-market-filters data-clear-market-url="{escape(entry_clear_url(path, params))}">Clear filters</button>
         </div>
@@ -913,7 +923,8 @@ def build_entry_shell_html(
         <span>{map_payload['live_count']} live / {map_payload['demo_count']} sample</span>
       </div>
       <div class="market-map-frame">
-        <div id="lead-map" data-map data-map-workspace data-jobs-api="{escape(jobs_api_url)}" role="region" tabindex="0" aria-label="Interactive map of approximate DMV project locations" aria-describedby="lead-map-status">
+        <div id="lead-map" data-map data-map-workspace data-jobs-api="{escape(jobs_api_url)}" data-tile-url="https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png" data-tile-attribution='&amp;copy; &lt;a href="https://www.openstreetmap.org/copyright"&gt;OpenStreetMap&lt;/a&gt;' role="region" tabindex="0" aria-label="Interactive map of approximate DMV project locations" aria-describedby="lead-map-status">
+          <button class="button compact map-search-area" type="button" data-search-map-area hidden>Search this area</button>
           <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Loading the project map. The project list is ready.</p>
           <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Loading the project map. The project list is ready.</p>
         </div>

@@ -2,11 +2,14 @@
   id="lead-map"
   data-map
   data-jobs-api="{{ map_jobs_api_url }}"
+  data-tile-url="{{ config.MAP_TILE_URL }}"
+  data-tile-attribution='{{ config.MAP_TILE_ATTRIBUTION }}'
   role="region"
   tabindex="0"
   aria-label="{{ map_label }}"
   aria-describedby="lead-map-status"
 >
+  <button class="button compact map-search-area" type="button" data-search-map-area hidden>Search this area</button>
   <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Map loading. Job list is ready.</p>
   <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Map loading. Job list is ready.</p>
 </div>
