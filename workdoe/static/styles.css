@@ -3739,6 +3739,11 @@ textarea:focus {
   height: min(520px, calc(100dvh - 36px));
 }
 
+.site-dialog[data-dialog-kind="bid"] .site-dialog-surface {
+  width: min(1080px, 100%);
+  height: min(860px, calc(100dvh - 36px));
+}
+
 .site-dialog-header {
   display: flex;
   align-items: center;
@@ -3823,6 +3828,70 @@ textarea:focus {
   background: var(--surface);
   transform: translateX(-50%);
   z-index: 4;
+}
+
+.site-dialog[data-dialog-kind="bid"] .contractor-lead-flow > .dashboard-header {
+  margin-bottom: 12px;
+}
+
+.site-dialog[data-dialog-kind="bid"] .contractor-lead-flow > .dashboard-header:focus {
+  outline: none;
+}
+
+.site-dialog[data-dialog-kind="bid"] .contractor-lead-flow > .dashboard-header h1 {
+  font-size: 1.55rem;
+}
+
+.site-dialog[data-dialog-kind="bid"] .contractor-lead-flow > .lead-action-bar {
+  display: none;
+}
+
+.site-dialog[data-dialog-kind="bid"] .bid-window {
+  margin: 0 0 12px;
+}
+
+.site-dialog[data-dialog-kind="bid"] .detail-grid {
+  grid-template-columns: minmax(0, 1.08fr) minmax(340px, 0.92fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.site-dialog[data-dialog-kind="bid"] .detail-grid > .panel {
+  padding: 14px;
+}
+
+.site-dialog[data-dialog-kind="bid"] .bid-panel {
+  position: sticky;
+  top: 0;
+}
+
+.dialog-project-snapshot {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 14px;
+}
+
+.dialog-project-snapshot > div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+  padding: 8px;
+}
+
+.dialog-project-snapshot dt {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.dialog-project-snapshot dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .site-dialog-content > .form-panel {
@@ -6077,6 +6146,41 @@ textarea:focus {
     bottom: 0;
     width: calc(100vw - 24px);
     padding: 10px 0;
+  }
+
+  .site-dialog[data-dialog-kind="bid"] .site-dialog-surface {
+    height: 96dvh;
+  }
+
+  .site-dialog[data-dialog-kind="bid"] .site-dialog-content {
+    padding: 10px;
+  }
+
+  .site-dialog[data-dialog-kind="bid"] .contractor-lead-flow > .dashboard-header {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .site-dialog[data-dialog-kind="bid"] .contractor-lead-flow > .dashboard-header h1 {
+    font-size: 1.35rem;
+  }
+
+  .site-dialog[data-dialog-kind="bid"] .contractor-lead-flow > .dashboard-header p {
+    font-size: 0.82rem;
+  }
+
+  .site-dialog[data-dialog-kind="bid"] .detail-grid {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .site-dialog[data-dialog-kind="bid"] .bid-panel {
+    position: static;
+    order: -1;
+  }
+
+  .site-dialog[data-dialog-kind="bid"] .dialog-project-snapshot {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .history-heading,

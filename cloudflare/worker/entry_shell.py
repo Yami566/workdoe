@@ -833,7 +833,7 @@ def build_entry_shell_html(
   <script src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>
   <script src="/map.js"></script>"""
     dialog_html = "" if embedded else site_dialog_html()
-    dialog_script_html = "" if embedded else '  <script defer src="/site-dialogs.js?v=workdoe-overlay-dialog"></script>'
+    dialog_script_html = "" if embedded else '  <script defer src="/site-dialogs.js?v=workdoe-bid-dialog"></script>'
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -864,7 +864,7 @@ def build_entry_shell_html(
   <link rel="canonical" href="https://workdoe.com/">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=workdoe-account-security">
+  <link rel="stylesheet" href="/styles.css?v=workdoe-bid-dialog">
 {map_styles_html}
 </head>
 <body class="{escape(body_class)}" data-default-mobile-panel="{escape(mobile_default)}">

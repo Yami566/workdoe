@@ -644,7 +644,7 @@ def layout(
             ]
         )
     if not embedded:
-        scripts.append('<script defer src="/site-dialogs.js?v=workdoe-overlay-dialog"></script>')
+        scripts.append('<script defer src="/site-dialogs.js?v=workdoe-bid-dialog"></script>')
     script_html = "\n  ".join(scripts)
     dialog_html = "" if embedded else site_dialog_html()
     mobile_nav_html = "" if embedded else mobile_task_nav_html(user, active_path)
@@ -680,7 +680,7 @@ def layout(
   <link rel="canonical" href="{escape(canonical_url)}">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=workdoe-account-security">
+  <link rel="stylesheet" href="/styles.css?v=workdoe-bid-dialog">
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet/leaflet.css\">" if include_map else ""}
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.css\"><link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.Default.css\">" if include_map else ""}
   {script_html}
@@ -1555,6 +1555,11 @@ def lead_board_html(user, payload: dict) -> str:
         saved_view_html = '<span>Keep a useful task, area, or sort for your next visit.</span>'
     if selected:
         desired_date = escape(selected.get("desired_date", "") or "Flexible")
+        action_label = (
+            "View bid status"
+            if selected.get("request_status")
+            else "Review and bid"
+        )
         detail_html = f"""
         <article class="market-project-detail" data-project-detail-content data-job-id="{escape(str(selected.get('id', '')))}">
           <div class="project-detail-heading"><span class="live-badge">Open project</span><span>{escape(selected.get('category', ''))}</span></div>
@@ -1567,7 +1572,7 @@ def lead_board_html(user, payload: dict) -> str:
           </dl>
           <div class="project-description"><h3>Field brief</h3><p>{escape(selected.get('description', ''))}</p></div>
           <p class="project-privacy-note">Location is intentionally approximate until a match is approved.</p>
-          <div class="project-detail-actions"><a class="button primary" href="{escape(selected.get('url', '#'))}">View and send bid</a></div>
+          <div class="project-detail-actions"><a class="button primary" href="{escape(selected.get('url', '#'))}" data-dialog-title="{escape(action_label)}">{escape(action_label)}</a></div>
         </article>"""
     else:
         detail_html = """
@@ -3129,7 +3134,13 @@ def admin_dashboard_html(user, payload: dict) -> str:
     return layout(user, "/admin", "Admin", body, include_actions=True)
 
 
-def contractor_job_detail_html(user, payload: dict, site_key: str = "") -> str:
+def contractor_job_detail_html(
+    user,
+    payload: dict,
+    site_key: str = "",
+    *,
+    embedded: bool = False,
+) -> str:
     job = payload.get("job", {})
     job_policy = service_policy(job.get("service_slug"))
     existing = payload.get("existing_request")
@@ -3270,6 +3281,14 @@ def contractor_job_detail_html(user, payload: dict, site_key: str = "") -> str:
         </form>"""
     else:
         side = f'<h2>{escape(bidding.get("availability_label", "Lead unavailable"))}</h2><p class="help-text">This project is not accepting another mini bid. No contractor can pay to move ahead of the queue.</p><a class="button secondary full" href="/leads">Back to leads</a>'
+    if embedded:
+        side = f"""
+        <dl class="dialog-project-snapshot" aria-label="Project snapshot">
+          <div><dt>Budget</dt><dd>{escape(job.get('budget', '') or 'Not provided')}</dd></div>
+          <div><dt>Target</dt><dd>{escape(job.get('desired_date', '') or 'Flexible')}</dd></div>
+          <div><dt>Area</dt><dd>{escape(job.get('area_label', ''))}</dd></div>
+        </dl>
+        {side}"""
     if row_value(user, "role") == "contractor":
         side += f"""
         <form class="report-form" data-json-action="/api/reports" data-success-url-template="/jobs/{int(job.get('id', 0))}" aria-label="Report lead" aria-describedby="lead-report-status">
@@ -3288,7 +3307,8 @@ def contractor_job_detail_html(user, payload: dict, site_key: str = "") -> str:
       <span class="status {escape(repeat_invitation.get('status', 'pending'))}">{escape(repeat_invitation.get('status_label', 'Waiting for contractor'))}</span>
     </section>"""
     body = f"""
-    <section class="dashboard-header">
+    <div class="contractor-lead-flow" data-dialog-fragment data-bid-flow>
+    <section class="dashboard-header" data-dialog-focus tabindex="-1">
       <div>
         <p class="eyebrow">Contractor lead</p>
         <h1>{escape(job.get('title', 'Lead'))}</h1>
@@ -3315,8 +3335,17 @@ def contractor_job_detail_html(user, payload: dict, site_key: str = "") -> str:
         <div class="photo-grid">{photo_html}</div>
       </article>
       <aside class="panel">{side}</aside>
-    </section>"""
-    return layout(user, "/leads", job.get("title", "Lead"), body, include_actions=True, include_turnstile=bool(site_key))
+    </section>
+    </div>"""
+    return layout(
+        user,
+        "/leads",
+        job.get("title", "Lead"),
+        body,
+        include_actions=True,
+        include_turnstile=bool(site_key),
+        body_class="dialog-fragment-body" if embedded else "",
+    )
 
 
 def bid_comparison_html(comparison: dict, job_id: int = 0) -> str:

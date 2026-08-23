@@ -151,7 +151,7 @@
         </dl>
         <div class="project-description"><h3>Field brief</h3><p>{{ selected_job.description }}</p></div>
         <p class="project-privacy-note">Location stays approximate until a match is approved.</p>
-        <div class="project-detail-actions"><a class="button" href="{{ url_for('contractor_job_detail', job_id=selected_job.id) }}">View and send bid</a></div>
+        <div class="project-detail-actions"><a class="button" href="{{ url_for('contractor_job_detail', job_id=selected_job.id) }}" data-dialog-title="Review and bid">Review and bid</a></div>
       </article>
     {% else %}
       <div class="market-detail-empty" data-project-detail-content>

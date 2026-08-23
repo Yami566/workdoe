@@ -20,6 +20,7 @@
     "/post-project",
     "/jobs/new"
   ];
+  var contractorJobPath = /^\/jobs\/[1-9][0-9]*$/;
   var repeatableBootScripts = [
     "/clerk-entry.js",
     "/email-code-entry.js",
@@ -35,11 +36,15 @@
     return Boolean(dialog.open || dialog.hasAttribute("open"));
   }
 
+  function isModalPath(pathname) {
+    return modalPaths.indexOf(pathname) !== -1 || contractorJobPath.test(pathname);
+  }
+
   function dialogTarget(anchor) {
     if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) {
       return null;
     }
-    if (!dialogIsOpen() && modalPaths.indexOf(window.location.pathname) !== -1) {
+    if (!dialogIsOpen() && isModalPath(window.location.pathname)) {
       return null;
     }
     var url;
@@ -48,7 +53,14 @@
     } catch (error) {
       return null;
     }
-    if (url.origin !== window.location.origin || modalPaths.indexOf(url.pathname) === -1) {
+    if (url.origin !== window.location.origin || !isModalPath(url.pathname)) {
+      return null;
+    }
+    if (
+      contractorJobPath.test(url.pathname) &&
+      !dialogIsOpen() &&
+      !anchor.hasAttribute("data-dialog-title")
+    ) {
       return null;
     }
     url.searchParams.delete("embed");
@@ -65,6 +77,9 @@
     if (url.pathname === "/post-project" || url.pathname === "/jobs/new") {
       return "Post a project";
     }
+    if (contractorJobPath.test(url.pathname)) {
+      return "Review and bid";
+    }
     if (url.pathname === "/start/verify") {
       return "Verify your email";
     }
@@ -77,6 +92,9 @@
     }
     if (url.pathname === "/post-project" || url.pathname === "/jobs/new") {
       return "project";
+    }
+    if (contractorJobPath.test(url.pathname)) {
+      return "bid";
     }
     return "flow";
   }
@@ -224,8 +242,9 @@
   }
 
   function focusDialogContent() {
-    var target = content.querySelector('[aria-invalid="true"], [autofocus], input:not([type="hidden"]), select, textarea, button, a[href]');
+    var target = content.querySelector('[data-dialog-focus], [aria-invalid="true"], [autofocus], input:not([type="hidden"]), select, textarea, button, a[href]');
     if (target && typeof target.focus === "function") {
+      content.scrollTop = 0;
       target.focus({ preventScroll: true });
     } else {
       closeButton.focus({ preventScroll: true });
@@ -235,7 +254,7 @@
   function renderResponse(response, requestedUrl, sequence) {
     var responseUrl = new URL(response.url || requestedUrl.href, window.location.href);
     responseUrl.searchParams.delete("embed");
-    if (response.redirected && modalPaths.indexOf(responseUrl.pathname) === -1) {
+    if (response.redirected && !isModalPath(responseUrl.pathname)) {
       window.location.assign(canonicalPath(responseUrl));
       return Promise.resolve();
     }
@@ -463,6 +482,19 @@
     if (event.target === dialog) {
       requestClose();
     }
+  });
+  document.addEventListener("workdoe:dialog-navigate", function (event) {
+    var nextUrl;
+    try {
+      nextUrl = new URL(event.detail && event.detail.url, window.location.origin);
+    } catch (error) {
+      return;
+    }
+    if (!dialogIsOpen() || nextUrl.origin !== window.location.origin || !isModalPath(nextUrl.pathname)) {
+      window.location.assign(canonicalPath(nextUrl));
+      return;
+    }
+    openDialog(null, nextUrl, "replace");
   });
   window.addEventListener("popstate", function (event) {
     if (event.state && event.state.workdoeDialog && event.state.dialogUrl) {

@@ -3660,7 +3660,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('<meta name="twitter:card" content="summary_large_image">', html)
         self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', html)
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', html)
-        self.assertIn('href="/styles.css?v=workdoe-account-security"', html)
+        self.assertIn('href="/styles.css?v=workdoe-bid-dialog"', html)
         self.assertIn('href="/vendor/leaflet/leaflet.css"', html)
         self.assertIn('href="/vendor/leaflet-markercluster/MarkerCluster.css"', html)
         self.assertIn('src="/vendor/leaflet/leaflet.js"', html)
@@ -4898,6 +4898,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('class="job-service-chip"', lead_html)
         self.assertIn('/vendor/tabler-icons/window.svg', lead_html)
         self.assertIn("Ground-floor exterior glass.", lead_html)
+        self.assertIn('data-dialog-title="Review and bid"', lead_html)
+        self.assertIn(">Review and bid</a>", lead_html)
         self.assertIn('id="saved-lead-alerts"', lead_html)
         self.assertIn('name="lead_alert_preference"', lead_html)
         self.assertEqual(lead_html.count('class="service-family-filter-link'), 7)
@@ -4959,6 +4961,32 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('enterkeyhint="done"', detail_html)
         self.assertIn("Send bid", detail_html)
         self.assertIn("223xx", detail_html)
+
+        embedded_detail_html = module.contractor_job_detail_html(
+            contractor,
+            {
+                "job": {
+                    "id": 21,
+                    "title": "Clean windows",
+                    "category": "Window cleaning",
+                    "area_label": "Alexandria, VA 223xx",
+                    "description": "Ground-floor exterior glass.",
+                    "desired_date": "2026-09-15",
+                    "budget": "$300-$450",
+                    "status": "open",
+                    "can_request_match": True,
+                    "location_privacy": "Contractors see city/state and ZIP prefix only.",
+                },
+                "photos": [],
+            },
+            site_key="turnstile-site-key",
+            embedded=True,
+        )
+        self.assertIn('<body class="dialog-fragment-body">', embedded_detail_html)
+        self.assertNotIn("data-site-dialog", embedded_detail_html)
+        self.assertIn("data-dialog-fragment data-bid-flow", embedded_detail_html)
+        self.assertIn('class="dialog-project-snapshot"', embedded_detail_html)
+        self.assertIn("$300-$450", embedded_detail_html)
 
         client_job_html = module.client_job_detail_html(
             client,
@@ -5442,7 +5470,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertFalse(payload["jobs"][0]["can_request_match"])
         self.assertEqual(payload["jobs"][0]["fit_label"], "Best fit")
         self.assertEqual(payload["jobs"][0]["fit_score"], 3)
-        self.assertEqual(payload["map_jobs"][0]["action_label"], "View sent bid")
+        self.assertEqual(payload["map_jobs"][0]["action_label"], "View bid status")
         self.assertEqual(payload["map_jobs"][0]["description"], "Townhouse front steps need cleaning.")
         self.assertEqual(payload["map_jobs"][0]["desired_date"], "2026-09-01")
         self.assertFalse(payload["map_jobs"][0]["is_demo"])

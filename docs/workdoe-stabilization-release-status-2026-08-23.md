@@ -328,6 +328,20 @@ deployment has been performed during this stabilization pass.
   all 10 exact DMV labels without exposing an address. Same-state comparison
   and evidence limits are recorded in
   `docs/ux-audit/2026-08-23-public-contractor-profile-friction/`.
+- Kept contractor quoting inside the selected lead workspace with a native,
+  route-backed bid dialog on desktop and bottom sheet on mobile. Successful
+  bids refresh in place; closing restores the selected project, URL, and
+  invoking-action focus. Current-run 390x844 and 1280x720 evidence, including
+  the former 3,270-pixel mobile page, is recorded in
+  `docs/ux-audit/2026-08-23-contractor-map-to-offer-friction/`.
+- The contractor map-to-offer correction passed all 228 tests in 85.474
+  seconds. The complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed
+  secret across 521 non-ignored files, and no dependency drift. Cloudflare
+  preflight remained warning-free; all 31 migrations and both expected D1
+  public indexes passed without a table scan; and Wrangler 4.125.0 packaged 48
+  Python modules and 86 assets at 905.64 KiB / 166.39 KiB gzip without
+  deploying.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

@@ -3957,7 +3957,8 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'class="job-service-chip"', board.data)
         self.assertIn(b'/static/vendor/tabler-icons/wash.svg', board.data)
         self.assertIn(b'data-project-detail-content data-job-id="', board.data)
-        self.assertIn(b"View and send bid", board.data)
+        self.assertIn(b"Review and bid", board.data)
+        self.assertIn(b'data-dialog-title="Review and bid"', board.data)
         self.assertIn(b"Location stays approximate until a match is approved.", board.data)
         self.assertIn(b'data-jobs-api="/api/jobs/open?limit=50"', board.data)
         self.assertIn(b'id="lead-search" name="q" type="search" enterkeyhint="search"', board.data)
@@ -5312,7 +5313,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'data-site-dialog-content', home.data)
         self.assertNotIn(b'data-site-dialog-frame', home.data)
         self.assertNotIn(b'<iframe class="site-dialog-frame"', home.data)
-        self.assertIn(b'src="/static/site-dialogs.js?v=workdoe-overlay-dialog"', home.data)
+        self.assertIn(b'src="/static/site-dialogs.js?v=workdoe-bid-dialog"', home.data)
 
         direct_login = self.client.get("/login")
         self.assertEqual(direct_login.headers["X-Frame-Options"], "DENY")
@@ -5346,11 +5347,22 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('returnFocus.focus({ preventScroll: true })', script)
         self.assertIn('fragmentFromDocument', script)
         self.assertIn('return "project";', script)
+        self.assertIn('return "bid";', script)
+        self.assertIn('var contractorJobPath = /^\\/jobs\\/[1-9][0-9]*$/;', script)
+        self.assertIn('anchor.hasAttribute("data-dialog-title")', script)
+        self.assertIn('document.addEventListener("workdoe:dialog-navigate"', script)
         self.assertIn('dialog.dataset.dialogKind = kindFor(url)', script)
         self.assertIn('delete dialog.dataset.dialogKind', script)
+        worker_actions = (
+            ROOT / "workdoe" / "static" / "worker-actions.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn('form.closest("[data-site-dialog-content]")', worker_actions)
+        self.assertIn('new CustomEvent("workdoe:dialog-navigate"', worker_actions)
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
         self.assertIn(".site-dialog::backdrop", styles)
         self.assertIn(".site-dialog-content", styles)
+        self.assertIn('.site-dialog[data-dialog-kind="bid"] .site-dialog-surface', styles)
+        self.assertIn(".dialog-project-snapshot", styles)
         self.assertRegex(
             styles,
             r'\.site-dialog\[data-dialog-kind="auth"\] \.site-dialog-surface\s*\{[^}]*height: min\(520px, calc\(100dvh - 36px\)\);',
@@ -5381,6 +5393,29 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('composer.closest("[data-site-dialog-content]")', composer_script)
         self.assertIn("dialogContent.scrollTop = 0", composer_script)
         self.assertIn('composer.querySelector(".project-composer-head")', composer_script)
+
+        self.login("contractor@workdoe.local", "workdoe-contractor")
+        available = self.one(
+            """
+            SELECT jobs.id
+            FROM jobs
+            LEFT JOIN match_requests
+              ON match_requests.job_id = jobs.id
+             AND match_requests.contractor_id = (
+                 SELECT id FROM users WHERE email = 'contractor@workdoe.local'
+             )
+            WHERE jobs.status = 'open' AND match_requests.id IS NULL
+            ORDER BY jobs.id
+            LIMIT 1
+            """
+        )
+        embedded_bid = self.client.get(f"/jobs/{available['id']}?embed=1")
+        self.assertEqual(embedded_bid.status_code, 200)
+        self.assertIn(b'<body class="dialog-fragment-body">', embedded_bid.data)
+        self.assertNotIn(b"data-site-dialog", embedded_bid.data)
+        self.assertIn(b'data-dialog-fragment data-bid-flow', embedded_bid.data)
+        self.assertIn(b'class="dialog-project-snapshot"', embedded_bid.data)
+        self.assertIn(b'aria-label="Send mini bid"', embedded_bid.data)
 
     def test_role_dashboards_show_private_project_and_closed_work_history(self):
         with self.app.app_context():

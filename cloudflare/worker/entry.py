@@ -2097,6 +2097,7 @@ class Default(WorkerEntrypoint):
                 user,
                 payload,
                 getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", ""),
+                embedded=embedded,
             )
         elif path == "/contractor/profile" and role == "contractor":
             profile = await ensure_contractor_profile(self.env, user, utc_now())

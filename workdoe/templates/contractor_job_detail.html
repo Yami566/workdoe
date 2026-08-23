@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ job.title }} - Workdoe Lead{% endblock %}
 {% block content %}
-<section class="dashboard-header">
+<div class="contractor-lead-flow" data-dialog-fragment data-bid-flow>
+<section class="dashboard-header" data-dialog-focus tabindex="-1">
   <div>
     <p class="eyebrow">Contractor lead</p>
     <h1>{{ job.title }}</h1>
@@ -73,6 +74,13 @@
   </article>
 
   <aside id="mini-bid" class="panel bid-panel" tabindex="-1">
+    {% if embedded_dialog_mode() %}
+      <dl class="dialog-project-snapshot" aria-label="Project snapshot">
+        <div><dt>Budget</dt><dd>{{ job|budget_label }}</dd></div>
+        <div><dt>Target</dt><dd>{{ job.desired_date|date_label if job.desired_date else "Flexible" }}</dd></div>
+        <div><dt>Area</dt><dd>{{ job.city }}, {{ job.state }} {{ job.zip_code[:3] }}xx</dd></div>
+      </dl>
+    {% endif %}
     {% if repeat_invitation %}
       <div class="repeat-invitation-note">
         <span class="eyebrow">Invited back</span>
@@ -247,4 +255,5 @@
     {% endif %}
   </aside>
 </section>
+</div>
 {% endblock %}

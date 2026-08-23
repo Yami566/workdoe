@@ -196,6 +196,17 @@
     return payload.url || template;
   }
 
+  function navigateAfterSuccess(form, payload) {
+    var url = successUrl(form, payload);
+    if (form.closest("[data-site-dialog-content]")) {
+      document.dispatchEvent(new CustomEvent("workdoe:dialog-navigate", {
+        detail: { url: url }
+      }));
+      return;
+    }
+    window.location.assign(url);
+  }
+
   function selectedFiles(form) {
     var files = [];
     form.querySelectorAll("input[type='file']").forEach(function (input) {
@@ -295,11 +306,11 @@
         await uploadFilesAfterJson(form, payload);
       } catch (uploadError) {
         setStatus(form, (uploadError.message || "Job saved, but photo upload failed.") + " Opening the job now.");
-        window.location.assign(successUrl(form, payload));
+        navigateAfterSuccess(form, payload);
         return;
       }
       setStatus(form, "Saved.");
-      window.location.assign(successUrl(form, payload));
+      navigateAfterSuccess(form, payload);
     } catch (error) {
       setSubmitting(form, button, false);
       setStatus(form, error.message || "Workdoe could not save this yet.");
@@ -340,7 +351,7 @@
         );
       }
       setStatus(form, "Uploaded.");
-      window.location.assign(successUrl(form, payload));
+      navigateAfterSuccess(form, payload);
     } catch (error) {
       setSubmitting(form, button, false);
       setStatus(form, error.message || "Workdoe could not upload this yet.");

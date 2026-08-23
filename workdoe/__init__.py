@@ -4151,7 +4151,11 @@ def register_routes(app: Flask) -> None:
                     "fit_score": card["fit_score"],
                     "fit_label": card["fit_label"],
                     "row_cue": "Sent" if card["request_status"] else "View",
-                    "action_label": "View and send bid",
+                    "action_label": (
+                        "View bid status"
+                        if card["request_status"]
+                        else "Review and bid"
+                    ),
                     "url": detail_url,
                     "detail_url": detail_url,
                 }

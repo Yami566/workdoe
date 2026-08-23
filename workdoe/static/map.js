@@ -434,6 +434,7 @@
       var sample = job.is_demo ? '<span class="sample-badge">Demonstration project</span>' : '<span class="live-badge">Open project</span>';
       var bidding = job.bid_window || {};
       var biddingFact = bidding.usage_label ? "<div><dt>Mini bids</dt><dd>" + escapeHtml(bidding.usage_label) + "</dd></div>" : "";
+      var actionLabel = job.action_label || "Review and bid";
       detailContent.outerHTML = (
         '<article class="market-project-detail" data-project-detail-content data-job-id="' + escapeAttribute(job.id) + '">' +
           '<div class="project-detail-heading">' + sample + "<span>" + escapeHtml(job.service_name || job.category || "Project") + "</span></div>" +
@@ -443,8 +444,7 @@
           "<div><dt>Desired date</dt><dd>" + escapeHtml(job.desired_date || "Flexible") + "</dd></div>" + biddingFact + "</dl>" +
           '<div class="project-description"><h3>Project overview</h3><p>' + escapeHtml(job.description || "Project details are available after sign-in.") + "</p></div>" +
           '<p class="project-privacy-note">Location is intentionally approximate until a match is approved.</p>' +
-          '<div class="project-detail-actions"><a class="button primary" href="' + escapeAttribute(job.url || "/start") + '">' + escapeHtml(job.action_label || "Join to respond") + "</a>" +
-          '<a class="button secondary" href="' + escapeAttribute(job.detail_url || "#") + '">Open project link</a></div>' +
+          '<div class="project-detail-actions"><a class="button primary" href="' + escapeAttribute(job.url || "/start") + '" data-dialog-title="' + escapeAttribute(actionLabel) + '">' + escapeHtml(actionLabel) + "</a></div>" +
         "</article>"
       );
       detailContent = document.querySelector("[data-project-detail-content]");

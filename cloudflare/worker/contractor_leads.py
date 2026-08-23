@@ -170,7 +170,7 @@ def contractor_lead_map_marker(row) -> dict:
         "lng": row_value(row, "approx_lng"),
         "url": f"/jobs/{row_value(row, 'id')}",
         "detail_url": f"/jobs/{row_value(row, 'id')}",
-        "action_label": "View sent bid" if status else ("View and send bid" if bidding["accepting"] else "View bid status"),
+        "action_label": "View bid status" if status else ("Review and bid" if bidding["accepting"] else "View bid status"),
         "request_status": status,
         "bid_window": bidding,
         "is_demo": False,
