@@ -1175,7 +1175,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
     def test_fresh_d1_database_accepts_complete_migration_chain(self):
         migrations_dir = ROOT / "cloudflare" / "d1" / "migrations"
         migration_paths = sorted(migrations_dir.glob("[0-9][0-9][0-9][0-9]_*.sql"))
-        self.assertEqual(len(migration_paths), 30)
+        self.assertEqual(len(migration_paths), 31)
 
         connection = sqlite3.connect(":memory:")
         try:
@@ -1212,8 +1212,63 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             photo_indexes = {
                 row[1] for row in connection.execute("PRAGMA index_list(job_photos)")
             }
+            thread_indexes = {
+                row[1] for row in connection.execute("PRAGMA index_list(threads)")
+            }
             self.assertIn("idx_jobs_open_geo", job_indexes)
             self.assertIn("idx_job_photos_public_job", photo_indexes)
+            self.assertIn("idx_threads_client", thread_indexes)
+            self.assertIn("idx_threads_contractor", thread_indexes)
+            client_unread_plan = " ".join(
+                row[3]
+                for row in connection.execute(
+                    """
+                    EXPLAIN QUERY PLAN
+                    SELECT COUNT(*)
+                    FROM threads
+                    JOIN messages ON messages.thread_id = threads.id
+                    LEFT JOIN thread_reads
+                      ON thread_reads.thread_id = threads.id
+                     AND thread_reads.user_id = ?
+                    WHERE threads.client_id = ?
+                      AND messages.is_hidden = 0
+                      AND messages.sender_id != ?
+                      AND messages.id > COALESCE(
+                          thread_reads.last_read_message_id,
+                          0
+                      )
+                    """,
+                    (1, 1, 1),
+                )
+            )
+            contractor_unread_plan = " ".join(
+                row[3]
+                for row in connection.execute(
+                    """
+                    EXPLAIN QUERY PLAN
+                    SELECT COUNT(*)
+                    FROM threads
+                    JOIN messages ON messages.thread_id = threads.id
+                    LEFT JOIN thread_reads
+                      ON thread_reads.thread_id = threads.id
+                     AND thread_reads.user_id = ?
+                    WHERE threads.contractor_id = ?
+                      AND messages.is_hidden = 0
+                      AND messages.sender_id != ?
+                      AND messages.id > COALESCE(
+                          thread_reads.last_read_message_id,
+                          0
+                      )
+                    """,
+                    (1, 1, 1),
+                )
+            )
+            self.assertIn("idx_threads_client", client_unread_plan)
+            self.assertIn("idx_threads_contractor", contractor_unread_plan)
+            self.assertIn("idx_messages_thread_unread", client_unread_plan)
+            self.assertIn("idx_messages_thread_unread", contractor_unread_plan)
+            self.assertNotIn("SCAN threads", client_unread_plan)
+            self.assertNotIn("SCAN threads", contractor_unread_plan)
             self.assertFalse(connection.execute("PRAGMA foreign_key_check").fetchall())
         finally:
             connection.close()
@@ -3440,7 +3495,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             ["idx_job_photos_public_job", "idx_jobs_open_geo"],
         )
         self.assertEqual(plan["table_scans"], [])
-        self.assertEqual(plan["last_migration"], "0030_thread_reads.sql")
+        self.assertEqual(plan["last_migration"], "0031_thread_nav_indexes.sql")
 
     def test_demo_projects_are_realistic_labeled_and_filterable(self):
         module = load_demo_projects_module()
@@ -3933,8 +3988,20 @@ class CloudflareReleasePrepTests(unittest.TestCase):
     def test_cloudflare_app_shell_renders_post_login_workflows(self):
         module = load_app_shell_module()
         entry_module = load_worker_entry_module()
-        client = {"id": 8, "role": "client", "status": "active", "display_name": "Client"}
-        contractor = {"id": 7, "role": "contractor", "status": "active", "display_name": "Crew"}
+        client = {
+            "id": 8,
+            "role": "client",
+            "status": "active",
+            "display_name": "Client",
+            "unread_message_count": 1,
+        }
+        contractor = {
+            "id": 7,
+            "role": "contractor",
+            "status": "active",
+            "display_name": "Crew",
+            "unread_message_count": 1,
+        }
         admin = {"id": 1, "role": "admin", "status": "active", "display_name": "Admin"}
         self.assertTrue(module.is_app_shell_route("/dashboard"))
         self.assertTrue(module.is_app_shell_route("/account"))
@@ -3976,6 +4043,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertNotIn('href="/jobs/new">Post project</a>', anonymous_nav)
         client_nav = module.nav_links(client, "/client/dashboard")
         self.assertIn('href="/client/dashboard" aria-current="page">Profile</a>', client_nav)
+        self.assertIn('aria-label="Messages, 1 unread"', client_nav)
+        self.assertIn('<span class="nav-unread-count" aria-hidden="true">1</span>', client_nav)
+        self.assertIn(
+            '<span class="nav-unread-count" aria-hidden="true">99+</span>',
+            module.nav_links(
+                {**client, "unread_message_count": 100},
+                "/client/dashboard",
+            ),
+        )
         self.assertIn('<details class="account-menu">', client_nav)
         self.assertIn('href="/account">Account settings</a>', client_nav)
         self.assertIn('data-json-action="/api/auth/logout"', client_nav)
@@ -3987,6 +4063,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("<span>Explore</span>", contractor_mobile_nav)
         self.assertIn("<span>Bids</span>", contractor_mobile_nav)
         self.assertIn("<span>Messages</span>", contractor_mobile_nav)
+        self.assertIn('aria-label="Messages, 1 unread"', contractor_mobile_nav)
+        self.assertIn('<span class="nav-unread-count" aria-hidden="true">1</span>', contractor_mobile_nav)
         self.assertIn("<span>Profile</span>", contractor_mobile_nav)
         self.assertEqual(module.parse_app_client_job_edit_id("/client/jobs/12/edit"), 12)
         self.assertEqual(module.parse_app_client_job_edit_id("/client/jobs/12"), 0)
@@ -6764,6 +6842,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("last_read_message_id INTEGER NOT NULL DEFAULT 0", read_migration)
         self.assertIn("idx_messages_thread_unread", read_migration)
         self.assertNotIn("body", read_migration.lower())
+        nav_index_migration = (
+            ROOT / "cloudflare" / "d1" / "migrations" / "0031_thread_nav_indexes.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("idx_threads_client", nav_index_migration)
+        self.assertIn("idx_threads_contractor", nav_index_migration)
         worker_source = (ROOT / "cloudflare" / "worker" / "entry.py").read_text(
             encoding="utf-8"
         )
@@ -7093,6 +7176,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         result = module.run_preflight(ROOT)
         self.assertTrue(result.ok, result.errors)
         self.assertIn("Wrangler enables Python Workers", result.checks)
+        self.assertIn(
+            "D1 unread-navigation queries are indexed for both marketplace roles",
+            result.checks,
+        )
         self.assertIn("Wrangler keeps Clerk same-domain OTP mode", result.checks)
         self.assertIn(
             "Wrangler requires Clerk, Workdoe, and Turnstile secrets",

@@ -394,6 +394,8 @@ ON repeat_provider_invitations(contractor_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_repeat_provider_invitations_client
 ON repeat_provider_invitations(client_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_threads_parties ON threads(client_id, contractor_id);
+CREATE INDEX IF NOT EXISTS idx_threads_client ON threads(client_id, id);
+CREATE INDEX IF NOT EXISTS idx_threads_contractor ON threads(contractor_id, id);
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_messages_thread_unread
 ON messages(thread_id, is_hidden, id, sender_id);

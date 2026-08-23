@@ -7,7 +7,7 @@ was performed.
 
 ## Query plan
 
-The verifier applies all 29 forward-only D1 migrations to an in-memory SQLite
+The verifier applies all 31 forward-only D1 migrations to an in-memory SQLite
 database, seeds deterministic project/photo records, runs `ANALYZE`, and uses
 the Worker's exact public-query builder with `EXPLAIN QUERY PLAN`.
 
@@ -28,6 +28,11 @@ whether further specialization is justified. Run the evidence again with:
 npm run cf:d1:query-plan
 ```
 
+The global unread-navigation query was also checked for both marketplace roles.
+Its role-specific plans use the covering `idx_threads_client` or
+`idx_threads_contractor` index, `idx_messages_thread_unread`, and the
+`thread_reads` primary-key index. Neither plan scans `threads`.
+
 This follows Cloudflare's guidance to use multi-column indexes for recurring
 predicates and joins, verify them with `EXPLAIN QUERY PLAN`, and inspect rows
 read rather than only rows returned:
@@ -37,9 +42,9 @@ read rather than only rows returned:
 
 - Wrangler: 4.125.0, pinned with npm integrity and license provenance.
 - Compatibility date: 2026-08-23.
-- Local D1: migrations through `0029_public_job_photo_index.sql` applied.
-- Worker dry run: 869.78 KiB upload, 159.39 KiB gzip, all configured bindings
-  resolved.
+- Local D1: migrations through `0031_thread_nav_indexes.sql` applied.
+- Worker dry run: 48 Python modules and 86 assets, 889.92 KiB upload / 163.07
+  KiB gzip, with all configured bindings resolved and no config warnings.
 - `GET /health`: 200 with HSTS.
 - `GET /`: 200 with HSTS and CSP.
 - Bounded `GET /api/jobs/open`: 200 with `Cache-Control: no-store` and normalized
@@ -51,10 +56,10 @@ The bounded public query emitted this structured cost shape:
 ```json
 {
   "event": "d1-public-open-jobs-query",
-  "rows_read": 3,
+  "rows_read": 2,
   "rows_written": 0,
   "returned_rows": 0,
-  "viewport_applied": true,
+  "viewport_applied": false,
   "cursor_offset": 0,
   "family": "",
   "service": "",

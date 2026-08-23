@@ -74,6 +74,14 @@ performance, identity-provider, or assistive-technology evidence.
 - Automated local and Worker-contract coverage verifies that sending, listing,
   reading, same-second ordering, and `HEAD` request behavior preserve the
   expected unread state.
+- The shared consumer and contractor navigation now carries the unread total on
+  every signed-in page without carrying message text. At 390x844 the badge
+  remained attached to the Messages icon inside the existing bottom navigation;
+  at 1280x720 it remained inline with the desktop Messages link. Both states had
+  zero horizontal overflow and exposed the exact count through the link's
+  accessible name while capping only the visible badge at `99+`.
+- Opening the unread thread removed the global badge in the same rendered
+  response. The final automated suite passed 223 tests in 79.210 seconds.
 
 ## Live gates not replaced by this check
 

@@ -286,6 +286,9 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     public_job_photo_index_migration_path = (
         repo_root / "cloudflare" / "d1" / "migrations" / "0029_public_job_photo_index.sql"
     )
+    thread_nav_indexes_migration_path = (
+        repo_root / "cloudflare" / "d1" / "migrations" / "0031_thread_nav_indexes.sql"
+    )
     manifest_path = repo_root / "cloudflare" / "workdoe-cloudflare-manifest.json"
     wrangler_path = repo_root / "cloudflare" / "wrangler.jsonc"
     dev_vars_path = repo_root / "cloudflare" / ".dev.vars.example"
@@ -433,6 +436,10 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     )
     public_job_photo_index_migration_sql = read_text(
         public_job_photo_index_migration_path,
+        errors,
+    )
+    thread_nav_indexes_migration_sql = read_text(
+        thread_nav_indexes_migration_path,
         errors,
     )
     manifest = read_json(manifest_path, errors)
@@ -926,6 +933,23 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             "D1 public project indexes are missing or incomplete.",
             checks,
             "D1 public project map and visible-photo queries are indexed",
+        )
+    if thread_nav_indexes_migration_sql:
+        require(
+            all(
+                marker in thread_nav_indexes_migration_sql
+                for marker in (
+                    "idx_threads_client",
+                    "ON threads(client_id, id)",
+                    "idx_threads_contractor",
+                    "ON threads(contractor_id, id)",
+                    "PRAGMA optimize",
+                )
+            ),
+            errors,
+            "D1 unread-navigation indexes are missing or incomplete.",
+            checks,
+            "D1 unread-navigation queries are indexed for both marketplace roles",
         )
     if idempotency_migration_sql:
         require(

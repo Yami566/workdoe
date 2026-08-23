@@ -35,24 +35,33 @@ deployment has been performed during this stabilization pass.
   compact unread cues. Ordering and read state use immutable message IDs so
   same-second replies remain deterministic; `HEAD` requests never mark a
   thread read.
+- Added count-only unread indicators to consumer and contractor desktop/mobile
+  navigation. The projection does not include message bodies, caps the visible
+  badge at `99+`, exposes the exact count to assistive technology, and clears
+  on the same response after a participant reads a thread.
 
 ## Verification evidence
 
-- Full suite: 223 tests passed in 77.296 seconds after the reputation,
-  credential-filter, and unread-message work.
+- Full suite: 223 tests passed in 79.210 seconds after the global unread
+  navigation, D1 index, and release-preflight work.
 - Full Ruff baseline and the ordinary CI quality command passed.
 - Dependency provenance passed locally and against all recorded upstream Python
   source archives on 2026-08-23.
 - The complete local security gate passed: `pip-audit` found no known Python
   dependency vulnerabilities, `npm audit` found no known Node vulnerabilities,
   Bandit found no medium/high issues, Ruff passed, and the reviewed secret gate
-  passed across 414 non-ignored files.
-- All 30 forward-only D1 migrations apply to a blank database and to the local
+  passed across 420 non-ignored files.
+- All 31 forward-only D1 migrations apply to a blank database and to the local
   Wrangler database. `EXPLAIN QUERY PLAN` uses `idx_jobs_open_geo` and the
-  covering `idx_job_photos_public_job` index without scanning either hot table.
-- Wrangler 4.125.0 serves the 2026-08-23 compatibility date locally. Runtime
-  smoke returned 200 for health/home/bounded public jobs, 400 for incomplete
-  bounds, and emitted a privacy-safe D1 event with `rows_read: 3`.
+  covering `idx_job_photos_public_job` index without scanning either public hot
+  table. Consumer and contractor unread queries use `idx_threads_client` or
+  `idx_threads_contractor`, `idx_messages_thread_unread`, and the thread-read
+  primary-key index without scanning `threads`.
+- Wrangler 4.125.0 serves the 2026-08-23 compatibility date locally. The
+  warning-free production-config dry run packaged 48 Python modules and 86
+  assets at 889.92 KiB / 163.07 KiB gzip. Runtime smoke returned 200 for
+  health, home, and public jobs and emitted a privacy-safe D1 event with
+  `rows_read: 2`.
 - Responsive browser evidence is stored in
   `docs/ux-audit/2026-08-23-task-navigation/` at 390x844, 820x1180, and
   1280x720.
@@ -69,6 +78,10 @@ deployment has been performed during this stabilization pass.
 - An authenticated message-state pass at 390x844 and 1280x720 verified compact
   unread metrics, separated project/participant labels, zero horizontal
   overflow, a clean console, and per-thread read-state updates.
+- A final selected-browser pass at 390x844 and 1280x720 verified the shared
+  navigation badge in both responsive states, exact `Messages, 2 unread`
+  labeling, zero horizontal overflow, and immediate badge removal after opening
+  the unread thread. The temporary visual-check message was removed afterward.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

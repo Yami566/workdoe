@@ -1304,6 +1304,26 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         self.logout()
         self.login("contractor@workdoe.local", "workdoe-contractor")
+        contractor_dashboard_with_unread = self.client.get("/contractor/dashboard")
+        contractor_dashboard_with_unread_html = contractor_dashboard_with_unread.data.decode(
+            "utf-8"
+        )
+        self.assertEqual(
+            contractor_dashboard_with_unread_html.count(
+                '<span class="nav-unread-count" aria-hidden="true">1</span>'
+            ),
+            2,
+        )
+        self.assertEqual(
+            contractor_dashboard_with_unread_html.count(
+                'aria-label="Messages, 1 unread"'
+            ),
+            2,
+        )
+        self.assertNotIn(
+            "Thanks, can you start next week?",
+            contractor_dashboard_with_unread_html,
+        )
         contractor_threads = self.client.get("/messages")
         contractor_threads_html = contractor_threads.data.decode("utf-8")
         self.assertRegex(
@@ -1318,7 +1338,10 @@ class WorkdoeFlowTests(unittest.TestCase):
             head_threads_html,
             r"<span>Unread</span>\s*<strong>1</strong>",
         )
-        self.client.get(f"/messages/{thread['id']}")
+        read_thread_detail_html = self.client.get(f"/messages/{thread['id']}").data.decode(
+            "utf-8"
+        )
+        self.assertNotIn("nav-unread-count", read_thread_detail_html)
         read_threads_html = self.client.get("/messages").data.decode("utf-8")
         self.assertRegex(
             read_threads_html,

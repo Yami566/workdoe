@@ -1693,6 +1693,18 @@ class Default(WorkerEntrypoint):
         include_turnstile = False
         include_clerk = False
         role = row_value(user, "role")
+        if (
+            role in {"client", "contractor"}
+            and not path.startswith("/messages/")
+        ):
+            user = user_with_unread_message_count(
+                user,
+                await unread_message_count_for_user(
+                    self.env,
+                    row_value(user, "id"),
+                    role,
+                ),
+            )
 
         if path == "/client/dashboard" and role == "client":
             view = normalize_client_job_view(first_query_value(params, "view"))
@@ -2121,9 +2133,10 @@ class Default(WorkerEntrypoint):
                 self.env,
                 row_value(user, "id"),
             )
+            payload = message_threads_listing_payload(rows)
             html = message_threads_html(
                 user,
-                message_threads_listing_payload(rows),
+                payload,
             )
         elif path.startswith("/messages/") and role in {"client", "contractor", "admin"}:
             thread_id = parse_app_thread_id(path)
@@ -2148,6 +2161,15 @@ class Default(WorkerEntrypoint):
                     row_value(messages[-1], "created_at")
                     if messages
                     else row_value(thread, "created_at"),
+                )
+            if role in {"client", "contractor"}:
+                user = user_with_unread_message_count(
+                    user,
+                    await unread_message_count_for_user(
+                        self.env,
+                        row_value(user, "id"),
+                        role,
+                    ),
                 )
             html = message_thread_detail_html(
                 user,
@@ -9719,6 +9741,64 @@ async def message_threads_for_user(env, user_id: int) -> list[dict]:
         user_id,
     )
     return rows_from(result)
+
+
+async def unread_message_count_for_user(env, user_id: int, role: str) -> int:
+    queries = {
+        "client": """
+            SELECT COUNT(*) AS unread_count
+            FROM threads
+            JOIN messages ON messages.thread_id = threads.id
+            LEFT JOIN thread_reads
+              ON thread_reads.thread_id = threads.id
+             AND thread_reads.user_id = ?
+            WHERE threads.client_id = ?
+              AND messages.is_hidden = 0
+              AND messages.sender_id != ?
+              AND messages.id > COALESCE(thread_reads.last_read_message_id, 0)
+        """,
+        "contractor": """
+            SELECT COUNT(*) AS unread_count
+            FROM threads
+            JOIN messages ON messages.thread_id = threads.id
+            LEFT JOIN thread_reads
+              ON thread_reads.thread_id = threads.id
+             AND thread_reads.user_id = ?
+            WHERE threads.contractor_id = ?
+              AND messages.is_hidden = 0
+              AND messages.sender_id != ?
+              AND messages.id > COALESCE(thread_reads.last_read_message_id, 0)
+        """,
+    }
+    query = queries.get(role)
+    if not query:
+        return 0
+    result = await db_run(
+        env,
+        query,
+        user_id,
+        user_id,
+        user_id,
+    )
+    return positive_int(row_value(first_row(result), "unread_count", 0))
+
+
+def user_with_unread_message_count(user, unread_count: int) -> dict:
+    public_fields = (
+        "id",
+        "email",
+        "role",
+        "display_name",
+        "company_name",
+        "status",
+        "auth_provider",
+        "external_subject",
+        "email_verified",
+        "created_at",
+    )
+    presentation_user = {field: row_value(user, field) for field in public_fields}
+    presentation_user["unread_message_count"] = max(0, int(unread_count or 0))
+    return presentation_user
 
 
 def message_threads_listing_payload(rows: list[dict]) -> dict:

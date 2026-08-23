@@ -4692,6 +4692,11 @@ def register_routes(app: Flask) -> None:
                 last_message["created_at"] if last_message else thread["created_at"],
             )
             db.commit()
+            g.unread_message_count = unread_message_count(
+                db,
+                g.user["id"],
+                g.user["role"],
+            )
         return render_template(
             "thread_detail.html",
             thread=thread,
@@ -5597,12 +5602,19 @@ def render_error_page(
 def load_logged_in_user() -> None:
     user_id = session.get("user_id")
     g.user = None
+    g.unread_message_count = 0
     if user_id is not None:
         g.user = get_db().execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         if g.user and g.user["status"] != "active" and request.endpoint != "logout":
             session.clear()
             flash("Your account is not active.", "error")
             g.user = None
+        elif g.user and g.user["role"] in {"client", "contractor"}:
+            g.unread_message_count = unread_message_count(
+                get_db(),
+                g.user["id"],
+                g.user["role"],
+            )
 
 
 def enforce_post_safety() -> None:
@@ -7523,6 +7535,47 @@ def mark_thread_read(
         """,
         (thread_id, user_id, last_read_message_id, last_read_at),
     )
+
+
+def unread_message_count(
+    db: sqlite3.Connection,
+    user_id: int,
+    role: str,
+) -> int:
+    queries = {
+        "client": """
+            SELECT COUNT(*) AS unread_count
+            FROM threads
+            JOIN messages ON messages.thread_id = threads.id
+            LEFT JOIN thread_reads
+              ON thread_reads.thread_id = threads.id
+             AND thread_reads.user_id = ?
+            WHERE threads.client_id = ?
+              AND messages.is_hidden = 0
+              AND messages.sender_id != ?
+              AND messages.id > COALESCE(thread_reads.last_read_message_id, 0)
+        """,
+        "contractor": """
+            SELECT COUNT(*) AS unread_count
+            FROM threads
+            JOIN messages ON messages.thread_id = threads.id
+            LEFT JOIN thread_reads
+              ON thread_reads.thread_id = threads.id
+             AND thread_reads.user_id = ?
+            WHERE threads.contractor_id = ?
+              AND messages.is_hidden = 0
+              AND messages.sender_id != ?
+              AND messages.id > COALESCE(thread_reads.last_read_message_id, 0)
+        """,
+    }
+    query = queries.get(role)
+    if not query:
+        return 0
+    row = db.execute(
+        query,
+        (user_id, user_id, user_id),
+    ).fetchone()
+    return int(row["unread_count"] or 0)
 
 
 def first_filter_value(values, key: str) -> str:

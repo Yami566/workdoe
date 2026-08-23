@@ -51,12 +51,12 @@
           {% if g.user.role == 'contractor' %}
             <a href="{{ url_for('leads') }}" {% if request.endpoint in ['leads', 'contractor_job_detail'] %}aria-current="page"{% endif %}>Explore</a>
             <a href="{{ url_for('contractor_dashboard') }}" {% if request.endpoint == 'contractor_dashboard' %}aria-current="page"{% endif %}>Bids</a>
-            <a href="{{ url_for('message_threads') }}" {% if request.endpoint in ['message_threads', 'thread_detail'] %}aria-current="page"{% endif %}>Messages</a>
+            <a class="nav-message-link" href="{{ url_for('message_threads') }}" {% if request.endpoint in ['message_threads', 'thread_detail'] %}aria-current="page"{% endif %}{% if g.unread_message_count %} aria-label="Messages, {{ g.unread_message_count }} unread"{% endif %}>Messages{% if g.unread_message_count %}<span class="nav-unread-count" aria-hidden="true">{{ '99+' if g.unread_message_count > 99 else g.unread_message_count }}</span>{% endif %}</a>
             <a href="{{ url_for('contractor_profile') }}" {% if request.endpoint in ['contractor_profile', 'contractor_public_profile'] %}aria-current="page"{% endif %}>Profile</a>
           {% elif g.user.role == 'client' %}
             <a href="{{ url_for('home') }}" {% if request.endpoint == 'home' %}aria-current="page"{% endif %}>Explore</a>
             <a href="{{ url_for('new_job') }}" {% if request.endpoint == 'new_job' %}aria-current="page"{% endif %}>Post project</a>
-            <a href="{{ url_for('message_threads') }}" {% if request.endpoint in ['message_threads', 'thread_detail'] %}aria-current="page"{% endif %}>Messages</a>
+            <a class="nav-message-link" href="{{ url_for('message_threads') }}" {% if request.endpoint in ['message_threads', 'thread_detail'] %}aria-current="page"{% endif %}{% if g.unread_message_count %} aria-label="Messages, {{ g.unread_message_count }} unread"{% endif %}>Messages{% if g.unread_message_count %}<span class="nav-unread-count" aria-hidden="true">{{ '99+' if g.unread_message_count > 99 else g.unread_message_count }}</span>{% endif %}</a>
             <a href="{{ url_for('client_dashboard') }}" {% if request.endpoint in ['client_dashboard', 'client_job_detail', 'edit_job', 'client_requests'] %}aria-current="page"{% endif %}>Profile</a>
           {% elif g.user.role == 'admin' %}
             <a href="{{ url_for('home') }}" {% if request.endpoint == 'home' %}aria-current="page"{% endif %}>Explore</a>

@@ -508,10 +508,30 @@ def account_menu_html(user, active_path: str) -> str:
 
 def nav_links(user, active_path: str) -> str:
     role = str(row_value(user, "role", "") or "")
-    rendered = [
-        f'<a href="{escape(href)}"{" aria-current=\"page\"" if nav_path_is_current(href, active_path, role) else ""}>{escape(label)}</a>'
-        for href, label, _icon in task_nav_items(user)
-    ]
+    unread_count = int(row_value(user, "unread_message_count", 0) or 0)
+    rendered = []
+    for href, label, _icon in task_nav_items(user):
+        current = (
+            ' aria-current="page"'
+            if nav_path_is_current(href, active_path, role)
+            else ""
+        )
+        if href == "/messages":
+            accessibility_label = (
+                f' aria-label="Messages, {unread_count} unread"'
+                if unread_count
+                else ""
+            )
+            badge = (
+                f'<span class="nav-unread-count" aria-hidden="true">{escape(unread_count_label(unread_count))}</span>'
+                if unread_count
+                else ""
+            )
+            rendered.append(
+                f'<a class="nav-message-link" href="{escape(href)}"{current}{accessibility_label}>{escape(label)}{badge}</a>'
+            )
+        else:
+            rendered.append(f'<a href="{escape(href)}"{current}>{escape(label)}</a>')
     menu = account_menu_html(user, active_path)
     if menu:
         rendered.append(menu)
@@ -520,6 +540,7 @@ def nav_links(user, active_path: str) -> str:
 
 def mobile_task_nav_html(user, active_path: str) -> str:
     role = str(row_value(user, "role", "") or "")
+    unread_count = int(row_value(user, "unread_message_count", 0) or 0)
     items = []
     for href, label, icon in task_nav_items(user):
         mobile_label = {"Post project": "Post", "Create account": "Join"}.get(
@@ -530,10 +551,29 @@ def mobile_task_nav_html(user, active_path: str) -> str:
             if nav_path_is_current(href, active_path, role)
             else ""
         )
-        items.append(
-            f'<a href="{escape(href)}"{current}><img src="/vendor/tabler-icons/{escape(icon)}" alt=""><span>{escape(mobile_label)}</span></a>'
-        )
+        if href == "/messages":
+            accessibility_label = (
+                f' aria-label="Messages, {unread_count} unread"'
+                if unread_count
+                else ""
+            )
+            badge = (
+                f'<span class="nav-unread-count" aria-hidden="true">{escape(unread_count_label(unread_count))}</span>'
+                if unread_count
+                else ""
+            )
+            items.append(
+                f'<a class="nav-message-link" href="{escape(href)}"{current}{accessibility_label}><span class="mobile-nav-icon"><img src="/vendor/tabler-icons/{escape(icon)}" alt="">{badge}</span><span>{escape(mobile_label)}</span></a>'
+            )
+        else:
+            items.append(
+                f'<a href="{escape(href)}"{current}><img src="/vendor/tabler-icons/{escape(icon)}" alt=""><span>{escape(mobile_label)}</span></a>'
+            )
     return '<nav class="mobile-task-nav" aria-label="Primary tasks">' + "".join(items) + "</nav>"
+
+
+def unread_count_label(unread_count: int) -> str:
+    return "99+" if unread_count > 99 else str(unread_count)
 
 
 def site_dialog_html() -> str:
