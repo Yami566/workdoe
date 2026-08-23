@@ -88,7 +88,7 @@ def build_manifest(migration_sql: str, migration_chain_sha: str) -> dict:
                 "dev_vars_example": str(DEV_VARS_EXAMPLE_RELATIVE_PATH).replace("\\", "/"),
                 "custom_domains": ["workdoe.com", "www.workdoe.com"],
                 "custom_domain_management": "preconfigured_outside_routine_deploys",
-                "compatibility_date": "2026-08-03",
+                "compatibility_date": "2026-08-23",
                 "compatibility_flags": [
                     "python_workers",
                     "disable_python_external_sdk",

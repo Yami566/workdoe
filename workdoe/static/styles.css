@@ -3204,6 +3204,24 @@ textarea:focus {
   height: 420px;
 }
 
+#lead-map .leaflet-control-zoom a,
+#lead-map .leaflet-popup-close-button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  line-height: 1;
+}
+
+#lead-map .leaflet-popup-content {
+  margin: 16px 48px 16px 18px;
+}
+
+#lead-map.has-open-popup .map-search-area {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .map-search-area {
   position: absolute;
   top: 12px;
@@ -4095,6 +4113,9 @@ textarea:focus {
 }
 
 .site-footer-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   color: var(--ink);
   font-weight: 750;
 }

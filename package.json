@@ -13,6 +13,7 @@
     "security:secrets": "python scripts/workdoe_secret_gate.py",
     "security:all": "npm run security:node && npm run security:python && npm run security:secrets && npm run provenance:verify",
     "cf:preflight": "python scripts/cloudflare_preflight.py",
+    "cf:d1:query-plan": "python scripts/verify_d1_query_plan.py",
     "cf:status": "python scripts/cloudflare_launch_status.py",
     "cf:status:json": "python scripts/cloudflare_launch_status.py --json",
     "cf:resources:plan": "python scripts/cloudflare_resource_bootstrap.py --json --no-secret-probe",
@@ -39,6 +40,6 @@
     "launch:doctor:live": "python scripts/workdoe_launch_doctor.py --live"
   },
   "devDependencies": {
-    "wrangler": "4.123.0"
+    "wrangler": "4.125.0"
   }
 }

@@ -46,6 +46,7 @@
     bindFilters();
     bindMobileTabs();
     bindMapSearch();
+    bindPopupOverlayState();
     if (activeViewport) {
       moveMap(function () {
         map.fitBounds(viewportBounds(activeViewport), { padding: [28, 28], maxZoom: 13 });
@@ -132,6 +133,15 @@
           }
         });
       }
+    }
+
+    function bindPopupOverlayState() {
+      map.on("popupopen", function () {
+        mapElement.classList.add("has-open-popup");
+      });
+      map.on("popupclose", function () {
+        mapElement.classList.remove("has-open-popup");
+      });
     }
 
     function bindMapSearch() {
@@ -314,7 +324,12 @@
             "<strong>" + escapeHtml(job.title || "Open project") + "</strong>" +
             "<span>" + escapeHtml(placeLabel(job)) + "</span>" +
             "<span>" + escapeHtml(job.budget || "Budget not provided") + "</span>" +
-          "</div>"
+          "</div>",
+          {
+            maxWidth: 220,
+            autoPanPaddingTopLeft: [64, 56],
+            autoPanPaddingBottomRight: [16, 16]
+          }
         );
         marker.on("click", function () {
           activateJob(job.id, false, true);

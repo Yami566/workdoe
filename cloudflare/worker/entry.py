@@ -337,10 +337,11 @@ from moderation_reports import (
 from pilot_metrics import pilot_cell_metrics
 from public_job_query import (
     PublicJobQueryError,
+    build_public_open_jobs_query,
     encode_public_cursor,
     parse_public_cursor,
     parse_public_viewport,
-    public_viewport_sql,
+    public_query_telemetry,
 )
 from public_jobs import (
     first_query_value,
@@ -2231,57 +2232,16 @@ class Default(WorkerEntrypoint):
                 status=400,
                 headers={"Cache-Control": "no-store"},
             )
-        sql = [
-            """
-            SELECT
-                jobs.id,
-                jobs.title,
-                jobs.category,
-                jobs.service_group_slug,
-                jobs.service_slug,
-                jobs.city,
-                jobs.state,
-                jobs.description,
-                jobs.approx_lat,
-                jobs.approx_lng,
-                jobs.created_at,
-                jobs.desired_date,
-                COUNT(job_photos.id) AS photo_count
-            FROM jobs
-            LEFT JOIN job_photos
-              ON job_photos.job_id = jobs.id
-             AND job_photos.is_hidden = 0
-            WHERE jobs.status = 'open'
-            """,
-        ]
-        bindings: list[str | int] = []
-        if filters["category"]:
-            sql.append("AND jobs.category = ?")
-            bindings.append(filters["category"])
-        if filters.get("service"):
-            sql.append("AND jobs.service_slug = ?")
-            bindings.append(filters["service"])
-        if filters["family"]:
-            sql.append("AND jobs.service_group_slug = ?")
-            bindings.append(filters["family"])
-        if filters["q"]:
-            like = f"%{filters['q']}%"
-            sql.append(
-                "AND (jobs.city LIKE ? OR jobs.state LIKE ? OR jobs.zip_code LIKE ? OR jobs.title LIKE ?)"
-            )
-            bindings.extend([like, like, like, like])
-        viewport_clause, viewport_bindings = public_viewport_sql(viewport)
-        if viewport_clause:
-            sql.append(viewport_clause)
-            bindings.extend(viewport_bindings)
-        sql.append(
-            f"GROUP BY jobs.id ORDER BY {public_job_order_clause(filters['sort'])} "
-            "LIMIT ? OFFSET ?"
+        query, bindings = build_public_open_jobs_query(
+            filters,
+            viewport,
+            order_clause=public_job_order_clause(filters["sort"]),
+            limit=limit,
+            cursor_offset=cursor_offset,
         )
-        bindings.extend([limit + 1, cursor_offset])
 
         try:
-            result = await db_run(self.env, "\n".join(sql), *bindings)
+            result = await db_run(self.env, query, *bindings)
         except Exception:  # noqa: BLE001 - D1 failures cross the Worker binding boundary.
             return json_response(
                 {
@@ -2293,6 +2253,18 @@ class Default(WorkerEntrypoint):
             )
 
         live_rows = rows_from(result)
+        print(
+            json.dumps(
+                public_query_telemetry(
+                    result,
+                    returned_rows=min(len(live_rows), limit),
+                    filters=filters,
+                    viewport_applied=viewport is not None,
+                    cursor_offset=cursor_offset,
+                ),
+                sort_keys=True,
+            )
+        )
         has_more = len(live_rows) > limit
         live_rows = live_rows[:limit]
         rows = guest_project_rows(

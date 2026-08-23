@@ -94,7 +94,7 @@ artifacts on 2026-08-16. The test suite enforces the same values locally.
   Source-archive SHA-256 values and official PyPI pages are recorded in the
   dependency provenance ledger.
 
-### Wrangler 4.123.0
+### Wrangler 4.125.0
 
 - Purpose: Cloudflare Worker validation and deployment tooling.
 - License: MIT OR Apache-2.0.

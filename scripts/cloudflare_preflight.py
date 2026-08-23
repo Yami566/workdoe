@@ -280,6 +280,12 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
         / "migrations"
         / "0026_service_aliases_and_icons.sql"
     )
+    public_job_viewport_index_migration_path = (
+        repo_root / "cloudflare" / "d1" / "migrations" / "0027_public_job_viewport_index.sql"
+    )
+    public_job_photo_index_migration_path = (
+        repo_root / "cloudflare" / "d1" / "migrations" / "0029_public_job_photo_index.sql"
+    )
     manifest_path = repo_root / "cloudflare" / "workdoe-cloudflare-manifest.json"
     wrangler_path = repo_root / "cloudflare" / "wrangler.jsonc"
     dev_vars_path = repo_root / "cloudflare" / ".dev.vars.example"
@@ -311,6 +317,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     clerk_proxy_path = repo_root / "cloudflare" / "worker" / "clerk_proxy.py"
     webhook_security_path = repo_root / "cloudflare" / "worker" / "clerk_webhooks.py"
     public_jobs_path = repo_root / "cloudflare" / "worker" / "public_jobs.py"
+    public_job_query_path = repo_root / "cloudflare" / "worker" / "public_job_query.py"
     job_details_path = repo_root / "cloudflare" / "worker" / "job_details.py"
     job_status_path = repo_root / "cloudflare" / "worker" / "job_status.py"
     job_posts_path = repo_root / "cloudflare" / "worker" / "job_posts.py"
@@ -414,6 +421,14 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     )
     service_aliases_icons_migration_sql = read_text(
         service_aliases_icons_migration_path,
+        errors,
+    )
+    public_job_viewport_index_migration_sql = read_text(
+        public_job_viewport_index_migration_path,
+        errors,
+    )
+    public_job_photo_index_migration_sql = read_text(
+        public_job_photo_index_migration_path,
         errors,
     )
     manifest = read_json(manifest_path, errors)
@@ -896,6 +911,18 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             checks,
             "D1 task icons and recall aliases stay canonical and location-free",
         )
+    if public_job_viewport_index_migration_sql and public_job_photo_index_migration_sql:
+        require(
+            "idx_jobs_open_geo" in public_job_viewport_index_migration_sql
+            and "ON jobs(status, approx_lat, approx_lng" in public_job_viewport_index_migration_sql
+            and "idx_job_photos_public_job" in public_job_photo_index_migration_sql
+            and "ON job_photos(job_id, is_hidden)" in public_job_photo_index_migration_sql
+            and "PRAGMA optimize" in public_job_photo_index_migration_sql,
+            errors,
+            "D1 public project indexes are missing or incomplete.",
+            checks,
+            "D1 public project map and visible-photo queries are indexed",
+        )
     if idempotency_migration_sql:
         require(
             all(
@@ -1203,6 +1230,12 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     )
     compile_python(entry_shell_path, errors, checks, "Cloudflare same-domain entry shell helper compiles")
     compile_python(public_jobs_path, errors, checks, "Cloudflare public jobs helper compiles")
+    compile_python(
+        public_job_query_path,
+        errors,
+        checks,
+        "Cloudflare public job query helper compiles",
+    )
     compile_python(job_details_path, errors, checks, "Cloudflare job detail helper compiles")
     compile_python(job_status_path, errors, checks, "Cloudflare job status helper compiles")
     compile_python(job_posts_path, errors, checks, "Cloudflare job posting helper compiles")
@@ -1273,6 +1306,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     client_requests_source = read_text(client_requests_path, errors)
     entry_shell_source = read_text(entry_shell_path, errors)
     public_jobs_source = read_text(public_jobs_path, errors)
+    public_job_query_source = read_text(public_job_query_path, errors)
     job_details_source = read_text(job_details_path, errors)
     job_status_source = read_text(job_status_path, errors)
     job_posts_source = read_text(job_posts_path, errors)
@@ -2277,14 +2311,17 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             checks,
             "Cloudflare Worker preserves visual task selection and native fallback",
         )
-        combined_public_jobs_source = worker_source + "\n" + public_jobs_source
+        combined_public_jobs_source = (
+            worker_source + "\n" + public_jobs_source + "\n" + public_job_query_source
+        )
         missing_public_jobs_markers = [
             marker
             for marker in (
                 "/api/jobs/open",
                 "public_open_jobs",
                 "public_jobs_payload",
-                "public_viewport_sql(viewport)",
+                "build_public_open_jobs_query(",
+                "public_query_telemetry(",
                 "next_cursor=next_cursor",
                 "jobs.status = 'open'",
                 "jobs.zip_code LIKE ?",

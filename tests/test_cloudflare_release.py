@@ -58,6 +58,7 @@ CLIENT_REQUESTS_PATH = ROOT / "cloudflare" / "worker" / "client_requests.py"
 BID_COMPARISON_PATH = ROOT / "cloudflare" / "worker" / "bid_comparison.py"
 ENTRY_SHELL_PATH = ROOT / "cloudflare" / "worker" / "entry_shell.py"
 PUBLIC_JOBS_PATH = ROOT / "cloudflare" / "worker" / "public_jobs.py"
+PUBLIC_JOB_QUERY_PATH = ROOT / "cloudflare" / "worker" / "public_job_query.py"
 DEMO_PROJECTS_PATH = ROOT / "cloudflare" / "worker" / "demo_projects.py"
 JOB_DETAILS_PATH = ROOT / "cloudflare" / "worker" / "job_details.py"
 JOB_STATUS_PATH = ROOT / "cloudflare" / "worker" / "job_status.py"
@@ -406,6 +407,15 @@ def load_admin_moderation_module():
 def load_public_jobs_module():
     load_job_posts_module()
     spec = importlib.util.spec_from_file_location("public_jobs", PUBLIC_JOBS_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_public_job_query_module():
+    spec = importlib.util.spec_from_file_location("public_job_query", PUBLIC_JOB_QUERY_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module
@@ -1150,7 +1160,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
     def test_fresh_d1_database_accepts_complete_migration_chain(self):
         migrations_dir = ROOT / "cloudflare" / "d1" / "migrations"
         migration_paths = sorted(migrations_dir.glob("[0-9][0-9][0-9][0-9]_*.sql"))
-        self.assertEqual(len(migration_paths), 28)
+        self.assertEqual(len(migration_paths), 29)
 
         connection = sqlite3.connect(":memory:")
         try:
@@ -1174,6 +1184,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertIn("budget_min", job_columns)
             self.assertIn("service_group_slug", job_columns)
             self.assertIn("service_slug", job_columns)
+            job_indexes = {
+                row[1] for row in connection.execute("PRAGMA index_list(jobs)")
+            }
+            photo_indexes = {
+                row[1] for row in connection.execute("PRAGMA index_list(job_photos)")
+            }
+            self.assertIn("idx_jobs_open_geo", job_indexes)
+            self.assertIn("idx_job_photos_public_job", photo_indexes)
             self.assertFalse(connection.execute("PRAGMA foreign_key_check").fetchall())
         finally:
             connection.close()
@@ -3331,6 +3349,76 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "Do not include an exact street address, email, or phone number.",
             app_shell_source,
         )
+
+    def test_cloudflare_public_job_query_is_indexed_and_emits_safe_cost_telemetry(self):
+        module = load_public_job_query_module()
+        filters = {
+            "category": "Painting",
+            "family": "remodel-finish",
+            "service": "interior-painting",
+            "q": "Arlington private search",
+            "sort": "newest",
+        }
+        viewport = {
+            "north": 39.5,
+            "south": 38.0,
+            "east": -76.2,
+            "west": -78.0,
+        }
+        query, bindings = module.build_public_open_jobs_query(
+            filters,
+            viewport,
+            order_clause="jobs.created_at DESC, jobs.id DESC",
+            limit=24,
+            cursor_offset=48,
+        )
+        self.assertIn("jobs.approx_lat BETWEEN ? AND ?", query)
+        self.assertIn("jobs.approx_lng BETWEEN ? AND ?", query)
+        self.assertEqual(bindings[-2:], [25, 48])
+        with self.assertRaisesRegex(module.PublicJobQueryError, "sort order"):
+            module.build_public_open_jobs_query(
+                filters,
+                viewport,
+                order_clause="jobs.created_at DESC; DROP TABLE jobs",
+                limit=24,
+                cursor_offset=0,
+            )
+
+        telemetry = module.public_query_telemetry(
+            {
+                "meta": {
+                    "rows_read": 31,
+                    "rows_written": 0,
+                    "duration": 1.25,
+                }
+            },
+            returned_rows=24,
+            filters=filters,
+            viewport_applied=True,
+            cursor_offset=48,
+        )
+        self.assertEqual(telemetry["rows_read"], 31)
+        self.assertEqual(telemetry["returned_rows"], 24)
+        self.assertTrue(telemetry["viewport_applied"])
+        serialized = json.dumps(telemetry, sort_keys=True)
+        self.assertNotIn("Arlington private search", serialized)
+        self.assertNotIn("north", serialized)
+
+        completed = subprocess.run(
+            [sys.executable, "scripts/verify_d1_query_plan.py"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        plan = json.loads(completed.stdout)
+        self.assertEqual(
+            plan["used_indexes"],
+            ["idx_job_photos_public_job", "idx_jobs_open_geo"],
+        )
+        self.assertEqual(plan["table_scans"], [])
+        self.assertEqual(plan["last_migration"], "0029_public_job_photo_index.sql")
 
     def test_demo_projects_are_realistic_labeled_and_filterable(self):
         module = load_demo_projects_module()
@@ -7610,6 +7698,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("python -m pip install ruff==0.16.4", workflow)
         self.assertIn("npm run provenance:verify", workflow)
         self.assertIn("npm run lint", workflow)
+        self.assertIn("npm run cf:d1:query-plan", workflow)
         self.assertIn("Ruff 0.16.4", notices)
         self.assertIn("Ruff is distributed under the MIT License", notices)
         self.assertEqual(provenance["first_party"]["license_status"], "proprietary")

@@ -111,11 +111,11 @@
   "node_tooling": [
     {
       "name": "wrangler",
-      "version": "4.123.0",
+      "version": "4.125.0",
       "purpose": "Cloudflare Worker validation and deployment",
       "license": "MIT OR Apache-2.0",
-      "official_source": "https://www.npmjs.com/package/wrangler/v/4.123.0",
-      "integrity": "sha512-VXo2I1oa0x9aGAKIFPRSQPqTh0RBY5Ktl44YOhNmsJQFUdJKDA2vVTU6Xj+FC2koll6orJqWZN8jbXVIk9O67Q=="
+      "official_source": "https://www.npmjs.com/package/wrangler/v/4.125.0",
+      "integrity": "sha512-yFpvggu+xk1Hdm/Uxwaqa19bb7GArME4CrCS3Vov68a2TZq2MPO+wLocKbbnIC9K0oLowcdau7/ycxbbNHKCEg=="
     }
   ],
   "browser_components": [

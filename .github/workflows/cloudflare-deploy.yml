@@ -99,6 +99,9 @@ jobs:
       - name: Run local tests
         run: npm test
 
+      - name: Verify D1 public query indexes
+        run: npm run cf:d1:query-plan
+
       - name: Run Cloudflare preflight
         run: npm run cf:preflight
 

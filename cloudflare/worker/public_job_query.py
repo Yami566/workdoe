@@ -12,6 +12,37 @@ PILOT_VIEWPORT = {
 }
 PUBLIC_CURSOR_MAX_OFFSET = 5000
 PUBLIC_VIEWPORT_KEYS = ("north", "south", "east", "west")
+PUBLIC_ORDER_CLAUSES = frozenset(
+    {
+        "jobs.created_at DESC, jobs.id DESC",
+        (
+            "CASE WHEN jobs.desired_date IS NULL OR jobs.desired_date = '' THEN 1 ELSE 0 END, "
+            "jobs.desired_date ASC, jobs.created_at DESC, jobs.id DESC"
+        ),
+        "jobs.city COLLATE NOCASE ASC, jobs.created_at DESC, jobs.id DESC",
+    }
+)
+PUBLIC_OPEN_JOBS_SELECT = """
+SELECT
+    jobs.id,
+    jobs.title,
+    jobs.category,
+    jobs.service_group_slug,
+    jobs.service_slug,
+    jobs.city,
+    jobs.state,
+    jobs.description,
+    jobs.approx_lat,
+    jobs.approx_lng,
+    jobs.created_at,
+    jobs.desired_date,
+    COUNT(job_photos.id) AS photo_count
+FROM jobs
+LEFT JOIN job_photos
+  ON job_photos.job_id = jobs.id
+ AND job_photos.is_hidden = 0
+WHERE jobs.status = 'open'
+"""
 
 
 class PublicJobQueryError(ValueError):
@@ -107,3 +138,95 @@ def public_viewport_contains(viewport: dict[str, float] | None, lat, lng) -> boo
         viewport["south"] <= latitude <= viewport["north"]
         and viewport["west"] <= longitude <= viewport["east"]
     )
+
+
+def build_public_open_jobs_query(
+    filters: dict[str, str],
+    viewport: dict[str, float] | None,
+    *,
+    order_clause: str,
+    limit: int,
+    cursor_offset: int,
+) -> tuple[str, list[str | int | float]]:
+    if order_clause not in PUBLIC_ORDER_CLAUSES:
+        raise PublicJobQueryError("The project sort order is invalid.")
+    sql = [PUBLIC_OPEN_JOBS_SELECT]
+    bindings: list[str | int | float] = []
+    if filters.get("category"):
+        sql.append("AND jobs.category = ?")
+        bindings.append(filters["category"])
+    if filters.get("service"):
+        sql.append("AND jobs.service_slug = ?")
+        bindings.append(filters["service"])
+    if filters.get("family"):
+        sql.append("AND jobs.service_group_slug = ?")
+        bindings.append(filters["family"])
+    if filters.get("q"):
+        like = f"%{filters['q']}%"
+        sql.append(
+            "AND (jobs.city LIKE ? OR jobs.state LIKE ? OR jobs.zip_code LIKE ? OR jobs.title LIKE ?)"
+        )
+        bindings.extend([like, like, like, like])
+    viewport_clause, viewport_bindings = public_viewport_sql(viewport)
+    if viewport_clause:
+        sql.append(viewport_clause)
+        bindings.extend(viewport_bindings)
+    sql.append(
+        f"GROUP BY jobs.id ORDER BY {order_clause} "
+        "LIMIT ? OFFSET ?"
+    )
+    bindings.extend([limit + 1, cursor_offset])
+    return "\n".join(sql), bindings
+
+
+def result_meta(result) -> dict:
+    if isinstance(result, dict):
+        meta = result.get("meta") or result.get("result", {}).get("meta") or {}
+    else:
+        meta = getattr(result, "meta", {}) or {}
+    if isinstance(meta, dict):
+        return meta
+    return {
+        key: getattr(meta, key)
+        for key in (
+            "rows_read",
+            "rowsRead",
+            "rows_written",
+            "rowsWritten",
+            "duration",
+            "duration_ms",
+            "durationMs",
+        )
+        if hasattr(meta, key)
+    }
+
+
+def first_metric(meta: dict, *keys: str):
+    for key in keys:
+        value = meta.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def public_query_telemetry(
+    result,
+    *,
+    returned_rows: int,
+    filters: dict[str, str],
+    viewport_applied: bool,
+    cursor_offset: int,
+) -> dict:
+    meta = result_meta(result)
+    return {
+        "event": "d1-public-open-jobs-query",
+        "rows_read": first_metric(meta, "rows_read", "rowsRead"),
+        "rows_written": first_metric(meta, "rows_written", "rowsWritten"),
+        "duration_ms": first_metric(meta, "duration", "duration_ms", "durationMs"),
+        "returned_rows": max(0, int(returned_rows)),
+        "viewport_applied": bool(viewport_applied),
+        "cursor_offset": max(0, int(cursor_offset)),
+        "family": filters.get("family", ""),
+        "service": filters.get("service", ""),
+        "sort": filters.get("sort", "newest"),
+    }

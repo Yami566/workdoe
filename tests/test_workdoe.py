@@ -2892,6 +2892,19 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn("textarea:focus-visible", styles)
         self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
 
+    def test_map_and_policy_controls_use_accessible_touch_targets(self):
+        styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
+        self.assertRegex(
+            styles,
+            r"#lead-map \.leaflet-control-zoom a,\s*"
+            r"#lead-map \.leaflet-popup-close-button\s*\{[^}]*"
+            r"width: 44px;[^}]*height: 44px;",
+        )
+        self.assertRegex(
+            styles,
+            r"\.site-footer-links a\s*\{[^}]*min-height: 44px;",
+        )
+
     def test_mobile_css_keeps_entry_header_visible_and_auth_first(self):
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
         self.assertIn(".entry-shortcuts", styles)
@@ -4320,6 +4333,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn("preventScroll: false", script)
         self.assertIn("No matching projects", script)
         self.assertIn("Search this area", script)
+        self.assertIn('map.on("popupopen"', script)
+        self.assertIn('map.on("popupclose"', script)
+        self.assertIn("autoPanPaddingTopLeft: [64, 56]", script)
+        self.assertIn("autoPanPaddingBottomRight: [16, 16]", script)
         self.assertIn("map.getBounds()", script)
         self.assertIn("window.history.replaceState", script)
         self.assertIn('setOptionalParam(url, "job_id", activeJobId)', script)

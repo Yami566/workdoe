@@ -27,17 +27,28 @@ deployment has been performed during this stabilization pass.
 
 ## Verification evidence
 
-- Full suite: 218 tests passed in 75.834 seconds.
+- Full suite: 220 tests passed in 80.016 seconds.
 - Full Ruff baseline and the ordinary CI quality command passed.
 - Dependency provenance passed locally and against all recorded upstream Python
   source archives on 2026-08-23.
 - The complete local security gate passed: `pip-audit` found no known Python
   dependency vulnerabilities, `npm audit` found no known Node vulnerabilities,
   Bandit found no medium/high issues, Ruff passed, and the reviewed secret gate
-  passed across 410 non-ignored files.
+  passed across 414 non-ignored files.
+- All 29 forward-only D1 migrations apply to a blank database and to the local
+  Wrangler database. `EXPLAIN QUERY PLAN` uses `idx_jobs_open_geo` and the
+  covering `idx_job_photos_public_job` index without scanning either hot table.
+- Wrangler 4.125.0 serves the 2026-08-23 compatibility date locally. Runtime
+  smoke returned 200 for health/home/bounded public jobs, 400 for incomplete
+  bounds, and emitted a privacy-safe D1 event with `rows_read: 3`.
 - Responsive browser evidence is stored in
   `docs/ux-audit/2026-08-23-task-navigation/` at 390x844, 820x1180, and
   1280x720.
+- A repeated authenticated mobile browser pass verified zero horizontal
+  overflow, canonical native-dialog URL/focus restoration, synchronized
+  map/list selection, keyboard project navigation, and 44-pixel map/policy
+  controls. Exact evidence and live-test limits are recorded in
+  `docs/release-evidence/2026-08-23-local-browser-acceptance.md`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.
@@ -50,9 +61,9 @@ performance, accessibility, and live gates run on the final commit.
 2. Prove the Clerk production instance, same-domain proxy, restricted sign-up,
    email-code-only authentication, disabled passwords, express legal consent,
    webhook secret, and real code delivery.
-3. Complete dependency vulnerability, secret, Bandit, migration-chain, D1 query
-   plan, Worker dry-run/runtime, private-media, queue/email, rate-limit,
-   accessibility, and agreed performance checks on the final commit.
+3. Repeat dependency, secret, Bandit, migration, query-plan, and Worker checks
+   on the final commit; complete live private-media, queue/email, rate-limit,
+   accessibility, and agreed performance checks.
 4. Take the pre-deployment D1 backup, record rollback targets, make one reviewed
    GitHub push, run one guarded Cloudflare deployment, and retain the deployed
    SHA plus strict production smoke evidence.

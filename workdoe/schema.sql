@@ -375,6 +375,8 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status_category ON jobs(status, category);
 CREATE INDEX IF NOT EXISTS idx_jobs_location ON jobs(state, city, zip_code);
 CREATE INDEX IF NOT EXISTS idx_jobs_open_geo
 ON jobs(status, approx_lat, approx_lng, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_job_photos_public_job
+ON job_photos(job_id, is_hidden);
 CREATE INDEX IF NOT EXISTS idx_match_requests_job ON match_requests(job_id, status);
 CREATE INDEX IF NOT EXISTS idx_match_requests_contractor ON match_requests(contractor_id, status);
 CREATE INDEX IF NOT EXISTS idx_contractor_proposal_templates_owner
