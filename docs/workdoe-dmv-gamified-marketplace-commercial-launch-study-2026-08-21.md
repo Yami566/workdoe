@@ -39,6 +39,13 @@ offer remains visible in the complete received-order list. The wording stays
 atomic: a reviewed public record is not a guarantee of skill, safety,
 insurance coverage, or legal eligibility.
 
+The 2026-08-23 milestone follow-up makes all four fixed thresholds visible as
+one compact earned/next/locked track on contractor dashboards and public
+profiles. Progress is measured against the next absolute threshold, so one
+verified project reads `1 of 3` toward Steady provider instead of an empty
+post-milestone `0 of 2` bar. The follow-up adds no table, event, score input,
+personal field, ranking weight, eligibility rule, or marketplace reorder.
+
 ## Research method and limits
 
 This review uses public product pages, public help centers, public company

@@ -5,13 +5,29 @@
       <p class="eyebrow">Work milestones</p>
       <h3 id="{{ reputation_id_prefix }}-title">{{ reputation.level_label }}</h3>
     </div>
-    <strong>{{ reputation.completion_points }} points</strong>
+    <span class="work-progress-score">
+      <strong>{{ reputation.completion_points }} pts</strong>
+      <small>{{ reputation.verified_completions }} verified {{ "project" if reputation.verified_completions == 1 else "projects" }}</small>
+    </span>
   </div>
-  <p>{{ reputation.method_label }}. Points summarize completed work only and never change lead or bid order.</p>
-  <progress value="{{ reputation.progress_value }}" max="{{ reputation.progress_max }}">{{ reputation.progress_value }} of {{ reputation.progress_max }}</progress>
+  <ol class="milestone-track" aria-label="Verified completion milestones">
+    {% for milestone in reputation.milestones %}
+      <li class="milestone-step is-{{ milestone.state }}"{% if milestone.state == "current" %} aria-current="step"{% endif %}>
+        <span class="milestone-marker" aria-hidden="true">
+          {% if milestone.earned %}<img src="{{ url_for('static', filename='vendor/tabler-icons/sparkles.svg') }}" alt="">{% else %}{{ milestone.threshold }}{% endif %}
+        </span>
+        <span class="milestone-copy">
+          <strong>{{ milestone.label }}</strong>
+          <small>{% if milestone.earned %}Earned{% else %}At {{ milestone.threshold }} {{ "project" if milestone.threshold == 1 else "projects" }}{% endif %}</small>
+        </span>
+      </li>
+    {% endfor %}
+  </ol>
+  <p class="work-progress-note">Mutually confirmed Workdoe projects only. Points never change lead or bid order.</p>
+  <progress aria-label="Progress to {{ reputation.next_milestone.label if reputation.next_milestone else 'current milestone maximum' }}" value="{{ reputation.progress_value }}" max="{{ reputation.progress_max }}">{{ reputation.progress_value }} of {{ reputation.progress_max }}</progress>
   <div class="work-progress-footer">
     {% if reputation.next_milestone %}
-      <span>{{ reputation.next_milestone.remaining }} more {{ "project" if reputation.next_milestone.remaining == 1 else "projects" }} to {{ reputation.next_milestone.label }}</span>
+      <span>Next: {{ reputation.next_milestone.label }} in {{ reputation.next_milestone.remaining }} {{ "project" if reputation.next_milestone.remaining == 1 else "projects" }}</span>
     {% else %}
       <span>All current completion milestones reached</span>
     {% endif %}

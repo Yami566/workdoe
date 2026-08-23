@@ -1194,18 +1194,41 @@ Policy: https://workdoe.com/safety
 def contractor_reputation_html(reputation: dict, title_id: str) -> str:
     if not reputation:
         return ""
+    completions = int(reputation.get("verified_completions", 0) or 0)
+    completion_label = "project" if completions == 1 else "projects"
     next_milestone = reputation.get("next_milestone")
     if next_milestone:
         remaining = int(next_milestone.get("remaining", 0) or 0)
         project_label = "project" if remaining == 1 else "projects"
         next_html = (
-            f"{remaining} more {project_label} to "
-            f"{escape(next_milestone.get('label', 'the next milestone'))}"
+            f"Next: {escape(next_milestone.get('label', 'the next milestone'))} "
+            f"in {remaining} {project_label}"
         )
+        progress_label = f"Progress to {next_milestone.get('label', 'next milestone')}"
     else:
         next_html = "All current completion milestones reached"
+        progress_label = "Progress through current milestone maximum"
+    milestones_html = ""
+    for milestone in reputation.get("milestones", []):
+        state = str(milestone.get("state", "locked") or "locked")
+        if state not in {"earned", "current", "next", "locked"}:
+            state = "locked"
+        threshold = max(1, int(milestone.get("threshold", 1) or 1))
+        earned = bool(milestone.get("earned"))
+        marker = (
+            '<img src="/vendor/tabler-icons/sparkles.svg" alt="">'
+            if earned
+            else str(threshold)
+        )
+        status = "Earned" if earned else f"At {threshold} {'project' if threshold == 1 else 'projects'}"
+        current = ' aria-current="step"' if state == "current" else ""
+        milestones_html += f"""
+        <li class="milestone-step is-{state}"{current}>
+          <span class="milestone-marker" aria-hidden="true">{marker}</span>
+          <span class="milestone-copy"><strong>{escape(milestone.get('label', 'Milestone'))}</strong><small>{status}</small></span>
+        </li>"""
     signals_html = "".join(
-        '<span class="trust-chip"><img src="/static/vendor/tabler-icons/home-check.svg" alt="">'
+        '<span class="trust-chip"><img src="/vendor/tabler-icons/home-check.svg" alt="">'
         + escape(signal.get("label", "Source checked"))
         + "</span>"
         for signal in reputation.get("credential_signals", [])
@@ -1213,12 +1236,13 @@ def contractor_reputation_html(reputation: dict, title_id: str) -> str:
     return f"""
     <section class="work-progress" aria-labelledby="{escape(title_id)}">
       <div class="work-progress-heading">
-        <span class="work-progress-icon" aria-hidden="true"><img src="/static/vendor/tabler-icons/sparkles.svg" alt=""></span>
+        <span class="work-progress-icon" aria-hidden="true"><img src="/vendor/tabler-icons/sparkles.svg" alt=""></span>
         <div><p class="eyebrow">Work milestones</p><h3 id="{escape(title_id)}">{escape(reputation.get('level_label', 'New to Workdoe'))}</h3></div>
-        <strong>{int(reputation.get('completion_points', 0) or 0)} points</strong>
+        <span class="work-progress-score"><strong>{int(reputation.get('completion_points', 0) or 0)} pts</strong><small>{completions} verified {completion_label}</small></span>
       </div>
-      <p>{escape(reputation.get('method_label', '100 points per mutually confirmed Workdoe project'))}. Points summarize completed work only and never change lead or bid order.</p>
-      <progress value="{int(reputation.get('progress_value', 0) or 0)}" max="{max(1, int(reputation.get('progress_max', 1) or 1))}">{int(reputation.get('progress_value', 0) or 0)} of {max(1, int(reputation.get('progress_max', 1) or 1))}</progress>
+      <ol class="milestone-track" aria-label="Verified completion milestones">{milestones_html}</ol>
+      <p class="work-progress-note">Mutually confirmed Workdoe projects only. Points never change lead or bid order.</p>
+      <progress aria-label="{escape(progress_label)}" value="{int(reputation.get('progress_value', 0) or 0)}" max="{max(1, int(reputation.get('progress_max', 1) or 1))}">{int(reputation.get('progress_value', 0) or 0)} of {max(1, int(reputation.get('progress_max', 1) or 1))}</progress>
       <div class="work-progress-footer"><span>{next_html}</span>{signals_html}</div>
     </section>"""
 

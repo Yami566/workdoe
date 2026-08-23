@@ -124,6 +124,11 @@ deployment has been performed during this stabilization pass.
   ownership-checked path back to the offer. Pending offers expose Choose,
   approved offers expose Message, and unrelated project IDs fail closed in both
   Flask and Worker adapters.
+- Made contractor progress legible as a deterministic four-step milestone
+  track. First finish, Steady provider, Local regular, and Proven partner now
+  expose earned, current, next, and locked states; the score identifies its
+  verified-project basis; and next-threshold progress uses an absolute count.
+  The Flask and Worker projections remain ranking-neutral and store no new data.
 
 ## Verification evidence
 
@@ -342,6 +347,19 @@ deployment has been performed during this stabilization pass.
   public indexes passed without a table scan; and Wrangler 4.125.0 packaged 48
   Python modules and 86 assets at 905.64 KiB / 166.39 KiB gzip without
   deploying.
+- The contractor-milestone correction passed all 229 tests in 86.301 seconds.
+  The complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed
+  secret across 530 non-ignored files, and no dependency drift. Cloudflare
+  preflight remained warning-free; all 31 migrations and both expected D1
+  public indexes passed without a table scan; and Wrangler 4.125.0 packaged 48
+  Python modules and 86 assets at 907.70 KiB / 166.88 KiB gzip without
+  deploying.
+- Current-run milestone evidence at 390x844, 820x1180, and 1280x720 shows zero
+  horizontal overflow, all four fixed thresholds in one stable row, a current
+  First finish state, and absolute `1 of 3` progress toward Steady provider.
+  The aligned mobile before/after comparison and evidence limits are recorded
+  in `docs/ux-audit/2026-08-23-contractor-milestones-friction/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

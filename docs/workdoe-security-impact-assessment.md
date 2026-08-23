@@ -183,6 +183,11 @@ formal certification against OWASP ASVS or WCAG.
   carries the service label but no client identity, location, contact, or bid
   terms. Reviews do not alter search order, bid eligibility, account status, or
   paid placement.
+- Contractor milestone labels, points, earned-state markers, and next-threshold
+  progress are a deterministic presentation of the aggregate mutually verified
+  completion count. The milestone track adds no stored profile field, event,
+  credential inference, identity signal, eligibility change, or ranking
+  weight. Flask and Worker projections are contract-tested for equality.
 - State-changing Worker API routes require the Workdoe same-origin custom
   request marker; JSON endpoints also reject non-JSON bodies. This complements
   SameSite cookies and browser preflight behavior, including multipart photo

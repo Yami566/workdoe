@@ -6638,9 +6638,23 @@ textarea:focus {
   font-size: 1rem;
 }
 
-.work-progress-heading > strong {
+.work-progress-score {
+  display: grid;
+  justify-items: end;
+  line-height: 1.2;
+}
+
+.work-progress-score strong {
   color: var(--accent-dark);
   font-size: 0.86rem;
+}
+
+.work-progress-score small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .work-progress-icon {
@@ -6661,6 +6675,95 @@ textarea:focus {
 .work-progress > p {
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+.milestone-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 3px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.milestone-step {
+  display: grid;
+  min-width: 0;
+  border-top: 2px solid var(--line);
+  padding-top: 8px;
+}
+
+.milestone-step.is-earned {
+  border-top-color: var(--accent);
+}
+
+.milestone-step.is-current {
+  border-top-color: var(--gold);
+}
+
+.milestone-step.is-next {
+  border-top-style: dashed;
+  border-top-color: var(--blue);
+}
+
+.milestone-marker {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-strong);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.milestone-step.is-earned .milestone-marker {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.milestone-step.is-current .milestone-marker {
+  border-color: var(--gold);
+  background: var(--gold);
+}
+
+.milestone-step.is-next .milestone-marker {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.milestone-marker img {
+  width: 14px;
+  height: 14px;
+  filter: brightness(0) invert(1);
+}
+
+.milestone-copy {
+  display: grid;
+  gap: 1px;
+  margin-top: 5px;
+}
+
+.milestone-copy strong,
+.milestone-copy small {
+  overflow-wrap: anywhere;
+}
+
+.milestone-copy strong {
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
+.milestone-copy small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.work-progress-note {
+  margin-top: 2px;
 }
 
 .work-progress progress {

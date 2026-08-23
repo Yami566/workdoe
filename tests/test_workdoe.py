@@ -2891,6 +2891,13 @@ class WorkdoeFlowTests(unittest.TestCase):
             contractor_html.find('class="work-history contractor-bid-workspace"'),
             contractor_html.find('class="work-progress"'),
         )
+        self.assertIn(
+            'class="milestone-track" aria-label="Verified completion milestones"',
+            contractor_html,
+        )
+        self.assertIn('class="milestone-step is-next"', contractor_html)
+        self.assertIn("0 verified projects", contractor_html)
+        self.assertIn('aria-label="Progress to First finish" value="0" max="1"', contractor_html)
         self.assertLess(
             contractor_html.find('class="work-history contractor-bid-workspace"'),
             contractor_html.find('class="contractor-workspace-context"'),

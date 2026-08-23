@@ -4276,10 +4276,25 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "reputation": {
                     "level_label": "New to Workdoe",
                     "completion_points": 0,
+                    "verified_completions": 0,
                     "method_label": "100 points per mutually confirmed Workdoe project",
                     "progress_value": 0,
                     "progress_max": 1,
                     "next_milestone": {"remaining": 1, "label": "First finish"},
+                    "milestones": [
+                        {
+                            "label": "First finish",
+                            "threshold": 1,
+                            "earned": False,
+                            "state": "next",
+                        },
+                        {
+                            "label": "Steady provider",
+                            "threshold": 3,
+                            "earned": False,
+                            "state": "locked",
+                        },
+                    ],
                     "credential_signals": [],
                 },
             },
@@ -4301,6 +4316,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('href="/contractor/dashboard" aria-current="page"', contractor_dashboard_html)
         self.assertIn('aria-label="Message about Power wash steps"', contractor_dashboard_html)
         self.assertIn('<span class="row-cue">Message</span>', contractor_dashboard_html)
+        self.assertIn('class="milestone-track" aria-label="Verified completion milestones"', contractor_dashboard_html)
+        self.assertIn('class="milestone-step is-next"', contractor_dashboard_html)
+        self.assertIn("0 verified projects", contractor_dashboard_html)
+        self.assertIn('/vendor/tabler-icons/sparkles.svg', contractor_dashboard_html)
+        self.assertNotIn('/static/vendor/tabler-icons/sparkles.svg', contractor_dashboard_html)
 
         contractor_empty_html = module.contractor_dashboard_html(
             contractor,
@@ -6200,6 +6220,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         reputation = worker.contractor_reputation(10, 2, 1)
         self.assertEqual(reputation["completion_points"], 1000)
         self.assertEqual(reputation["level_label"], "Local regular")
+        self.assertEqual(reputation["progress_value"], 10)
+        self.assertEqual(reputation["progress_max"], 25)
+        self.assertEqual(
+            [milestone["state"] for milestone in reputation["milestones"]],
+            ["earned", "earned", "current", "next"],
+        )
         self.assertEqual(reputation["ranking_effect"], "none")
 
     def test_cloudflare_job_detail_payload_redacts_contractor_location(self):

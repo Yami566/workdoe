@@ -38,10 +38,9 @@ def contractor_reputation(
         ),
         None,
     )
-    current_threshold = current["threshold"] if current else 0
     if next_milestone:
-        progress_value = completions - current_threshold
-        progress_max = next_milestone["threshold"] - current_threshold
+        progress_value = completions
+        progress_max = next_milestone["threshold"]
         next_milestone.update(
             {
                 "remaining": next_milestone["threshold"] - completions,
@@ -50,8 +49,27 @@ def contractor_reputation(
             }
         )
     else:
-        progress_value = 1
-        progress_max = 1
+        progress_value = completions
+        progress_max = max(COMPLETION_MILESTONES[-1]["threshold"], completions)
+
+    current_key = current["key"] if current else ""
+    next_key = next_milestone["key"] if next_milestone else ""
+    milestones = []
+    for milestone in COMPLETION_MILESTONES:
+        earned = completions >= milestone["threshold"]
+        state = "earned" if earned else "locked"
+        if milestone["key"] == current_key:
+            state = "current"
+        elif milestone["key"] == next_key:
+            state = "next"
+        milestones.append(
+            {
+                **milestone,
+                "earned": earned,
+                "points": milestone["threshold"] * COMPLETION_POINTS,
+                "state": state,
+            }
+        )
 
     credential_signals = []
     if licenses:
@@ -79,6 +97,7 @@ def contractor_reputation(
         "level_label": current["label"] if current else "New to Workdoe",
         "current_milestone": current,
         "achieved_milestones": achieved,
+        "milestones": milestones,
         "next_milestone": next_milestone,
         "progress_value": progress_value,
         "progress_max": progress_max,
