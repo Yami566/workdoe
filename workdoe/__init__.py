@@ -93,6 +93,7 @@ from .contractor_proposal_templates import (
     proposal_template_response,
     proposal_template_values,
 )
+from .contractor_public_profiles import contractor_choice_context
 from .contractor_reputation import contractor_reputation
 from .idempotency import (
     IdempotencyError,
@@ -3087,6 +3088,7 @@ def register_routes(app: Flask) -> None:
             all_requests,
             bid_view,
             credential_filter,
+            job_id,
         )
         comparison["credential_filter_options"] = bid_credential_filter_links(
             job_id,
@@ -4067,6 +4069,35 @@ def register_routes(app: Flask) -> None:
         completed_work_reviews = (
             visible_contractor_reviews(contractor_id) if website_visible else []
         )
+        relationship = None
+        requested_job_id = request.args.get("job_id", type=int)
+        if requested_job_id and g.user and g.user["role"] == "client":
+            relationship = db.execute(
+                """
+                SELECT jobs.id AS job_id,
+                       jobs.title AS job_title,
+                       jobs.client_id,
+                       match_requests.contractor_id,
+                       match_requests.id AS request_id,
+                       match_requests.status,
+                       threads.id AS thread_id
+                FROM jobs
+                JOIN match_requests
+                  ON match_requests.job_id = jobs.id
+                LEFT JOIN threads
+                  ON threads.match_request_id = match_requests.id
+                WHERE jobs.id = ?
+                  AND jobs.client_id = ?
+                  AND match_requests.contractor_id = ?
+                LIMIT 1
+                """,
+                (requested_job_id, g.user["id"], contractor_id),
+            ).fetchone()
+        choice_context = contractor_choice_context(
+            g.user,
+            contractor_id,
+            relationship,
+        )
         return render_template(
             "contractor_public.html",
             contractor=contractor,
@@ -4079,6 +4110,7 @@ def register_routes(app: Flask) -> None:
             reputation=reputation,
             availability=availability,
             completed_work_reviews=completed_work_reviews,
+            choice_context=choice_context,
             review_dimensions=REVIEW_DIMENSIONS,
             review_response_max=REVIEW_RESPONSE_MAX_LENGTH,
             review_report_max=REVIEW_REPORT_MAX_LENGTH,

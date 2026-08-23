@@ -63,6 +63,10 @@ def thread_url(row) -> str:
 def client_request_card(row) -> dict:
     status = row_value(row, "status", "") or ""
     contractor_id = row_value(row, "contractor_id")
+    try:
+        job_id = int(row_value(row, "job_id", 0) or 0)
+    except (TypeError, ValueError):
+        job_id = 0
     thread_link = thread_url(row)
     card = {
         "id": row_value(row, "id"),
@@ -84,7 +88,11 @@ def client_request_card(row) -> dict:
         "updated_at": row_value(row, "updated_at", "") or "",
         "thread_id": row_value(row, "thread_id"),
         "thread_url": thread_link,
-        "profile_url": f"/contractors/{contractor_id}",
+        "profile_url": (
+            f"/contractors/{contractor_id}?job_id={job_id}"
+            if job_id > 0
+            else f"/contractors/{contractor_id}"
+        ),
         "client_confirmed_at": row_value(row, "client_confirmed_at", "") or "",
         "contractor_confirmed_at": row_value(row, "contractor_confirmed_at", "") or "",
         "verified_at": row_value(row, "verified_at", "") or "",
@@ -188,7 +196,12 @@ def client_job_requests_payload(
         None,
     )
     bidding = bid_window(job, len(all_requests))
-    comparison = bid_comparison(rows, normalized_view, normalized_filter)
+    comparison = bid_comparison(
+        rows,
+        normalized_view,
+        normalized_filter,
+        job_id,
+    )
     comparison["credential_filter_options"] = comparison_filter_links(
         job_id,
         normalized_view,

@@ -153,6 +153,7 @@ from contractor_public_profiles import (
     ContractorPublicProfileError,
     can_view_contractor_website,
     can_view_public_contractor_profile,
+    contractor_choice_context,
     parse_public_contractor_id,
     public_contractor_profile_payload,
 )
@@ -2220,6 +2221,8 @@ class Default(WorkerEntrypoint):
             )
         contractor_id = parse_app_contractor_id(path)
         user = await self.optional_workdoe_user(request)
+        params = parse_qs(urlparse(request.url).query)
+        requested_job_id = positive_int(first_query_value(params, "job_id"))
         contractor = await public_contractor_for_profile(self.env, contractor_id)
         if not can_view_public_contractor_profile(user, contractor):
             return Response(
@@ -2252,6 +2255,21 @@ class Default(WorkerEntrypoint):
             website_visible=website_visible,
             credentials=credentials,
             availability=contractor,
+        )
+        relationship = (
+            await client_contractor_choice_for_profile(
+                self.env,
+                contractor_id,
+                requested_job_id,
+                user,
+            )
+            if requested_job_id
+            else None
+        )
+        payload["contractor"]["choice_context"] = contractor_choice_context(
+            user,
+            contractor_id,
+            relationship,
         )
         payload["contractor"]["completed_work_reviews"] = (
             await visible_contractor_match_reviews(self.env, contractor_id)
@@ -4339,6 +4357,8 @@ class Default(WorkerEntrypoint):
             )
 
         user = await self.optional_workdoe_user(request)
+        params = parse_qs(urlparse(request.url).query)
+        requested_job_id = positive_int(first_query_value(params, "job_id"))
         contractor = await public_contractor_for_profile(self.env, contractor_id)
         if not can_view_public_contractor_profile(user, contractor):
             return json_response(
@@ -4370,6 +4390,23 @@ class Default(WorkerEntrypoint):
             market_fit=market_fit,
             website_visible=website_visible,
             credentials=credentials,
+        )
+        relationship = (
+            await client_contractor_choice_for_profile(
+                self.env,
+                contractor_id,
+                requested_job_id,
+                user,
+            )
+            if requested_job_id
+            else None
+        )
+        profile_payload["contractor"]["choice_context"] = (
+            contractor_choice_context(
+                user,
+                contractor_id,
+                relationship,
+            )
         )
         profile_payload["contractor"]["completed_work_reviews"] = (
             await visible_contractor_match_reviews(self.env, contractor_id)
@@ -8727,6 +8764,46 @@ async def contractor_has_client_bid_relationship(env, contractor_id: int, viewer
         row_value(viewer, "id"),
     )
     return first_row(result) is not None
+
+
+async def client_contractor_choice_for_profile(
+    env,
+    contractor_id: int,
+    job_id: int,
+    viewer,
+):
+    if (
+        not viewer
+        or row_value(viewer, "role") != "client"
+        or row_value(viewer, "status") != "active"
+        or job_id < 1
+    ):
+        return None
+    result = await db_run(
+        env,
+        """
+        SELECT jobs.id AS job_id,
+               jobs.title AS job_title,
+               jobs.client_id,
+               match_requests.contractor_id,
+               match_requests.id AS request_id,
+               match_requests.status,
+               threads.id AS thread_id
+        FROM jobs
+        JOIN match_requests
+          ON match_requests.job_id = jobs.id
+        LEFT JOIN threads
+          ON threads.match_request_id = match_requests.id
+        WHERE jobs.id = ?
+          AND jobs.client_id = ?
+          AND match_requests.contractor_id = ?
+        LIMIT 1
+        """,
+        job_id,
+        row_value(viewer, "id"),
+        contractor_id,
+    )
+    return first_row(result)
 
 
 async def client_jobs_for_user(env, client_id: int) -> list[dict]:

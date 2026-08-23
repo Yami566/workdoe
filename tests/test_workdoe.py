@@ -2399,7 +2399,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIsNone(claim["checked_at"])
 
         public_pending = self.client.get(profile_url)
-        self.assertNotIn(b"Source-checked records", public_pending.data)
+        self.assertIn(b"Source-checked records", public_pending.data)
+        self.assertIn(
+            b"No current source-checked record is shown.",
+            public_pending.data,
+        )
         self.assertNotIn(b"VA-1234", public_pending.data)
 
         self.logout()
@@ -2464,7 +2468,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Credential review saved", expired.data)
         self.logout()
         public_expired = self.client.get(profile_url)
-        self.assertNotIn(b"Source-checked records", public_expired.data)
+        self.assertIn(b"Source-checked records", public_expired.data)
+        self.assertIn(
+            b"No current source-checked record is shown.",
+            public_expired.data,
+        )
         audit = self.one(
             """
             SELECT * FROM moderation_actions
@@ -2538,6 +2546,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         public_profile = self.client.get(f"/contractors/{contractor['id']}")
         self.assertIn(b"Pressure washing", public_profile.data)
         self.assertIn(b"Arlington", public_profile.data)
+        self.assertIn(b"2 service areas", public_profile.data)
+        self.assertLess(
+            public_profile.data.find(b"Work history and records"),
+            public_profile.data.find(b">About</h2>"),
+        )
 
     def test_client_can_prefill_a_repeat_project_without_reusing_the_date(self):
         client = self.one("SELECT id FROM users WHERE email = ?", ("client@workdoe.local",))
@@ -2567,6 +2580,36 @@ class WorkdoeFlowTests(unittest.TestCase):
     def test_contractor_profile_report_flow_and_admin_review(self):
         contractor = self.one("SELECT id FROM users WHERE email = ?", ("contractor@workdoe.local",))
         profile_url = f"/contractors/{contractor['id']}"
+        client_id = self.one(
+            "SELECT id FROM users WHERE email = ?",
+            ("client@workdoe.local",),
+        )["id"]
+        job = self.one(
+            "SELECT id FROM jobs WHERE client_id = ? ORDER BY id LIMIT 1",
+            (client_id,),
+        )
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                """
+                INSERT INTO match_requests
+                    (job_id, contractor_id, scope_note, price_range, timeline,
+                     experience, questions, availability, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, '', ?, 'pending', ?, ?)
+                """,
+                (
+                    job["id"],
+                    contractor["id"],
+                    "Complete the exterior cleaning scope.",
+                    "$400-$550",
+                    "One day",
+                    "Five years completing exterior cleaning projects.",
+                    "Weekday mornings",
+                    "2026-08-17T12:00:00+00:00",
+                    "2026-08-17T12:00:00+00:00",
+                ),
+            )
+            db.commit()
 
         public_profile = self.client.get(profile_url)
         self.assertEqual(public_profile.status_code, 200)
@@ -2588,6 +2631,41 @@ class WorkdoeFlowTests(unittest.TestCase):
             client_profile.data,
         )
         self.assertIn(b'aria-label="Report profile"', client_profile.data)
+        relationship = self.one(
+            """
+            SELECT jobs.id AS job_id,
+                   jobs.title AS job_title,
+                   match_requests.id AS request_id,
+                   match_requests.status
+            FROM jobs
+            JOIN match_requests ON match_requests.job_id = jobs.id
+            WHERE jobs.client_id = ?
+              AND match_requests.contractor_id = ?
+            ORDER BY match_requests.id
+            LIMIT 1
+            """,
+            (client_id, contractor["id"]),
+        )
+        contextual_profile = self.client.get(
+            f"{profile_url}?job_id={relationship['job_id']}"
+        )
+        self.assertIn(b"Project choice", contextual_profile.data)
+        self.assertIn(relationship["job_title"].encode(), contextual_profile.data)
+        self.assertIn(
+            f'href="/client/jobs/{relationship["job_id"]}#mini-bids"'.encode(
+                "ascii"
+            ),
+            contextual_profile.data,
+        )
+        self.assertIn(
+            f'action="/client/requests/{relationship["request_id"]}/approve"'.encode(
+                "ascii"
+            ),
+            contextual_profile.data,
+        )
+        unrelated_context = self.client.get(f"{profile_url}?job_id=999999")
+        self.assertNotIn(b"Project choice", unrelated_context.data)
+        self.assertIn(b"Back to projects", unrelated_context.data)
 
         sent = self.client.post(
             "/report",
@@ -5468,7 +5546,9 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"<dt>Price</dt><dd>$400-$550</dd>", detail.data)
         self.assertIn(b"<dt>Timeline</dt><dd>One day</dd>", detail.data)
         self.assertIn(
-            f'href="/contractors/{contractor["id"]}">Profile</a>'.encode("ascii"),
+            f'href="/contractors/{contractor["id"]}?job_id={job["id"]}">Profile</a>'.encode(
+                "ascii"
+            ),
             detail.data,
         )
         self.assertNotIn(b'aria-label="Bid availability"', detail.data)
@@ -5483,7 +5563,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(persisted_job["status"], "closed")
 
         profile = self.client.get(f"/contractors/{contractor['id']}")
-        self.assertIn(b"1 verified", profile.data)
+        self.assertIn(b"1 project", profile.data)
 
     def test_completion_rejects_unapproved_or_open_projects(self):
         with self.app.app_context():
@@ -6545,6 +6625,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(
             comparison["offers"][1]["reputation"]["level_label"],
             "Steady provider",
+        )
+        contextual = bid_comparison(rows, "pending", job_id=42)
+        self.assertEqual(
+            contextual["offers"][0]["profile_url"],
+            "/contractors/7?job_id=42",
         )
         license_filtered = bid_comparison(rows, "pending", "license-checked")
         self.assertEqual(license_filtered["count"], 1)

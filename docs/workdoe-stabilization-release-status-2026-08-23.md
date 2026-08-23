@@ -117,6 +117,13 @@ deployment has been performed during this stabilization pass.
   completed readiness details collapse; and credential claims precede the full
   53-service editor. Flask and Worker adapters share the same native disclosure,
   ordering, and anchor contract without changing credential review semantics.
+- Reframed the public contractor profile around client choice and factual trust
+  signals. Availability, mutually confirmed work, milestone points, and current
+  source-checked record state now precede biography; service coverage uses a
+  native disclosure; and profile links from client projects preserve an
+  ownership-checked path back to the offer. Pending offers expose Choose,
+  approved offers expose Message, and unrelated project IDs fail closed in both
+  Flask and Worker adapters.
 
 ## Verification evidence
 
@@ -305,6 +312,22 @@ deployment has been performed during this stabilization pass.
   5,834 to 868 pixels on mobile. The credential anchor clears the sticky app
   bar by 72 pixels. Same-state comparison and evidence limits are recorded in
   `docs/ux-audit/2026-08-23-contractor-profile-friction/`.
+- The public contractor-choice correction passed all 228 tests in 81.460
+  seconds. The complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed secret
+  across 514 non-ignored files, and no dependency drift. Cloudflare preflight
+  remained warning-free; all 31 forward-only migrations and both expected D1
+  public indexes passed without a hot-table scan; and Wrangler 4.125.0 packaged
+  48 Python modules and 86 assets at 904.76 KiB / 166.16 KiB gzip without
+  deploying.
+- Current-run public-profile evidence at 390x844 and 1280x720 shows zero
+  horizontal overflow, moves factual trust signals 325 pixels earlier on
+  mobile, and keeps the contextual project decision in the first viewport.
+  Pending, approved, and unrelated project states expose only the ownership-
+  appropriate Choose, Message, and back actions. Native service coverage lists
+  all 10 exact DMV labels without exposing an address. Same-state comparison
+  and evidence limits are recorded in
+  `docs/ux-audit/2026-08-23-public-contractor-profile-friction/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

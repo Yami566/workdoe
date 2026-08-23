@@ -71,7 +71,7 @@ def offer_order_key(row) -> tuple[str, int]:
     return created_at, request_id
 
 
-def comparison_offer(row, position: int) -> dict:
+def comparison_offer(row, position: int, job_id: int = 0) -> dict:
     contractor_id = count_value(row, "contractor_id")
     checked_credentials = count_value(row, "source_checked_credential_count")
     checked_licenses = count_value(row, "source_checked_license_count")
@@ -87,7 +87,11 @@ def comparison_offer(row, position: int) -> dict:
         "offer_label": f"Offer {position}",
         "contractor_name": contractor_name(row),
         "trades": str(row_value(row, "trades", "") or "Contractor profile"),
-        "profile_url": f"/contractors/{contractor_id}",
+        "profile_url": (
+            f"/contractors/{contractor_id}?job_id={job_id}"
+            if job_id > 0
+            else f"/contractors/{contractor_id}"
+        ),
         "price_range": str(row_value(row, "price_range", "") or "Not provided"),
         "timeline": str(row_value(row, "timeline", "") or "Not provided"),
         "availability": str(row_value(row, "availability", "") or "Not provided"),
@@ -137,6 +141,7 @@ def bid_comparison(
     rows: list,
     view: str = "all",
     credential_filter: str = "all",
+    job_id: int = 0,
 ) -> dict:
     normalized_filter = normalize_credential_filter(credential_filter)
     if view not in COMPARISON_VIEWS:
@@ -156,7 +161,7 @@ def bid_comparison(
         if row_matches_credential_filter(row, normalized_filter)
     ][:MAX_COMPARISON_OFFERS]
     offers = [
-        comparison_offer(row, position)
+        comparison_offer(row, position, job_id)
         for position, row in enumerate(pending_rows, start=1)
     ]
     filter_options = [

@@ -2374,15 +2374,9 @@ def public_contractor_profile_html(user, payload: dict) -> str:
     service_zones = contractor.get("service_zones", [])
     contractor_id = int(contractor.get("id", 0) or 0)
     photo_html = "\n".join(
-        f'<figure><img src="{escape(photo.get("url", ""))}" alt="Portfolio photo"><figcaption>Portfolio photo</figcaption></figure>'
-        for photo in photos
+        f'<figure><img src="{escape(photo.get("url", ""))}" alt="Portfolio photo {index}"><figcaption>Portfolio photo {index}</figcaption></figure>'
+        for index, photo in enumerate(photos, start=1)
     )
-    if not photo_html:
-        photo_html = """
-        <div class="empty-state">
-          <h2>No portfolio photos yet</h2>
-          <p class="help-text">Clients can still review this contractor through mini bids.</p>
-        </div>"""
     years = contractor.get("years_in_business")
     year_label = "Not listed" if years in {"", None} else str(years)
     status_html = (
@@ -2403,9 +2397,20 @@ def public_contractor_profile_html(user, payload: dict) -> str:
         if service_tags
         else ""
     )
-    zone_summary = ", ".join(
-        str(zone.get("short_name", "")) for zone in service_zones if zone.get("short_name")
-    ) or contractor.get("service_area", "DMV area")
+    zone_tags = "".join(
+        f'<span>{escape(zone.get("short_name", ""))}</span>'
+        for zone in service_zones
+        if zone.get("short_name")
+    )
+    if not zone_tags:
+        zone_tags = f'<span>{escape(contractor.get("service_area", "DMV area"))}</span>'
+    coverage_label = (
+        f"{len(service_zones)} service areas" if service_zones else "Service area"
+    )
+    coverage_html = (
+        f'<details class="profile-coverage"><summary>{coverage_label}</summary>'
+        f'<div class="profile-tag-list">{zone_tags}</div></details>'
+    )
     availability = contractor.get("availability", {})
     website_html = ""
     if contractor.get("website") and contractor.get("website_label"):
@@ -2430,12 +2435,70 @@ def public_contractor_profile_html(user, payload: dict) -> str:
             f'<div class="admin-row credential-row"><span><strong>{escape(credential.get("credential_type_label", "Credential"))} - {escape(credential.get("jurisdiction_label", ""))}</strong><small>Source checked {escape(checked_at)}{expiry_text}</small></span>{source_html}</div>'
         )
     credentials_html = (
-        '<section class="profile-capability-block" aria-labelledby="public-credentials-title"><h3 id="public-credentials-title">Source-checked records</h3>'
-        + "".join(credential_rows)
+        '<section class="profile-capability-block public-credential-records" aria-labelledby="public-credentials-title"><h3 id="public-credentials-title">Source-checked records</h3>'
+        + (
+            "".join(credential_rows)
+            if credential_rows
+            else '<p class="empty compact-empty">No current source-checked record is shown.</p>'
+        )
         + "</section>"
-        if credential_rows
-        else ""
     )
+    reputation = contractor.get("reputation", {})
+    reviewed_records = ", ".join(
+        str(signal.get("label", ""))
+        for signal in reputation.get("credential_signals", [])
+        if signal.get("label")
+    ) or "None shown"
+    completed_count = int(contractor.get("verified_completions", 0) or 0)
+    completed_label = f"{completed_count} project{'s' if completed_count != 1 else ''}"
+    choice_context = contractor.get("choice_context") or {}
+    role = str(row_value(user, "role", "") or "")
+    include_actions = False
+    if choice_context:
+        decision_action = ""
+        if choice_context.get("can_choose"):
+            include_actions = True
+            decision_action = f"""
+          <form data-json-action="/api/match-requests/{int(choice_context.get('request_id', 0) or 0)}/approve" data-success-url-template="/client/jobs/{int(choice_context.get('job_id', 0) or 0)}" aria-describedby="profile-choice-status">
+            <button class="button" type="submit" aria-label="Choose {escape(contractor.get('business_name', 'contractor'))} for {escape(choice_context.get('job_title', 'project'))}">Choose contractor</button>
+            <span id="profile-choice-status" class="form-status" role="status" aria-live="polite"></span>
+          </form>"""
+        elif choice_context.get("thread_url"):
+            decision_action = f'<a class="button" href="{escape(choice_context.get("thread_url", ""))}">Message contractor</a>'
+        profile_actions_html = f"""
+    <section class="profile-decision-bar" aria-labelledby="profile-decision-title">
+      <div><p class="eyebrow">Project choice</p><h2 id="profile-decision-title">{escape(choice_context.get('job_title', 'Project'))}</h2><p>Review this contractor's profile without losing your place in the offers.</p></div>
+      <div class="profile-decision-actions"><a class="button secondary" href="{escape(choice_context.get('back_url', '/client/dashboard'))}">Back to offers</a>{decision_action}</div>
+    </section>"""
+    else:
+        if not user:
+            action_url = f"/login?next=/contractors/{contractor_id}"
+            action_label = "Sign in"
+            action_class = "button"
+        elif role == "client":
+            action_url = "/client/dashboard"
+            action_label = "Back to projects"
+            action_class = "button secondary"
+        elif role == "contractor" and int(row_value(user, "id", 0) or 0) == contractor_id:
+            action_url = "/contractor/profile"
+            action_label = "Edit profile"
+            action_class = "button"
+        elif role == "contractor":
+            action_url = "/leads"
+            action_label = "Back to leads"
+            action_class = "button secondary"
+        else:
+            action_url = "/admin"
+            action_label = "Back to moderation"
+            action_class = "button secondary"
+        profile_actions_html = f'<div class="lead-action-bar public-profile-actions"><a class="{action_class}" href="{action_url}">{action_label}</a></div>'
+    portfolio_html = ""
+    if photo_html:
+        portfolio_html = f"""
+    <section class="work-history profile-portfolio" aria-labelledby="profile-portfolio-title">
+      <div class="section-heading"><div><p class="eyebrow">Past work</p><h2 id="profile-portfolio-title">Portfolio</h2></div><span class="count-pill">{len(photos)}</span></div>
+      <div class="photo-grid profile-photos">{photo_html}</div>
+    </section>"""
     completed_work_reviews = contractor.get("completed_work_reviews", [])
     reviews_html = ""
     if completed_work_reviews:
@@ -2455,7 +2518,7 @@ def public_contractor_profile_html(user, payload: dict) -> str:
       <div class="review-list">{review_rows}</div>
     </section>"""
     body = f"""
-    <section class="dashboard-header">
+    <section class="dashboard-header public-profile-header">
       <div>
         <p class="eyebrow">Contractor profile</p>
         <h1>{escape(contractor.get('business_name', 'Workdoe contractor'))}</h1>
@@ -2463,36 +2526,41 @@ def public_contractor_profile_html(user, payload: dict) -> str:
       </div>
       {status_html}
     </section>
-    <section class="detail-grid">
+    {profile_actions_html}
+    <section class="public-profile-trust" aria-labelledby="public-trust-title">
+      <div class="section-heading"><div><p class="eyebrow">Contractor signals</p><h2 id="public-trust-title">Work history and records</h2></div></div>
+      <dl class="profile-facts public-profile-facts">
+        <div><dt>Availability</dt><dd><span class="availability-label {escape(availability.get('status', 'available'))}">{escape(availability.get('label', 'Available for new work'))}</span><small>Self-reported</small></dd></div>
+        <div><dt>Workdoe-completed</dt><dd>{escape(completed_label)}<small>Both sides confirmed</small></dd></div>
+        <div><dt>Years active</dt><dd>{escape(year_label)}<small>Self-reported</small></dd></div>
+        <div><dt>Reviewed records</dt><dd>{escape(reviewed_records)}<small>Current public sources only</small></dd></div>
+      </dl>
+      {contractor_reputation_html(reputation, 'public-reputation-title')}
+      {credentials_html}
+      <p class="help-text">Profile details are self-reported. A source-checked record means Workdoe reviewed the linked public source on the date shown; it is not a guarantee of skill, safety, coverage, or legal eligibility.</p>
+    </section>
+    <section class="detail-grid public-profile-details">
       <article class="panel">
         <h2>About</h2>
         <p class="preline">{escape(contractor.get('intro', ''))}</p>
         {website_html}
         {service_block}
-        <dl class="profile-facts">
-          <div><dt>Availability</dt><dd><span class="availability-label {escape(availability.get('status', 'available'))}">{escape(availability.get('label', 'Available for new work'))}</span> <small>Self-reported</small></dd></div>
-          <div><dt>Service area</dt><dd>{escape(zone_summary)}</dd></div>
-          <div><dt>Years</dt><dd>{escape(year_label)}</dd></div>
-          <div><dt>Workdoe completions</dt><dd>{int(contractor.get('verified_completions', 0) or 0)} verified</dd></div>
-        </dl>
-        {contractor_reputation_html(contractor.get('reputation', {}), 'public-reputation-title')}
-        {credentials_html}
-        <p class="help-text">Profile details are self-reported. A source-checked record means Workdoe reviewed the linked public source on the date shown; it is not a guarantee of skill, safety, coverage, or legal eligibility.</p>
-        <p class="help-text">{escape(contractor.get('contact_policy', 'Clients approve a mini bid before messaging opens.'))}</p>
+        {coverage_html}
       </article>
       <aside class="panel">
-        <h2>Portfolio</h2>
-        <div class="photo-grid">
-{photo_html}
-        </div>
+        <h2>Contact policy</h2>
+        <p>{escape(contractor.get('contact_policy', 'Clients approve a mini bid before messaging opens.'))}</p>
       </aside>
     </section>
     {reviews_html}
-    <section class="action-row">
-      <a class="button secondary" href="/leads">Back to leads</a>
-      <a class="button secondary" href="/login?next=/contractors/{contractor_id}">Sign in</a>
-    </section>"""
-    return layout(user, f"/contractors/{contractor_id}", contractor.get("business_name", "Contractor Profile"), body)
+    {portfolio_html}"""
+    return layout(
+        user,
+        f"/contractors/{contractor_id}",
+        contractor.get("business_name", "Contractor Profile"),
+        body,
+        include_actions=include_actions,
+    )
 
 
 def message_threads_html(user, payload: dict) -> str:

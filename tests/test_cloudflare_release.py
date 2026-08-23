@@ -4526,6 +4526,32 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "years_in_business": 7,
                     "contact_policy": "Clients approve a contractor's mini bid before a private Workdoe message thread opens.",
                     "photos": [{"id": 4, "url": "/media/contractors/4"}],
+                    "availability": {
+                        "status": "available",
+                        "label": "Available for new work",
+                    },
+                    "verified_completions": 2,
+                    "reputation": {
+                        "level_label": "First finish",
+                        "completion_points": 200,
+                        "method_label": "100 points per mutually confirmed Workdoe project",
+                        "progress_value": 1,
+                        "progress_max": 3,
+                        "next_milestone": {
+                            "remaining": 1,
+                            "label": "Steady provider",
+                        },
+                        "credential_signals": [],
+                    },
+                    "choice_context": {
+                        "job_id": 12,
+                        "job_title": "Power wash steps",
+                        "request_id": 31,
+                        "status": "pending",
+                        "back_url": "/client/jobs/12#mini-bids",
+                        "can_choose": True,
+                        "thread_url": "",
+                    },
                     "email": "contractor@example.com",
                 }
             },
@@ -4535,6 +4561,18 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Portfolio photo", public_profile_html)
         self.assertNotIn("crew.webp", public_profile_html)
         self.assertIn("private Workdoe message thread", public_profile_html)
+        self.assertIn("Work history and records", public_profile_html)
+        self.assertLess(
+            public_profile_html.find("Work history and records"),
+            public_profile_html.find("<h2>About</h2>"),
+        )
+        self.assertIn("No current source-checked record is shown.", public_profile_html)
+        self.assertIn('href="/client/jobs/12#mini-bids"', public_profile_html)
+        self.assertIn(
+            'data-json-action="/api/match-requests/31/approve"',
+            public_profile_html,
+        )
+        self.assertNotIn('href="/leads">Back to leads</a>', public_profile_html)
         self.assertIn(
             "Profile details are self-reported. A source-checked record means Workdoe reviewed the linked public source",
             public_profile_html,
@@ -6013,7 +6051,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(len(payload["requests"]), 1)
         request_payload = payload["requests"][0]
         self.assertEqual(request_payload["contractor_name"], "Doe Exterior Care")
-        self.assertEqual(request_payload["profile_url"], "/contractors/7")
+        self.assertEqual(request_payload["profile_url"], "/contractors/7?job_id=42")
         self.assertTrue(request_payload["can_approve"])
         self.assertTrue(request_payload["needs_review"])
         self.assertEqual(request_payload["row_cue"], "Review")
@@ -6106,12 +6144,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "created_at": "2026-08-17T13:00:00+00:00",
             },
         ]
-        local_result = bid_comparison(rows, "pending")
-        worker_result = worker.bid_comparison(rows, "pending")
+        local_result = bid_comparison(rows, "pending", job_id=42)
+        worker_result = worker.bid_comparison(rows, "pending", job_id=42)
         self.assertEqual(worker_result, local_result)
         self.assertEqual(
             [offer["contractor_name"] for offer in worker_result["offers"]],
             ["First Offer", "Second Offer"],
+        )
+        self.assertEqual(
+            worker_result["offers"][0]["profile_url"],
+            "/contractors/8?job_id=42",
         )
         self.assertNotIn("private@example.com", json.dumps(worker_result))
         self.assertNotIn("Private Street", json.dumps(worker_result))
@@ -6527,6 +6569,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
     def test_cloudflare_public_contractor_profile_helper_keeps_contact_private(self):
         module = load_contractor_public_profiles_module()
+        from workdoe.contractor_public_profiles import contractor_choice_context
+
         self.assertEqual(module.parse_public_contractor_id("/api/contractors/42"), 42)
         with self.assertRaisesRegex(module.ContractorPublicProfileError, "Unsupported"):
             module.parse_public_contractor_id("/api/contractors/0")
@@ -6564,6 +6608,29 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             module.can_view_contractor_website(
                 {"id": 42, "role": "contractor", "status": "active"},
                 42,
+            )
+        )
+        relationship = {
+            "job_id": 12,
+            "job_title": "Power wash steps",
+            "client_id": 8,
+            "contractor_id": 42,
+            "request_id": 31,
+            "status": "pending",
+            "thread_id": None,
+        }
+        expected_choice = contractor_choice_context(client, 42, relationship)
+        self.assertEqual(
+            module.contractor_choice_context(client, 42, relationship),
+            expected_choice,
+        )
+        self.assertEqual(expected_choice["back_url"], "/client/jobs/12#mini-bids")
+        self.assertTrue(expected_choice["can_choose"])
+        self.assertIsNone(
+            module.contractor_choice_context(
+                {"id": 9, "role": "client", "status": "active"},
+                42,
+                relationship,
             )
         )
 

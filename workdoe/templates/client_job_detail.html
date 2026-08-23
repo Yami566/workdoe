@@ -28,7 +28,7 @@
     </div>
     <div class="project-match-actions">
       {% if approved_request.thread_id %}<a class="button compact" href="{{ url_for('thread_detail', thread_id=approved_request.thread_id) }}">Message</a>{% endif %}
-      <a class="button secondary compact" href="{{ url_for('contractor_public_profile', contractor_id=approved_request.contractor_id) }}">Profile</a>
+      <a class="button secondary compact" href="{{ url_for('contractor_public_profile', contractor_id=approved_request.contractor_id, job_id=job.id) }}">Profile</a>
     </div>
     <dl class="thread-match-facts">
       <div><dt>Price</dt><dd>{{ approved_request.price_range or "Not provided" }}</dd></div>
@@ -202,7 +202,7 @@
               <h3 id="bid-title-{{ item.id }}">{{ contractor_name }}</h3>
             </div>
             <div class="row-actions bid-actions" aria-label="Actions for {{ contractor_name }}">
-              <a class="button secondary compact" href="{{ url_for('contractor_public_profile', contractor_id=item.contractor_id) }}">Profile</a>
+              <a class="button secondary compact" href="{{ url_for('contractor_public_profile', contractor_id=item.contractor_id, job_id=job.id) }}">Profile</a>
               {% if item.status == 'approved' and item.thread_id %}
                 <a class="button compact" href="{{ url_for('thread_detail', thread_id=item.thread_id) }}">Message</a>
               {% endif %}

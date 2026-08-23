@@ -1,18 +1,94 @@
 {% extends "base.html" %}
 {% block title %}{{ contractor.business_name }} - Workdoe{% endblock %}
 {% block content %}
-<section class="page-header">
-  <p class="eyebrow">Contractor profile</p>
-  <h1>{{ contractor.business_name }}</h1>
-  <p>{% if services %}{{ services|map(attribute='name')|join(', ') }}{% else %}{{ contractor.trades or "DMV contractor" }}{% endif %}</p>
+<section class="dashboard-header public-profile-header">
+  <div>
+    <p class="eyebrow">Contractor profile</p>
+    <h1>{{ contractor.business_name }}</h1>
+    <p>{% if services %}{{ services|map(attribute='name')|join(', ') }}{% else %}{{ contractor.trades or "DMV contractor" }}{% endif %}</p>
+  </div>
+  {% if g.user and g.user.role == 'admin' %}
+    <span class="status {{ contractor.status }}">{{ contractor.status }}</span>
+  {% endif %}
 </section>
 
-<section class="detail-grid">
+{% if choice_context %}
+  <section class="profile-decision-bar" aria-labelledby="profile-decision-title">
+    <div>
+      <p class="eyebrow">Project choice</p>
+      <h2 id="profile-decision-title">{{ choice_context.job_title }}</h2>
+      <p>Review this contractor's profile without losing your place in the offers.</p>
+    </div>
+    <div class="profile-decision-actions">
+      <a class="button secondary" href="{{ choice_context.back_url }}">Back to offers</a>
+      {% if choice_context.can_choose %}
+        <form method="post" action="{{ url_for('decide_request', request_id=choice_context.request_id, action='approve') }}">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          <button class="button" type="submit">Choose contractor</button>
+        </form>
+      {% elif choice_context.thread_url %}
+        <a class="button" href="{{ choice_context.thread_url }}">Message contractor</a>
+      {% endif %}
+    </div>
+  </section>
+{% else %}
+  <div class="lead-action-bar public-profile-actions">
+    {% if not g.user %}
+      <a class="button" href="{{ url_for('login', next=request.path) }}">Sign in</a>
+    {% elif g.user.role == 'client' %}
+      <a class="button secondary" href="{{ url_for('client_dashboard') }}">Back to projects</a>
+    {% elif g.user.role == 'contractor' and g.user.id == contractor.id %}
+      <a class="button" href="{{ url_for('contractor_profile') }}">Edit profile</a>
+    {% elif g.user.role == 'contractor' %}
+      <a class="button secondary" href="{{ url_for('leads') }}">Back to leads</a>
+    {% elif g.user.role == 'admin' %}
+      <a class="button secondary" href="{{ url_for('admin_dashboard') }}">Back to moderation</a>
+    {% endif %}
+  </div>
+{% endif %}
+
+<section class="public-profile-trust" aria-labelledby="public-trust-title">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Contractor signals</p>
+      <h2 id="public-trust-title">Work history and records</h2>
+    </div>
+  </div>
+  <dl class="profile-facts public-profile-facts">
+    <div><dt>Availability</dt><dd><span class="availability-label {{ availability.status }}">{{ availability.label }}</span><small>Self-reported</small></dd></div>
+    <div><dt>Workdoe-completed</dt><dd>{{ contractor.verified_completions }} project{{ "" if contractor.verified_completions == 1 else "s" }}<small>Both sides confirmed</small></dd></div>
+    <div><dt>Years active</dt><dd>{{ contractor.years_in_business if contractor.years_in_business is not none else "Not listed" }}<small>Self-reported</small></dd></div>
+    <div>
+      <dt>Reviewed records</dt>
+      <dd>
+        {% for signal in reputation.credential_signals %}
+          {{ signal.label }}{% if not loop.last %}, {% endif %}
+        {% else %}
+          None shown
+        {% endfor %}
+        <small>Current public sources only</small>
+      </dd>
+    </div>
+  </dl>
+  {% set reputation_id_prefix = "public-reputation" %}
+  {% include "_contractor_reputation.html" %}
+  <section class="profile-capability-block public-credential-records" aria-labelledby="public-credentials-title">
+    <h3 id="public-credentials-title">Source-checked records</h3>
+    {% for credential in credentials %}
+      <div class="admin-row credential-row">
+        <span><strong>{{ credential.credential_type_label }} - {{ credential.jurisdiction_label }}</strong><small>Source checked {{ credential.checked_at|datetime_label }}{% if credential.expires_at %} - expires {{ credential.expires_at|date_label }}{% endif %}</small></span>
+        {% if credential.source_url %}<a href="{{ credential.source_url }}" target="_blank" rel="noopener noreferrer nofollow external">Public source</a>{% endif %}
+      </div>
+    {% else %}
+      <p class="empty compact-empty">No current source-checked record is shown.</p>
+    {% endfor %}
+  </section>
+  <p class="help-text">Profile details are self-reported. A source-checked record means Workdoe reviewed the linked public source on the date shown; it is not a guarantee of skill, safety, coverage, or legal eligibility.</p>
+</section>
+
+<section class="detail-grid public-profile-details">
   <article class="panel">
     <h2>About</h2>
-    {% if g.user and g.user.role == 'admin' %}
-      <p><span class="status {{ contractor.status }}">{{ contractor.status }}</span></p>
-    {% endif %}
     <p class="preline">{{ contractor.intro or "This contractor is still completing their profile." }}</p>
     {% if public_website %}
       <p class="profile-website">
@@ -28,26 +104,12 @@
         </div>
       </section>
     {% endif %}
-    <dl class="profile-facts">
-      <div><dt>Availability</dt><dd><span class="availability-label {{ availability.status }}">{{ availability.label }}</span> <small>Self-reported</small></dd></div>
-      <div><dt>Service area</dt><dd>{% if service_zones %}{{ service_zones|map(attribute='short_name')|join(', ') }}{% else %}{{ contractor.service_area or "DMV area" }}{% endif %}</dd></div>
-      <div><dt>Years in business</dt><dd>{{ contractor.years_in_business or "Not listed" }}</dd></div>
-      <div><dt>Workdoe completions</dt><dd>{{ contractor.verified_completions }} verified</dd></div>
-    </dl>
-    {% set reputation_id_prefix = "public-reputation" %}
-    {% include "_contractor_reputation.html" %}
-    {% if credentials %}
-      <section class="profile-capability-block" aria-labelledby="public-credentials-title">
-        <h3 id="public-credentials-title">Source-checked records</h3>
-        {% for credential in credentials %}
-          <div class="admin-row credential-row">
-            <span><strong>{{ credential.credential_type_label }} - {{ credential.jurisdiction_label }}</strong><small>Source checked {{ credential.checked_at|datetime_label }}{% if credential.expires_at %} - expires {{ credential.expires_at|date_label }}{% endif %}</small></span>
-            {% if credential.source_url %}<a href="{{ credential.source_url }}" target="_blank" rel="noopener noreferrer nofollow external">Public source</a>{% endif %}
-          </div>
-        {% endfor %}
-      </section>
-    {% endif %}
-    <p class="help-text">Profile details are self-reported. A source-checked record means Workdoe reviewed the linked public source on the date shown; it is not a guarantee of skill, safety, coverage, or legal eligibility.</p>
+    <details class="profile-coverage">
+      <summary>{% if service_zones %}{{ service_zones|length }} service areas{% else %}Service area{% endif %}</summary>
+      <div class="profile-tag-list">
+        {% for zone in service_zones %}<span>{{ zone.short_name }}</span>{% else %}<span>{{ contractor.service_area or "DMV area" }}</span>{% endfor %}
+      </div>
+    </details>
   </article>
   <aside class="panel">
     <h2>Contact policy</h2>
@@ -88,12 +150,20 @@
   </section>
 {% endif %}
 
-<section class="photo-grid profile-photos">
-  {% for photo in photos %}
-    <figure>
-      <img src="{{ url_for('contractor_photo', photo_id=photo.id) }}" alt="Portfolio photo {{ loop.index }}">
-      <figcaption>Portfolio photo {{ loop.index }}</figcaption>
-    </figure>
-  {% endfor %}
-</section>
+{% if photos %}
+  <section class="work-history profile-portfolio" aria-labelledby="profile-portfolio-title">
+    <div class="section-heading">
+      <div><p class="eyebrow">Past work</p><h2 id="profile-portfolio-title">Portfolio</h2></div>
+      <span class="count-pill">{{ photos|length }}</span>
+    </div>
+    <div class="photo-grid profile-photos">
+      {% for photo in photos %}
+        <figure>
+          <img src="{{ url_for('contractor_photo', photo_id=photo.id) }}" alt="Portfolio photo {{ loop.index }}">
+          <figcaption>Portfolio photo {{ loop.index }}</figcaption>
+        </figure>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
 {% endblock %}
