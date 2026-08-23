@@ -18,7 +18,7 @@
 </section>
 
 <section class="dashboard-metrics" aria-label="Client work queue">
-  <a class="metric-card" href="{{ url_for('new_job') }}">
+  <a class="metric-card metric-supporting" href="{{ url_for('new_job') }}">
     <span>Post</span>
     <strong>New project</strong>
   </a>
@@ -30,11 +30,11 @@
     <span>Pending bids</span>
     <strong>{{ stats.pending_requests }}</strong>
   </div>
-  <div class="metric-card">
+  <div class="metric-card metric-supporting">
     <span>Brief-ready</span>
     <strong>{{ stats.brief_ready_jobs }}</strong>
   </div>
-  <div class="metric-card">
+  <div class="metric-card metric-supporting">
     <span>Total projects</span>
     <strong>{{ stats.total_jobs }}</strong>
   </div>

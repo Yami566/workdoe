@@ -30,6 +30,44 @@
   </div>
 </section>
 
+<section class="work-history contractor-bid-workspace" aria-labelledby="contractor-bid-status-title">
+  <div class="section-heading history-heading">
+    <div>
+      <p class="eyebrow">Response queue</p>
+      <h2 id="contractor-bid-status-title">Mini bid status</h2>
+    </div>
+    <span class="count-pill">{{ stats.visible_requests }} showing</span>
+  </div>
+  <nav class="work-view-tabs bid-view-tabs" aria-label="Contractor mini bid status">
+    {% for item in bid_view_links %}
+      {% set count = stats.total_requests if item.value == "all" else (stats.pending_requests if item.value == "pending" else (stats.approved_requests if item.value == "approved" else stats.rejected_requests)) %}
+      <a class="work-view-tab{% if bid_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if bid_view == item.value %}aria-current="page"{% endif %}>
+        <span>{{ item.label }}</span>
+        <strong>{{ count }}</strong>
+      </a>
+    {% endfor %}
+  </nav>
+  <div class="job-list compact-list">
+    {% for item in requests %}
+      {% set row_href = url_for('thread_detail', thread_id=item.thread_id) if item.status == 'approved' and item.thread_id else url_for('contractor_job_detail', job_id=item.job_id) %}
+      {% set row_cue = "Message" if item.status == "approved" and item.thread_id else "View" %}
+      {% set row_label = "Message about " ~ item.title if row_cue == "Message" else "View mini bid for " ~ item.title %}
+      <a class="job-row link-row" href="{{ row_href }}" aria-label="{{ row_label }}">
+        <span>
+          <strong>{{ item.title }}</strong>
+          <small>{{ item.category }} in {{ item.city }}, {{ item.state }}</small>
+        </span>
+        <span class="row-actions">
+          <span class="status {{ item.status }}">{{ item.status }}</span>
+          <span class="row-cue">{{ row_cue }}</span>
+        </span>
+      </a>
+    {% else %}
+      <p class="empty">{% if bid_view == "pending" %}No pending bids.{% elif bid_view == "approved" %}No approved bids.{% elif bid_view == "rejected" %}No rejected bids.{% else %}No mini bids yet. Browse leads to start.{% endif %}</p>
+    {% endfor %}
+  </div>
+</section>
+
 {% set reputation_id_prefix = "dashboard-reputation" %}
 {% include "_contractor_reputation.html" %}
 
@@ -80,44 +118,6 @@
       <div><dt>Insurance</dt><dd>{{ profile.insurance_status or "Not set" }}</dd></div>
   </dl>
   <a class="button secondary compact" href="{{ url_for('contractor_profile') }}">Edit profile</a>
-</section>
-
-<section class="work-history contractor-bid-workspace" aria-labelledby="contractor-bid-status-title">
-  <div class="section-heading history-heading">
-    <div>
-      <p class="eyebrow">Response queue</p>
-      <h2 id="contractor-bid-status-title">Mini bid status</h2>
-    </div>
-    <span class="count-pill">{{ stats.visible_requests }} showing</span>
-  </div>
-    <nav class="work-view-tabs bid-view-tabs" aria-label="Contractor mini bid status">
-      {% for item in bid_view_links %}
-        {% set count = stats.total_requests if item.value == "all" else (stats.pending_requests if item.value == "pending" else (stats.approved_requests if item.value == "approved" else stats.rejected_requests)) %}
-        <a class="work-view-tab{% if bid_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if bid_view == item.value %}aria-current="page"{% endif %}>
-          <span>{{ item.label }}</span>
-          <strong>{{ count }}</strong>
-        </a>
-      {% endfor %}
-    </nav>
-    <div class="job-list compact-list">
-      {% for item in requests %}
-        {% set row_href = url_for('thread_detail', thread_id=item.thread_id) if item.status == 'approved' and item.thread_id else url_for('contractor_job_detail', job_id=item.job_id) %}
-        {% set row_cue = "Message" if item.status == "approved" and item.thread_id else "View" %}
-        {% set row_label = "Message about " ~ item.title if row_cue == "Message" else "View mini bid for " ~ item.title %}
-        <a class="job-row link-row" href="{{ row_href }}" aria-label="{{ row_label }}">
-          <span>
-            <strong>{{ item.title }}</strong>
-            <small>{{ item.category }} in {{ item.city }}, {{ item.state }}</small>
-          </span>
-          <span class="row-actions">
-            <span class="status {{ item.status }}">{{ item.status }}</span>
-            <span class="row-cue">{{ row_cue }}</span>
-          </span>
-        </a>
-      {% else %}
-        <p class="empty">{% if bid_view == "pending" %}No pending bids.{% elif bid_view == "approved" %}No approved bids.{% elif bid_view == "rejected" %}No rejected bids.{% else %}No mini bids yet. Browse leads to start.{% endif %}</p>
-      {% endfor %}
-    </div>
 </section>
 
 <section id="proposal-templates" class="work-history" aria-labelledby="proposal-templates-title">

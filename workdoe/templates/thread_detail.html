@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Message Thread - Workdoe{% endblock %}
 {% block content %}
-<section class="dashboard-header">
+<section class="dashboard-header thread-dashboard-header">
   <div>
     <p class="eyebrow">Private thread</p>
     <h1>{{ thread.title }}</h1>
@@ -19,8 +19,8 @@
   {% endif %}
 </section>
 
-<section class="message-shell">
-  <div class="message-list">
+<section class="message-shell thread-message-shell">
+  <div class="message-list thread-message-list">
     {% for message in messages %}
       <article class="message {% if message.sender_id == g.user.id %}mine{% endif %}{% if message.is_hidden %} is-hidden{% endif %}">
         <div class="message-meta">
@@ -55,7 +55,7 @@
   </div>
   {% if can_reply %}
     {% set message_field_errors = message_error_feedback.fields %}
-    <form class="message-form" method="post" aria-label="New message" {% if message_error_feedback.summary %}aria-describedby="message-form-errors"{% endif %}>
+    <form class="message-form thread-message-form" method="post" aria-label="New message" {% if message_error_feedback.summary %}aria-describedby="message-form-errors"{% endif %}>
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="idempotency_key" value="{{ request.form.get('idempotency_key') or new_idempotency_key() }}">
       {% if message_error_feedback.summary %}
@@ -70,7 +70,7 @@
       {% endif %}
       <label for="message-body">
         New message
-        <textarea id="message-body" name="body" rows="4" maxlength="{{ message_max }}" placeholder="Share timing, access, or next steps." autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required {% if message_field_errors.body %}aria-invalid="true" aria-describedby="message-body-error"{% endif %}>{{ draft_body }}</textarea>
+        <textarea id="message-body" name="body" rows="3" maxlength="{{ message_max }}" placeholder="Share timing, access, or next steps." autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required {% if message_field_errors.body %}aria-invalid="true" aria-describedby="message-body-error"{% endif %}>{{ draft_body }}</textarea>
         {% if message_field_errors.body %}<span id="message-body-error" class="field-error">{{ message_field_errors.body[0] }}</span>{% endif %}
       </label>
       <button class="button full" type="submit" aria-label="Send message">Send</button>

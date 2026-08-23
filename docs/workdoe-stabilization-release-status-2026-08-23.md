@@ -50,11 +50,16 @@ deployment has been performed during this stabilization pass.
   Details views, responsive mobile tabs, URL-preserved selection, retained
   private fit/bid/readiness signals after public map refreshes, and a direct
   bid action without reintroducing the former long-scroll dashboard.
+- Reduced remaining first-viewport friction using existing templates and CSS:
+  public Explore now reaches the map sooner, contractor bids precede profile
+  detail, mobile consumer summaries omit redundant cards, and message threads
+  keep the reply form alongside a bounded conversation list. No new runtime or
+  visual dependency was introduced.
 
 ## Verification evidence
 
-- Full suite: 225 tests passed in 83.321 seconds after the contractor map-first
-  parity and privacy-test work.
+- Full suite: 225 tests passed in 89.840 seconds after the final first-viewport
+  workflow pass.
 - Full Ruff baseline and the ordinary CI quality command passed.
 - Dependency provenance passed locally and against all recorded upstream Python
   source archives on 2026-08-23.
@@ -106,7 +111,7 @@ deployment has been performed during this stabilization pass.
   `docs/ux-audit/2026-08-23-current-journeys/`.
 - The final local security pass found no known Python or Node vulnerabilities,
   no medium/high Bandit issues, no Ruff findings, no unreviewed detected
-  secrets across 434 non-ignored files, and no dependency-provenance drift.
+  secrets across 440 non-ignored files, and no dependency-provenance drift.
   Cloudflare preflight, D1 query-plan verification, and the Wrangler 4.125.0
   48-module/86-asset dry run also passed.
 

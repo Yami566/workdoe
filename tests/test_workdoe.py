@@ -1525,13 +1525,19 @@ class WorkdoeFlowTests(unittest.TestCase):
             detail.data,
         )
         self.assertIn(b'aria-label="Report message from ', detail.data)
-        self.assertIn(b'class="message-form" method="post" aria-label="New message"', detail.data)
+        self.assertIn(
+            b'class="message-form thread-message-form" method="post" aria-label="New message"',
+            detail.data,
+        )
+        self.assertIn(b'class="message-shell thread-message-shell"', detail.data)
+        self.assertIn(b'class="message-list thread-message-list"', detail.data)
         self.assertIn(b'for="message-body"', detail.data)
         self.assertIn(b'id="message-body"', detail.data)
         self.assertIn(b"required", detail.data)
         self.assertIn(b'autocapitalize="sentences"', detail.data)
         self.assertIn(b'spellcheck="true"', detail.data)
         self.assertIn(b'enterkeyhint="send"', detail.data)
+        self.assertIn(b'rows="3"', detail.data)
         self.assertIn(b'aria-label="Send message"', detail.data)
         self.assertIn(b"Share timing, access, or next steps.", detail.data)
 
@@ -2726,6 +2732,14 @@ class WorkdoeFlowTests(unittest.TestCase):
             'class="work-view-tabs bid-view-tabs" aria-label="Contractor mini bid status"',
             contractor_html,
         )
+        self.assertLess(
+            contractor_html.find('class="work-history contractor-bid-workspace"'),
+            contractor_html.find('class="work-progress"'),
+        )
+        self.assertLess(
+            contractor_html.find('class="work-history contractor-bid-workspace"'),
+            contractor_html.find('class="contractor-workspace-context"'),
+        )
         self.assertIn('href="/contractor/dashboard?bids=pending"', contractor_html)
 
         contractor_pending = self.client.get("/contractor/dashboard?bids=pending")
@@ -2756,6 +2770,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('href="/client/dashboard?view=review"', client_html)
         self.assertRegex(client_html, r"<span>Needs review</span>\s*<strong>1</strong>")
         self.assertIn('href="/jobs/new"', client_html)
+        self.assertEqual(client_html.count("metric-card metric-supporting"), 3)
         self.assertIn(f'href="/client/jobs/{job["id"]}?bids=pending#mini-bids"', client_html)
         self.assertIn('class="job-row link-row needs-review"', client_html)
         self.assertIn('aria-label="Review pending bids for Power wash townhouse front steps"', client_html)
@@ -3958,6 +3973,8 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'title="Workdoe home"', home.data)
         self.assertIn(b"brand-home-button", home.data)
         self.assertIn(b"Open projects near you", home.data)
+        self.assertIn(b"Choose work", home.data)
+        self.assertNotIn(b"Pick a role, find the work, make contact.", home.data)
         self.assertIn(b'href="/post-project">Post project</a>', home.data)
         self.assertIn(b'>Find work</a>', home.data)
         self.assertIn(b"Approximate DMV job map", home.data)
@@ -3984,6 +4001,17 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'id="lead-map-loading"', home.data)
         self.assertIn(b'id="lead-map-status" class="sr-only" aria-live="polite"', home.data)
         self.assertIn(b"Map loading. Job list is ready.", home.data)
+
+        styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn(
+            ".home-family-picker .service-family-filter {\n  grid-template-columns: repeat(6, minmax(0, 1fr));",
+            styles,
+        )
+        self.assertIn("grid-auto-columns: 142px;", styles)
+        self.assertIn(".thread-message-shell {", styles)
+        self.assertIn("grid-template-rows: minmax(220px, 1fr) auto;", styles)
+        self.assertIn("overscroll-behavior: contain;", styles)
+        self.assertIn(".dashboard-metrics .metric-supporting {", styles)
 
         selected_lane = self.client.get("/?family=outdoor-yard")
         self.assertEqual(selected_lane.status_code, 200)

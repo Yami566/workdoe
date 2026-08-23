@@ -540,9 +540,10 @@ button.compact {
 .market-entry {
   display: grid;
   grid-template-columns: minmax(0, 1fr) fit-content(360px);
-  align-items: end;
+  align-items: center;
   gap: 18px;
-  padding: 26px 0 14px;
+  margin: 14px 0 10px;
+  padding: 14px 0 8px;
   border-top: 1px solid var(--line);
 }
 
@@ -552,9 +553,9 @@ button.compact {
 
 .market-entry h1 {
   max-width: 760px;
-  font-size: clamp(2.25rem, 5.2vw, 4.35rem);
-  line-height: 0.98;
-  margin: 0 0 12px;
+  font-size: clamp(2rem, 3.6vw, 3.15rem);
+  line-height: 1;
+  margin: 0;
   letter-spacing: 0;
 }
 
@@ -2059,11 +2060,11 @@ button.compact {
 
 .home-family-picker {
   display: grid;
-  gap: 10px;
-  width: min(1040px, 100%);
-  margin: 18px auto 4px;
+  gap: 8px;
+  width: 100%;
+  margin: 6px auto 4px;
   border-block: 1px solid var(--line-soft);
-  padding: 14px 0 6px;
+  padding: 8px 0 5px;
 }
 
 .home-family-picker .compact-heading {
@@ -2073,12 +2074,25 @@ button.compact {
   padding: 0;
 }
 
+.home-family-picker .compact-heading h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
 .home-family-picker .service-family-filter {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   grid-auto-columns: auto;
   grid-auto-flow: row;
   overflow: visible;
   scroll-snap-type: none;
+}
+
+.home-family-picker .service-family-filter-link {
+  min-height: 62px;
+}
+
+.home-family-picker .service-family-filter-copy small {
+  display: none;
 }
 
 .home-family-picker .service-family-filter-link:first-child {
@@ -4107,6 +4121,35 @@ textarea:focus {
   padding-top: 18px;
 }
 
+.thread-message-shell {
+  display: grid;
+  grid-template-rows: minmax(220px, 1fr) auto;
+  height: min(680px, calc(100dvh - 250px));
+  min-height: 440px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.thread-message-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px;
+  overscroll-behavior: contain;
+}
+
+.thread-message-form {
+  z-index: 1;
+  margin: 0;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  padding: 14px 18px 18px;
+  box-shadow: 0 -10px 24px rgba(18, 38, 24, 0.06);
+}
+
+.thread-message-form textarea {
+  min-height: 76px;
+}
+
 .message-report {
   margin-top: 10px;
 }
@@ -4946,6 +4989,10 @@ textarea:focus {
 }
 
 @media (max-width: 900px) {
+  .home-family-picker .service-family-filter {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .map-panel {
     position: static;
   }
@@ -5411,10 +5458,10 @@ textarea:focus {
   }
 
   .home-family-picker .service-family-filter {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-columns: auto;
-    grid-auto-flow: row;
-    overflow: visible;
+    grid-template-columns: none;
+    grid-auto-columns: 142px;
+    grid-auto-flow: column;
+    overflow-x: auto;
     padding-bottom: 4px;
   }
 
@@ -6295,6 +6342,37 @@ textarea:focus {
 }
 
 @media (max-width: 620px) {
+  .dashboard-metrics .metric-supporting {
+    display: none;
+  }
+
+  .thread-dashboard-header {
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .thread-dashboard-header h1 {
+    font-size: 1.75rem;
+  }
+
+  .thread-dashboard-header .button {
+    width: fit-content;
+  }
+
+  .thread-message-shell {
+    height: calc(100dvh - 330px);
+    min-height: 480px;
+    margin-top: 8px;
+  }
+
+  .thread-message-list {
+    padding: 12px;
+  }
+
+  .thread-message-form {
+    padding: 10px 12px 14px;
+  }
+
   .choice-grid,
   .choice-grid.two-column,
   .saved-location-form {

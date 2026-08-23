@@ -107,6 +107,23 @@ performance, identity-provider, or assistive-technology evidence.
   `docs/ux-audit/2026-08-23-current-journeys/`. The final automated suite passed
   225 tests in 83.321 seconds.
 
+## First-viewport workflow follow-up
+
+- Public Explore at 1280x720 keeps all six service families in one compact row
+  and begins the map at 350 pixels. At 390x844, the families become one
+  horizontal task rail and the map begins at 495 pixels. Both pages report zero
+  horizontal document overflow.
+- The mobile contractor dashboard presents the response queue before milestone
+  and profile detail; its first bid begins at 602 pixels. The mobile consumer
+  dashboard shows only Open projects and Pending bids summary cards before its
+  status tabs; its first project begins at 553 pixels.
+- The message thread is a bounded workspace at 390x844 and 1280x720. Its message
+  list scrolls independently while the send form remains visible; no custom
+  JavaScript or new dependency was added for this behavior.
+- Before/after comparisons and accepted captures are `14` through `19` in
+  `docs/ux-audit/2026-08-23-current-journeys/`. The repeated full suite passed
+  225 tests in 89.840 seconds.
+
 ## Live gates not replaced by this check
 
 - A real screen-reader pass with VoiceOver, NVDA, or an equivalent remains

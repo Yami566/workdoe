@@ -52,6 +52,23 @@ reduces long-scroll friction, and avoids inventing another controller.
 5. `13-contractor-lead-detail-mobile-after.jpg` confirms that selecting a row
    moves directly to a bid-ready detail panel, retains the selected `job_id` in
    the URL, and does not display an exact address.
+6. `14-explore-desktop-after.jpg` compresses the public heading and six service
+   families into two compact rows. The live map now begins at 350 pixels in the
+   1280x720 viewport instead of sitting mostly below the first screen.
+7. `15-explore-mobile-after.jpg` uses a horizontal six-family task rail. The map
+   begins at 495 pixels in the 390x844 viewport with zero horizontal page
+   overflow; only the deliberately scrollable task rail overflows its own
+   container.
+8. `16-contractor-dashboard-mobile-after.jpg` moves the response queue ahead of
+   reputation and profile detail. The first actual bid begins at 602 pixels and
+   remains visible above the mobile task navigation.
+9. `17-thread-mobile-after.jpg` and `19-thread-desktop-after.jpg` turn the thread
+   into a bounded conversation workspace: messages scroll internally and the
+   reply composer remains visible at both tested viewport sizes.
+10. `18-consumer-dashboard-mobile-after.jpg` removes three redundant summary
+    metrics on phones while retaining them in the DOM and on wider layouts. The
+    first project now begins at 553 pixels and is actionable in the first
+    viewport.
 
 The implementation reuses the existing Worker workspace, Leaflet controller,
 green/gray tokens, service taxonomy, and Tabler icon set. No new dependency or
