@@ -78,6 +78,12 @@ deployment has been performed during this stabilization pass.
   checksums before migrations. The workflow captures the deployed Worker state
   afterward and retains the non-user-data evidence as a pinned official GitHub
   artifact even when a later release step fails.
+- Updated the generated launch handoff to reuse the already validated,
+  non-secret Clerk proof for its four GitHub workflow confirmations. The actual
+  deploy dispatcher still requires an intentional execute action, while the
+  handoff no longer asks an operator to repeat confirmed configuration work.
+  Launch-status tests now ignore operator-local evidence unless a test supplies
+  it explicitly.
 
 ## Verification evidence
 
@@ -171,18 +177,53 @@ deployment has been performed during this stabilization pass.
   checks also proved that the configured D1 returns a current Time Travel
   bookmark and that the active Worker exposes deployment/version metadata;
   neither command changed production state.
+- After production Clerk configuration and the handoff correction, the full
+  suite passed 226 tests in 79.798 seconds. `npm audit` and `pip-audit` found no
+  known vulnerabilities; Bandit reported no medium/high findings; full Ruff,
+  the secret gate across 463 non-ignored files, and dependency provenance all
+  passed.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.
+
+## Production configuration completed during release preparation
+
+- Created the Workdoe Clerk production instance and replaced the Worker's
+  development Clerk configuration with one coherent production key set. The
+  initially exposed setup key was rotated, replaced in Cloudflare, and revoked
+  in Clerk before continuing.
+- Configured Clerk for Invite-only (`restricted`) beta access, email-code
+  verification and sign-in, disabled password sign-up and password attachment,
+  and required express consent to `https://workdoe.com/terms` and
+  `https://workdoe.com/privacy`.
+- Pointed Clerk sign-in, sign-up, unauthorized-sign-in, and sign-out behavior to
+  Workdoe routes, including `https://workdoe.com/create-account`, and disabled
+  the hosted Account Portal so authentication stays on Workdoe.
+- Clerk Domains verified the Frontend API proxy at
+  `https://workdoe.com/__clerk`. The Worker's production JWT verification key
+  now matches that instance.
+- Created `https://workdoe.com/clerk/webhook` for `user.created`,
+  `user.updated`, and `user.deleted`; installed its signing secret in the
+  Worker; and retained the existing linked-user-only synchronization boundary.
+- Wrangler confirmed all seven required Worker secret names. The ignored,
+  value-free Clerk proof and secret-name evidence pass the release evidence
+  check; the deployment plan reports no strict blockers; and the live launch
+  doctor reports all pre-deployment phases ready.
+- Clerk still reports its three email DNS records as unverified:
+  `clkmail.workdoe.com`, `clk._domainkey.workdoe.com`, and
+  `clk2._domainkey.workdoe.com`. Cloudflare authorization and a real Workdoe
+  email-code journey remain required before public invitations.
 
 ## Remaining production gates
 
 1. Record owner/legal approval of the advisory-only service model, legal
    operator identity, policy copy, retention/deletion rules, and monitored
    support/privacy/security ownership.
-2. Prove the Clerk production instance, same-domain proxy, restricted sign-up,
-   email-code-only authentication, disabled passwords, express legal consent,
-   webhook secret, and real code delivery.
+2. Authorize Clerk's three email DNS records in Cloudflare, wait for Clerk to
+   verify them, and prove real email-code delivery through Workdoe. Production
+   instance, same-domain proxy, restricted access, email-code-only settings,
+   disabled passwords, express legal consent, JWT verification, and webhook
+   configuration are already evidenced above.
 3. Repeat dependency, secret, Bandit, migration, query-plan, and Worker checks
    on the final commit; complete live private-media, queue/email, rate-limit,
    accessibility, and agreed Core Web Vitals checks. Local asset/header evidence

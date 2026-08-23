@@ -8291,7 +8291,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 ],
             }
             module.build_doctor = lambda repo_root=ROOT, live=True, local_url=module.DEFAULT_LOCAL_URL: doctor_payload
-            module.build_dispatch_plan = lambda repo_root=ROOT, local_url=module.DEFAULT_LOCAL_URL: dispatch_payload
+            module.build_dispatch_plan = lambda repo_root=ROOT, local_url=module.DEFAULT_LOCAL_URL, **kwargs: dispatch_payload
             payload = module.build_handoff_payload(ROOT)
             markdown = module.render_markdown(payload)
             shareable_payload = module.build_handoff_payload(ROOT, shareable=True)
@@ -8374,6 +8374,71 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertNotIn(str(ROOT), str(shareable_payload))
         self.assertNotIn(str(ROOT), shareable_markdown)
         self.assertIn("This handoff is generated from local and live release gates", shareable_markdown)
+
+    def test_workdoe_launch_handoff_reuses_valid_clerk_proof_confirmations(self):
+        module = load_workdoe_launch_handoff_script()
+        original_doctor = module.build_doctor
+        original_dispatch = module.build_dispatch_plan
+        original_proof_error = module.clerk_proxy_proof_error
+        captured_confirmations = {}
+        try:
+            module.build_doctor = lambda *args, **kwargs: {
+                "ready": True,
+                "blockers": [],
+                "next_actions": [],
+                "phases": [],
+            }
+
+            def fake_dispatch(*args, **kwargs):
+                captured_confirmations.update(
+                    {
+                        key: kwargs[key]
+                        for key in (
+                            "clerk_proxy_confirmed",
+                            "restricted_signup_confirmed",
+                            "email_code_only_confirmed",
+                            "legal_consent_confirmed",
+                        )
+                    }
+                )
+                return {
+                    "ready_to_dispatch": True,
+                    "repository": "Yami566/workdoe",
+                    "workflow": "cloudflare-deploy.yml",
+                    "ref": "main",
+                    "command_text": "gh workflow run cloudflare-deploy.yml",
+                    "git": {
+                        "branch": "main",
+                        "clean": True,
+                        "synced_with_upstream": True,
+                    },
+                    "blockers": [],
+                }
+
+            module.build_dispatch_plan = fake_dispatch
+            module.clerk_proxy_proof_error = lambda path: ""
+            payload = module.build_handoff_payload(
+                ROOT,
+                clerk_proxy_proof_json=ROOT / "clerk-proxy-proof.local.json",
+            )
+        finally:
+            module.build_doctor = original_doctor
+            module.build_dispatch_plan = original_dispatch
+            module.clerk_proxy_proof_error = original_proof_error
+
+        self.assertEqual(
+            captured_confirmations,
+            {
+                "clerk_proxy_confirmed": True,
+                "restricted_signup_confirmed": True,
+                "email_code_only_confirmed": True,
+                "legal_consent_confirmed": True,
+            },
+        )
+        self.assertEqual(
+            payload["dispatch"]["operator_confirmations"],
+            captured_confirmations,
+        )
 
     def test_workdoe_launch_handoff_write_uses_private_or_shareable_default_output(self):
         module = load_workdoe_launch_handoff_script()
@@ -9157,7 +9222,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             module.wrangler_available = lambda repo_root=ROOT: True
             module.resolved_wrangler_bin = lambda repo_root=ROOT: "wrangler"
             module.cloudflare_api_token_present = lambda: False
-            status = module.build_launch_status(ROOT)
+            status = module.build_launch_status(
+                ROOT,
+                secret_list_json=None,
+                clerk_proxy_proof_json=None,
+            )
         finally:
             module.wrangler_available = original_wrangler_available
             module.resolved_wrangler_bin = original_resolved_wrangler_bin
