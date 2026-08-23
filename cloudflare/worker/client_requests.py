@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from urllib.parse import urlencode
 
+from bid_comparison import bid_comparison
+from job_posts import bid_window
+from match_completions import completion_label, completion_state
+
 
 CLIENT_REQUEST_VIEWS = {"all", "pending", "approved", "rejected"}
 DEFAULT_CLIENT_REQUEST_VIEW = "all"
@@ -61,7 +65,7 @@ def client_request_card(row) -> dict:
     status = row_value(row, "status", "") or ""
     contractor_id = row_value(row, "contractor_id")
     thread_link = thread_url(row)
-    return {
+    card = {
         "id": row_value(row, "id"),
         "job_id": row_value(row, "job_id"),
         "contractor_id": contractor_id,
@@ -82,11 +86,17 @@ def client_request_card(row) -> dict:
         "thread_id": row_value(row, "thread_id"),
         "thread_url": thread_link,
         "profile_url": f"/contractors/{contractor_id}",
+        "client_confirmed_at": row_value(row, "client_confirmed_at", "") or "",
+        "contractor_confirmed_at": row_value(row, "contractor_confirmed_at", "") or "",
+        "verified_at": row_value(row, "verified_at", "") or "",
         "can_approve": status == "pending",
         "can_reject": status == "pending",
         "needs_review": status == "pending",
         "row_cue": "Message" if status == "approved" and thread_link else "Review",
     }
+    card["completion_state"] = completion_state(card)
+    card["completion_label"] = completion_label(card, "client")
+    return card
 
 
 def filter_client_request_cards(cards: list[dict], view: str) -> list[dict]:
@@ -103,6 +113,7 @@ def client_request_stats(all_requests: list[dict], visible_requests: list[dict])
         "pending": sum(1 for request in all_requests if request["status"] == "pending"),
         "approved": sum(1 for request in all_requests if request["status"] == "approved"),
         "rejected": sum(1 for request in all_requests if request["status"] == "rejected"),
+        "verified": sum(1 for request in all_requests if request["verified_at"]),
     }
 
 
@@ -132,6 +143,7 @@ def client_job_requests_payload(job, rows: list, view: str) -> dict:
     normalized_view = normalize_client_request_view(view)
     all_requests = [client_request_card(row) for row in rows]
     visible_requests = filter_client_request_cards(all_requests, normalized_view)
+    bidding = bid_window(job, len(all_requests))
     return {
         "ok": True,
         "view": normalized_view,
@@ -139,9 +151,11 @@ def client_job_requests_payload(job, rows: list, view: str) -> dict:
             "id": job_id,
             "title": row_value(job, "title", "") or "",
             "status": row_value(job, "status", "") or "",
+            "bid_window": bidding,
             "url": f"/client/jobs/{job_id}",
         },
         "requests": visible_requests,
+        "comparison": bid_comparison(rows, normalized_view),
         "stats": client_request_stats(all_requests, visible_requests),
         "view_links": client_request_view_links(job_id),
     }

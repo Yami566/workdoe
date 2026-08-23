@@ -5,6 +5,7 @@
     "post-job": "client",
     "find-work": "contractor"
   };
+  var PROFILE_STATE_MAX_AGE_MS = 30 * 60 * 1000;
 
   function selectedIntent(scope) {
     var selected = scope.querySelector('input[name="intent"]:checked');
@@ -37,12 +38,116 @@
     return "";
   }
 
+  function clerkUserDisplayName() {
+    var user = window.Clerk && window.Clerk.user;
+    if (!user) {
+      return "";
+    }
+    var name = String(user.fullName || user.firstName || "").trim();
+    if (name) {
+      return name.slice(0, 120);
+    }
+    var email = clerkUserEmail();
+    return email ? email.split("@", 1)[0].slice(0, 120) : "";
+  }
+
+  function entryScope(node) {
+    return node.closest(".clerk-entry-panel") || document;
+  }
+
   function setMessage(node, text) {
-    var scope = node.closest(".clerk-entry-panel") || document;
-    var message = scope.querySelector("[data-clerk-onboarding-message]");
+    var message = entryScope(node).querySelector("[data-clerk-onboarding-message]");
     if (message) {
       message.textContent = text || "";
     }
+  }
+
+  function profileStateKey() {
+    return "workdoe-clerk-profile-v1:" + window.location.pathname;
+  }
+
+  function readProfileState() {
+    try {
+      var value = window.sessionStorage.getItem(profileStateKey());
+      if (!value) {
+        return null;
+      }
+      var state = JSON.parse(value);
+      if (!state || Date.now() - Number(state.savedAt || 0) > PROFILE_STATE_MAX_AGE_MS) {
+        window.sessionStorage.removeItem(profileStateKey());
+        return null;
+      }
+      return state;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function writeProfileState(node) {
+    if (node.dataset.clerkMode !== "start") {
+      return;
+    }
+    var scope = entryScope(node);
+    var state = {
+      intent: selectedIntent(scope),
+      displayName: inputValue(scope, "[data-clerk-display-name]").slice(0, 120),
+      companyName: inputValue(scope, "[data-clerk-company-name]").slice(0, 120),
+      savedAt: Date.now()
+    };
+    try {
+      window.sessionStorage.setItem(profileStateKey(), JSON.stringify(state));
+    } catch (error) {
+      return;
+    }
+  }
+
+  function restoreProfileState(node) {
+    if (node.dataset.clerkMode !== "start") {
+      return;
+    }
+    var state = readProfileState();
+    if (!state) {
+      return;
+    }
+    var scope = entryScope(node);
+    var roleChoice = scope.querySelector('input[name="intent"][value="' + state.intent + '"]');
+    var displayName = scope.querySelector("[data-clerk-display-name]");
+    var companyName = scope.querySelector("[data-clerk-company-name]");
+    if (roleChoice) {
+      roleChoice.checked = true;
+    }
+    if (displayName && !displayName.value) {
+      displayName.value = String(state.displayName || "").slice(0, 120);
+    }
+    if (companyName && !companyName.value) {
+      companyName.value = String(state.companyName || "").slice(0, 120);
+    }
+  }
+
+  function clearProfileState() {
+    try {
+      window.sessionStorage.removeItem(profileStateKey());
+    } catch (error) {
+      return;
+    }
+  }
+
+  function bindProfileState(node) {
+    if (node.dataset.clerkMode !== "start") {
+      return;
+    }
+    var scope = entryScope(node);
+    restoreProfileState(node);
+    scope.addEventListener("input", function (event) {
+      if (event.target.matches('[name="intent"], [data-clerk-display-name], [data-clerk-company-name]')) {
+        writeProfileState(node);
+      }
+    });
+    scope.addEventListener("change", function (event) {
+      if (event.target.matches('[name="intent"]')) {
+        writeProfileState(node);
+      }
+    });
   }
 
   function destinationForStart(node, role) {
@@ -77,17 +182,20 @@
       return true;
     }
     node.dataset.clerkOnboarding = "running";
-    var scope = node.closest(".clerk-entry-panel") || document;
+    restoreProfileState(node);
+    var scope = entryScope(node);
     var role = selectedRole(scope);
 
     try {
       setMessage(node, "Checking Workdoe access...");
       var session = await fetchJson(node.dataset.sessionUrl || "/api/auth/session");
       if (session.workdoe_user) {
+        clearProfileState();
         window.location.assign(destinationForStart(node, session.workdoe_user.role || role));
         return true;
       }
       if (!session.onboarding_required) {
+        clearProfileState();
         window.location.assign(node.dataset.dashboardUrl || "/dashboard");
         return true;
       }
@@ -95,7 +203,7 @@
       setMessage(node, "Creating your Workdoe workspace...");
       var onboardPayload = {
         role: role,
-        display_name: inputValue(scope, "[data-clerk-display-name]"),
+        display_name: inputValue(scope, "[data-clerk-display-name]") || clerkUserDisplayName(),
         company_name: inputValue(scope, "[data-clerk-company-name]")
       };
       var email = clerkUserEmail();
@@ -106,11 +214,13 @@
         method: "POST",
         headers: {
           "Accept": "application/json",
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "X-Workdoe-Request": "same-origin"
         },
         body: JSON.stringify(onboardPayload)
       });
       var createdRole = onboard.workdoe_user ? onboard.workdoe_user.role : role;
+      clearProfileState();
       window.location.assign(destinationForStart(node, createdRole));
       return true;
     } catch (error) {
@@ -138,7 +248,7 @@
         return true;
       }
       if (session.onboarding_required) {
-        window.location.assign(node.dataset.signUpUrl || "/start");
+        window.location.assign(node.dataset.signUpUrl || "/create-account");
         return true;
       }
       window.location.assign(node.dataset.dashboardUrl || "/dashboard");
@@ -150,199 +260,63 @@
     }
   }
 
-  function formValue(form, name) {
-    var field = form.elements.namedItem(name);
-    return field && typeof field.value === "string" ? field.value.trim() : "";
-  }
-
-  function setBusy(form, busy) {
-    form.querySelectorAll("button, input").forEach(function (control) {
-      control.disabled = busy;
-    });
-    form.setAttribute("aria-busy", busy ? "true" : "false");
-  }
-
-  function clerkErrorCode(error) {
-    var first = error && error.errors && error.errors[0];
-    return first && first.code ? String(first.code) : "";
-  }
-
-  function clerkErrorMessage(error) {
-    var first = error && error.errors && error.errors[0];
-    if (first && (first.longMessage || first.message)) {
-      return String(first.longMessage || first.message);
-    }
-    return error && error.message
-      ? String(error.message)
-      : "Workdoe could not complete email sign-in.";
-  }
-
-  function emailCodeFactor(factors) {
-    var available = factors || [];
-    for (var index = 0; index < available.length; index += 1) {
-      if (available[index] && available[index].strategy === "email_code") {
-        return available[index];
-      }
-    }
-    return null;
-  }
-
-  function needsSignUpField(attempt, fieldName) {
-    return !!(
-      attempt &&
-      attempt.missingFields &&
-      attempt.missingFields.indexOf(fieldName) !== -1
-    );
-  }
-
-  function secureTemporaryPassword() {
-    if (!window.crypto || typeof window.crypto.getRandomValues !== "function") {
-      throw new Error("Secure email sign-in is unavailable in this browser.");
-    }
-    var alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-    var randomBytes = new Uint8Array(32);
-    window.crypto.getRandomValues(randomBytes);
-    var value = "Wd9!";
-    for (var index = 0; index < randomBytes.length; index += 1) {
-      value += alphabet.charAt(randomBytes[index] % alphabet.length);
-    }
-    return value;
-  }
-
-  function showCodeStep(node, email) {
-    var form = node.querySelector("[data-clerk-email-code-form]");
-    var requestStep = form.querySelector("[data-clerk-request-step]");
-    var codeStep = form.querySelector("[data-clerk-code-step]");
-    requestStep.hidden = true;
-    codeStep.hidden = false;
-    var codeInput = form.elements.namedItem("code");
-    if (codeInput) {
-      codeInput.required = true;
-      codeInput.focus();
-    }
-    setMessage(node, "Code sent to " + email + ". Check your inbox.");
-  }
-
-  async function requestEmailCode(node) {
-    var form = node.querySelector("[data-clerk-email-code-form]");
-    var email = formValue(form, "email").toLowerCase();
-    setMessage(node, "Sending your one-time code...");
-
-    try {
-      var signInAttempt = await window.Clerk.client.signIn.create({
-        identifier: email
-      });
-      var factor = emailCodeFactor(signInAttempt.supportedFirstFactors);
-      if (!factor) {
-        throw new Error("Email code sign-in is not available for this account.");
-      }
-      await window.Clerk.client.signIn.prepareFirstFactor({
-        strategy: "email_code",
-        emailAddressId: factor.emailAddressId
-      });
-      node.dataset.clerkFlow = "signin";
-      showCodeStep(node, email);
-      return;
-    } catch (error) {
-      if (clerkErrorCode(error) !== "form_identifier_not_found") {
-        throw error;
-      }
-    }
-
-    var signUpAttempt = await window.Clerk.client.signUp.create({
-      emailAddress: email
-    });
-    if (needsSignUpField(signUpAttempt, "password")) {
-      await window.Clerk.client.signUp.update({
-        password: secureTemporaryPassword()
-      });
-    }
-    await window.Clerk.client.signUp.prepareEmailAddressVerification({
-      strategy: "email_code"
-    });
-    node.dataset.clerkFlow = "signup";
-    showCodeStep(node, email);
-  }
-
-  async function finishClerkAttempt(node, attempt) {
-    if (!attempt || attempt.status !== "complete" || !attempt.createdSessionId) {
-      window.console.error("Clerk email verification is incomplete.", {
-        status: attempt && attempt.status,
-        missingFields: attempt && attempt.missingFields,
-        unverifiedFields: attempt && attempt.unverifiedFields
-      });
-      throw new Error("Email verification needs another step. Please restart and try again.");
-    }
-    setMessage(node, "Email verified. Opening your workspace...");
-    await window.Clerk.setActive({ session: attempt.createdSessionId });
-    if (node.dataset.clerkMode === "start") {
-      await finishStartOnboarding(node);
-    } else {
-      await finishSignIn(node);
-    }
-  }
-
-  async function verifyEmailCode(node) {
-    var form = node.querySelector("[data-clerk-email-code-form]");
-    var code = formValue(form, "code");
-    setMessage(node, "Verifying your code...");
-    var attempt;
-    if (node.dataset.clerkFlow === "signup") {
-      attempt = await window.Clerk.client.signUp.attemptEmailAddressVerification({
-        code: code
-      });
-    } else {
-      attempt = await window.Clerk.client.signIn.attemptFirstFactor({
-        strategy: "email_code",
-        code: code
-      });
-    }
-    await finishClerkAttempt(node, attempt);
-  }
-
-  function bindEmailCodeForm(node) {
-    var form = node.querySelector("[data-clerk-email-code-form]");
-    if (!form) {
-      throw new Error("Email sign-in form is unavailable.");
-    }
-    form.addEventListener("submit", function (event) {
-      event.preventDefault();
-      setBusy(form, true);
-      var operation = node.dataset.clerkFlow
-        ? verifyEmailCode(node)
-        : requestEmailCode(node);
-      operation.catch(function (error) {
-        setMessage(node, clerkErrorMessage(error));
-      }).finally(function () {
-        setBusy(form, false);
-      });
-    });
-
-    var restart = form.querySelector("[data-clerk-restart-code]");
-    if (restart) {
-      restart.addEventListener("click", function () {
-        window.location.reload();
-      });
-    }
-
-    setBusy(form, false);
-  }
-
   function clerkLoadOptions(node) {
-    var options = {};
+    var options = {
+      telemetry: false,
+      ui: { ClerkUI: window.__internal_ClerkUICtor },
+      appearance: {
+        options: {
+          elevation: "flush",
+          logoLinkUrl: "/"
+        },
+        variables: {
+          colorPrimary: "#1b2b22",
+          colorPrimaryForeground: "#ffffff",
+          colorForeground: "#111512",
+          colorMutedForeground: "#536057",
+          colorBackground: "#ffffff",
+          colorInput: "#ffffff",
+          colorInputForeground: "#111512",
+          colorBorder: "#c7d0c8",
+          colorRing: "#1b2b22",
+          borderRadius: "6px",
+          fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
+        }
+      }
+    };
     if (node.dataset.clerkProxyUrl) {
       options.proxyUrl = node.dataset.clerkProxyUrl;
     }
     return options;
   }
 
+  function clerkReturnUrl() {
+    return window.location.pathname + window.location.search;
+  }
+
+  function mountClerkSignIn(node) {
+    if (typeof window.Clerk.mountSignIn !== "function") {
+      throw new Error("Clerk sign-in is temporarily unavailable.");
+    }
+    var returnUrl = clerkReturnUrl();
+    window.Clerk.mountSignIn(node, {
+      routing: "hash",
+      withSignUp: true,
+      forceRedirectUrl: returnUrl,
+      signUpForceRedirectUrl: returnUrl
+    });
+    node.dataset.state = "ready";
+    setMessage(node, "");
+  }
+
   async function loadClerk(node) {
-    if (!window.Clerk || typeof window.Clerk.load !== "function") {
+    if (!window.Clerk || typeof window.Clerk.load !== "function" || !window.__internal_ClerkUICtor) {
       node.dataset.state = "unavailable";
-      setMessage(node, "Clerk sign-in is not available yet.");
+      setMessage(node, "Secure email sign-in is not available yet.");
       return;
     }
 
+    bindProfileState(node);
     await window.Clerk.load(clerkLoadOptions(node));
 
     if (window.Clerk.isSignedIn) {
@@ -354,31 +328,15 @@
       return;
     }
 
-    bindEmailCodeForm(node);
-    node.dataset.state = "ready";
-    setMessage(node, "");
-
-    if (typeof window.Clerk.addListener === "function") {
-      window.Clerk.addListener(function () {
-        if (!window.Clerk.isSignedIn) {
-          return;
-        }
-        if (node.dataset.clerkMode === "start") {
-          finishStartOnboarding(node);
-        } else {
-          finishSignIn(node);
-        }
-      });
-    }
+    mountClerkSignIn(node);
   }
 
   function boot() {
-    var mounts = document.querySelectorAll("[data-clerk-entry]");
-    mounts.forEach(function (node) {
+    document.querySelectorAll("[data-clerk-entry]").forEach(function (node) {
       loadClerk(node).catch(function (error) {
-        window.console.error("Clerk email-code initialization failed.", error);
+        window.console.error("Clerk sign-in initialization failed.", error);
         node.dataset.state = "failed";
-        setMessage(node, "Clerk sign-in could not load.");
+        setMessage(node, "Secure email sign-in could not load.");
       });
     });
   }

@@ -1,0 +1,18 @@
+<section class="brief-readiness" aria-label="Project brief readiness">
+  <div class="brief-readiness-heading">
+    <div>
+      <p class="eyebrow">Brief readiness</p>
+      <h3>{{ brief_readiness.label }}</h3>
+    </div>
+    <span class="brief-readiness-state {{ brief_readiness.state }}">{{ "Ready to quote" if brief_readiness.state == "ready" else ("Useful start" if brief_readiness.state == "building" else "Needs detail") }}</span>
+  </div>
+  <ol class="brief-signal-list">
+    {% for signal in brief_readiness.signals %}
+      <li class="{{ 'complete' if signal.complete else 'pending' }}">
+        <span class="brief-signal-number">{{ "%02d"|format(loop.index) }}</span>
+        <span>{{ signal.label }}</span>
+        <small>{{ "Included" if signal.complete else "Missing" }}</small>
+      </li>
+    {% endfor %}
+  </ol>
+</section>

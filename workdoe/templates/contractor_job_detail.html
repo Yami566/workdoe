@@ -5,7 +5,7 @@
   <div>
     <p class="eyebrow">Contractor lead</p>
     <h1>{{ job.title }}</h1>
-    <p>{{ job.category }} in {{ job.city }}, {{ job.state }} {{ job.zip_code[:3] }}xx</p>
+    <p>{{ job.service_slug|service_name(job.category) }} in {{ job.city }}, {{ job.state }} {{ job.zip_code[:3] }}xx</p>
   </div>
   <span class="status {{ job.status }}">{{ job.status }}</span>
 </section>
@@ -15,22 +15,51 @@
     {% if existing_request %}
       <a class="button secondary" href="{{ url_for('leads') }}">Back to leads</a>
       <a class="button" href="#mini-bid">View bid status</a>
-    {% else %}
+    {% elif bid_window.accepting %}
       <a class="button" href="#mini-bid">Send mini bid</a>
       <a class="button secondary" href="#job-details">Review details</a>
+    {% else %}
+      <a class="button secondary" href="#mini-bid">View bid status</a>
+      <a class="button secondary" href="#job-details">Review details</a>
     {% endif %}
-  </nav>
+</nav>
 {% endif %}
+
+<section class="bid-window bid-window-{{ bid_window.state }}" aria-label="Bid availability">
+  <div>
+    <span class="bid-window-kicker">Fair bid window</span>
+    <strong>{{ bid_window.availability_label }}</strong>
+  </div>
+  <div class="bid-window-status">
+    <span>{{ bid_window.usage_label }}</span>
+    <span>{% if bid_window.is_expired %}Closed{% else %}Closes{% endif %} {{ bid_window.deadline_label }}</span>
+  </div>
+  <progress value="{{ bid_window.used }}" max="{{ bid_window.limit }}">{{ bid_window.usage_label }}</progress>
+</section>
 
 <section class="detail-grid">
   <article id="job-details" class="panel job-detail-panel" tabindex="-1">
     <h2>Job details</h2>
     <dl class="job-facts">
-      <div><dt>Trade</dt><dd>{{ job.category }}</dd></div>
+      <div><dt>Service</dt><dd>{{ job.service_slug|service_name(job.category) }}</dd></div>
+      <div><dt>Setting</dt><dd>{{ job.project_setting|project_setting_label }}</dd></div>
       <div><dt>Area</dt><dd>{{ job.city }}, {{ job.state }} {{ job.zip_code[:3] }}xx</dd></div>
       <div><dt>Target</dt><dd>{{ job.desired_date|date_label if job.desired_date else "Flexible" }}</dd></div>
+      <div><dt>Budget</dt><dd>{{ job|budget_label }}</dd></div>
       <div><dt>Photos</dt><dd>{{ photos|length }}</dd></div>
     </dl>
+    {% include "_brief_readiness.html" %}
+    {% if scope_answers %}
+      <section class="quote-ready-details" aria-labelledby="quote-ready-details-title">
+        <div class="section-heading compact-heading">
+          <p class="eyebrow">Project signals</p>
+          <h3 id="quote-ready-details-title">Quote-ready details</h3>
+        </div>
+        <dl class="scope-answer-list">
+          {% for answer in scope_answers %}<div><dt>{{ answer.question_label }}</dt><dd>{{ answer.answer_label }}</dd></div>{% endfor %}
+        </dl>
+      </section>
+    {% endif %}
     <p class="preline">{{ job.description }}</p>
     <p class="help-text">Approximate location only. Workdoe does not reveal exact addresses in the lead board.</p>
     <div class="photo-grid">
@@ -44,12 +73,20 @@
   </article>
 
   <aside id="mini-bid" class="panel bid-panel" tabindex="-1">
+    {% if repeat_invitation %}
+      <div class="repeat-invitation-note">
+        <span class="eyebrow">Invited back</span>
+        <strong>Prior Workdoe work was verified</strong>
+        <p>This is a new project and needs a fresh mini bid. You keep full control over scope, price, timing, and whether to respond.</p>
+      </div>
+    {% endif %}
     {% if g.user.role == 'admin' %}
       <h2>Admin review</h2>
       <a class="button secondary full" href="{{ url_for('admin_dashboard') }}">Back to admin</a>
     {% elif existing_request %}
       <h2>Mini bid sent</h2>
       <p>Your request is currently <strong>{{ existing_request.status }}</strong>.</p>
+      {% if job.status == 'closed' and job.close_reason %}<p class="outcome-chip">{{ job.close_reason|project_close_reason_label }}</p>{% endif %}
       <dl class="profile-facts compact-facts">
         <div><dt>Price</dt><dd>{{ existing_request.price_range }}</dd></div>
         <div><dt>Timeline</dt><dd>{{ existing_request.timeline }}</dd></div>
@@ -57,8 +94,59 @@
       </dl>
       <p class="preline">{{ existing_request.scope_note }}</p>
       <a class="button secondary full" href="{{ url_for('leads') }}">Back to leads</a>
-    {% elif g.user.role == 'contractor' %}
+      {% if proposal_templates|length < proposal_template_limit %}
+        <details id="save-proposal-template" class="quality-feedback">
+          <summary>Save as proposal template</summary>
+          <form class="stack-form" method="post" action="{{ url_for('add_contractor_proposal_template') }}">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="source_match_request_id" value="{{ existing_request.id }}">
+            <label for="proposal-template-name">Template name
+              <input id="proposal-template-name" name="name" maxlength="{{ proposal_template_name_max }}" autocomplete="off" placeholder="Exterior wash response" required>
+            </label>
+            <button class="button secondary compact" type="submit">Save template</button>
+            <p class="help-text">Scope, timeline, experience, questions, and availability are copied. Price is never reused.</p>
+          </form>
+        </details>
+      {% endif %}
+      <details id="lead-quality" class="quality-feedback" {% if lead_feedback %}open{% endif %}>
+        <summary>Lead quality feedback</summary>
+        <form class="stack-form" method="post" action="{{ url_for('submit_job_quality_feedback', job_id=job.id) }}">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          <label for="lead-quality-reason">Issue
+            <select id="lead-quality-reason" name="reason_code" required>
+              <option value="">Choose an issue</option>
+              {% for option in lead_quality_reasons %}
+                <option value="{{ option.value }}"{% if lead_feedback and lead_feedback.reason_code == option.value %} selected{% endif %}>{{ option.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label for="lead-quality-note">Private note (optional)
+            <textarea id="lead-quality-note" name="note" rows="2" maxlength="{{ outcome_note_max }}" placeholder="Concise operational detail">{{ lead_feedback.note if lead_feedback else '' }}</textarea>
+          </label>
+          <button class="button secondary compact" type="submit">Save feedback</button>
+          <p class="help-text">This improves matching operations. Use the report form below for safety or policy concerns.</p>
+        </form>
+      </details>
+    {% elif g.user.role == 'contractor' and bid_window.accepting %}
       <h2>Send mini bid</h2>
+      {% if proposal_templates %}
+        <section class="proposal-template-picker" aria-labelledby="proposal-template-picker-title">
+          <strong id="proposal-template-picker-title">Start from a saved proposal</strong>
+          <div class="saved-location-shortcuts">
+            {% for template in proposal_templates %}
+              <a class="button secondary compact" href="{{ url_for('contractor_job_detail', job_id=job.id, proposal_template=template.id) }}#mini-bid">{{ template.name }}</a>
+            {% endfor %}
+          </div>
+          <p class="help-text">Reusable wording only. Enter a fresh price for this project.</p>
+        </section>
+      {% endif %}
+      {% if selected_proposal_template %}
+        <div class="repeat-invitation-note proposal-template-applied">
+          <span class="eyebrow">Template applied</span>
+          <strong>{{ selected_proposal_template.name }}</strong>
+          <p>Review every field and add a project-specific price before sending.</p>
+        </div>
+      {% endif %}
       {% set bid_field_errors = bid_error_feedback.fields %}
       <form class="stack-form bid-form" method="post" action="{{ url_for('request_match', job_id=job.id) }}" aria-label="Send mini bid" {% if bid_error_feedback.summary %}aria-describedby="bid-form-errors"{% endif %}>
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
@@ -80,7 +168,7 @@
         <div class="bid-quick-grid">
           <label for="bid-price-range">
             Price range
-            <input id="bid-price-range" name="price_range" value="{{ bid_form.price_range }}" maxlength="{{ bid_limits.price_max }}" inputmode="text" placeholder="$450-$650" list="bid-price-options" enterkeyhint="next" required {% if bid_field_errors.price_range %}aria-invalid="true" aria-describedby="bid-price-range-error"{% endif %}>
+            <input id="bid-price-range" name="price_range" value="{{ bid_form.price_range }}" maxlength="{{ bid_limits.price_max }}" inputmode="text" placeholder="{% if selected_proposal_template %}Add a fresh estimate{% else %}$450-$650{% endif %}" list="bid-price-options" enterkeyhint="next" required {% if bid_field_errors.price_range %}aria-invalid="true" aria-describedby="bid-price-range-error"{% endif %}>
             {% if bid_field_errors.price_range %}<span id="bid-price-range-error" class="field-error">{{ bid_field_errors.price_range[0] }}</span>{% endif %}
           </label>
           <label for="bid-timeline">
@@ -123,10 +211,15 @@
         {% with action='match-request' %}{% include "_turnstile.html" %}{% endwith %}
         <button class="button full" type="submit" aria-label="Send mini bid">Send bid</button>
       </form>
+    {% elif g.user.role == 'contractor' %}
+      <h2>{{ bid_window.availability_label }}</h2>
+      <p class="help-text">This project is not accepting another mini bid. No contractor can pay to move ahead of the queue.</p>
+      <a class="button secondary full" href="{{ url_for('leads') }}">Back to leads</a>
     {% endif %}
     {% if g.user.role != 'admin' %}
       <form class="report-form" method="post" action="{{ url_for('report_content') }}">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="idempotency_key" value="{{ new_idempotency_key() }}">
         <input type="hidden" name="target_type" value="job">
         <input type="hidden" name="target_id" value="{{ job.id }}">
         <label for="lead-report-reason">

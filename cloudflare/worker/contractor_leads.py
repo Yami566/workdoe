@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from urllib.parse import urlencode
 
+from job_posts import bid_window, budget_label
+from market_fit import annotate_job_fits
+from project_readiness import project_brief_readiness
+from service_taxonomy import GROUP_BY_SLUG, SERVICE_BY_SLUG
+
 
 FILTER_QUERY_MAX_LENGTH = 80
 DEFAULT_JOB_SORT = "newest"
@@ -69,8 +74,21 @@ def contractor_lead_filters_from_query(params: dict) -> dict[str, str]:
     category = first_query_value(params, "category")
     if category not in JOB_CATEGORIES:
         category = ""
+    family = compact_spaces(first_query_value(params, "family"))
+    if family not in GROUP_BY_SLUG:
+        family = ""
+    service = compact_spaces(first_query_value(params, "service"))
+    service_record = SERVICE_BY_SLUG.get(service)
+    if not service_record:
+        service = ""
+    elif family and service_record["group_slug"] != family:
+        service = ""
+    elif not family:
+        family = service_record["group_slug"]
     return {
         "category": category,
+        "family": family,
+        "service": service,
         "q": compact_spaces(first_query_value(params, "q"))[:FILTER_QUERY_MAX_LENGTH],
         "sort": normalize_contractor_lead_sort(first_query_value(params, "sort")),
     }
@@ -111,43 +129,56 @@ def has_map_coordinates(row) -> bool:
 def contractor_lead_card(row) -> dict:
     job_id = row_value(row, "id")
     status = request_status(row)
+    bidding = bid_window(row)
     return {
         "id": job_id,
         "title": row_value(row, "title", "") or "",
         "category": row_value(row, "category", "") or "",
+        "service_group_slug": row_value(row, "service_group_slug", "") or "",
+        "service_slug": row_value(row, "service_slug", "") or "",
         "city": row_value(row, "city", "") or "",
         "state": row_value(row, "state", "") or "",
         "description": row_value(row, "description", "") or "",
         "desired_date": row_value(row, "desired_date", "") or "",
         "created_at": row_value(row, "created_at", "") or "",
         "photo_count": count_value(row, "photo_count"),
-        "budget": row_value(row, "budget", "") or "",
+        "budget": budget_label(row),
         "request_status": status,
+        "bid_window": bidding,
         "url": f"/jobs/{job_id}",
-        "can_request_match": not bool(status),
-        "row_cue": "Sent" if status else "View",
+        "can_request_match": not bool(status) and bidding["accepting"],
+        "row_cue": "Sent" if status else ("View" if bidding["accepting"] else bidding["state"].title()),
+        "fit_score": count_value(row, "fit_score"),
+        "fit_label": row_value(row, "fit_label", "") or "",
+        "brief_readiness": project_brief_readiness(row),
     }
 
 
 def contractor_lead_map_marker(row) -> dict:
     status = request_status(row)
+    bidding = bid_window(row)
     return {
         "id": row_value(row, "id"),
         "title": row_value(row, "title", "") or "",
         "category": row_value(row, "category", "") or "",
+        "service_group_slug": row_value(row, "service_group_slug", "") or "",
+        "service_slug": row_value(row, "service_slug", "") or "",
         "city": row_value(row, "city", "") or "",
         "state": row_value(row, "state", "") or "",
         "description": row_value(row, "description", "") or "",
         "desired_date": row_value(row, "desired_date", "") or "",
         "photo_count": count_value(row, "photo_count"),
-        "budget": row_value(row, "budget", "") or "Budget not provided",
+        "budget": budget_label(row),
         "lat": row_value(row, "approx_lat"),
         "lng": row_value(row, "approx_lng"),
         "url": f"/jobs/{row_value(row, 'id')}",
         "detail_url": f"/jobs/{row_value(row, 'id')}",
-        "action_label": "View sent bid" if status else "View and send bid",
+        "action_label": "View sent bid" if status else ("View and send bid" if bidding["accepting"] else "View bid status"),
         "request_status": status,
+        "bid_window": bidding,
         "is_demo": False,
+        "fit_score": count_value(row, "fit_score"),
+        "fit_label": row_value(row, "fit_label", "") or "",
     }
 
 
@@ -181,6 +212,10 @@ def contractor_lead_view_links(filters: dict[str, str]) -> list[dict[str, str]]:
         args: dict[str, str] = {}
         if filters.get("category"):
             args["category"] = filters["category"]
+        if filters.get("family"):
+            args["family"] = filters["family"]
+        if filters.get("service"):
+            args["service"] = filters["service"]
         if filters.get("q"):
             args["q"] = filters["q"]
         if filters.get("sort", DEFAULT_JOB_SORT) != DEFAULT_JOB_SORT:
@@ -197,13 +232,24 @@ def contractor_lead_view_links(filters: dict[str, str]) -> list[dict[str, str]]:
     return links
 
 
-def contractor_leads_payload(rows: list, filters: dict[str, str], view: str) -> dict:
+def contractor_leads_payload(
+    rows: list,
+    filters: dict[str, str],
+    view: str,
+    service_slugs=None,
+    service_zone_slugs=None,
+) -> dict:
     normalized_view = normalize_contractor_lead_view(view)
-    all_jobs = [contractor_lead_card(row) for row in rows]
+    annotated_rows = annotate_job_fits(
+        rows,
+        service_slugs or [],
+        service_zone_slugs or [],
+    )
+    all_jobs = [contractor_lead_card(row) for row in annotated_rows]
     visible_jobs = filter_contractor_lead_cards(all_jobs, normalized_view)
     all_markers = [
         contractor_lead_map_marker(row)
-        for row in rows
+        for row in annotated_rows
         if has_map_coordinates(row)
     ]
     map_jobs = filter_map_markers(all_markers, visible_jobs)

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Bid Requests - Workdoe{% endblock %}
+{% block content %}
+<section class="dashboard-header">
+  <div>
+    <p class="eyebrow">Consumer workspace</p>
+    <h1>Bid requests</h1>
+    <p>Compare contractor scope, timing, and pricing before opening a private conversation.</p>
+  </div>
+  <a class="button" href="{{ url_for('new_job') }}">Post a project</a>
+</section>
+
+<section class="dashboard-metrics" aria-label="Bid request queue">
+  <div class="metric-card"><span>Pending bids</span><strong>{{ stats.pending_requests }}</strong></div>
+  <div class="metric-card"><span>Projects to review</span><strong>{{ stats.review_jobs }}</strong></div>
+  <div class="metric-card"><span>Approved bids</span><strong>{{ stats.approved_requests }}</strong></div>
+</section>
+
+<section class="job-list" aria-label="Projects with pending bids">
+  {% for job in jobs %}
+    <a class="job-row link-row needs-review" href="{{ url_for('client_job_detail', job_id=job.id, bids='pending') }}#mini-bids" aria-label="Review {{ job.pending_count }} pending {{ 'bid' if job.pending_count == 1 else 'bids' }} for {{ job.title }}">
+      <div>
+        <div class="row-meta">
+          <span class="status {{ job.status }}">{{ job.status }}</span>
+          <span>{{ job.service_slug|service_name(job.category) }}</span>
+          <span>{{ job.city }}, {{ job.state }}</span>
+        </div>
+        <h2>{{ job.title }}</h2>
+        <p class="job-summary">{{ job.description }}</p>
+      </div>
+      <div class="row-actions">
+        <span class="count-pill attention">{{ job.pending_count }} pending</span>
+        <span class="row-cue">Review bids</span>
+      </div>
+    </a>
+  {% else %}
+    <div class="empty-state field-empty-state">
+      <img class="empty-state-visual" src="{{ url_for('static', filename='field-doe.webp') }}" alt="" width="180" height="180">
+      <h2>No bids waiting</h2>
+      <a class="button secondary" href="{{ url_for('client_dashboard') }}">View projects</a>
+    </div>
+  {% endfor %}
+</section>
+{% endblock %}

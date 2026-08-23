@@ -25,7 +25,46 @@
     <span>Approved</span>
     <strong>{{ stats.approved_requests }}</strong>
   </a>
+  <div class="metric-card">
+    <span>Verified complete</span>
+    <strong>{{ stats.verified_completions }}</strong>
+  </div>
 </section>
+
+{% if repeat_invitations %}
+  <section id="repeat-invitations" class="work-history repeat-invitation-section" aria-labelledby="repeat-invitations-title">
+    <div class="section-heading history-heading">
+      <div>
+        <p class="eyebrow">Repeat work</p>
+        <h2 id="repeat-invitations-title">Invited back</h2>
+      </div>
+      <span class="count-pill">{{ repeat_invitations|length }} waiting</span>
+    </div>
+    <div class="history-list">
+      {% for invitation in repeat_invitations %}
+        <div class="history-row repeat-invitation-row">
+          <div>
+            <div class="row-meta">
+              <span>Prior work verified</span>
+              <span>{{ invitation.city }}, {{ invitation.state }}</span>
+              {% if invitation.desired_date %}<span>Target <time datetime="{{ invitation.desired_date }}">{{ invitation.desired_date|date_label }}</time></span>{% endif %}
+              <span>{{ invitation.bid_window.usage_label }}</span>
+            </div>
+            <h3>{{ invitation.project_title }}</h3>
+            <p>The consumer invited you based on a completed Workdoe match. Review the new scope before deciding.</p>
+          </div>
+          <div class="history-row-actions">
+            <a class="button compact" href="{{ url_for('contractor_job_detail', job_id=invitation.job_id) }}">Review and bid</a>
+            <form method="post" action="{{ url_for('respond_repeat_invitation', invitation_id=invitation.id, action='decline') }}">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <button class="button secondary compact" type="submit">Pass</button>
+            </form>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
 
 <section class="content-grid two">
   <article class="panel">
@@ -68,5 +107,94 @@
       {% endfor %}
     </div>
   </article>
+</section>
+
+<section id="proposal-templates" class="work-history" aria-labelledby="proposal-templates-title">
+  <div class="section-heading history-heading">
+    <div>
+      <p class="eyebrow">Faster responses</p>
+      <h2 id="proposal-templates-title">Proposal templates</h2>
+    </div>
+    <span class="count-pill">{{ proposal_templates|length }}/{{ proposal_template_limit }}</span>
+  </div>
+  <p class="section-intro">Save reusable wording from a mini bid, then apply it to another lead. Every project still requires a fresh price.</p>
+  <div class="project-template-list">
+    {% for template in proposal_templates %}
+      <article class="project-template-row">
+        <div>
+          <strong>{{ template.name }}</strong>
+          <span>{{ template.timeline }} - {{ template.availability }}</span>
+        </div>
+        <div class="saved-location-actions">
+          <form method="post" action="{{ url_for('delete_contractor_proposal_template', template_id=template.id) }}">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <button class="button secondary compact" type="submit">Remove</button>
+          </form>
+        </div>
+      </article>
+    {% else %}
+      <p class="empty history-empty">After sending a mini bid, save its reusable wording here.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section id="completed-work" class="work-history" aria-labelledby="completed-work-title">
+  <div class="section-heading history-heading">
+    <div>
+      <p class="eyebrow">Work outcomes</p>
+      <h2 id="completed-work-title">Matched work</h2>
+    </div>
+    <span class="count-pill">{{ stats.verified_completions }} verified</span>
+  </div>
+  <div class="history-list">
+    {% for item in completed_work %}
+      {% set completed_href = url_for('thread_detail', thread_id=item.thread_id) if item.thread_id else url_for('contractor_job_detail', job_id=item.job_id) %}
+      {% set item_reviews = reviews_by_request.get(item.id, {}) %}
+      <div class="history-row completed-work-row">
+        <div>
+          <div class="row-meta">
+            <span>{{ item.category }}</span>
+            <span>{{ item.city }}, {{ item.state }}</span>
+            {% if item.desired_date %}<span>Target <time datetime="{{ item.desired_date }}">{{ item.desired_date|date_label }}</time></span>{% endif %}
+          </div>
+          <h3>{{ item.title }}</h3>
+          <p>{{ item.scope_note }}</p>
+          <dl class="history-facts">
+            <div><dt>Timeline</dt><dd>{{ item.timeline }}</dd></div>
+            <div><dt>Estimate</dt><dd>{{ item.price_range }}</dd></div>
+            <div><dt>Availability</dt><dd>{{ item.availability }}</dd></div>
+          </dl>
+          <div class="completion-status {{ item|completion_state }}">
+            <strong>{{ item|completion_label('contractor') }}</strong>
+            {% if item.verified_at %}<span>Both participants confirmed this Workdoe project.</span>{% else %}<span>Both participants confirm independently. No rating or payment is created.</span>{% endif %}
+          </div>
+          {% if item.verified_at %}
+            <section class="completed-feedback" aria-label="Completed-work feedback for {{ item.title }}">
+              {% if not item_reviews.get('contractor') %}
+                {% set request_id = item.id %}
+                {% set reviewer_role = 'contractor' %}
+                {% include "_match_review_form.html" %}
+              {% endif %}
+              {% for review in item_reviews.values() %}
+                {% include "_match_review_card.html" %}
+              {% endfor %}
+            </section>
+          {% endif %}
+        </div>
+        <div class="history-row-actions">
+          <a class="button secondary compact" href="{{ completed_href }}">Details</a>
+          {% if not item.contractor_confirmed_at %}
+            <form method="post" action="{{ url_for('confirm_match_completion', request_id=item.id) }}">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <button class="button compact" type="submit">Confirm complete</button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+    {% else %}
+      <p class="empty history-empty">Work matched on Workdoe appears here after the consumer closes the project.</p>
+    {% endfor %}
+  </div>
+  <p class="help-text history-privacy">Closed work shows the project and general service area only. Specific addresses stay private.</p>
 </section>
 {% endblock %}

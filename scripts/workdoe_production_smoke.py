@@ -2,17 +2,26 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import socket
 import time
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 
 DEFAULT_DOMAIN = "workdoe.com"
 DEFAULT_BASE_URL = "https://workdoe.com"
 DEFAULT_TIMEOUT = 8.0
+REQUIRED_HEALTH_BINDINGS = {
+    "d1",
+    "email_sender",
+    "email_queue",
+    "media_queue",
+    "r2_media",
+    "write_rate_limiter",
+}
 REQUIRED_SECURITY_HEADERS = {
     "Strict-Transport-Security": ("max-age=", "includeSubDomains"),
     "Content-Security-Policy": ("default-src 'self'", "frame-ancestors 'none'"),
@@ -22,6 +31,19 @@ REQUIRED_SECURITY_HEADERS = {
     "Permissions-Policy": ("geolocation=(), microphone=(), camera=()",),
 }
 CLERK_ASSET_PATH = "/__clerk/npm/@clerk/clerk-js@6/dist/clerk.browser.js"
+PUBLIC_TRUST_PAGES = {
+    "/safety": "Share only what the job needs.",
+    "/privacy": "Privacy Policy",
+    "/terms": "Terms of Use",
+}
+OPTIONAL_DISCOVERY_PATHS = (
+    "/robots.txt",
+    "/sitemap.xml",
+    "/.well-known/security.txt",
+)
+CLERK_PUBLISHABLE_KEY_PATTERN = re.compile(
+    r'data-clerk-publishable-key=["\']([^"\']+)["\']'
+)
 
 
 @dataclass
@@ -46,6 +68,14 @@ class SmokeCheck:
 
 
 def normalized_base_url(value: str) -> str:
+    parsed = urlparse(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError("Smoke-test base URL must be HTTP(S) without embedded credentials.")
     return value.rstrip("/") + "/"
 
 
@@ -76,7 +106,7 @@ def fetch_url(
     )
     started = time.perf_counter()
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
             body = ""
             if method != "HEAD":
                 body = response.read(body_limit).decode("utf-8", errors="replace")
@@ -172,6 +202,20 @@ def health_check(base_url: str, timeout: float) -> SmokeCheck:
             name="health-json",
             status="failed",
             summary=f"Health endpoint did not return ok=true JSON: {error or payload}",
+            url=url,
+            status_code=result.status_code,
+            elapsed_ms=result.elapsed_ms,
+        )
+    bindings = payload.get("bindings") if isinstance(payload.get("bindings"), dict) else {}
+    missing_bindings = sorted(
+        binding for binding in REQUIRED_HEALTH_BINDINGS if bindings.get(binding) is not True
+    )
+    if missing_bindings:
+        return SmokeCheck(
+            name="health-json",
+            status="failed",
+            summary="Health endpoint is missing required bindings: "
+            + ", ".join(missing_bindings),
             url=url,
             status_code=result.status_code,
             elapsed_ms=result.elapsed_ms,
@@ -273,6 +317,111 @@ def security_headers_check(base_url: str, timeout: float) -> SmokeCheck:
     )
 
 
+def public_trust_pages_check(base_url: str, timeout: float) -> SmokeCheck:
+    missing: list[str] = []
+    elapsed_ms = 0
+    for path, marker in PUBLIC_TRUST_PAGES.items():
+        url = check_url(base_url, path)
+        result = fetch_url(url, timeout=timeout, body_limit=100000)
+        elapsed_ms += result.elapsed_ms
+        if not result.ok:
+            missing.append(f"{path} returned HTTP {result.status_code or 'error'}")
+        elif marker not in result.body:
+            missing.append(f"{path} is missing its page marker")
+    url = check_url(base_url, "/safety")
+    if missing:
+        return SmokeCheck(
+            name="public-trust-pages",
+            status="failed",
+            summary="Required public trust pages are not ready: " + "; ".join(missing),
+            url=url,
+            elapsed_ms=elapsed_ms,
+        )
+    return SmokeCheck(
+        name="public-trust-pages",
+        status="ready",
+        summary="Safety, Privacy Policy, and Terms of Use are publicly available.",
+        url=url,
+        status_code=200,
+        elapsed_ms=elapsed_ms,
+    )
+
+
+def social_share_check(base_url: str, timeout: float) -> SmokeCheck:
+    page_url = check_url(base_url, "/")
+    page = fetch_url(page_url, timeout=timeout, body_limit=200000)
+    if not page.ok:
+        return response_check(
+            "social-share-card",
+            page_url,
+            page,
+            expected_summary="Homepage share metadata returned HTTP success.",
+        )
+    required_markers = (
+        '<meta property="og:title" content="Workdoe - a local Work Exchange">',
+        '<meta property="og:image" content="https://workdoe.com/workdoe-share.png">',
+        '<meta property="og:image:width" content="1200">',
+        '<meta property="og:image:height" content="630">',
+        '<meta name="twitter:card" content="summary_large_image">',
+    )
+    missing = [marker for marker in required_markers if marker not in page.body]
+    asset_url = check_url(base_url, "/workdoe-share.png")
+    asset = fetch_url(asset_url, method="HEAD", timeout=timeout)
+    asset_type = header_value(asset.headers, "Content-Type").lower()
+    if missing or not asset.ok or "image/png" not in asset_type:
+        details = []
+        if missing:
+            details.append("homepage metadata is incomplete")
+        if not asset.ok:
+            details.append(f"share image returned HTTP {asset.status_code or 'error'}")
+        elif "image/png" not in asset_type:
+            details.append("share image is not served as image/png")
+        return SmokeCheck(
+            name="social-share-card",
+            status="failed",
+            summary="Social share card is not ready: " + "; ".join(details),
+            url=page_url,
+            status_code=page.status_code,
+            elapsed_ms=page.elapsed_ms + asset.elapsed_ms,
+        )
+    return SmokeCheck(
+        name="social-share-card",
+        status="ready",
+        summary="Homepage share metadata declares 1200x630 and its PNG asset is available.",
+        url=page_url,
+        status_code=page.status_code,
+        elapsed_ms=page.elapsed_ms + asset.elapsed_ms,
+    )
+
+
+def discovery_files_check(base_url: str, timeout: float) -> SmokeCheck:
+    missing: list[str] = []
+    elapsed_ms = 0
+    for path in OPTIONAL_DISCOVERY_PATHS:
+        result = fetch_url(check_url(base_url, path), method="HEAD", timeout=timeout)
+        elapsed_ms += result.elapsed_ms
+        if not result.ok:
+            missing.append(path)
+    if missing:
+        return SmokeCheck(
+            name="public-discovery-files",
+            status="warning",
+            summary="Optional public discovery files are absent: " + ", ".join(missing),
+            url=check_url(base_url, missing[0]),
+            elapsed_ms=elapsed_ms,
+            required=False,
+        )
+    return SmokeCheck(
+        name="public-discovery-files",
+        status="ready",
+        summary="robots.txt, sitemap.xml, and security.txt are available.",
+        url=check_url(base_url, "/robots.txt"),
+        status_code=200,
+        elapsed_ms=elapsed_ms,
+        required=False,
+    )
+
+
 def clerk_proxy_check(base_url: str, timeout: float) -> SmokeCheck:
     url = check_url(base_url, CLERK_ASSET_PATH)
     result = fetch_url(url, timeout=timeout)
@@ -297,6 +446,45 @@ def clerk_proxy_check(base_url: str, timeout: float) -> SmokeCheck:
         name="clerk-same-domain-proxy",
         status="ready",
         summary="Clerk sign-in assets are served through workdoe.com.",
+        url=url,
+        status_code=result.status_code,
+        elapsed_ms=result.elapsed_ms,
+    )
+
+
+def clerk_production_key_check(base_url: str, timeout: float) -> SmokeCheck:
+    url = check_url(base_url, "/login")
+    result = fetch_url(url, timeout=timeout, body_limit=200000)
+    if not result.ok:
+        return response_check(
+            "clerk-production-key",
+            url,
+            result,
+            expected_summary="Sign-in page returned HTTP success.",
+        )
+    match = CLERK_PUBLISHABLE_KEY_PATTERN.search(result.body)
+    if not match:
+        return SmokeCheck(
+            name="clerk-production-key",
+            status="failed",
+            summary="Sign-in page is missing the Clerk publishable key marker.",
+            url=url,
+            status_code=result.status_code,
+            elapsed_ms=result.elapsed_ms,
+        )
+    if not match.group(1).startswith("pk_live_"):
+        return SmokeCheck(
+            name="clerk-production-key",
+            status="failed",
+            summary="Sign-in is not using a Clerk production instance.",
+            url=url,
+            status_code=result.status_code,
+            elapsed_ms=result.elapsed_ms,
+        )
+    return SmokeCheck(
+        name="clerk-production-key",
+        status="ready",
+        summary="Sign-in uses a Clerk production publishable key.",
         url=url,
         status_code=result.status_code,
         elapsed_ms=result.elapsed_ms,
@@ -335,6 +523,10 @@ def build_smoke_payload(
             health_check(base_url, timeout),
             public_jobs_check(base_url, timeout),
             security_headers_check(base_url, timeout),
+            public_trust_pages_check(base_url, timeout),
+            social_share_check(base_url, timeout),
+            discovery_files_check(base_url, timeout),
+            clerk_production_key_check(base_url, timeout),
             clerk_proxy_check(base_url, timeout),
         ]
     )

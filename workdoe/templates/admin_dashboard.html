@@ -6,6 +6,115 @@
   <h1>Moderation console</h1>
 </section>
 
+<section class="marketplace-outcomes" aria-labelledby="marketplace-outcomes-title">
+  <div class="section-heading">
+    <div><p class="eyebrow">Marketplace truth</p><h2 id="marketplace-outcomes-title">Pilot outcomes</h2></div>
+    <span class="privacy-label">Operational</span>
+  </div>
+  <div class="dashboard-metrics compact-metrics" aria-label="Marketplace outcomes">
+    <div class="metric-card"><span>Published</span><strong>{{ marketplace_metrics.published_projects }}</strong></div>
+    <div class="metric-card"><span>With bids</span><strong>{{ marketplace_metrics.projects_with_bids }}</strong></div>
+    <div class="metric-card"><span>Matched</span><strong>{{ marketplace_metrics.matched_projects }}</strong><small>{{ marketplace_metrics.qualified_match_rate }}% of published</small></div>
+    <div class="metric-card"><span>Completion signals</span><strong>{{ marketplace_metrics.completion_signals }}</strong></div>
+    <div class="metric-card"><span>Verified complete</span><strong>{{ marketplace_metrics.verified_completions }}</strong><small>{{ marketplace_metrics.verified_completion_rate }}% of approved matches</small></div>
+    <div class="metric-card"><span>Closed</span><strong>{{ marketplace_metrics.closed_projects }}</strong></div>
+    <div class="metric-card"><span>Workdoe outcomes</span><strong>{{ marketplace_metrics.workdoe_match_outcomes }}</strong><small>{{ marketplace_metrics.workdoe_close_rate }}% of closed</small></div>
+    <div class="metric-card"><span>Lead signals</span><strong>{{ marketplace_metrics.lead_quality_signals }}</strong></div>
+  </div>
+</section>
+
+<section class="marketplace-outcomes" aria-labelledby="pilot-cell-title">
+  <div class="section-heading">
+    <div><p class="eyebrow">Last 12 weeks</p><h2 id="pilot-cell-title">Service-zone pulse</h2></div>
+    <span class="privacy-label">Aggregate only</span>
+  </div>
+  <div class="dashboard-metrics compact-metrics" aria-label="Service-zone summary">
+    <div class="metric-card"><span>Tracked cells</span><strong>{{ pilot_metrics.summary.tracked_cells }}</strong><small>{{ pilot_metrics.summary.observed_cells }} with projects</small></div>
+    <div class="metric-card"><span>Active, no projects</span><strong>{{ pilot_metrics.summary.active_zero_project_cells }}</strong></div>
+    <div class="metric-card"><span>Supply gaps</span><strong>{{ pilot_metrics.summary.supply_gap_cells }}</strong></div>
+    <div class="metric-card"><span>Zero-bid projects</span><strong>{{ pilot_metrics.summary.zero_bid_projects }}</strong></div>
+    <div class="metric-card"><span>Median first bid</span><strong>{{ pilot_metrics.summary.median_first_bid_label }}</strong><small>{{ pilot_metrics.summary.first_bid_samples }} responding projects</small></div>
+    <div class="metric-card"><span>Qualified match</span><strong>{{ pilot_metrics.summary.qualified_match_rate }}%</strong><small>{{ pilot_metrics.summary.matched_projects }} of {{ pilot_metrics.summary.published_projects }} published</small></div>
+    <div class="metric-card"><span>Verified complete</span><strong>{{ pilot_metrics.summary.verified_completions }}</strong><small>{{ pilot_metrics.summary.verified_completion_rate }}% of matched</small></div>
+    <div class="metric-card"><span>Cancelled / no fit</span><strong>{{ pilot_metrics.summary.no_match_or_cancelled_projects }}</strong></div>
+    <div class="metric-card"><span>Open project reports</span><strong>{{ pilot_metrics.summary.open_report_projects }}</strong><small>{{ pilot_metrics.summary.open_report_rate }}% of published</small></div>
+  </div>
+  {% if pilot_metrics.cells %}
+    <div class="pilot-cell-list" role="list" aria-label="Weekly service-zone operations">
+      {% for cell in pilot_metrics.cells %}
+        <article class="pilot-cell-row" role="listitem">
+          <header class="pilot-cell-heading">
+            <div>
+              <p class="pilot-cell-week">Week of {{ cell.week_start }}</p>
+              <h3>{{ cell.service_name }}</h3>
+              <p>{{ cell.zone_name }}</p>
+            </div>
+            <span class="pilot-state pilot-state--{{ cell.state }}">{{ cell.state_label }}</span>
+          </header>
+          <dl class="pilot-cell-facts">
+            <div><dt>Published</dt><dd>{{ cell.published_projects }}</dd></div>
+            <div><dt>Brief ready</dt><dd>{{ cell.brief_ready_projects }}/{{ cell.published_projects }} <small>{{ cell.brief_ready_rate }}%</small></dd></div>
+            <div><dt>With bids</dt><dd>{{ cell.projects_with_bids }}/{{ cell.published_projects }} <small>{{ cell.total_bids }} total</small></dd></div>
+            <div><dt>Matched</dt><dd>{{ cell.matched_projects }} <small>{{ cell.qualified_match_rate }}%</small></dd></div>
+            <div><dt>Verified</dt><dd>{{ cell.verified_completions }} <small>{{ cell.verified_completion_rate }}%</small></dd></div>
+            <div><dt>First bid</dt><dd>{{ cell.median_first_bid_label }} <small>{{ cell.first_bid_samples }} projects</small></dd></div>
+            <div><dt>Closed</dt><dd>{{ cell.closed_projects }} <small>{{ cell.workdoe_match_closures }} Workdoe</small></dd></div>
+            <div><dt>Cancelled / no fit</dt><dd>{{ cell.no_match_or_cancelled_projects }}</dd></div>
+            <div><dt>Open reports</dt><dd>{{ cell.open_report_projects }}</dd></div>
+            <div><dt>Current supply</dt><dd>{{ cell.current_eligible_contractors }}/{{ cell.minimum_eligible_contractors }}</dd></div>
+          </dl>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">No tracked service-zone cells in the last 12 weeks.</p>
+  {% endif %}
+</section>
+
+<section class="marketplace-outcomes" aria-labelledby="repeat-work-outcomes-title">
+  <div class="section-heading">
+    <div><p class="eyebrow">Repeat work</p><h2 id="repeat-work-outcomes-title">Invitation funnel</h2></div>
+    <span class="privacy-label">Project-level only</span>
+  </div>
+  <div class="dashboard-metrics compact-metrics" aria-label="Repeat work outcomes">
+    <div class="metric-card"><span>Invited</span><strong>{{ repeat_work_metrics.invitations_created }}</strong></div>
+    <div class="metric-card"><span>Waiting</span><strong>{{ repeat_work_metrics.invitations_pending }}</strong></div>
+    <div class="metric-card"><span>Fresh bids</span><strong>{{ repeat_work_metrics.invitations_bid_sent }}</strong><small>{{ repeat_work_metrics.invitation_bid_rate }}% of invitations</small></div>
+    <div class="metric-card"><span>Passed</span><strong>{{ repeat_work_metrics.invitations_declined }}</strong></div>
+    <div class="metric-card"><span>Withdrawn</span><strong>{{ repeat_work_metrics.invitations_withdrawn }}</strong></div>
+    <div class="metric-card"><span>Verified repeats</span><strong>{{ repeat_work_metrics.verified_repeat_projects }}</strong><small>{{ repeat_work_metrics.verified_repeat_rate }}% of fresh bids</small></div>
+  </div>
+</section>
+
+<section class="marketplace-outcomes" aria-labelledby="lead-alert-outcomes-title">
+  <div class="section-heading">
+    <div><p class="eyebrow">Contractor response</p><h2 id="lead-alert-outcomes-title">Matching project alerts</h2></div>
+    <span class="privacy-label">Opt-in only</span>
+  </div>
+  <div class="dashboard-metrics compact-metrics" aria-label="Contractor lead alert outcomes">
+    <div class="metric-card"><span>Contractors on</span><strong>{{ lead_alert_metrics.opted_in_contractors }}</strong></div>
+    <div class="metric-card"><span>Local pending</span><strong>{{ lead_alert_metrics.pending_alerts }}</strong></div>
+    <div class="metric-card"><span>Queued</span><strong>{{ lead_alert_metrics.queued_alerts }}</strong></div>
+    <div class="metric-card"><span>Sent</span><strong>{{ lead_alert_metrics.sent_alerts }}</strong></div>
+    <div class="metric-card"><span>Failed</span><strong>{{ lead_alert_metrics.failed_alerts }}</strong></div>
+  </div>
+</section>
+
+<section class="marketplace-outcomes" aria-labelledby="review-outcomes-title">
+  <div class="section-heading">
+    <div><p class="eyebrow">Completed work</p><h2 id="review-outcomes-title">Participant feedback</h2></div>
+    <span class="privacy-label">No star score</span>
+  </div>
+  <div class="dashboard-metrics compact-metrics" aria-label="Completed-work feedback outcomes">
+    <div class="metric-card"><span>Total</span><strong>{{ match_review_metrics.total_reviews }}</strong></div>
+    <div class="metric-card"><span>From consumers</span><strong>{{ match_review_metrics.client_reviews }}</strong></div>
+    <div class="metric-card"><span>From contractors</span><strong>{{ match_review_metrics.contractor_reviews }}</strong></div>
+    <div class="metric-card"><span>Responses</span><strong>{{ match_review_metrics.responses }}</strong></div>
+    <div class="metric-card"><span>Open reports</span><strong>{{ match_review_metrics.open_reports }}</strong></div>
+    <div class="metric-card"><span>Hidden</span><strong>{{ match_review_metrics.hidden_reviews }}</strong></div>
+  </div>
+</section>
+
 <section class="dashboard-metrics compact-metrics" aria-label="Moderation summary">
   <div class="metric-card">
     <span>Open reports</span>
@@ -30,6 +139,108 @@
 </section>
 
 <section class="admin-grid">
+  <article id="completed-feedback-moderation" class="panel admin-panel">
+    <h2>Feedback reports</h2>
+    {% for report in match_review_reports %}
+      <div class="admin-row">
+        <span><strong>{{ report.project_title }}</strong><small>{{ report.reporter_email }} - {{ report.reason }}</small></span>
+        <form method="post" action="{{ url_for('admin_resolve_match_review_report', report_id=report.id) }}">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          <button class="button secondary compact" type="submit">Resolve</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="empty">No open feedback reports.</p>
+    {% endfor %}
+  </article>
+
+  <article class="panel admin-panel">
+    <h2>Recent completed-work feedback</h2>
+    {% for review in recent_match_reviews %}
+      <div class="admin-row">
+        <span><strong>{{ review.project_title }}</strong><small>{{ review.reviewer_role }} - {{ review.reviewer_email }} to {{ review.subject_email }} - {{ 'hidden' if review.is_hidden else 'visible' }}</small></span>
+        <form method="post" action="{{ url_for('admin_match_review_action', review_id=review.id, action='restore' if review.is_hidden else 'hide') }}">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          <button class="button secondary compact" type="submit">{{ 'Restore' if review.is_hidden else 'Hide' }}</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="empty">No completed-work feedback yet.</p>
+    {% endfor %}
+  </article>
+
+  <article class="panel admin-panel">
+    <h2>Recent matching alerts</h2>
+    {% for alert in recent_lead_alerts %}
+      <div class="admin-row">
+        <span><strong>{{ alert.project_title }}</strong><small>{{ alert.contractor_name }} - {{ alert.city }}, {{ alert.state }} - {{ alert.status }}</small></span>
+        <a class="button secondary compact" href="{{ url_for('contractor_job_detail', job_id=alert.job_id) }}">Review</a>
+      </div>
+    {% else %}
+      <p class="empty">No matching project alerts yet.</p>
+    {% endfor %}
+  </article>
+
+  <article class="panel admin-panel">
+    <h2>Recent repeat invitations</h2>
+    {% for invitation in repeat_invitations %}
+      <div class="admin-row">
+        <span>
+          <strong>{{ invitation.project_title }}</strong>
+          <small>{{ invitation.contractor_name }} - {{ invitation.city }}, {{ invitation.state }} - {{ invitation.status|replace('_', ' ') }}{% if invitation.verified_complete %} - verified complete{% endif %}</small>
+        </span>
+        <a class="button secondary compact" href="{{ url_for('contractor_job_detail', job_id=invitation.job_id) }}">Review</a>
+      </div>
+    {% else %}
+      <p class="empty">No repeat invitations yet.</p>
+    {% endfor %}
+  </article>
+
+  <article class="panel admin-panel">
+    <h2>Service launch gates</h2>
+    {% for activation in service_activations %}
+      <div class="admin-row">
+        <span>
+          <strong>{{ activation.service_name }} - {{ activation.zone_name }}</strong>
+          <small>{{ activation.status }} - {{ activation.eligible_contractors }} of {{ activation.minimum_eligible_contractors }} eligible contractors</small>
+        </span>
+        <span class="privacy-label">{{ 'Open' if activation|service_activation_live else 'Closed' }}</span>
+      </div>
+    {% else %}
+      <p class="empty">No service launch candidates configured.</p>
+    {% endfor %}
+  </article>
+
+  <article class="panel admin-panel">
+    <h2>Project close outcomes</h2>
+    {% for outcome in close_outcomes %}
+      <div class="admin-row"><span><strong>{{ outcome.label }}</strong><small>{{ outcome.reason_code }}</small></span><strong>{{ outcome.count }}</strong></div>
+    {% else %}
+      <p class="empty">No structured close outcomes yet.</p>
+    {% endfor %}
+  </article>
+
+  <article class="panel admin-panel">
+    <h2>Lead quality signals</h2>
+    {% for outcome in lead_quality_outcomes %}
+      <div class="admin-row"><span><strong>{{ outcome.label }}</strong><small>{{ outcome.reason_code }}</small></span><strong>{{ outcome.count }}</strong></div>
+    {% else %}
+      <p class="empty">No contractor quality signals yet.</p>
+    {% endfor %}
+  </article>
+
+  <article class="panel admin-panel">
+    <h2>Recent lead feedback</h2>
+    {% for item in lead_feedback %}
+      <div class="admin-row">
+        <span><strong>{{ item.job_title }}</strong><small>{{ item.reason_code|lead_quality_reason_label }} - {{ item.contractor_email }}{% if item.note %} - {{ item.note }}{% endif %}</small></span>
+        <a class="button secondary compact" href="{{ url_for('contractor_job_detail', job_id=item.job_id) }}">Review</a>
+      </div>
+    {% else %}
+      <p class="empty">No lead feedback recorded.</p>
+    {% endfor %}
+  </article>
+
   <article class="panel admin-panel">
     <h2>Open reports</h2>
     {% for report in reports %}
@@ -81,7 +292,7 @@
     <h2>Jobs</h2>
     {% for job in jobs %}
       <div class="admin-row">
-        <span><strong>{{ job.title }}</strong><small>{{ job.category }} - {{ job.city }}, {{ job.state }} - {{ job.status }}</small></span>
+        <span><strong>{{ job.title }}</strong><small>{{ job.service_slug|service_name(job.category) }} - {{ job.city }}, {{ job.state }} - {{ job.status }}</small></span>
         <form method="post" action="{{ url_for('admin_job_action', job_id=job.id, action='hide' if job.status != 'hidden' else 'restore') }}">
           <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
           <button class="button secondary compact" type="submit">{{ 'Hide' if job.status != 'hidden' else 'Restore' }}</button>
@@ -120,17 +331,40 @@
     {% endfor %}
   </article>
 
+  <article id="credential-review" class="panel admin-panel">
+    <h2>Credential review</h2>
+    {% for credential in credentials %}
+      <div class="credential-review-row">
+        <div class="admin-row">
+          <span><strong>{{ credential.business_name }} - {{ credential.credential_type_label }}</strong><small>{{ credential.jurisdiction_label }} - {{ credential.claimed_identifier }} - {{ credential.status_label }} - {{ credential.contractor_email }}</small></span>
+        </div>
+        <form class="stack-form credential-review-form" method="post" action="{{ url_for('admin_credential_action', credential_id=credential.id, action='verify') }}">
+          <label for="credential-source-{{ credential.id }}">Public source <input id="credential-source-{{ credential.id }}" name="source_url" type="url" maxlength="300" value="{{ credential.source_url }}" placeholder="https://..."></label>
+          <label for="credential-expiry-{{ credential.id }}">Expiration <input id="credential-expiry-{{ credential.id }}" name="expires_at" type="date" value="{{ credential.expires_at }}"></label>
+          <label class="wide" for="credential-note-{{ credential.id }}">Review note <input id="credential-note-{{ credential.id }}" name="review_note" maxlength="{{ credential_review_note_max }}" value="{{ credential.review_note }}" placeholder="Required for needs info or not confirmed"></label>
+          <div class="row-actions wide">
+            <button class="button compact" type="submit">Source checked</button>
+            <button class="button secondary compact" type="submit" formaction="{{ url_for('admin_credential_action', credential_id=credential.id, action='pending') }}">Needs info</button>
+            <button class="button secondary compact" type="submit" formaction="{{ url_for('admin_credential_action', credential_id=credential.id, action='reject') }}">Not confirmed</button>
+            <button class="button secondary compact" type="submit" formaction="{{ url_for('admin_credential_action', credential_id=credential.id, action='expire') }}">Expired</button>
+          </div>
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        </form>
+      </div>
+    {% else %}
+      <p class="empty">No credential claims awaiting review.</p>
+    {% endfor %}
+  </article>
+
   <article class="panel admin-panel">
     <h2>Recent messages</h2>
     {% for message in messages %}
       <div class="admin-row">
-        <span><strong>{{ message.sender_email }}</strong><small>{{ message.job_title }} - {{ message.body[:90] }}</small></span>
-        {% if not message.is_hidden %}
-          <form method="post" action="{{ url_for('admin_hide_message', message_id=message.id) }}">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <button class="button secondary compact" type="submit">Hide</button>
-          </form>
-        {% endif %}
+        <span><strong>{{ message.sender_email }}</strong><small>{{ message.job_title }} - {{ message.body[:90] }} - {{ 'hidden' if message.is_hidden else 'visible' }}</small></span>
+        <form method="post" action="{{ url_for('admin_message_action', message_id=message.id, action='restore' if message.is_hidden else 'hide') }}">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          <button class="button secondary compact" type="submit">{{ 'Restore' if message.is_hidden else 'Hide' }}</button>
+        </form>
       </div>
     {% else %}
       <p class="empty">No messages yet.</p>

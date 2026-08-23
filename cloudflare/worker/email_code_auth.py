@@ -45,6 +45,12 @@ def role_for_intent(intent: str) -> str:
     return "contractor" if intent == "find-work" else "client"
 
 
+def fixed_account_role(existing_role: str | None, requested_role: str) -> str:
+    if existing_role in {"client", "contractor", "admin"}:
+        return str(existing_role)
+    return requested_role if requested_role in {"client", "contractor"} else "client"
+
+
 def normalize_code(value: str | None) -> str:
     return re.sub(r"[\s-]+", "", str(value or ""))
 

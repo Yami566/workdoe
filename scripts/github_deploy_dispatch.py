@@ -13,7 +13,6 @@ REPO_ROOT = SCRIPT_DIR.parent
 DEFAULT_REPOSITORY = "Yami566/workdoe"
 DEFAULT_WORKFLOW = "cloudflare-deploy.yml"
 DEFAULT_REF = "main"
-DEFAULT_CLERK_PROXY_URL = "https://workdoe.com/__clerk"
 
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
@@ -96,7 +95,10 @@ def dispatch_command(
     repository: str = DEFAULT_REPOSITORY,
     workflow: str = DEFAULT_WORKFLOW,
     ref: str = DEFAULT_REF,
-    clerk_proxy_url: str = DEFAULT_CLERK_PROXY_URL,
+    clerk_proxy_confirmed: bool = False,
+    restricted_signup_confirmed: bool = False,
+    email_code_only_confirmed: bool = False,
+    legal_consent_confirmed: bool = False,
 ) -> list[str]:
     return [
         "gh",
@@ -109,6 +111,14 @@ def dispatch_command(
         ref,
         "-f",
         "deploy=DEPLOY",
+        "-f",
+        f"clerk_proxy_confirmed={str(clerk_proxy_confirmed).lower()}",
+        "-f",
+        f"restricted_signup_confirmed={str(restricted_signup_confirmed).lower()}",
+        "-f",
+        f"email_code_only_confirmed={str(email_code_only_confirmed).lower()}",
+        "-f",
+        f"legal_consent_confirmed={str(legal_consent_confirmed).lower()}",
     ]
 
 
@@ -118,8 +128,11 @@ def build_dispatch_plan(
     repository: str = DEFAULT_REPOSITORY,
     workflow: str = DEFAULT_WORKFLOW,
     ref: str = DEFAULT_REF,
-    clerk_proxy_url: str = DEFAULT_CLERK_PROXY_URL,
     local_url: str = DEFAULT_LOCAL_URL,
+    clerk_proxy_confirmed: bool = False,
+    restricted_signup_confirmed: bool = False,
+    email_code_only_confirmed: bool = False,
+    legal_consent_confirmed: bool = False,
 ) -> dict:
     doctor = build_doctor(repo_root, live=True, local_url=local_url)
     git_state = build_git_state(repo_root, expected_branch=ref)
@@ -130,12 +143,23 @@ def build_dispatch_plan(
         )
         blockers.extend(doctor["blockers"])
     blockers.extend(git_state.blockers)
+    confirmations = {
+        "clerk_proxy_confirmed": clerk_proxy_confirmed,
+        "restricted_signup_confirmed": restricted_signup_confirmed,
+        "email_code_only_confirmed": email_code_only_confirmed,
+        "legal_consent_confirmed": legal_consent_confirmed,
+    }
+    if not all(confirmations.values()):
+        blockers.append(
+            "Dispatch requires explicit confirmation of the Clerk same-domain proxy, "
+            "restricted sign-up, email-code-only sign-in, and express legal consent settings."
+        )
 
     command = dispatch_command(
         repository=repository,
         workflow=workflow,
         ref=ref,
-        clerk_proxy_url=clerk_proxy_url,
+        **confirmations,
     )
     return {
         "service": "workdoe",
@@ -146,6 +170,7 @@ def build_dispatch_plan(
         "repository": repository,
         "workflow": workflow,
         "ref": ref,
+        "operator_confirmations": confirmations,
         "command": command,
         "command_text": command_string(command),
         "git": asdict(git_state),
@@ -208,17 +233,32 @@ def main() -> int:
     parser.add_argument("--workflow", default=DEFAULT_WORKFLOW, help="Workflow file to dispatch.")
     parser.add_argument("--ref", default=DEFAULT_REF, help="Branch or tag to dispatch.")
     parser.add_argument(
-        "--clerk-proxy-url",
-        default=DEFAULT_CLERK_PROXY_URL,
-        help="Confirmed Clerk same-domain proxy URL.",
-    )
-    parser.add_argument(
         "--local-url",
         default=DEFAULT_LOCAL_URL,
         help="Local prototype URL checked by the launch doctor.",
     )
     parser.add_argument("--execute", action="store_true", help="Dispatch the workflow.")
     parser.add_argument("--yes", action="store_true", help="Confirm intentional dispatch.")
+    parser.add_argument(
+        "--confirm-clerk-proxy",
+        action="store_true",
+        help="Confirm Clerk Domains uses https://workdoe.com/__clerk.",
+    )
+    parser.add_argument(
+        "--confirm-restricted-sign-up",
+        action="store_true",
+        help="Confirm Clerk Restricted sign-up mode is enabled.",
+    )
+    parser.add_argument(
+        "--confirm-email-code-only",
+        action="store_true",
+        help="Confirm email-code sign-in is enabled and password sign-in is disabled.",
+    )
+    parser.add_argument(
+        "--confirm-legal-consent",
+        action="store_true",
+        help="Confirm Clerk requires express consent to Workdoe Terms and Privacy.",
+    )
     parser.add_argument(
         "--fail-when-not-ready",
         action="store_true",
@@ -231,8 +271,11 @@ def main() -> int:
         repository=args.repo,
         workflow=args.workflow,
         ref=args.ref,
-        clerk_proxy_url=args.clerk_proxy_url,
         local_url=args.local_url,
+        clerk_proxy_confirmed=args.confirm_clerk_proxy,
+        restricted_signup_confirmed=args.confirm_restricted_sign_up,
+        email_code_only_confirmed=args.confirm_email_code_only,
+        legal_consent_confirmed=args.confirm_legal_consent,
     )
 
     if args.execute:

@@ -20,10 +20,36 @@
       {% endif %}
     {% else %}
       <a class="button" href="{{ url_for('login') }}">Sign in</a>
-      <a class="button secondary" href="{{ url_for('start', intent='find-work') }}">Contractor</a>
-      <a class="button secondary" href="{{ url_for('start', intent='post-job') }}">Consumer</a>
+      <a class="button secondary" href="{{ url_for('create_account', intent='find-work') }}">Find work</a>
+      <a class="button secondary" href="{{ url_for('post_project') }}">Post project</a>
     {% endif %}
   </div>
+</section>
+
+<section class="home-family-picker" aria-labelledby="home-family-title">
+  <div class="section-heading compact-heading">
+    <p class="eyebrow">Choose a lane</p>
+    <h2 id="home-family-title">What kind of work?</h2>
+  </div>
+  {% set family_filter_label = "Filter open projects by work family" %}
+  {% include "_service_family_filter.html" %}
+  {% if selected_family %}
+    <div class="home-lane-action" aria-live="polite">
+      <div class="home-lane-summary">
+        <span class="home-lane-number" aria-hidden="true">{{ selected_family_number }}</span>
+        <img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ selected_family.icon) }}" alt="" width="30" height="30">
+        <span><small>Lane selected</small><strong>{{ selected_family.name }}</strong><span>{{ open_jobs|length }} open project{{ '' if open_jobs|length == 1 else 's' }}</span></span>
+      </div>
+      <div class="home-lane-actions">
+        {% if open_jobs %}
+          <a class="button secondary" href="#home-open-jobs">Browse projects</a>
+        {% else %}
+          <a class="button secondary" href="{{ url_for('home', _anchor='home-open-jobs') }}">Show all projects</a>
+        {% endif %}
+        <a class="button" href="{{ url_for('post_project', family=selected_family.slug, service=filters.service or None) }}">{% if selected_service %}Post this task{% else %}Post in this lane{% endif %}</a>
+      </div>
+    </div>
+  {% endif %}
 </section>
 
 <section class="home-board priority-board">
@@ -34,15 +60,18 @@
   </div>
   <div id="home-open-jobs" class="job-list">
     <form class="filter-bar compact-filter" method="get" role="search" aria-label="Filter open jobs" aria-controls="home-open-job-results lead-map">
-      <label for="home-category">
-        Category
-        <select name="category" id="home-category">
-          <option value="">All</option>
-          {% for category in job_categories %}
-            <option value="{{ category }}" {% if filters.category == category %}selected{% endif %}>{{ category }}</option>
+      {% if filters.family %}<input type="hidden" name="family" value="{{ filters.family }}">{% endif %}
+      {% if selected_family %}
+      <label for="home-service">
+        Task
+        <select name="service" id="home-service">
+          <option value="">All {{ selected_family.name|lower }} tasks</option>
+          {% for service_slug, service_name, legacy_category in selected_family.services %}
+            <option value="{{ service_slug }}" {% if filters.service == service_slug %}selected{% endif %}>{{ service_name }}</option>
           {% endfor %}
         </select>
       </label>
+      {% endif %}
       <label for="home-search">
         Search
         <input name="q" type="search" id="home-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}">
@@ -73,7 +102,7 @@
         <a class="job-row link-row compact-lead-row" role="listitem" data-job-id="{{ job.id }}" href="{{ job_href }}" aria-label="{{ row_cue }} for {{ job.title }}">
           <div>
             <div class="row-meta">
-              <span>{{ job.category }}</span>
+              <span class="job-service-chip"><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(job.service_slug or job.category)) }}" alt="" width="16" height="16">{{ job.service_slug|service_name(job.category) }}</span>
               <span>{{ job.city }}, {{ job.state }}</span>
               {% if job.desired_date %}<span>Target <time datetime="{{ job.desired_date }}">{{ job.desired_date|date_label }}</time></span>{% endif %}
               <span>{{ job.photo_count|photo_count_label }}</span>
@@ -86,11 +115,15 @@
         <div class="empty-state field-empty-state">
           <img class="empty-state-visual" src="{{ url_for('static', filename='field-doe.webp') }}" alt="" width="180" height="180">
           {% if has_filters %}
-            <h2>No matches</h2>
-            <a class="button secondary" href="{{ url_for('home') }}">Clear filters</a>
+            <h2>{% if selected_service %}No {{ selected_service.name|lower }} projects yet{% elif selected_family %}No {{ selected_family.name|lower }} projects yet{% else %}No matches{% endif %}</h2>
+            {% if filters.service %}
+              <a class="button secondary" href="{{ url_for('home', family=filters.family, _anchor='home-open-jobs') }}">Show all {{ selected_family.name|lower }}</a>
+            {% else %}
+              <a class="button secondary" href="{{ url_for('home') }}">Clear filters</a>
+            {% endif %}
           {% else %}
             <h2>The board is quiet</h2>
-            <a class="button" href="{{ url_for('start', intent='post-job') }}">Post a project</a>
+            <a class="button" href="{{ url_for('post_project') }}">Post a project</a>
           {% endif %}
         </div>
       {% endfor %}

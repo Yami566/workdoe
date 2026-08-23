@@ -9,27 +9,21 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 D1_MIGRATION_RELATIVE_PATH = Path("cloudflare/d1/migrations/0001_initial.sql")
+D1_MIGRATIONS_RELATIVE_PATH = D1_MIGRATION_RELATIVE_PATH.parent
 MANIFEST_RELATIVE_PATH = Path("cloudflare/workdoe-cloudflare-manifest.json")
 WRANGLER_RELATIVE_PATH = Path("cloudflare/wrangler.jsonc")
 DEV_VARS_EXAMPLE_RELATIVE_PATH = Path("cloudflare/.dev.vars.example")
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 D1_ID_FIELDS = ("database_id", "preview_database_id")
+IMMUTABLE_D1_BASELINE_SHA256 = "dd46194b4f45811901a8fe1718a482ea286863a4a87e3bcdce66cf60967c479e"
 UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
-SELECTED_JOB_INDEX_SQL = (
-    "CREATE INDEX IF NOT EXISTS idx_login_codes_selected_job "
-    "ON login_codes(selected_job_id);"
-)
-AUTH_SUBJECT_INDEX_SQL = (
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth_subject "
-    "ON users(auth_provider, external_subject) "
-    "WHERE external_subject IS NOT NULL;"
 )
 REQUIRED_WORKER_SECRETS = [
     "CLERK_JWT_KEY",
     "CLERK_PUBLISHABLE_KEY",
     "CLERK_SECRET_KEY",
+    "CLERK_WEBHOOK_SECRET",
     "WORKDOE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SITE_KEY",
@@ -53,23 +47,32 @@ def existing_d1_ids(wrangler_path: Path) -> dict[str, str]:
     }
 
 
-def normalized_schema(schema_sql: str) -> str:
-    body = schema_sql.strip()
-    statements = [
-        "-- Workdoe D1 migration snapshot.",
-        "-- Generated from workdoe/schema.sql by scripts/prepare_cloudflare_release.py.",
-        "PRAGMA foreign_keys = ON;",
-        "",
-        body,
-    ]
-    if "idx_login_codes_selected_job" not in body:
-        statements.extend(["", SELECTED_JOB_INDEX_SQL])
-    if "idx_users_auth_subject" not in body:
-        statements.extend(["", AUTH_SUBJECT_INDEX_SQL])
-    return "\n".join(statements).rstrip() + "\n"
+def migration_chain_sha256(migrations_dir: Path) -> str:
+    digest = hashlib.sha256()
+    migration_paths = sorted(migrations_dir.glob("[0-9][0-9][0-9][0-9]_*.sql"))
+    if not migration_paths:
+        raise ValueError(f"No D1 migrations found in {migrations_dir}")
+    for path in migration_paths:
+        digest.update(path.name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_text(encoding="utf-8").encode("utf-8"))
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
-def build_manifest(migration_sql: str) -> dict:
+def immutable_baseline_sql(repo_root: Path) -> str:
+    migration_path = repo_root / D1_MIGRATION_RELATIVE_PATH
+    migration_sql = migration_path.read_text(encoding="utf-8")
+    actual_sha = hashlib.sha256(migration_sql.encode("utf-8")).hexdigest()
+    if actual_sha != IMMUTABLE_D1_BASELINE_SHA256:
+        raise ValueError(
+            "The immutable 0001 D1 migration changed. Add a new numbered migration "
+            "instead of editing or regenerating 0001_initial.sql."
+        )
+    return migration_sql
+
+
+def build_manifest(migration_sql: str, migration_chain_sha: str) -> dict:
     return {
         "name": "workdoe",
         "domain": "workdoe.com",
@@ -108,6 +111,7 @@ def build_manifest(migration_sql: str) -> dict:
                     "CLERK_JWT_KEY": "set as a secret",
                     "CLERK_PUBLISHABLE_KEY": "set as a secret",
                     "CLERK_SECRET_KEY": "set as a secret",
+                    "CLERK_WEBHOOK_SECRET": "set as a secret",
                     "WORKDOE_AUTH_PROVIDER": "clerk",
                     "WORKDOE_SECRET_KEY": "set as a secret",
                 },
@@ -123,12 +127,22 @@ def build_manifest(migration_sql: str) -> dict:
                 "binding": "DB",
                 "migration": str(D1_MIGRATION_RELATIVE_PATH).replace("\\", "/"),
                 "migration_sha256": hashlib.sha256(migration_sql.encode("utf-8")).hexdigest(),
+                "migrations_dir": str(D1_MIGRATIONS_RELATIVE_PATH).replace("\\", "/"),
+                "migration_chain_sha256": migration_chain_sha,
             },
             "media": {
-                "service": "R2",
+                "service": "Cloudflare Images and R2",
                 "binding": "MEDIA",
+                "images_binding": "IMAGES",
                 "bucket": "workdoe-media",
                 "private": True,
+                "sanitization": {
+                    "decode": "Cloudflare Images binding",
+                    "output": "WebP",
+                    "max_dimension": 2400,
+                    "metadata": "discarded",
+                    "animation": "flattened",
+                },
                 "key_prefixes": [
                     "jobs/{job_id}/",
                     "contractors/{contractor_id}/",
@@ -152,10 +166,22 @@ def build_manifest(migration_sql: str) -> dict:
                 "forms": [
                     "start",
                     "login",
+                    "project draft",
                     "job posting",
                     "match request",
                     "report",
                 ],
+            },
+            "rate_limiting": {
+                "service": "Cloudflare Workers Rate Limiting",
+                "bindings": [
+                    {
+                        "name": "WRITE_RATE_LIMITER",
+                        "namespace_id": "949417",
+                        "simple": {"limit": 40, "period": 60},
+                    }
+                ],
+                "key": "authenticated Workdoe user ID",
             },
             "automation": {
                 "scheduled_jobs": [
@@ -181,6 +207,8 @@ def build_manifest(migration_sql: str) -> dict:
                         "queue": "workdoe-email",
                         "uses": [
                             "match reminders",
+                            "new matching project alerts",
+                            "repeat-provider invitation alerts",
                             "admin moderation digests",
                             "local fallback OTP and reset mail",
                         ],
@@ -240,6 +268,7 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
                 "bucket_name": targets["media"]["bucket"],
             }
         ],
+        "images": {"binding": targets["media"]["images_binding"]},
         "send_email": [
             {
                 "name": targets["email"]["binding"],
@@ -247,6 +276,7 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
                 "remote": True,
             }
         ],
+        "ratelimits": targets["rate_limiting"]["bindings"],
         "queues": {
             "producers": [
                 {"binding": queue["binding"], "queue": queue["queue"]}
@@ -269,6 +299,7 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
             "WORKDOE_DOMAIN": manifest["domain"],
             "WORKDOE_PUBLIC_URL": f"https://{manifest['domain']}",
             "WORKDOE_LOGIN_MODE": "same_domain_email_code",
+            "WORKDOE_ENFORCE_SERVICE_ACTIVATION": "true",
             "WORKDOE_EMAIL_FROM": targets["email"]["from"],
             "WORKDOE_ADMIN_EMAIL": targets["email"]["admin_digest_to"],
         },
@@ -299,12 +330,14 @@ def build_dev_vars_example(manifest: dict) -> str:
         "WORKDOE_DOMAIN=workdoe.com",
         "WORKDOE_PUBLIC_URL=https://workdoe.com",
         "WORKDOE_LOGIN_MODE=same_domain_email_code",
+        "WORKDOE_ENFORCE_SERVICE_ACTIVATION=true",
     ]
     for key in sorted(required_env):
         if key in {
             "WORKDOE_ENV",
             "WORKDOE_AUTH_PROVIDER",
             "WORKDOE_LOGIN_MODE",
+            "WORKDOE_ENFORCE_SERVICE_ACTIVATION",
         }:
             continue
         lines.append(f"{key}=replace-me")
@@ -321,14 +354,14 @@ def write_text_if_changed(path: Path, content: str) -> bool:
 
 def prepare_release(repo_root: Path = REPO_ROOT, output_root: Path | None = None) -> dict:
     output_root = output_root or repo_root / "cloudflare"
-    schema_path = repo_root / "workdoe" / "schema.sql"
     migration_path = output_root / "d1" / "migrations" / "0001_initial.sql"
     manifest_path = output_root / "workdoe-cloudflare-manifest.json"
     wrangler_path = output_root / "wrangler.jsonc"
     dev_vars_example_path = output_root / ".dev.vars.example"
 
-    migration_sql = normalized_schema(schema_path.read_text(encoding="utf-8"))
-    manifest = build_manifest(migration_sql)
+    migration_sql = immutable_baseline_sql(repo_root)
+    chain_sha = migration_chain_sha256(repo_root / D1_MIGRATIONS_RELATIVE_PATH)
+    manifest = build_manifest(migration_sql, chain_sha)
     manifest_json = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
     d1_ids = existing_d1_ids(wrangler_path)
     wrangler_json = json.dumps(
@@ -353,6 +386,9 @@ def prepare_release(repo_root: Path = REPO_ROOT, output_root: Path | None = None
         "wrangler_changed": wrangler_changed,
         "dev_vars_example_changed": dev_vars_example_changed,
         "migration_sha256": manifest["cloudflare_targets"]["database"]["migration_sha256"],
+        "migration_chain_sha256": manifest["cloudflare_targets"]["database"][
+            "migration_chain_sha256"
+        ],
     }
 
 

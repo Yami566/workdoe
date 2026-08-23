@@ -66,7 +66,7 @@ def run_release_evidence(
         "clerk_proxy_proof_json": str(clerk_proxy_proof_json) if clerk_proxy_proof_json else "",
         "next_steps": [
             "python scripts\\cloudflare_secret_evidence.py --execute --yes",
-            "python scripts\\cloudflare_clerk_proxy_proof.py --confirm",
+            "python scripts\\cloudflare_clerk_proxy_proof.py --confirm --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent",
             "python scripts\\cloudflare_release_evidence.py --json",
         ],
     }

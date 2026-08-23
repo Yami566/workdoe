@@ -93,7 +93,8 @@ def authorized_parties_from_env(env, request_url: str = "") -> list[str]:
         if parsed.scheme in {"http", "https"} and parsed.hostname in {
             "localhost",
             "127.0.0.1",
-            "0.0.0.0",
+            # Development hostname allowlist, not a socket bind address.
+            "0.0.0.0",  # nosec B104
         }:
             parties.append(f"{parsed.scheme}://{parsed.netloc}".rstrip("/"))
     return sorted(set(parties))

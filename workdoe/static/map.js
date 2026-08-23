@@ -12,6 +12,7 @@
     var resultContainer = document.querySelector("[data-project-results]");
     var searchInput = document.querySelector("[data-market-search]");
     var categorySelect = document.querySelector("[data-market-category]");
+    var serviceSelect = document.querySelector("[data-market-service]");
     var clearButton = document.querySelector("[data-clear-market-filters]");
     var resultCount = document.querySelector("[data-project-result-count]");
     var mapResultCount = document.querySelector("[data-map-result-count]");
@@ -88,13 +89,26 @@
           applyFilters(true);
         });
       }
+      if (serviceSelect) {
+        serviceSelect.addEventListener("change", function () {
+          applyFilters(true);
+        });
+      }
       if (clearButton) {
         clearButton.addEventListener("click", function () {
+          var clearUrl = clearButton.getAttribute("data-clear-market-url");
+          if (clearUrl) {
+            window.location.assign(clearUrl);
+            return;
+          }
           if (searchInput) {
             searchInput.value = "";
           }
           if (categorySelect) {
             categorySelect.value = "";
+          }
+          if (serviceSelect) {
+            serviceSelect.value = "";
           }
           applyFilters(true);
           if (searchInput) {
@@ -107,14 +121,18 @@
     function applyFilters(fitMap) {
       var query = searchInput ? searchInput.value.trim().toLowerCase() : "";
       var category = categorySelect ? categorySelect.value : "";
+      var service = serviceSelect ? serviceSelect.value : "";
       visibleJobs = allJobs.filter(function (job) {
         if (category && job.category !== category) {
+          return false;
+        }
+        if (service && job.service_slug !== service) {
           return false;
         }
         if (!query) {
           return true;
         }
-        return [job.title, job.category, job.city, job.state, job.description]
+        return [job.title, job.service_name, job.category, job.city, job.state, job.description]
           .filter(Boolean)
           .join(" ")
           .toLowerCase()
@@ -147,7 +165,7 @@
       var sample = job.is_demo ? '<span class="sample-badge">Sample</span>' : "";
       return (
         '<a class="project-result' + (active ? " is-map-active" : "") + '" role="listitem" data-job-id="' + escapeAttribute(job.id) + '" href="' + escapeAttribute(job.detail_url || "#") + '"' + (active ? ' aria-current="true"' : "") + ">" +
-          '<span class="project-result-topline"><span>' + escapeHtml(job.category || "Project") + "</span>" + sample + "</span>" +
+          '<span class="project-result-topline"><span>' + escapeHtml(job.service_name || job.category || "Project") + "</span>" + sample + "</span>" +
           "<strong>" + escapeHtml(job.title || "Open project") + "</strong>" +
           '<span class="project-result-facts"><span>' + escapeHtml(placeLabel(job)) + "</span><span>" + escapeHtml(job.budget || "Budget not provided") + "</span></span>" +
         "</a>"
@@ -267,7 +285,7 @@
         : '<span class="live-badge">Open project</span>';
       detailContent.outerHTML = (
         '<article class="market-project-detail" data-project-detail-content data-job-id="' + escapeAttribute(job.id) + '">' +
-          '<div class="project-detail-heading">' + sample + "<span>" + escapeHtml(job.category || "Project") + "</span></div>" +
+          '<div class="project-detail-heading">' + sample + "<span>" + escapeHtml(job.service_name || job.category || "Project") + "</span></div>" +
           "<h2>" + escapeHtml(job.title || "Open project") + "</h2>" +
           '<p class="project-detail-location">' + escapeHtml(placeLabel(job)) + "</p>" +
           '<dl class="project-facts"><div><dt>Estimated budget</dt><dd>' + escapeHtml(job.budget || "Budget not provided") + "</dd></div>" +

@@ -5,10 +5,51 @@
   <div>
     <p class="eyebrow">Client job</p>
     <h1>{{ job.title }}</h1>
-    <p>{{ job.category }} in {{ job.city }}, {{ job.state }} {{ job.zip_code }}</p>
+    <p>{{ job.service_slug|service_name(job.category) }} in {{ job.city }}, {{ job.state }} {{ job.zip_code }}</p>
   </div>
   <span class="status {{ job.status }}">{{ job.status }}</span>
 </section>
+
+<ol class="project-journey" aria-label="Project journey">
+  <li class="is-complete"><span>01</span><strong>Posted</strong></li>
+  <li{% if request_stats.total %} class="is-complete"{% endif %}><span>02</span><strong>Bids</strong></li>
+  <li{% if request_stats.approved %} class="is-complete"{% endif %}><span>03</span><strong>Matched</strong></li>
+  <li{% if request_stats.verified %} class="is-complete"{% endif %}><span>04</span><strong>Complete</strong></li>
+</ol>
+
+<section class="bid-window bid-window-{{ bid_window.state }}" aria-label="Bid availability">
+  <div>
+    <span class="bid-window-kicker">Fair bid window</span>
+    <strong>{{ bid_window.availability_label }}</strong>
+  </div>
+  <div class="bid-window-status">
+    <span>{{ bid_window.usage_label }}</span>
+    <span>{% if bid_window.is_expired %}Closed{% else %}Closes{% endif %} {{ bid_window.deadline_label }}</span>
+  </div>
+  <progress value="{{ bid_window.used }}" max="{{ bid_window.limit }}">{{ bid_window.usage_label }}</progress>
+  {% if bid_window.can_extend %}
+    <form method="post" action="{{ url_for('extend_job_bids', job_id=job.id) }}">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <button class="button secondary compact" type="submit">Add 7 days</button>
+    </form>
+  {% endif %}
+</section>
+
+{% if repeat_invitation %}
+  <section class="repeat-invitation-banner compact-banner" aria-label="Repeat contractor invitation">
+    <div>
+      <span class="eyebrow">Prior contractor</span>
+      <strong>{{ repeat_invitation.contractor_name }}</strong>
+      <p>{{ repeat_invitation.status_label }}. {% if repeat_invitation.status == 'pending' %}They can review the project and choose whether to send a fresh mini bid.{% elif repeat_invitation.status == 'bid_sent' %}Their new mini bid follows the same approval rules as every other bid.{% elif repeat_invitation.status == 'declined' %}The project remains open to other eligible contractors.{% else %}The project remains open to ordinary mini bids.{% endif %}</p>
+    </div>
+    {% if repeat_invitation.status == 'pending' %}
+      <form method="post" action="{{ url_for('respond_repeat_invitation', invitation_id=repeat_invitation.id, action='withdraw') }}">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <button class="button secondary compact" type="submit">Withdraw</button>
+      </form>
+    {% endif %}
+  </section>
+{% endif %}
 
 <nav class="lead-action-bar client-review-bar" aria-label="Client job shortcuts">
   {% if request_stats.pending %}
@@ -22,11 +63,26 @@
   <article class="panel">
     <h2>Scope</h2>
     <dl class="job-facts">
-      <div><dt>Trade</dt><dd>{{ job.category }}</dd></div>
+      <div><dt>Service</dt><dd>{{ job.service_slug|service_name(job.category) }}</dd></div>
+      <div><dt>Setting</dt><dd>{{ job.project_setting|project_setting_label }}</dd></div>
       <div><dt>Area</dt><dd>{{ job.city }}, {{ job.state }} {{ job.zip_code }}</dd></div>
       <div><dt>Target</dt><dd>{{ job.desired_date|date_label if job.desired_date else "Flexible" }}</dd></div>
+      <div><dt>Budget</dt><dd>{{ job|budget_label }}</dd></div>
       <div><dt>Photos</dt><dd>{{ photos|length }}</dd></div>
+      <div><dt>Bids</dt><dd>{{ bid_window.usage_label }}</dd></div>
     </dl>
+    {% include "_brief_readiness.html" %}
+    {% if scope_answers %}
+      <section class="quote-ready-details" aria-labelledby="quote-ready-details-title">
+        <div class="section-heading compact-heading">
+          <p class="eyebrow">Project signals</p>
+          <h3 id="quote-ready-details-title">Quote-ready details</h3>
+        </div>
+        <dl class="scope-answer-list">
+          {% for answer in scope_answers %}<div><dt>{{ answer.question_label }}</dt><dd>{{ answer.answer_label }}</dd></div>{% endfor %}
+        </dl>
+      </section>
+    {% endif %}
     <p class="preline">{{ job.description }}</p>
     <div class="photo-grid">
       {% for photo in photos %}
@@ -38,24 +94,59 @@
     </div>
   </article>
 
-  <aside class="panel">
+  <aside id="job-controls" class="panel">
     <h2>Job controls</h2>
     <a class="button full" href="{{ url_for('edit_job', job_id=job.id) }}">Edit job</a>
     {% if job.status == 'open' %}
-      <form method="post" action="{{ url_for('client_job_status', job_id=job.id, action='close') }}">
-        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-        <button class="button secondary full" type="submit">Close job</button>
-      </form>
-    {% elif job.status == 'closed' %}
+      <button class="button secondary full" type="button" data-inline-dialog-open="close-job-dialog">Close job</button>
+    {% elif job.status == 'closed' and not requests|selectattr('client_confirmed_at')|list and not requests|selectattr('contractor_confirmed_at')|list %}
       <form method="post" action="{{ url_for('client_job_status', job_id=job.id, action='reopen') }}">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <button class="button secondary full" type="submit">Reopen job</button>
       </form>
+    {% elif job.status == 'closed' %}
+      <p class="help-text">This project cannot reopen after either participant confirms completion.</p>
     {% else %}
       <p class="help-text">This job is hidden by moderation.</p>
     {% endif %}
+    {% if job.status == 'closed' and job.close_reason %}
+      <div class="close-outcome-summary">
+        <span>Close outcome</span>
+        <strong>{{ job.close_reason|project_close_reason_label }}</strong>
+        {% if job.close_note %}<p>{{ job.close_note }}</p>{% endif %}
+      </div>
+    {% endif %}
   </aside>
 </section>
+
+{% if job.status == 'open' %}
+  <dialog id="close-job-dialog" class="inline-dialog" data-inline-dialog aria-labelledby="close-job-title">
+    <form class="inline-dialog-surface stack-form" method="post" action="{{ url_for('client_job_status', job_id=job.id, action='close') }}">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <header class="inline-dialog-header">
+        <div><p class="eyebrow">Project close-out</p><h2 id="close-job-title">Where did this project land?</h2></div>
+        <button class="button secondary compact" type="button" data-inline-dialog-close>Cancel</button>
+      </header>
+      <p class="help-text">This keeps project history and pilot results accurate. Private notes are visible only to you and Workdoe administrators.</p>
+      <fieldset class="outcome-choice-list">
+        <legend>Choose one outcome</legend>
+        {% for option in project_close_reasons %}
+          <label class="outcome-choice">
+            <input type="radio" name="reason_code" value="{{ option.value }}" required>
+            <span><strong>{{ option.label }}</strong><small>{{ option.description }}</small></span>
+          </label>
+        {% endfor %}
+      </fieldset>
+      <label for="close-job-note">Private note (optional)
+        <textarea id="close-job-note" name="note" rows="3" maxlength="{{ outcome_note_max }}" placeholder="Anything the operations team should understand?" autocapitalize="sentences" spellcheck="true"></textarea>
+      </label>
+      <div class="inline-dialog-actions">
+        <button class="button secondary" type="button" data-inline-dialog-close>Keep open</button>
+        <button class="button" type="submit">Close project</button>
+      </div>
+    </form>
+  </dialog>
+{% endif %}
 
 <section id="mini-bids" class="band subtle bid-review-section" tabindex="-1" aria-labelledby="mini-bids-title">
   <div class="section-heading">
@@ -89,9 +180,11 @@
       </a>
     {% endfor %}
   </nav>
+  {% include "_bid_comparison.html" %}
   <div class="job-list bid-review-list" aria-live="polite">
     {% for item in requests %}
       {% set contractor_name = item.business_name or item.company_name or item.display_name %}
+      {% set item_reviews = reviews_by_request.get(item.id, {}) %}
       <article class="job-row bid-row bid-review-row{% if item.status == 'pending' %} needs-review{% endif %}" aria-labelledby="bid-title-{{ item.id }}">
         <div class="bid-card-main">
           <div class="bid-row-top">
@@ -107,6 +200,12 @@
               <a class="button secondary compact" href="{{ url_for('contractor_public_profile', contractor_id=item.contractor_id) }}">Profile</a>
               {% if item.status == 'approved' and item.thread_id %}
                 <a class="button compact" href="{{ url_for('thread_detail', thread_id=item.thread_id) }}">Message</a>
+              {% endif %}
+              {% if item.status == 'approved' and job.status == 'closed' and job.close_reason == 'workdoe-match' and not item.client_confirmed_at %}
+                <form method="post" action="{{ url_for('confirm_match_completion', request_id=item.id) }}">
+                  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                  <button class="button compact" type="submit">Confirm complete</button>
+                </form>
               {% endif %}
               {% if item.status == 'pending' %}
                 <form method="post" action="{{ url_for('decide_request', request_id=item.id, action='approve') }}">
@@ -132,6 +231,24 @@
               {% if item.questions %}<p><strong>Questions:</strong> {{ item.questions }}</p>{% endif %}
             </div>
           </div>
+          {% if item.status == 'approved' %}
+            <div class="completion-status {{ item|completion_state }}">
+              <strong>{{ item|completion_label('client') }}</strong>
+              {% if job.status != 'closed' %}<span>Close the project after the work is finished to begin confirmation.</span>{% elif job.close_reason != 'workdoe-match' %}<span>This project closed without a Workdoe fulfillment claim.</span>{% elif item.verified_at %}<span>Both participants confirmed this Workdoe project.</span>{% else %}<span>Both participants confirm independently. No rating or payment is created.</span>{% endif %}
+            </div>
+            {% if item.verified_at %}
+              <section id="completed-feedback" class="completed-feedback" aria-label="Completed-work feedback for {{ contractor_name }}">
+                {% if not item_reviews.get('client') %}
+                  {% set request_id = item.id %}
+                  {% set reviewer_role = 'client' %}
+                  {% include "_match_review_form.html" %}
+                {% endif %}
+                {% for review in item_reviews.values() %}
+                  {% include "_match_review_card.html" %}
+                {% endfor %}
+              </section>
+            {% endif %}
+          {% endif %}
         </div>
       </article>
     {% else %}

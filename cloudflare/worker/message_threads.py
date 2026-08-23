@@ -80,6 +80,7 @@ def message_thread_summary(row) -> dict:
         "job_id": row_value(row, "job_id"),
         "title": row_value(row, "title"),
         "category": row_value(row, "category"),
+        "service_slug": row_value(row, "service_slug", ""),
         "city": row_value(row, "city"),
         "state": row_value(row, "state"),
         "client_name": row_value(row, "client_name"),

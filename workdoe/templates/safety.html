@@ -2,27 +2,33 @@
 {% block title %}Safety - Workdoe{% endblock %}
 {% block content %}
 <section class="page-header">
-  <p class="eyebrow">Trust model</p>
-  <h1>Privacy and moderation are part of the MVP, not a later patch.</h1>
-  <p>Workdoe is designed around compartmentalized records, private media routes, and controlled match approvals.</p>
+  <p class="eyebrow">Work with confidence</p>
+  <h1>Share only what the job needs.</h1>
+  <p>Workdoe keeps early conversations focused on project scope, approximate location, and contractor fit.</p>
 </section>
 
-<section class="content-grid two">
+<section class="content-grid two" aria-label="Workdoe safety practices">
   <article class="panel">
-    <h2>Location privacy</h2>
-    <p>Jobs collect city, state, and ZIP for the DMV beta. Contractors see approximate pins and never receive an exact address through the lead board.</p>
+    <h2>Approximate locations</h2>
+    <p>Contractors see the city and a rounded ZIP area before a client approves a bid. Do not put an exact address in a public project description.</p>
   </article>
   <article class="panel">
-    <h2>Photo privacy</h2>
-    <p>Job photos are stored outside the public static folder. The app checks the viewer before serving each file.</p>
+    <h2>Private contact</h2>
+    <p>A private message thread opens after the client approves a contractor's mini bid. Keep access codes, payment details, and sensitive documents out of messages.</p>
   </article>
   <article class="panel">
-    <h2>Account separation</h2>
-    <p>Clients, contractors, and admins have separate role-based dashboards. Password hashes stay in auth records, separate from jobs and media metadata.</p>
+    <h2>Review before approval</h2>
+    <p>Clients can compare the proposed scope, price range, timeline, experience, and availability before choosing who to contact.</p>
   </article>
   <article class="panel">
-    <h2>Cloudflare path</h2>
-    <p>When this moves to Cloudflare, D1 stores structured records, R2 stores photos, Email Service handles transactional email, and Turnstile protects forms.</p>
+    <h2>Report concerns</h2>
+    <p>Report suspicious projects, profiles, photos, or messages from the related Workdoe page. Workdoe moderators can review content and suspend accounts when needed.</p>
   </article>
+</section>
+
+<section class="trust-contact" aria-labelledby="safety-contact-title">
+  <p class="eyebrow">Contact</p>
+  <h2 id="safety-contact-title">Safety and account help</h2>
+  <p>Email <a href="mailto:admin@workdoe.com">admin@workdoe.com</a> for account, privacy, or safety requests. Workdoe is not an emergency service; call 911 when anyone faces immediate danger.</p>
 </section>
 {% endblock %}

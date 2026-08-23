@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from service_taxonomy import service_selection
+
 
 DEMO_PROJECTS = [
     {
@@ -207,10 +209,31 @@ def compact_spaces(value: str | None) -> str:
 def demo_projects_for_filters(filters: dict[str, str] | None = None) -> list[dict]:
     active = filters or {}
     category = compact_spaces(active.get("category"))
+    family = compact_spaces(active.get("family"))
+    service_slug = compact_spaces(active.get("service"))
     query = compact_spaces(active.get("q")).lower()
-    projects = [dict(project, is_demo=True, photo_count=0) for project in DEMO_PROJECTS]
+    projects = []
+    for project in DEMO_PROJECTS:
+        service = service_selection("", "", project["category"])
+        projects.append(
+            dict(
+                project,
+                is_demo=True,
+                photo_count=0,
+                service_group_slug=service["service_group_slug"],
+                service_slug=service["service_slug"],
+            )
+        )
     if category:
         projects = [project for project in projects if project["category"] == category]
+    if family:
+        projects = [
+            project for project in projects if project["service_group_slug"] == family
+        ]
+    if service_slug:
+        projects = [
+            project for project in projects if project["service_slug"] == service_slug
+        ]
     if query:
         projects = [
             project
@@ -236,5 +259,15 @@ def demo_projects_for_filters(filters: dict[str, str] | None = None) -> list[dic
     return projects
 
 
-def guest_project_rows(rows: list, filters: dict[str, str] | None = None) -> list:
-    return list(rows) + demo_projects_for_filters(filters)
+def guest_project_rows(
+    rows: list,
+    filters: dict[str, str] | None = None,
+    limit: int | None = None,
+) -> list:
+    live_rows = list(rows)
+    demo_rows = demo_projects_for_filters(filters)
+    if limit is None:
+        return live_rows + demo_rows
+    capped_limit = max(0, int(limit))
+    live_rows = live_rows[:capped_limit]
+    return live_rows + demo_rows[: max(0, capped_limit - len(live_rows))]

@@ -9,6 +9,14 @@
   <a class="button" href="{{ url_for('new_job') }}">Post a project</a>
 </section>
 
+<section class="consumer-workspace-context" aria-label="Consumer profile summary">
+  <div>
+    <strong>{{ profile.organization_name }}</strong>
+    <span>{{ account_type_label(profile.account_type) }} - {{ saved_locations|length }} saved area{{ "" if saved_locations|length == 1 else "s" }} - {{ project_templates|length }} template{{ "" if project_templates|length == 1 else "s" }}</span>
+  </div>
+  <a class="button secondary compact" href="{{ url_for('client_profile') }}">Manage profile</a>
+</section>
+
 <section class="dashboard-metrics" aria-label="Client work queue">
   <a class="metric-card" href="{{ url_for('new_job') }}">
     <span>Post</span>
@@ -21,6 +29,10 @@
   <div class="metric-card">
     <span>Pending bids</span>
     <strong>{{ stats.pending_requests }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>Brief-ready</span>
+    <strong>{{ stats.brief_ready_jobs }}</strong>
   </div>
   <div class="metric-card">
     <span>Total projects</span>
@@ -46,9 +58,12 @@
       <div>
         <div class="row-meta">
           <span class="status {{ job.status }}">{{ job.status }}</span>
-          <span>{{ job.category }}</span>
+          <span>{{ job.service_slug|service_name(job.category) }}</span>
           <span>{{ job.city }}, {{ job.state }}</span>
           {% if job.desired_date %}<span>Target <time datetime="{{ job.desired_date }}">{{ job.desired_date|date_label }}</time></span>{% endif %}
+          <span>{{ job|budget_label }}</span>
+          <span class="brief-pill {{ job.brief_readiness.state }}">{{ job.brief_readiness.label }}</span>
+          <span class="bid-availability {{ job.bid_window.state }}">{{ job.bid_window.usage_label }} - {{ job.bid_window.availability_label }}</span>
         </div>
         <h2>{{ job.title }}</h2>
         <p class="job-summary">{{ job.description }}</p>
@@ -71,5 +86,43 @@
       {% endif %}
     </div>
   {% endfor %}
+</section>
+
+<section class="work-history" aria-labelledby="consumer-history-title">
+  <div class="section-heading history-heading">
+    <div>
+      <p class="eyebrow">Project history</p>
+      <h2 id="consumer-history-title">Previous work</h2>
+    </div>
+    <span class="count-pill">{{ project_history|length }} closed</span>
+  </div>
+  <div class="history-list">
+    {% for job in project_history %}
+      <div class="history-row repeat-history-row">
+        <div>
+          <div class="row-meta">
+            <span>{{ job.service_slug|service_name(job.category) }}</span>
+            <span>{{ job.city }}, {{ job.state }}</span>
+            {% if job.desired_date %}<span>Target <time datetime="{{ job.desired_date }}">{{ job.desired_date|date_label }}</time></span>{% endif %}
+            <span class="brief-pill {{ job.brief_readiness.state }}">{{ job.brief_readiness.label }}</span>
+          </div>
+          <h3>{{ job.title }}</h3>
+          <p>{{ job.description }}</p>
+          {% if job.close_reason %}<span class="outcome-chip">{{ job.close_reason|project_close_reason_label }}</span>{% endif %}
+          {% if job.verified_completion_count %}<span class="completion-chip verified">Verified complete</span>{% elif job.approved_count %}<span class="completion-chip awaiting">Completion pending</span>{% endif %}
+        </div>
+        <div class="history-row-actions">
+          <a class="button secondary compact" href="{{ url_for('client_job_detail', job_id=job.id) }}">Review</a>
+          <a class="button secondary compact" href="{{ url_for('client_profile', source_job=job.id) }}#project-templates">Save template</a>
+          <a class="button compact" href="{{ url_for('new_job', repeat=job.id) }}" data-dialog-title="Post this project again">Post again</a>
+          {% if job.repeat_match_request_id and job.repeat_contractor_name %}
+            <a class="button compact repeat-invite-action" href="{{ url_for('new_job', repeat=job.id, invite=job.repeat_match_request_id) }}" data-dialog-title="Invite {{ job.repeat_contractor_name }} again">Invite again</a>
+          {% endif %}
+        </div>
+      </div>
+    {% else %}
+      <p class="empty history-empty">Closed projects will collect here as your private work history.</p>
+    {% endfor %}
+  </div>
 </section>
 {% endblock %}

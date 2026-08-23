@@ -7,11 +7,12 @@ import asyncio
 import contextlib
 import io
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,26 +40,119 @@ CLERK_SESSIONS_PATH = ROOT / "cloudflare" / "worker" / "clerk_sessions.py"
 CLERK_PROXY_PATH = ROOT / "cloudflare" / "worker" / "clerk_proxy.py"
 CLERK_WEBHOOKS_PATH = ROOT / "cloudflare" / "worker" / "clerk_webhooks.py"
 EMAIL_PAYLOADS_PATH = ROOT / "cloudflare" / "worker" / "email_payloads.py"
+EMAIL_CODE_AUTH_PATH = ROOT / "cloudflare" / "worker" / "email_code_auth.py"
 ADMIN_MODERATION_PATH = ROOT / "cloudflare" / "worker" / "admin_moderation.py"
 CONTRACTOR_PROFILES_PATH = ROOT / "cloudflare" / "worker" / "contractor_profiles.py"
+CONTRACTOR_CREDENTIALS_PATH = ROOT / "cloudflare" / "worker" / "contractor_credentials.py"
+CONTRACTOR_PREFERENCES_PATH = ROOT / "cloudflare" / "worker" / "contractor_preferences.py"
+CONTRACTOR_PROPOSAL_TEMPLATES_PATH = (
+    ROOT / "cloudflare" / "worker" / "contractor_proposal_templates.py"
+)
+CLIENT_PROFILES_PATH = ROOT / "cloudflare" / "worker" / "client_profiles.py"
+CLIENT_PROJECT_TEMPLATES_PATH = ROOT / "cloudflare" / "worker" / "client_project_templates.py"
 CONTRACTOR_PUBLIC_PROFILES_PATH = ROOT / "cloudflare" / "worker" / "contractor_public_profiles.py"
 CONTRACTOR_LEADS_PATH = ROOT / "cloudflare" / "worker" / "contractor_leads.py"
 CONTRACTOR_BIDS_PATH = ROOT / "cloudflare" / "worker" / "contractor_bids.py"
 CLIENT_JOBS_PATH = ROOT / "cloudflare" / "worker" / "client_jobs.py"
 CLIENT_REQUESTS_PATH = ROOT / "cloudflare" / "worker" / "client_requests.py"
+BID_COMPARISON_PATH = ROOT / "cloudflare" / "worker" / "bid_comparison.py"
 ENTRY_SHELL_PATH = ROOT / "cloudflare" / "worker" / "entry_shell.py"
 PUBLIC_JOBS_PATH = ROOT / "cloudflare" / "worker" / "public_jobs.py"
 DEMO_PROJECTS_PATH = ROOT / "cloudflare" / "worker" / "demo_projects.py"
 JOB_DETAILS_PATH = ROOT / "cloudflare" / "worker" / "job_details.py"
 JOB_STATUS_PATH = ROOT / "cloudflare" / "worker" / "job_status.py"
 JOB_POSTS_PATH = ROOT / "cloudflare" / "worker" / "job_posts.py"
+SERVICE_TAXONOMY_PATH = ROOT / "cloudflare" / "worker" / "service_taxonomy.py"
+SERVICE_SCOPE_PATH = ROOT / "cloudflare" / "worker" / "service_scope.py"
+PROJECT_READINESS_PATH = ROOT / "cloudflare" / "worker" / "project_readiness.py"
+PILOT_METRICS_PATH = ROOT / "cloudflare" / "worker" / "pilot_metrics.py"
+SERVICE_ACTIVATION_PATH = ROOT / "cloudflare" / "worker" / "service_activation.py"
+MARKET_FIT_PATH = ROOT / "cloudflare" / "worker" / "market_fit.py"
 TURNSTILE_PATH = ROOT / "cloudflare" / "worker" / "turnstile.py"
 MATCH_REQUESTS_PATH = ROOT / "cloudflare" / "worker" / "match_requests.py"
 MATCH_DECISIONS_PATH = ROOT / "cloudflare" / "worker" / "match_decisions.py"
+MATCH_COMPLETIONS_PATH = ROOT / "cloudflare" / "worker" / "match_completions.py"
+MATCH_REVIEWS_PATH = ROOT / "cloudflare" / "worker" / "match_reviews.py"
+REPEAT_PROVIDER_INVITATIONS_PATH = (
+    ROOT / "cloudflare" / "worker" / "repeat_provider_invitations.py"
+)
 MESSAGE_THREADS_PATH = ROOT / "cloudflare" / "worker" / "message_threads.py"
 MODERATION_REPORTS_PATH = ROOT / "cloudflare" / "worker" / "moderation_reports.py"
 MEDIA_ACCESS_PATH = ROOT / "cloudflare" / "worker" / "media_access.py"
 MEDIA_UPLOADS_PATH = ROOT / "cloudflare" / "worker" / "media_uploads.py"
+REQUEST_SECURITY_PATH = ROOT / "cloudflare" / "worker" / "request_security.py"
+IDEMPOTENCY_PATH = ROOT / "cloudflare" / "worker" / "idempotency.py"
+WORKER_ENTRY_PATH = ROOT / "cloudflare" / "worker" / "entry.py"
+
+
+def load_worker_entry_module():
+    workers_stub = ModuleType("workers")
+
+    class StubResponse:
+        def __init__(self, body="", status=200, headers=None):
+            self.body = body
+            self.status = status
+            self.headers = headers or {}
+
+    class StubWorkerEntrypoint:
+        pass
+
+    async def stub_fetch(*args, **kwargs):
+        raise RuntimeError("Network fetch is not available in unit tests.")
+
+    workers_stub.Response = StubResponse
+    workers_stub.WorkerEntrypoint = StubWorkerEntrypoint
+    workers_stub.fetch = stub_fetch
+    previous_workers = sys.modules.get("workers")
+    worker_dir = str(WORKER_ENTRY_PATH.parent)
+    sys.modules["workers"] = workers_stub
+    sys.path.insert(0, worker_dir)
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "cloudflare_worker_entry_test",
+            WORKER_ENTRY_PATH,
+        )
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.path.remove(worker_dir)
+        if previous_workers is None:
+            sys.modules.pop("workers", None)
+        else:
+            sys.modules["workers"] = previous_workers
+
+
+def load_repeat_provider_invitations_module():
+    spec = importlib.util.spec_from_file_location(
+        "repeat_provider_invitations",
+        REPEAT_PROVIDER_INVITATIONS_PATH,
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_idempotency_module():
+    spec = importlib.util.spec_from_file_location("idempotency", IDEMPOTENCY_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_match_reviews_module():
+    spec = importlib.util.spec_from_file_location("match_reviews", MATCH_REVIEWS_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def load_release_script():
@@ -309,6 +403,7 @@ def load_admin_moderation_module():
 
 
 def load_public_jobs_module():
+    load_job_posts_module()
     spec = importlib.util.spec_from_file_location("public_jobs", PUBLIC_JOBS_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -318,6 +413,7 @@ def load_public_jobs_module():
 
 
 def load_demo_projects_module():
+    load_service_taxonomy_module()
     spec = importlib.util.spec_from_file_location("demo_projects", DEMO_PROJECTS_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -338,6 +434,15 @@ def load_entry_shell_module():
 
 def load_app_shell_module():
     load_job_posts_module()
+    load_match_reviews_module()
+    load_market_fit_module()
+    load_client_profiles_module()
+    load_client_project_templates_module()
+    load_contractor_profiles_module()
+    load_contractor_credentials_module()
+    load_contractor_preferences_module()
+    load_entry_shell_module()
+    load_service_activation_module()
     spec = importlib.util.spec_from_file_location("app_shell", APP_SHELL_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -347,6 +452,8 @@ def load_app_shell_module():
 
 
 def load_job_details_module():
+    load_job_posts_module()
+    load_project_readiness_module()
     spec = importlib.util.spec_from_file_location("job_details", JOB_DETAILS_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -365,7 +472,68 @@ def load_job_status_module():
 
 
 def load_job_posts_module():
+    load_service_taxonomy_module()
+    load_service_scope_module()
     spec = importlib.util.spec_from_file_location("job_posts", JOB_POSTS_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_service_taxonomy_module():
+    spec = importlib.util.spec_from_file_location("service_taxonomy", SERVICE_TAXONOMY_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_service_scope_module():
+    load_service_taxonomy_module()
+    spec = importlib.util.spec_from_file_location("service_scope", SERVICE_SCOPE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_project_readiness_module():
+    spec = importlib.util.spec_from_file_location(
+        "project_readiness", PROJECT_READINESS_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_pilot_metrics_module():
+    load_project_readiness_module()
+    spec = importlib.util.spec_from_file_location("pilot_metrics", PILOT_METRICS_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_service_activation_module():
+    spec = importlib.util.spec_from_file_location("service_activation", SERVICE_ACTIVATION_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_market_fit_module():
+    load_service_taxonomy_module()
+    spec = importlib.util.spec_from_file_location("market_fit", MARKET_FIT_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module
@@ -427,7 +595,17 @@ def load_email_payloads_module():
     return module
 
 
+def load_email_code_auth_module():
+    spec = importlib.util.spec_from_file_location("email_code_auth", EMAIL_CODE_AUTH_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_contractor_profiles_module():
+    load_market_fit_module()
     spec = importlib.util.spec_from_file_location("contractor_profiles", CONTRACTOR_PROFILES_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -436,7 +614,65 @@ def load_contractor_profiles_module():
     return module
 
 
+def load_contractor_credentials_module():
+    spec = importlib.util.spec_from_file_location(
+        "contractor_credentials", CONTRACTOR_CREDENTIALS_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_contractor_preferences_module():
+    load_service_taxonomy_module()
+    spec = importlib.util.spec_from_file_location(
+        "contractor_preferences", CONTRACTOR_PREFERENCES_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_client_profiles_module():
+    spec = importlib.util.spec_from_file_location("client_profiles", CLIENT_PROFILES_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_client_project_templates_module():
+    spec = importlib.util.spec_from_file_location(
+        "client_project_templates", CLIENT_PROJECT_TEMPLATES_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_contractor_proposal_templates_module():
+    spec = importlib.util.spec_from_file_location(
+        "contractor_proposal_templates", CONTRACTOR_PROPOSAL_TEMPLATES_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_contractor_public_profiles_module():
+    load_market_fit_module()
+    load_contractor_profiles_module()
+    load_contractor_credentials_module()
+    load_contractor_preferences_module()
     spec = importlib.util.spec_from_file_location(
         "contractor_public_profiles",
         CONTRACTOR_PUBLIC_PROFILES_PATH,
@@ -449,6 +685,8 @@ def load_contractor_public_profiles_module():
 
 
 def load_client_jobs_module():
+    load_job_posts_module()
+    load_project_readiness_module()
     spec = importlib.util.spec_from_file_location("client_jobs", CLIENT_JOBS_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -458,6 +696,9 @@ def load_client_jobs_module():
 
 
 def load_client_requests_module():
+    load_job_posts_module()
+    load_match_completions_module()
+    load_bid_comparison_module()
     spec = importlib.util.spec_from_file_location("client_requests", CLIENT_REQUESTS_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -466,7 +707,21 @@ def load_client_requests_module():
     return module
 
 
+def load_bid_comparison_module():
+    spec = importlib.util.spec_from_file_location(
+        "bid_comparison", BID_COMPARISON_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_contractor_leads_module():
+    load_job_posts_module()
+    load_market_fit_module()
+    load_project_readiness_module()
     spec = importlib.util.spec_from_file_location("contractor_leads", CONTRACTOR_LEADS_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -476,7 +731,20 @@ def load_contractor_leads_module():
 
 
 def load_contractor_bids_module():
+    load_match_completions_module()
     spec = importlib.util.spec_from_file_location("contractor_bids", CONTRACTOR_BIDS_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_match_completions_module():
+    spec = importlib.util.spec_from_file_location(
+        "match_completions",
+        MATCH_COMPLETIONS_PATH,
+    )
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module
@@ -495,6 +763,15 @@ def load_media_access_module():
 
 def load_media_uploads_module():
     spec = importlib.util.spec_from_file_location("media_uploads", MEDIA_UPLOADS_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_request_security_module():
+    spec = importlib.util.spec_from_file_location("request_security", REQUEST_SECURITY_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module
@@ -531,6 +808,151 @@ def fake_session_token(
 
 
 class CloudflareReleasePrepTests(unittest.TestCase):
+    def test_cloudflare_idempotency_contract_hashes_retry_keys_and_scopes_resources(self):
+        module = load_idempotency_module()
+        key = "idem-cloudflare-1234567890abcdef"
+        self.assertEqual(module.normalize_idempotency_key(key), key)
+        self.assertEqual(len(module.idempotency_key_hash(key)), 64)
+        self.assertNotEqual(module.idempotency_key_hash(key), key)
+        self.assertEqual(
+            module.idempotency_action("message-create", 42),
+            "message-create:42",
+        )
+        self.assertEqual(
+            module.idempotency_resource_type("contractor_photo"),
+            "contractor_photo",
+        )
+        with self.assertRaises(module.IdempotencyError):
+            module.normalize_idempotency_key("short", required=True)
+        with self.assertRaises(module.IdempotencyError):
+            module.normalize_idempotency_key("x" * 20 + " unsafe", required=True)
+        with self.assertRaises(module.IdempotencyError):
+            module.idempotency_action("message-create", 0)
+
+        migration = (
+            ROOT
+            / "cloudflare"
+            / "d1"
+            / "migrations"
+            / "0022_idempotent_marketplace_writes.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CREATE TABLE IF NOT EXISTS idempotency_requests", migration)
+        self.assertIn("UNIQUE(actor_id, action, key_hash)", migration)
+        self.assertIn("CHECK (length(key_hash) = 64)", migration)
+        for private_field in ("email", "description", "body", "reason", "stored_path"):
+            self.assertNotIn(private_field, migration.lower())
+
+        worker_actions = (ROOT / "workdoe" / "static" / "worker-actions.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("window.crypto.randomUUID", worker_actions)
+        self.assertIn('"Idempotency-Key": requestKey', worker_actions)
+        self.assertIn('uploadData.append("idempotency_key"', worker_actions)
+        entry = WORKER_ENTRY_PATH.read_text(encoding="utf-8")
+        self.assertIn("async def begin_idempotent_request", entry)
+        self.assertIn("async def complete_idempotent_request", entry)
+        self.assertIn('"job-create"', entry)
+        self.assertIn('idempotency_action("message-create", thread_id)', entry)
+        self.assertIn('idempotency_action(f"media-upload-{scope}", owner_id)', entry)
+
+        entry_module = load_worker_entry_module()
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        connection.executescript(migration)
+
+        async def fake_db_run(_env, sql, *params):
+            before = connection.total_changes
+            cursor = connection.execute(sql, params)
+            rows = (
+                [dict(row) for row in cursor.fetchall()]
+                if sql.lstrip().upper().startswith("SELECT")
+                else []
+            )
+            connection.commit()
+            return {
+                "results": rows,
+                "meta": {
+                    "changes": connection.total_changes - before,
+                    "last_row_id": cursor.lastrowid,
+                },
+            }
+
+        entry_module.db_run = fake_db_run
+        reserved = asyncio.run(
+            entry_module.begin_idempotent_request(
+                SimpleNamespace(), 8, "job-create", "job", key
+            )
+        )
+        self.assertEqual(reserved["state"], "reserved")
+        processing = asyncio.run(
+            entry_module.begin_idempotent_request(
+                SimpleNamespace(), 8, "job-create", "job", key
+            )
+        )
+        self.assertEqual(processing["state"], "processing")
+        self.assertEqual(entry_module.idempotency_conflict_response(processing).status, 409)
+        asyncio.run(
+            entry_module.complete_idempotent_request(
+                SimpleNamespace(), 8, reserved, 99
+            )
+        )
+        replay = asyncio.run(
+            entry_module.begin_idempotent_request(
+                SimpleNamespace(), 8, "job-create", "job", key
+            )
+        )
+        self.assertEqual(replay["state"], "replay")
+        self.assertEqual(replay["resource_id"], 99)
+        stored = connection.execute(
+            "SELECT key_hash, resource_type, status FROM idempotency_requests"
+        ).fetchone()
+        self.assertEqual(stored["key_hash"], module.idempotency_key_hash(key))
+        self.assertEqual(stored["resource_type"], "job")
+        self.assertEqual(stored["status"], "completed")
+        connection.close()
+
+    def test_worker_same_origin_write_marker_policy(self):
+        module = load_request_security_module()
+        self.assertTrue(
+            module.same_origin_api_write_allowed("GET", "/api/client/jobs", "")
+        )
+        self.assertTrue(
+            module.same_origin_api_write_allowed("POST", "/post-project", "")
+        )
+        self.assertTrue(
+            module.same_origin_api_write_allowed(
+                "POST", "/api/jobs", module.WORKDOE_REQUEST_MARKER
+            )
+        )
+        self.assertFalse(module.same_origin_api_write_allowed("POST", "/api/jobs", ""))
+        self.assertFalse(
+            module.same_origin_api_write_allowed(
+                "POST", "/api/media/jobs/12/upload", "cross-site"
+            )
+        )
+        self.assertTrue(
+            module.authenticated_write_rate_limit_required(
+                "POST", "/api/messages/threads/1"
+            )
+        )
+        self.assertTrue(
+            module.authenticated_write_rate_limit_required("POST", "/api/reports")
+        )
+        self.assertFalse(
+            module.authenticated_write_rate_limit_required("GET", "/api/reports")
+        )
+        self.assertFalse(
+            module.authenticated_write_rate_limit_required(
+                "POST", "/api/auth/logout"
+            )
+        )
+        self.assertEqual(
+            module.authenticated_write_rate_limit_key(17),
+            "workdoe-user:17",
+        )
+        with self.assertRaises(ValueError):
+            module.authenticated_write_rate_limit_key(0)
+
     def test_release_prep_writes_d1_migration_and_manifest(self):
         module = load_release_script()
         with tempfile.TemporaryDirectory() as tmp:
@@ -556,6 +978,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertIn("selected_job_id INTEGER", migration_sql)
             self.assertIn("idx_login_codes_selected_job", migration_sql)
             self.assertIn("idx_automation_events_type_target", migration_sql)
+            self.assertNotIn("CREATE TABLE IF NOT EXISTS contractor_lead_preferences", migration_sql)
+            self.assertNotIn("CREATE TABLE IF NOT EXISTS idempotency_requests", migration_sql)
 
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["domain"], "workdoe.com")
@@ -596,7 +1020,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 },
             )
             self.assertEqual(manifest["cloudflare_targets"]["database"]["service"], "D1")
-            self.assertEqual(manifest["cloudflare_targets"]["media"]["service"], "R2")
+            self.assertEqual(
+                manifest["cloudflare_targets"]["media"]["service"],
+                "Cloudflare Images and R2",
+            )
+            self.assertEqual(
+                manifest["cloudflare_targets"]["media"]["images_binding"],
+                "IMAGES",
+            )
             self.assertTrue(
                 manifest["cloudflare_targets"]["bot_protection"][
                     "server_side_validation_required"
@@ -605,6 +1036,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertEqual(
                 manifest["cloudflare_targets"]["database"]["migration_sha256"],
                 result["migration_sha256"],
+            )
+            self.assertEqual(
+                manifest["cloudflare_targets"]["database"]["migration_chain_sha256"],
+                result["migration_chain_sha256"],
+            )
+            self.assertEqual(
+                manifest["cloudflare_targets"]["database"]["migrations_dir"],
+                "cloudflare/d1/migrations",
             )
 
             wrangler = json.loads(wrangler_path.read_text(encoding="utf-8"))
@@ -625,11 +1064,23 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "preconfigured_outside_routine_deploys",
             )
             self.assertEqual(wrangler["d1_databases"][0]["binding"], "DB")
+
             self.assertEqual(
                 wrangler["d1_databases"][0]["migrations_dir"],
                 "d1/migrations",
             )
             self.assertEqual(wrangler["r2_buckets"][0]["binding"], "MEDIA")
+            self.assertEqual(wrangler["images"], {"binding": "IMAGES"})
+            self.assertEqual(
+                wrangler["ratelimits"],
+                [
+                    {
+                        "name": "WRITE_RATE_LIMITER",
+                        "namespace_id": "949417",
+                        "simple": {"limit": 40, "period": 60},
+                    }
+                ],
+            )
             self.assertEqual(wrangler["assets"]["binding"], "ASSETS")
             self.assertTrue(wrangler["assets"]["run_worker_first"])
             self.assertEqual(
@@ -648,6 +1099,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 wrangler["vars"]["WORKDOE_LOGIN_MODE"],
                 "same_domain_email_code",
             )
+            self.assertEqual(
+                wrangler["vars"]["WORKDOE_ENFORCE_SERVICE_ACTIVATION"],
+                "true",
+            )
             self.assertEqual(wrangler["vars"]["WORKDOE_EMAIL_FROM"], "no-reply@workdoe.com")
             self.assertEqual(wrangler["vars"]["WORKDOE_ADMIN_EMAIL"], "admin@workdoe.com")
             self.assertEqual(
@@ -664,6 +1119,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "CLERK_JWT_KEY",
                 "CLERK_PUBLISHABLE_KEY",
                 "CLERK_SECRET_KEY",
+                "CLERK_WEBHOOK_SECRET",
                 "WORKDOE_SECRET_KEY",
                 "WORKDOE_TURNSTILE_SITE_KEY",
                 "WORKDOE_TURNSTILE_SECRET_KEY",
@@ -675,8 +1131,72 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             dev_vars_example = dev_vars_example_path.read_text(encoding="utf-8")
             self.assertIn("WORKDOE_AUTH_PROVIDER=clerk", dev_vars_example)
             self.assertIn("WORKDOE_LOGIN_MODE=same_domain_email_code", dev_vars_example)
+            self.assertIn("WORKDOE_ENFORCE_SERVICE_ACTIVATION=true", dev_vars_example)
             for env_name in required_env_names:
                 self.assertIn(f"{env_name}=replace-me", dev_vars_example)
+
+    def test_fresh_d1_database_accepts_complete_migration_chain(self):
+        migrations_dir = ROOT / "cloudflare" / "d1" / "migrations"
+        migration_paths = sorted(migrations_dir.glob("[0-9][0-9][0-9][0-9]_*.sql"))
+        self.assertEqual(len(migration_paths), 26)
+
+        connection = sqlite3.connect(":memory:")
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            for path in migration_paths:
+                with self.subTest(migration=path.name):
+                    connection.executescript(path.read_text(encoding="utf-8"))
+
+            preference_columns = {
+                row[1]
+                for row in connection.execute(
+                    "PRAGMA table_info(contractor_lead_preferences)"
+                )
+            }
+            self.assertIn("lead_alert_preference", preference_columns)
+            self.assertIn("saved_service_group_slug", preference_columns)
+            self.assertIn("saved_service_slug", preference_columns)
+            job_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(jobs)")
+            }
+            self.assertIn("budget_min", job_columns)
+            self.assertIn("service_group_slug", job_columns)
+            self.assertIn("service_slug", job_columns)
+            self.assertFalse(connection.execute("PRAGMA foreign_key_check").fetchall())
+        finally:
+            connection.close()
+
+    def test_release_guards_immutable_baseline_and_duplicate_migrations(self):
+        release_module = load_release_script()
+        preflight_module = load_preflight_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            migrations_dir = repo_root / "cloudflare" / "d1" / "migrations"
+            migrations_dir.mkdir(parents=True)
+            (migrations_dir / "0001_initial.sql").write_text(
+                "CREATE TABLE example (id INTEGER PRIMARY KEY);\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "immutable 0001"):
+                release_module.immutable_baseline_sql(repo_root)
+
+            (migrations_dir / "0002_duplicate.sql").write_text(
+                "ALTER TABLE example ADD COLUMN id INTEGER;\n",
+                encoding="utf-8",
+            )
+            errors: list[str] = []
+            checks: list[str] = []
+            preflight_module.validate_fresh_d1_migration_chain(
+                migrations_dir,
+                errors,
+                checks,
+            )
+            self.assertTrue(errors)
+            self.assertIn("0002_duplicate.sql", errors[0])
+            self.assertNotIn(
+                "Fresh D1 database accepts the complete migration chain",
+                checks,
+            )
 
     def test_release_prep_preserves_real_d1_ids(self):
         module = load_release_script()
@@ -743,6 +1263,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "CLERK_JWT_KEY",
             "CLERK_PUBLISHABLE_KEY",
             "CLERK_SECRET_KEY",
+            "CLERK_WEBHOOK_SECRET",
             "WORKDOE_SECRET_KEY",
             "WORKDOE_TURNSTILE_SITE_KEY",
             "WORKDOE_TURNSTILE_SECRET_KEY",
@@ -1106,6 +1627,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://workdoe.com/__clerk",
                         "confirmed": True,
+                        "restricted_sign_up_mode": True,
+                        "email_code_sign_in": True,
+                        "password_sign_in_disabled": True,
+                        "custom_sign_up_url": "https://workdoe.com/create-account",
+                        "express_legal_consent": True,
+                        "terms_url": "https://workdoe.com/terms",
+                        "privacy_url": "https://workdoe.com/privacy",
                     }
                 ),
                 encoding="utf-8",
@@ -1139,10 +1667,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "Cloudflare secret evidence must be sanitized with contains_values=false.",
                 invalid["blockers"],
             )
+            self.assertIn(
+                "python scripts\\cloudflare_clerk_proxy_proof.py --confirm "
+                "--confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent",
+                invalid["next_steps"],
+            )
 
     def test_cloudflare_production_deploy_is_dry_run_by_default(self):
         module = load_production_deploy_script()
-        payload = module.plan_payload(ROOT)
+        with tempfile.TemporaryDirectory() as tmp:
+            payload = module.plan_payload(
+                ROOT,
+                secret_list_json=Path(tmp) / "missing-secret-evidence.json",
+            )
         self.assertTrue(payload["dry_run"])
         self.assertFalse(payload["executes_commands"])
         self.assertEqual(payload["service"], "workdoe")
@@ -1201,19 +1738,22 @@ class CloudflareReleasePrepTests(unittest.TestCase):
     def test_cloudflare_production_deploy_blocks_when_strict_readiness_fails(self):
         module = load_production_deploy_script()
         original_argv = sys.argv
-        try:
-            sys.argv = [
-                "cloudflare_production_deploy.py",
-                "--execute",
-                "--yes",
-                "--json",
-                "--no-smoke",
-            ]
-            with contextlib.redirect_stdout(io.StringIO()) as stdout:
-                self.assertEqual(module.main(), 1)
-            payload = json.loads(stdout.getvalue())
-        finally:
-            sys.argv = original_argv
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                sys.argv = [
+                    "cloudflare_production_deploy.py",
+                    "--execute",
+                    "--yes",
+                    "--json",
+                    "--no-smoke",
+                    "--secret-list-json",
+                    str(Path(tmp) / "missing-secret-evidence.json"),
+                ]
+                with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                    self.assertEqual(module.main(), 1)
+                payload = json.loads(stdout.getvalue())
+            finally:
+                sys.argv = original_argv
         self.assertFalse(payload["ok"])
         self.assertIn("Strict production readiness failed", payload["error"])
         self.assertIn(
@@ -1289,6 +1829,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
     def test_cloudflare_clerk_proxy_proof_helper_is_confirm_gated(self):
         module = load_clerk_proxy_proof_script()
         readiness = load_readiness_script()
+        package_scripts = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))[
+            "scripts"
+        ]
+        self.assertNotIn("--confirm", package_scripts["cf:clerk:proof"])
+        self.assertIn("--confirm", package_scripts["cf:clerk:proof:confirm"])
         with tempfile.TemporaryDirectory() as tmp:
             output_path = Path(tmp) / "clerk-proxy-proof.local.json"
             dry_run = module.dry_run_payload(
@@ -1303,6 +1848,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
             with self.assertRaisesRegex(module.ClerkProxyProofError, "Use --confirm"):
                 module.build_proof(confirmed=False)
+            with self.assertRaisesRegex(module.ClerkProxyProofError, "Restricted sign-up"):
+                module.build_proof(confirmed=True)
             with self.assertRaisesRegex(
                 module.ClerkProxyProofError,
                 "https://workdoe.com/__clerk",
@@ -1311,9 +1858,29 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     proxy_url="https://clerk.workdoe.com",
                     confirmed=True,
                 )
+            with self.assertRaisesRegex(module.ClerkProxyProofError, "Legal requires express consent"):
+                module.build_proof(
+                    confirmed=True,
+                    restricted_sign_up_mode=True,
+                    email_code_sign_in=True,
+                    password_sign_in_disabled=True,
+                )
+            with self.assertRaisesRegex(module.ClerkProxyProofError, "Terms URL"):
+                module.build_proof(
+                    confirmed=True,
+                    restricted_sign_up_mode=True,
+                    email_code_sign_in=True,
+                    password_sign_in_disabled=True,
+                    express_legal_consent=True,
+                    terms_url="https://example.com/terms",
+                )
 
             proof = module.build_proof(
                 confirmed=True,
+                restricted_sign_up_mode=True,
+                email_code_sign_in=True,
+                password_sign_in_disabled=True,
+                express_legal_consent=True,
                 checked_by="release-test",
                 confirmed_at_utc="2026-08-03T20:00:00Z",
             )
@@ -1326,6 +1893,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             saved = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertEqual(saved["domain"], "workdoe.com")
             self.assertEqual(saved["frontend_api_proxy_url"], "https://workdoe.com/__clerk")
+            self.assertTrue(saved["restricted_sign_up_mode"])
+            self.assertTrue(saved["email_code_sign_in"])
+            self.assertTrue(saved["password_sign_in_disabled"])
+            self.assertEqual(saved["custom_sign_up_url"], "https://workdoe.com/create-account")
+            self.assertTrue(saved["express_legal_consent"])
+            self.assertEqual(saved["terms_url"], "https://workdoe.com/terms")
+            self.assertEqual(saved["privacy_url"], "https://workdoe.com/privacy")
             self.assertEqual(saved["checked_by"], "release-test")
 
     def test_cloudflare_worker_entrypoint_covers_automation_handlers(self):
@@ -1336,8 +1910,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("async def scheduled(self, controller, env, ctx):", entrypoint)
         self.assertIn("async def queue(self, batch):", entrypoint)
         self.assertIn("def json_response", entrypoint)
+        self.assertIn("authenticated_write_rate_limit_response", entrypoint)
+        self.assertIn("WRITE_RATE_LIMITER", entrypoint)
+        self.assertIn("status=429", entrypoint)
+        self.assertIn('"Retry-After": "60"', entrypoint)
+        self.assertIn("Request body must include Content-Length.", entrypoint)
+        self.assertIn("async def request_form_data", entrypoint)
+        self.assertIn("Request body must use form encoding.", entrypoint)
+        self.assertIn("Image uploads must include Content-Length.", entrypoint)
         self.assertIn("handle_clerk_webhook", entrypoint)
         self.assertIn("CLERK_WEBHOOK_SECRET is required", entrypoint)
+        self.assertIn("MAX_CLERK_WEBHOOK_BODY_BYTES", entrypoint)
+        self.assertIn("Webhook requests must include Content-Length.", entrypoint)
+        self.assertIn("Webhook request body is too large.", entrypoint)
         self.assertIn("verify_svix_signature", entrypoint)
         self.assertIn("clerk-webhook-rejected", entrypoint)
         self.assertIn("clerk-webhook-verified", entrypoint)
@@ -1349,6 +1934,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("queue_moderation_digest", entrypoint)
         self.assertIn("automation_events", entrypoint)
         self.assertIn("/api/jobs/open", entrypoint)
+
         self.assertIn("public_open_jobs", entrypoint)
         self.assertIn("public_job_filters_from_query", entrypoint)
         self.assertIn("public_jobs_payload", entrypoint)
@@ -1361,16 +1947,21 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("is_static_asset_path", entrypoint)
         self.assertIn('"/workdoe-share.png"', entrypoint)
         self.assertIn("ENTRY_ROUTES", entrypoint)
+        self.assertIn("/create-account", entrypoint)
+        self.assertIn("/post-project", entrypoint)
         self.assertIn("entry_shell", entrypoint)
         self.assertIn("build_entry_shell_html", entrypoint)
         self.assertIn("entry_shell_jobs", entrypoint)
         self.assertIn("Entry pages accept GET only.", entrypoint)
+        self.assertIn("clerk_production_configuration_ready", entrypoint)
+        self.assertIn("Clerk production authentication is not configured.", entrypoint)
         self.assertIn("is_app_shell_route", entrypoint)
         self.assertIn("app_shell", entrypoint)
         self.assertIn("dashboard_path_for_user", entrypoint)
         self.assertIn("admin_dashboard_html", entrypoint)
         self.assertIn("admin_dashboard_payload", entrypoint)
         self.assertIn("client_dashboard_html", entrypoint)
+        self.assertIn("client_request_inbox_html", entrypoint)
         self.assertIn("client_job_detail_html", entrypoint)
         self.assertIn("lead_board_html", entrypoint)
         self.assertIn("job_form_html", entrypoint)
@@ -1380,6 +1971,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("message_threads_html", entrypoint)
         self.assertIn("message_thread_detail_html", entrypoint)
         self.assertIn("parse_app_client_job_id", entrypoint)
+        self.assertIn("parse_app_client_job_edit_id", entrypoint)
         self.assertIn("parse_app_contractor_id", entrypoint)
         self.assertIn("parse_app_thread_id", entrypoint)
         self.assertIn("contractor_profile_page", entrypoint)
@@ -1428,15 +2020,21 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Hidden jobs cannot be changed by clients.", entrypoint)
         self.assertIn("/api/jobs", entrypoint)
         self.assertIn("create_job", entrypoint)
+        self.assertIn("update_job", entrypoint)
         self.assertIn("job_post_payload", entrypoint)
+        self.assertIn("parse_job_update_id", entrypoint)
+        self.assertIn("can_update_job", entrypoint)
         self.assertIn("verify_turnstile_for_request", entrypoint)
         self.assertIn("WORKDOE_TURNSTILE_SECRET_KEY", entrypoint)
         self.assertIn("job-created", entrypoint)
+        self.assertIn("job-updated", entrypoint)
         self.assertIn("create_match_request", entrypoint)
         self.assertIn("parse_match_request_job_id", entrypoint)
         self.assertIn("match_request_payload", entrypoint)
         self.assertIn("Only contractor accounts can send mini bids.", entrypoint)
         self.assertIn("match-request-created", entrypoint)
+        self.assertIn("INSERT OR IGNORE INTO match_requests", entrypoint)
+        self.assertIn("AND jobs.status = 'open'", entrypoint)
         self.assertIn("decide_match_request", entrypoint)
         self.assertIn("parse_match_decision_path", entrypoint)
         self.assertIn("can_decide_match_request", entrypoint)
@@ -1444,6 +2042,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("APPROVAL_THREAD_MESSAGE", entrypoint)
         self.assertIn("match-request-approved", entrypoint)
         self.assertIn("match-request-rejected", entrypoint)
+        self.assertIn("INSERT OR IGNORE INTO threads", entrypoint)
         self.assertIn("/api/messages/threads", entrypoint)
         self.assertIn("message_threads_api", entrypoint)
         self.assertIn("message_thread_summary", entrypoint)
@@ -1454,7 +2053,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("/api/reports", entrypoint)
         self.assertIn("create_report", entrypoint)
         self.assertIn("report_payload", entrypoint)
-        self.assertIn("report_target_exists", entrypoint)
+        self.assertIn("report_target_visible_to_user", entrypoint)
+        self.assertIn("JOIN threads ON threads.id = messages.thread_id", entrypoint)
         self.assertIn("report-created", entrypoint)
         self.assertIn("/api/admin/", entrypoint)
         self.assertIn("admin_moderation_action", entrypoint)
@@ -1463,6 +2063,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("admin_update_statement", entrypoint)
         self.assertIn("insert_moderation_action", entrypoint)
         self.assertIn("admin-moderation-action", entrypoint)
+        self.assertIn(
+            "Admin account status must be changed through the operator recovery process.",
+            entrypoint,
+        )
         self.assertIn("/api/auth/session", entrypoint)
         self.assertIn("verify_clerk_session_token", entrypoint)
         self.assertIn("onboarding_required", entrypoint)
@@ -1474,10 +2078,18 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("claims_with_verified_clerk_email", entrypoint)
         self.assertIn("https://api.clerk.com/v1/sessions/", entrypoint)
         self.assertIn("clerk-session-revoke-failed", entrypoint)
-        self.assertIn("INSERT INTO users", entrypoint)
-        self.assertIn("INSERT INTO client_profiles", entrypoint)
-        self.assertIn("INSERT INTO contractor_profiles", entrypoint)
-        self.assertIn("email_conflict", entrypoint)
+        self.assertIn("login_code_consume_result", entrypoint)
+        self.assertIn("AND expires_at >= ?", entrypoint)
+        self.assertIn("AND attempt_count < ?", entrypoint)
+        self.assertIn("ensure_role_profile", entrypoint)
+        self.assertIn(
+            "__session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
+            entrypoint,
+        )
+        self.assertIn("INSERT OR IGNORE INTO users", entrypoint)
+        self.assertIn("INSERT OR IGNORE INTO client_profiles", entrypoint)
+        self.assertIn("INSERT OR IGNORE INTO contractor_profiles", entrypoint)
+        self.assertIn("A Workdoe account already uses this email.", entrypoint)
         self.assertIn("clerk-onboarding-linked", entrypoint)
         self.assertIn("/api/contractor/profile", entrypoint)
         self.assertIn("contractor_profile_api", entrypoint)
@@ -1485,6 +2097,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("can_update_contractor_profile", entrypoint)
         self.assertIn("upsert_contractor_profile", entrypoint)
         self.assertIn("contractor-profile-updated", entrypoint)
+        self.assertIn("/api/client/profile", entrypoint)
+        self.assertIn("client_profile_api", entrypoint)
+        self.assertIn("can_update_client_profile", entrypoint)
+        self.assertIn("upsert_client_profile", entrypoint)
+        self.assertIn("client-profile-updated", entrypoint)
+        self.assertIn("/api/client/locations", entrypoint)
+        self.assertIn("client_saved_locations_api", entrypoint)
+        self.assertIn("WHERE id = ? AND client_id = ?", entrypoint)
+        self.assertIn("client-saved-location-created", entrypoint)
+        self.assertIn("client-saved-location-deleted", entrypoint)
+        self.assertIn("client_profiles.notification_preference", entrypoint)
+        self.assertIn("client_profiles.email_reminder_consent_at IS NOT NULL", entrypoint)
+        self.assertIn("client/profile#bid-reminders", entrypoint)
         self.assertIn("/api/contractors/", entrypoint)
         self.assertIn("public_contractor_profile", entrypoint)
         self.assertIn("parse_public_contractor_id", entrypoint)
@@ -1497,6 +2122,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("email-message-sent", entrypoint)
         self.assertIn("email-message-invalid", entrypoint)
         self.assertIn("email-message-send-failed", entrypoint)
+        self.assertIn("record_event_best_effort", entrypoint)
         self.assertIn("ack_message", entrypoint)
         self.assertIn("retry_message", entrypoint)
         self.assertIn("/media/jobs/", entrypoint)
@@ -1512,11 +2138,77 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("/api/media/contractors/", entrypoint)
         self.assertIn("request.formData", entrypoint)
         self.assertIn("self.env.MEDIA.put", entrypoint)
+        self.assertIn("self.env.MEDIA.delete", entrypoint)
         self.assertIn("MEDIA_QUEUE.send", entrypoint)
         self.assertIn("media-uploaded", entrypoint)
+        self.assertIn("rollback_media_upload", entrypoint)
+        self.assertIn("metadata_cleanup", entrypoint)
+        self.assertIn("object_cleanup", entrypoint)
         self.assertIn("media-review-queued", entrypoint)
         self.assertIn("process_media_review_queue_message", entrypoint)
         self.assertIn("media-review-message-accepted", entrypoint)
+
+    def test_cloudflare_form_reader_bounds_public_project_drafts(self):
+        module = load_worker_entry_module()
+
+        class StubRequest:
+            def __init__(self, headers):
+                self.headers = headers
+                self.form_calls = 0
+
+            async def formData(self):
+                self.form_calls += 1
+                return {"service_slug": "lawn-mowing"}
+
+        missing_length = StubRequest(
+            {"Content-Type": "application/x-www-form-urlencoded"}
+        )
+        with self.assertRaisesRegex(
+            module.OnboardingError,
+            "Request body must include Content-Length",
+        ):
+            asyncio.run(module.request_form_data(missing_length, max_bytes=128))
+        self.assertEqual(missing_length.form_calls, 0)
+
+        oversized = StubRequest(
+            {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Content-Length": "129",
+            }
+        )
+        with self.assertRaisesRegex(module.OnboardingError, "too large"):
+            asyncio.run(module.request_form_data(oversized, max_bytes=128))
+        self.assertEqual(oversized.form_calls, 0)
+
+        wrong_type = StubRequest(
+            {"Content-Type": "text/plain", "Content-Length": "20"}
+        )
+        with self.assertRaisesRegex(module.OnboardingError, "form encoding"):
+            asyncio.run(module.request_form_data(wrong_type, max_bytes=128))
+        self.assertEqual(wrong_type.form_calls, 0)
+
+        accepted = StubRequest(
+            {
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "Content-Length": "64",
+            }
+        )
+        parsed = asyncio.run(module.request_form_data(accepted, max_bytes=128))
+        self.assertEqual(parsed["service_slug"], "lawn-mowing")
+        self.assertEqual(accepted.form_calls, 1)
+
+    def test_successful_email_is_acked_before_best_effort_audit(self):
+        entrypoint = (ROOT / "cloudflare" / "worker" / "entry.py").read_text(
+            encoding="utf-8"
+        )
+        start = entrypoint.index("async def process_email_queue_message")
+        end = entrypoint.index("\n\nasync def process_media_review_queue_message", start)
+        consumer = entrypoint[start:end]
+        send_index = consumer.index("result = await env.EMAIL.send(email_message)")
+        ack_index = consumer.rindex("ack_message(message)")
+        audit_index = consumer.index('"email-message-sent"', ack_index)
+        self.assertLess(send_index, ack_index)
+        self.assertLess(ack_index, audit_index)
 
     def test_cloudflare_media_access_helper_keeps_r2_routes_private(self):
         module = load_media_access_module()
@@ -1605,9 +2297,23 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(details["extension"], "png")
         self.assertEqual(details["content_type"], "image/png")
         self.assertEqual(details["size_bytes"], 4096)
+        self.assertTrue(
+            module.image_signature_matches("png", b"\x89PNG\r\n\x1a\nmore")
+        )
+        self.assertTrue(module.image_signature_matches("jpg", b"\xff\xd8\xff\xe0more"))
+        self.assertTrue(module.image_signature_matches("gif", b"GIF89amore"))
+        self.assertTrue(
+            module.image_signature_matches("webp", b"RIFF\x04\x00\x00\x00WEBP")
+        )
+        self.assertFalse(module.image_signature_matches("png", b"<html>"))
+        self.assertFalse(module.image_signature_matches("webp", b"RIFFbad-data"))
         self.assertEqual(
             module.upload_http_metadata(details)["cacheControl"],
             "private, no-store",
+        )
+        self.assertEqual(
+            module.upload_http_metadata(details)["contentDisposition"],
+            'inline; filename="workdoe-upload.png"',
         )
         for filename, mime, size in (
             ("photo.svg", "image/svg+xml", 200),
@@ -1621,6 +2327,145 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
         key = module.build_r2_upload_key("job", 12, "png")
         self.assertRegex(key, r"^jobs/12/[0-9a-f]{32}\.png$")
+
+        transform_options = []
+        output_options = []
+
+        class FakeImageFile:
+            def stream(self):
+                return "fresh-upload-stream"
+
+        class FakeImageResponse:
+            ok = True
+
+            async def arrayBuffer(self):
+                return SimpleNamespace(byteLength=8192)
+
+        class FakeImageResult:
+            def response(self):
+                return FakeImageResponse()
+
+        class FakeTransformer:
+            def transform(self, options):
+                transform_options.append(options)
+                return self
+
+            async def output(self, options):
+                output_options.append(options)
+                return FakeImageResult()
+
+        class FakeImagesBinding:
+            async def info(self, stream):
+                self.info_stream = stream
+                return {"width": 4032, "height": 3024}
+
+            def input(self, stream):
+                self.input_stream = stream
+                return FakeTransformer()
+
+        binding = FakeImagesBinding()
+        sanitized = asyncio.run(
+            module.sanitize_uploaded_image(binding, FakeImageFile(), lambda value: value)
+        )
+        self.assertEqual(binding.info_stream, "fresh-upload-stream")
+        self.assertEqual(binding.input_stream, "fresh-upload-stream")
+        self.assertEqual(
+            transform_options,
+            [{"width": 2400, "height": 2400, "fit": "scale-down", "metadata": "none"}],
+        )
+        self.assertEqual(
+            output_options,
+            [{"format": "image/webp", "quality": 82, "anim": False}],
+        )
+        sanitized_details = module.sanitized_upload_details(details, sanitized)
+        self.assertEqual(sanitized_details["extension"], "webp")
+        self.assertEqual(sanitized_details["content_type"], "image/webp")
+        self.assertEqual(sanitized_details["size_bytes"], 8192)
+        self.assertEqual(sanitized_details["source_width"], 4032)
+        self.assertEqual(sanitized_details["source_height"], 3024)
+        self.assertEqual(sanitized_details["sanitization"], "cloudflare-images-webp")
+
+        class InvalidImagesBinding(FakeImagesBinding):
+            async def info(self, stream):
+                raise ValueError("decode failed")
+
+        with self.assertRaisesRegex(module.MediaUploadError, "could not be decoded"):
+            asyncio.run(
+                module.sanitize_uploaded_image(
+                    InvalidImagesBinding(),
+                    FakeImageFile(),
+                    lambda value: value,
+                )
+            )
+
+        job_sql, job_params = module.media_metadata_delete_statement(
+            "job",
+            9,
+            4,
+            "jobs/4/workdoe.jpg",
+        )
+        self.assertEqual(
+            job_sql,
+            "DELETE FROM job_photos WHERE id = ? AND job_id = ? AND stored_path = ?",
+        )
+        self.assertEqual(job_params, (9, 4, "jobs/4/workdoe.jpg"))
+        contractor_sql, contractor_params = module.media_metadata_delete_statement(
+            "contractor",
+            11,
+            7,
+            "contractors/7/workdoe.webp",
+        )
+        self.assertEqual(
+            contractor_sql,
+            "DELETE FROM contractor_photos WHERE id = ? AND contractor_id = ? AND stored_path = ?",
+        )
+        self.assertEqual(
+            contractor_params,
+            (11, 7, "contractors/7/workdoe.webp"),
+        )
+        with self.assertRaisesRegex(module.MediaUploadError, "cleanup identifiers"):
+            module.media_metadata_delete_statement("job", 0, 4, "jobs/4/workdoe.jpg")
+
+        js_stub = ModuleType("js")
+
+        class FakeUint8Array:
+            @staticmethod
+            def new(value):
+                return SimpleNamespace(to_py=lambda: list(value))
+
+        class FakeFile:
+            def __init__(self, content):
+                self.content = content
+
+            def slice(self, start, end):
+                content = self.content[start:end]
+                return SimpleNamespace(arrayBuffer=lambda: async_bytes(content))
+
+        async def async_bytes(value):
+            return value
+
+        js_stub.Uint8Array = FakeUint8Array
+        previous_js = sys.modules.get("js")
+        sys.modules["js"] = js_stub
+        try:
+            asyncio.run(
+                module.validate_uploaded_file_signature(
+                    FakeFile(b"\x89PNG\r\n\x1a\nmore"),
+                    "png",
+                )
+            )
+            with self.assertRaisesRegex(module.MediaUploadError, "does not match"):
+                asyncio.run(
+                    module.validate_uploaded_file_signature(
+                        FakeFile(b"<html>"),
+                        "png",
+                    )
+                )
+        finally:
+            if previous_js is None:
+                sys.modules.pop("js", None)
+            else:
+                sys.modules["js"] = previous_js
 
         client = {"id": 2, "role": "client", "status": "active"}
         admin = {"id": 1, "role": "admin", "status": "active"}
@@ -1647,8 +2492,153 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         validated = module.validated_media_review_payload(payload)
         self.assertEqual(validated["scope"], "job")
         self.assertEqual(validated["photo_id"], 44)
+        self.assertEqual(
+            validated["checks"],
+            [
+                "cloudflare-images-decode",
+                "metadata-stripped",
+                "animation-flattened",
+                "moderation",
+            ],
+        )
         with self.assertRaises(module.MediaUploadError):
             module.validated_media_review_payload({**payload, "stored_path": "jobs/13/bad.png"})
+
+    def test_cloudflare_media_upload_rollback_cleans_d1_and_r2(self):
+        module = load_worker_entry_module()
+        deleted_metadata = []
+
+        class FakeMedia:
+            def __init__(self):
+                self.deleted = []
+
+            async def delete(self, key):
+                self.deleted.append(key)
+
+        worker = module.Default()
+        worker.env = SimpleNamespace(MEDIA=FakeMedia())
+
+        async def delete_metadata(scope, owner_id, photo_id, key):
+            deleted_metadata.append((scope, owner_id, photo_id, key))
+
+        worker.delete_media_metadata = delete_metadata
+        result = asyncio.run(
+            worker.rollback_media_upload(
+                "job",
+                12,
+                44,
+                "jobs/12/workdoe.png",
+            )
+        )
+        self.assertEqual(result["metadata_cleanup"], "deleted")
+        self.assertEqual(result["object_cleanup"], "deleted")
+        self.assertEqual(
+            deleted_metadata,
+            [("job", 12, 44, "jobs/12/workdoe.png")],
+        )
+        self.assertEqual(worker.env.MEDIA.deleted, ["jobs/12/workdoe.png"])
+
+        no_artifacts = asyncio.run(worker.rollback_media_upload("job", 12, None, ""))
+        self.assertEqual(no_artifacts["metadata_cleanup"], "not-created")
+        self.assertEqual(no_artifacts["object_cleanup"], "not-created")
+
+    def test_cloudflare_public_trust_routes_serve_get_head_and_discovery_types(self):
+        module = load_worker_entry_module()
+        worker = module.Default()
+        worker.env = SimpleNamespace()
+
+        class Request:
+            def __init__(self, method):
+                self.method = method
+
+        privacy = asyncio.run(worker.public_trust_page(Request("GET"), "/privacy"))
+        terms_head = asyncio.run(worker.public_trust_page(Request("HEAD"), "/terms"))
+        rejected = asyncio.run(worker.public_trust_page(Request("POST"), "/privacy"))
+        self.assertEqual(privacy.status, 200)
+        self.assertIn("<h1>Privacy Policy</h1>", privacy.body)
+        self.assertEqual(terms_head.status, 200)
+        self.assertEqual(terms_head.body, "")
+        self.assertEqual(rejected.status, 405)
+
+        robots = asyncio.run(
+            worker.public_discovery_file(Request("GET"), "/robots.txt")
+        )
+        sitemap = asyncio.run(
+            worker.public_discovery_file(Request("GET"), "/sitemap.xml")
+        )
+        security = asyncio.run(
+            worker.public_discovery_file(
+                Request("GET"), "/.well-known/security.txt"
+            )
+        )
+        self.assertEqual(robots.status, 200)
+        self.assertEqual(robots.headers["Content-Type"], "text/plain; charset=utf-8")
+        self.assertIn("Disallow: /api/", robots.body)
+        self.assertEqual(sitemap.headers["Content-Type"], "application/xml; charset=utf-8")
+        self.assertIn("https://workdoe.com/privacy", sitemap.body)
+        self.assertIn("Contact: mailto:admin@workdoe.com", security.body)
+
+    def test_cloudflare_signed_in_project_draft_preserves_selected_family(self):
+        module = load_worker_entry_module()
+        worker = module.Default()
+        worker.env = SimpleNamespace(DB=object())
+
+        async def signed_in_client(_request):
+            return {"id": 12, "role": "client", "status": "active"}
+
+        worker.optional_workdoe_user = signed_in_client
+        request = SimpleNamespace(
+            method="GET",
+            url="https://workdoe.com/post-project?family=outdoor-yard",
+        )
+        response = asyncio.run(worker.public_job_draft(request))
+
+        self.assertEqual(response.status, 303)
+        self.assertEqual(response.headers["Location"], "/jobs/new?family=outdoor-yard")
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+    def test_cloudflare_repeated_match_decisions_are_idempotent_or_conflict(self):
+        module = load_worker_entry_module()
+        worker = module.Default()
+        worker.env = SimpleNamespace()
+        repaired = []
+
+        async def no_existing_thread(env, request_id):
+            return None
+
+        async def repair_thread(env, match, created_at):
+            repaired.append((match["id"], created_at))
+            return 77
+
+        module.existing_thread_id_for_match = no_existing_thread
+        module.ensure_thread_for_match = repair_thread
+        approved_match = {
+            "id": 42,
+            "job_id": 12,
+            "client_id": 8,
+            "contractor_id": 7,
+            "status": "approved",
+        }
+        repeated = asyncio.run(
+            worker.existing_match_decision_response(
+                approved_match,
+                42,
+                requested_status="approved",
+            )
+        )
+        self.assertEqual(repeated.status, 200)
+        self.assertEqual(json.loads(repeated.body)["thread_id"], 77)
+        self.assertEqual(repaired[0][0], 42)
+
+        conflicting = asyncio.run(
+            worker.existing_match_decision_response(
+                approved_match,
+                42,
+                requested_status="rejected",
+            )
+        )
+        self.assertEqual(conflicting.status, 409)
+        self.assertEqual(json.loads(conflicting.body)["status"], "approved")
 
     def test_cloudflare_email_payloads_are_transactional_and_sanitized(self):
         module = load_email_payloads_module()
@@ -1668,6 +2658,54 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("&lt;Paint lobby&gt;", reminder["html"])
         self.assertNotIn("<script>", reminder["html"])
         self.assertIn("Sign in to Workdoe", reminder["text"])
+        self.assertIn(
+            "https://workdoe.com/client/profile#bid-reminders",
+            reminder["text"],
+        )
+        self.assertIn("Manage bid reminder emails", reminder["html"])
+
+        repeat_invitation = module.build_email_message(
+            {
+                "type": "repeat-provider-invitation",
+                "to": " Contractor@Example.com ",
+                "job_title": "<Fresh patio wash>",
+                "location": "Washington, DC",
+                "job_url": "https://workdoe.com/jobs/61",
+                "consumer_name": "Must not appear",
+                "prior_address": "Must not appear",
+                "prior_bid": "$1",
+            }
+        )
+        self.assertEqual(repeat_invitation["to"], "contractor@example.com")
+        self.assertIn("New Workdoe project invitation", repeat_invitation["subject"])
+        self.assertIn("&lt;Fresh patio wash&gt;", repeat_invitation["html"])
+        self.assertIn("https://workdoe.com/jobs/61", repeat_invitation["text"])
+        self.assertIn("fresh mini bid", repeat_invitation["text"])
+        self.assertNotIn("Must not appear", repeat_invitation["text"])
+        self.assertNotIn("$1", repeat_invitation["html"])
+
+        new_lead = module.build_email_message(
+            {
+                "type": "contractor-new-lead",
+                "to": "contractor@example.com",
+                "job_title": "<Front walk wash>",
+                "service_name": "Pressure washing",
+                "location": "Washington, DC",
+                "job_url": "https://workdoe.com/jobs/72",
+                "settings_url": "https://workdoe.com/leads#saved-lead-alerts",
+                "client_email": "must-not-appear@example.com",
+                "zip_code": "20003",
+                "description": "Private scope must not appear",
+            }
+        )
+        self.assertIn("New matching Workdoe project", new_lead["subject"])
+        self.assertIn("&lt;Front walk wash&gt;", new_lead["html"])
+        self.assertIn("Pressure washing", new_lead["text"])
+        self.assertIn("https://workdoe.com/jobs/72", new_lead["text"])
+        self.assertIn("Manage matching project emails", new_lead["html"])
+        self.assertNotIn("must-not-appear", new_lead["text"])
+        self.assertNotIn("20003", new_lead["html"])
+        self.assertNotIn("Private scope", new_lead["text"])
 
         login_code = module.build_email_message(
             {
@@ -1729,6 +2767,246 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "reset_url": "https://evil.example/reset-password/token_123",
                 }
             )
+        with self.assertRaisesRegex(module.EmailPayloadError, "workdoe.com"):
+            module.build_email_message(
+                {
+                    "type": "stale-match-reminder",
+                    "to": "client@example.com",
+                    "preferences_url": "https://evil.example/client/profile#bid-reminders",
+                }
+            )
+        with self.assertRaisesRegex(module.EmailPayloadError, "workdoe.com"):
+            module.build_email_message(
+                {
+                    "type": "repeat-provider-invitation",
+                    "to": "contractor@example.com",
+                    "job_url": "https://evil.example/jobs/61",
+                }
+            )
+        with self.assertRaisesRegex(module.EmailPayloadError, "one Workdoe project"):
+            module.build_email_message(
+                {
+                    "type": "repeat-provider-invitation",
+                    "to": "contractor@example.com",
+                    "job_url": "https://workdoe.com/jobs/61?address=private",
+                }
+            )
+        with self.assertRaisesRegex(module.EmailPayloadError, "workdoe.com"):
+            module.build_email_message(
+                {
+                    "type": "contractor-new-lead",
+                    "to": "contractor@example.com",
+                    "job_url": "https://evil.example/jobs/72",
+                }
+            )
+        with self.assertRaisesRegex(module.EmailPayloadError, "Workdoe lead alerts"):
+            module.build_email_message(
+                {
+                    "type": "contractor-new-lead",
+                    "to": "contractor@example.com",
+                    "job_url": "https://workdoe.com/jobs/72",
+                    "settings_url": "https://workdoe.com/leads?email=on#saved-lead-alerts",
+                }
+            )
+
+    def test_cloudflare_email_audit_metadata_redacts_authentication_material(self):
+        module = load_email_payloads_module()
+        payload = {
+            "type": "login-code",
+            "to": "Person@Example.com",
+            "code": "123456",
+            "reset_url": "https://workdoe.com/reset-password/private-token",
+            "text": "private message body",
+        }
+        metadata = module.email_audit_metadata(payload, "s" * 32)
+        serialized = json.dumps(metadata, sort_keys=True)
+
+        self.assertEqual(metadata["type"], "login-code")
+        self.assertTrue(metadata["recipient_present"])
+        self.assertEqual(len(metadata["recipient_hash"]), 64)
+        self.assertNotIn("person@example.com", serialized.lower())
+        self.assertNotIn("123456", serialized)
+        self.assertNotIn("private-token", serialized)
+        self.assertNotIn("private message body", serialized)
+
+    def test_cloudflare_repeat_invitation_email_queue_is_audited_and_non_blocking(self):
+        module = load_worker_entry_module()
+        sent = []
+        events = []
+
+        async def fake_db_run(_env, _sql, *_params):
+            return {"results": [{"email": "contractor@example.com"}]}
+
+        async def fake_record_event_best_effort(
+            _env,
+            event_type,
+            target_type="",
+            target_id=None,
+            payload=None,
+            status="queued",
+        ):
+            events.append(
+                {
+                    "event_type": event_type,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "payload": payload or {},
+                    "status": status,
+                }
+            )
+            return True
+
+        class EmailQueue:
+            async def send(self, payload):
+                sent.append(payload)
+
+        module.db_run = fake_db_run
+        module.record_event_best_effort = fake_record_event_best_effort
+        env = SimpleNamespace(EMAIL_QUEUE=EmailQueue(), WORKDOE_SECRET_KEY="s" * 32)
+        queued = asyncio.run(
+            module.queue_repeat_provider_invitation_email(
+                env,
+                contractor_id=22,
+                job_id=61,
+                job_title="Fresh patio wash",
+                city="Washington",
+                state="DC",
+            )
+        )
+        self.assertTrue(queued)
+        self.assertEqual(sent[0]["type"], "repeat-provider-invitation")
+        self.assertEqual(sent[0]["job_url"], "https://workdoe.com/jobs/61")
+        self.assertEqual(sent[0]["location"], "Washington, DC")
+        self.assertEqual(events[0]["event_type"], "repeat-provider-invitation-email")
+        self.assertIn("recipient_hash", events[0]["payload"])
+        self.assertNotIn("to", events[0]["payload"])
+        self.assertNotIn("job_title", events[0]["payload"])
+
+        class FailingEmailQueue:
+            async def send(self, _payload):
+                raise RuntimeError("queue unavailable")
+
+        events.clear()
+        failed_env = SimpleNamespace(
+            EMAIL_QUEUE=FailingEmailQueue(),
+            WORKDOE_SECRET_KEY="s" * 32,
+        )
+        queued = asyncio.run(
+            module.queue_repeat_provider_invitation_email(
+                failed_env,
+                contractor_id=22,
+                job_id=62,
+                job_title="Fresh patio wash",
+                city="Washington",
+                state="DC",
+            )
+        )
+        self.assertFalse(queued)
+        self.assertEqual(
+            events[0]["event_type"],
+            "repeat-provider-invitation-email-queue-failed",
+        )
+        self.assertEqual(events[0]["status"], "failed")
+        self.assertEqual(events[0]["payload"], {"error_type": "RuntimeError"})
+
+    def test_cloudflare_new_lead_alert_fanout_is_fit_bound_and_redacted(self):
+        module = load_worker_entry_module()
+        sent = []
+        db_calls = []
+        events = []
+
+        async def fake_db_run(_env, sql, *params):
+            db_calls.append((sql, params))
+            if "FROM jobs" in sql and "contractor_lead_preferences" in sql:
+                return {
+                    "results": [
+                        {
+                            "job_id": 72,
+                            "job_title": "Front walk wash",
+                            "category": "Power washing",
+                            "service_slug": "pressure-washing",
+                            "city": "Washington",
+                            "state": "DC",
+                            "contractor_id": 22,
+                            "contractor_email": "contractor@example.com",
+                            "delivery_id": None,
+                            "delivery_status": None,
+                        }
+                    ]
+                }
+            if "SELECT id, status" in sql:
+                return {"results": [{"id": 91, "status": "pending"}]}
+            return {"meta": {"changes": 1}}
+
+        async def fake_record_event_best_effort(
+            _env,
+            event_type,
+            target_type="",
+            target_id=None,
+            payload=None,
+            status="queued",
+        ):
+            events.append(
+                {
+                    "event_type": event_type,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "payload": payload or {},
+                    "status": status,
+                }
+            )
+            return True
+
+        class EmailQueue:
+            async def send(self, payload):
+                sent.append(payload)
+
+        module.db_run = fake_db_run
+        module.record_event_best_effort = fake_record_event_best_effort
+        env = SimpleNamespace(EMAIL_QUEUE=EmailQueue(), WORKDOE_SECRET_KEY="s" * 32)
+        queued_count = asyncio.run(
+            module.process_contractor_lead_alert_fanout(env, 72)
+        )
+        self.assertEqual(queued_count, 1)
+        self.assertEqual(sent[0]["type"], "contractor-new-lead")
+        self.assertEqual(sent[0]["job_url"], "https://workdoe.com/jobs/72")
+        self.assertEqual(sent[0]["location"], "Washington, DC")
+        self.assertEqual(sent[0]["service_name"], "Pressure washing")
+        self.assertEqual(sent[0]["lead_alert_delivery_id"], 91)
+        serialized = json.dumps(sent[0], sort_keys=True)
+        self.assertNotIn("zip", serialized.lower())
+        self.assertNotIn("client", serialized.lower())
+        self.assertNotIn("description", serialized.lower())
+        self.assertTrue(
+            any("contractor_service_capabilities" in sql for sql, _params in db_calls)
+        )
+        self.assertTrue(
+            any("contractor_service_zones" in sql for sql, _params in db_calls)
+        )
+        self.assertEqual(events[0]["event_type"], "contractor-new-lead-email")
+        self.assertIn("recipient_hash", events[0]["payload"])
+        self.assertNotIn("to", events[0]["payload"])
+
+        result = module.email_send_result_summary(
+            {
+                "messageId": "provider-message-1",
+                "delivered": True,
+                "permanent_bounces": ["private@example.com"],
+                "debug": {"authorization": "secret"},
+            }
+        )
+        self.assertEqual(result["messageId"], "provider-message-1")
+        self.assertTrue(result["delivered"])
+        self.assertEqual(result["permanent_bounce_count"], 1)
+        self.assertNotIn("private@example.com", json.dumps(result))
+        self.assertNotIn("authorization", result)
+
+        entrypoint = (ROOT / "cloudflare" / "worker" / "entry.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn('payload={"body": body', entrypoint)
+        self.assertNotIn('"to": email_message.get("to")', entrypoint)
+        self.assertNotIn('"subject": email_message.get("subject")', entrypoint)
 
     def test_clerk_onboarding_helper_requires_verified_email_and_role(self):
         module = load_clerk_onboarding_module()
@@ -1928,19 +3206,59 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         filters = module.public_job_filters_from_query(
             {
                 "category": ["Painting"],
+                "family": ["remodel-finish"],
+                "service": ["interior-painting"],
                 "q": ["  Arlington   VA  "],
                 "sort": ["soonest"],
             }
         )
         self.assertEqual(
             filters,
-            {"category": "Painting", "q": "Arlington VA", "sort": "soonest"},
+            {
+                "category": "Painting",
+                "family": "remodel-finish",
+                "service": "interior-painting",
+                "q": "Arlington VA",
+                "sort": "soonest",
+            },
         )
         self.assertEqual(
             module.public_job_filters_from_query(
-                {"category": ["Unknown"], "q": ["A" * 120], "sort": ["bad"]}
+                {
+                    "category": ["Unknown"],
+                    "family": ["unknown-family"],
+                    "q": ["A" * 120],
+                    "sort": ["bad"],
+                }
             ),
-            {"category": "", "q": "A" * 80, "sort": "newest"},
+            {
+                "category": "",
+                "family": "",
+                "service": "",
+                "q": "A" * 80,
+                "sort": "newest",
+            },
+        )
+        self.assertEqual(
+            module.public_job_filters_from_query(
+                {"service": ["pressure-washing"]}
+            ),
+            {
+                "category": "",
+                "family": "outdoor-yard",
+                "service": "pressure-washing",
+                "q": "",
+                "sort": "newest",
+            },
+        )
+        self.assertEqual(
+            module.public_job_filters_from_query(
+                {
+                    "family": ["cleaning-upkeep"],
+                    "service": ["pressure-washing"],
+                }
+            )["service"],
+            "",
         )
 
         payload = module.public_jobs_payload(
@@ -1949,6 +3267,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "id": 9,
                     "title": "Paint stairwell",
                     "category": "Painting",
+                    "service_group_slug": "remodel-finish",
+                    "service_slug": "interior-painting",
                     "city": "Arlington",
                     "state": "VA",
                     "zip_code": "22201",
@@ -1980,8 +3300,25 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(job["action_label"], "Sign in")
         self.assertEqual(job["url"], "/login?next=/jobs/9")
         self.assertNotIn("zip_code", job)
-        self.assertEqual(job["description"], "Paint the stairwell walls and trim.")
+        self.assertEqual(job["description"], "Project details are available after sign-in.")
         self.assertNotIn("client_email", job)
+        self.assertEqual(job["service_group_slug"], "remodel-finish")
+        self.assertEqual(job["service_name"], "Interior painting")
+
+        sample = module.public_job_payload(
+            {
+                "id": "demo-1",
+                "is_demo": True,
+                "title": "Sample project",
+                "description": "Controlled sample description.",
+            }
+        )
+        self.assertEqual(sample["description"], "Controlled sample description.")
+        app_shell_source = APP_SHELL_PATH.read_text(encoding="utf-8")
+        self.assertIn(
+            "Do not include an exact street address, email, or phone number.",
+            app_shell_source,
+        )
 
     def test_demo_projects_are_realistic_labeled_and_filterable(self):
         module = load_demo_projects_module()
@@ -2005,13 +3342,82 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         arlington = module.demo_projects_for_filters({"q": "Arlington"})
         self.assertEqual(len(arlington), 1)
         self.assertEqual(arlington[0]["category"], "Window cleaning")
+        outdoor = module.demo_projects_for_filters({"family": "outdoor-yard"})
+        self.assertEqual(len(outdoor), 5)
+        self.assertTrue(
+            all(project["service_group_slug"] == "outdoor-yard" for project in outdoor)
+        )
+        pressure_washing = module.demo_projects_for_filters(
+            {"family": "outdoor-yard", "service": "pressure-washing"}
+        )
+        self.assertTrue(pressure_washing)
+        self.assertTrue(
+            all(
+                project["service_slug"] == "pressure-washing"
+                for project in pressure_washing
+            )
+        )
+        limited_samples = module.guest_project_rows([], {}, limit=1)
+        self.assertEqual(len(limited_samples), 1)
+        self.assertEqual(limited_samples[0]["id"], "demo-01")
+        combined = module.guest_project_rows(
+            [{"id": 42, "title": "Live project"}],
+            {},
+            limit=3,
+        )
+        self.assertEqual([project["id"] for project in combined], [42, "demo-01", "demo-02"])
+        self.assertEqual(module.guest_project_rows([], {}, limit=0), [])
 
     def test_cloudflare_entry_shell_mounts_same_domain_clerk_and_live_jobs(self):
         module = load_entry_shell_module()
         self.assertEqual(module.normalize_intent(None, "/login"), "find-work")
         self.assertEqual(module.normalize_intent(None, "/start"), "post-job")
+        self.assertIn("/post-project", module.ENTRY_ROUTES)
+        self.assertEqual(
+            module.entry_redirect_url("/post-project", {}, "post-job", ""),
+            "/jobs/new",
+        )
+        self.assertEqual(
+            module.entry_redirect_url(
+                "/post-project",
+                {
+                    "family": ["outdoor-yard"],
+                    "service": ["pressure-washing"],
+                },
+                "post-job",
+                "",
+            ),
+            "/jobs/new?family=outdoor-yard&service=pressure-washing",
+        )
+        filtered_lead_params = {
+            "next": ["/leads?family=outdoor-yard&service=pressure-washing"]
+        }
+        self.assertEqual(
+            module.entry_job_filters(filtered_lead_params)["service"],
+            "pressure-washing",
+        )
+        self.assertEqual(
+            module.entry_redirect_url(
+                "/login",
+                filtered_lead_params,
+                "find-work",
+                "",
+            ),
+            "/leads?family=outdoor-yard&service=pressure-washing",
+        )
+        self.assertEqual(
+            module.entry_sign_up_url("/login", "", filtered_lead_params),
+            "/create-account?intent=find-work&next=%2Fleads%3Ffamily%3Doutdoor-yard%26service%3Dpressure-washing",
+        )
+        self.assertEqual(
+            module.entry_clear_url("/login", filtered_lead_params),
+            "/login?next=%2Fleads",
+        )
         self.assertEqual(module.photo_count_label(1), "1 photo")
         self.assertEqual(module.photo_count_label("2"), "2 photos")
+        self.assertTrue(module.is_production_clerk_publishable_key("pk_live_workdoe"))
+        self.assertFalse(module.is_production_clerk_publishable_key("pk_test_workdoe"))
+        self.assertFalse(module.is_production_clerk_publishable_key(""))
         self.assertEqual(
             module.normalize_clerk_frontend_api_url("http://bad.example"),
             "https://workdoe.com/__clerk",
@@ -2077,7 +3483,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('<meta name="twitter:card" content="summary_large_image">', html)
         self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', html)
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', html)
-        self.assertIn('href="/styles.css"', html)
+        self.assertIn('href="/styles.css?v=workdoe-account-security"', html)
         self.assertIn('href="/vendor/leaflet/leaflet.css"', html)
         self.assertIn('href="/vendor/leaflet-markercluster/MarkerCluster.css"', html)
         self.assertIn('src="/vendor/leaflet/leaflet.js"', html)
@@ -2085,19 +3491,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('src="/map.js"', html)
         self.assertIn('src="/clerk-entry.js"', html)
         self.assertIn("data-clerk-entry", html)
-        self.assertIn("data-clerk-email-code-form", html)
-        self.assertIn("data-clerk-request-code", html)
-        self.assertIn("data-clerk-verify-code", html)
-        self.assertIn("data-clerk-request-code disabled", html)
-        self.assertIn("data-clerk-verify-code disabled", html)
-        self.assertIn('id="clerk-captcha"', html)
-        self.assertIn('data-cl-size="flexible"', html)
-        self.assertIn("Email me a code", html)
-        self.assertNotIn("@clerk/ui", html)
+        self.assertIn("Loading secure email sign-in...", html)
+        self.assertNotIn("data-clerk-email-code-form", html)
+        self.assertNotIn('id="clerk-captcha"', html)
+        self.assertIn("@clerk/ui@1/dist/ui.browser.js", html)
         self.assertIn('data-clerk-mode="start"', html)
         self.assertIn('data-session-url="/api/auth/session"', html)
         self.assertIn('data-onboard-url="/api/auth/onboard"', html)
         self.assertIn('data-selected-job-id="9"', html)
+        self.assertIn('maxlength="120"', html)
         self.assertIn(
             'class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message',
             html,
@@ -2110,21 +3512,102 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('class="market-filter-rail"', html)
         self.assertIn('class="market-map-stage"', html)
         self.assertIn('id="start-account" class="market-detail-rail market-auth-rail"', html)
+        self.assertIn('data-mobile-panel-target="details">Account</button>', html)
         self.assertIn('data-project-results aria-label="Available projects" role="list"', html)
         self.assertIn("/api/jobs/open?limit=50&amp;target=start", html)
         self.assertIn("Paint &lt;stairwell&gt;", html)
+        self.assertIn('class="job-service-chip"', html)
+        self.assertIn('/vendor/tabler-icons/paint.svg', html)
         self.assertIn('role="listitem"', html)
         self.assertIn('data-job-id="9"', html)
         self.assertIn("Selected", html)
         self.assertNotIn("private@example.com", html)
         self.assertNotIn("22201", html)
+        family_html = module.build_entry_shell_html(
+            "/",
+            {
+                "family": ["outdoor-yard"],
+                "service": ["pressure-washing"],
+                "q": ["Arlington"],
+            },
+            rows,
+            "pk_test_workdoe",
+            "https://clerk.workdoe.com",
+        )
+        self.assertEqual(family_html.count('class="service-family-filter-link'), 7)
+        self.assertIn('href="/?q=Arlington&amp;family=outdoor-yard"', family_html)
+        self.assertIn(
+            "/api/jobs/open?limit=50&amp;target=start&amp;family=outdoor-yard&amp;service=pressure-washing&amp;q=Arlington",
+            family_html,
+        )
+        self.assertIn('/vendor/tabler-icons/trees.svg', family_html)
+        self.assertIn('class="market-lane-action"', family_html)
+        self.assertIn("Lane selected", family_html)
+        self.assertIn('id="market-service" data-market-service', family_html)
+        self.assertIn('value="pressure-washing" selected', family_html)
+        self.assertNotIn('value="house-cleaning"', family_html)
+        self.assertIn(
+            'href="/post-project?family=outdoor-yard&amp;service=pressure-washing"',
+            family_html,
+        )
+        self.assertIn("Post this task", family_html)
 
         marker = '<script id="map-jobs-data" type="application/json">'
         data = html.split(marker, 1)[1].split("</script>", 1)[0]
         self.assertNotIn("&quot;", data)
         parsed = json.loads(data)
-        self.assertEqual(parsed[0]["url"], "/start?intent=find-work&job_id=9")
-        self.assertEqual(parsed[0]["action_label"], "Join to respond")
+        self.assertEqual(parsed[0]["url"], "/create-account?intent=find-work&job_id=9")
+        self.assertEqual(parsed[0]["action_label"], "Create account to respond")
+
+        create_account_html = module.build_entry_shell_html(
+            "/create-account",
+            {"intent": ["post-job"]},
+            rows,
+            "pk_test_workdoe",
+            "https://clerk.workdoe.com",
+        )
+        self.assertIn("<title>Create Account - Workdoe</title>", create_account_html)
+        self.assertIn("Create your Workdoe account", create_account_html)
+        self.assertIn('href="/create-account?intent=post-job" aria-current="page">Create account</a>', create_account_html)
+        self.assertIn('data-redirect-url="/jobs/new"', create_account_html)
+        self.assertIn("One account keeps one role during beta.", create_account_html)
+        self.assertIn('data-sign-up-url="/create-account"', create_account_html)
+
+        post_project_html = module.build_entry_shell_html(
+            "/post-project",
+            {},
+            rows,
+            "pk_test_workdoe",
+            "https://clerk.workdoe.com",
+        )
+        self.assertIn("<title>Post Project - Workdoe</title>", post_project_html)
+        self.assertIn("Post a project", post_project_html)
+        self.assertIn(
+            'href="/post-project" aria-current="page">Post project</a>',
+            post_project_html,
+        )
+        self.assertIn('data-clerk-mode="start"', post_project_html)
+        self.assertIn('data-redirect-url="/jobs/new"', post_project_html)
+        self.assertIn('data-post-job-url="/jobs/new"', post_project_html)
+
+        task_post_html = module.build_entry_shell_html(
+            "/post-project",
+            {
+                "family": ["outdoor-yard"],
+                "service": ["pressure-washing"],
+            },
+            rows,
+            "pk_test_workdoe",
+            "https://clerk.workdoe.com",
+        )
+        self.assertIn(
+            'data-redirect-url="/jobs/new?family=outdoor-yard&amp;service=pressure-washing"',
+            task_post_html,
+        )
+        self.assertIn(
+            'data-post-job-url="/jobs/new?family=outdoor-yard&amp;service=pressure-washing"',
+            task_post_html,
+        )
 
         login_html = module.build_entry_shell_html(
             "/login",
@@ -2137,11 +3620,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('data-clerk-mode="signin"', login_html)
         self.assertIn('data-redirect-url="/jobs/9"', login_html)
         self.assertIn(
-            'data-sign-up-url="/start?intent=find-work&amp;job_id=9"',
+            'data-sign-up-url="/create-account?intent=find-work&amp;job_id=9&amp;next=%2Fjobs%2F9"',
             login_html,
         )
         self.assertIn('data-session-url="/api/auth/session"', login_html)
         self.assertIn('id="signin" class="market-detail-rail market-auth-rail"', login_html)
+        self.assertIn('data-mobile-panel-target="details">Account</button>', login_html)
         self.assertIn('data-project-results aria-label="Available projects" role="list"', login_html)
         self.assertIn("/api/jobs/open?limit=50&amp;target=login", login_html)
         self.assertIn('data-redirect-url="/jobs/9"', login_html)
@@ -2154,6 +3638,46 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             login_html,
         )
         self.assertNotIn("data-clerk-display-name", login_html)
+
+        filtered_login_html = module.build_entry_shell_html(
+            "/login",
+            filtered_lead_params,
+            rows,
+            "pk_test_workdoe",
+            "https://clerk.workdoe.com",
+        )
+        self.assertIn(
+            'data-redirect-url="/leads?family=outdoor-yard&amp;service=pressure-washing"',
+            filtered_login_html,
+        )
+        self.assertIn(
+            'data-sign-up-url="/create-account?intent=find-work&amp;next=%2Fleads%3Ffamily%3Doutdoor-yard%26service%3Dpressure-washing"',
+            filtered_login_html,
+        )
+        self.assertIn('value="pressure-washing" selected', filtered_login_html)
+        self.assertIn(
+            'data-clear-market-url="/login?next=%2Fleads"',
+            filtered_login_html,
+        )
+
+        filtered_start_html = module.build_entry_shell_html(
+            "/create-account",
+            {
+                "intent": ["find-work"],
+                **filtered_lead_params,
+            },
+            rows,
+            "pk_test_workdoe",
+            "https://clerk.workdoe.com",
+        )
+        self.assertIn(
+            'data-leads-url="/leads?family=outdoor-yard&amp;service=pressure-washing"',
+            filtered_start_html,
+        )
+        self.assertIn(
+            'data-redirect-url="/leads?family=outdoor-yard&amp;service=pressure-washing"',
+            filtered_start_html,
+        )
 
         headers = module.shell_headers("https://clerk.workdoe.com")
         self.assertEqual(headers["Cache-Control"], "no-store")
@@ -2192,6 +3716,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "https://workdoe.com/__clerk",
         )
         self.assertIn('data-clerk-proxy-url="https://workdoe.com/__clerk"', proxy_html)
+        self.assertIn("https://workdoe.com/__clerk/npm/@clerk/ui@1", proxy_html)
         self.assertIn("https://workdoe.com/__clerk/npm/@clerk/clerk-js@6", proxy_html)
 
         development_html = module.build_entry_shell_html(
@@ -2202,7 +3727,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "https://workdoe.com/__clerk",
         )
         self.assertNotIn("data-clerk-proxy-url", development_html)
-        self.assertNotIn("@clerk/ui", development_html)
+        self.assertIn(
+            "https://close-seal-34.clerk.accounts.dev/npm/@clerk/ui@1",
+            development_html,
+        )
         self.assertIn(
             "https://close-seal-34.clerk.accounts.dev/npm/@clerk/clerk-js@6",
             development_html,
@@ -2282,11 +3810,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
     def test_cloudflare_app_shell_renders_post_login_workflows(self):
         module = load_app_shell_module()
+        entry_module = load_worker_entry_module()
         client = {"id": 8, "role": "client", "status": "active", "display_name": "Client"}
         contractor = {"id": 7, "role": "contractor", "status": "active", "display_name": "Crew"}
         admin = {"id": 1, "role": "admin", "status": "active", "display_name": "Admin"}
         self.assertTrue(module.is_app_shell_route("/dashboard"))
+        self.assertTrue(module.is_app_shell_route("/account"))
         self.assertTrue(module.is_app_shell_route("/client/jobs/12"))
+        self.assertTrue(module.is_app_shell_route("/client/jobs/12/edit"))
+        self.assertTrue(module.is_app_shell_route("/client/requests"))
         self.assertTrue(module.is_app_shell_route("/messages/5"))
         self.assertTrue(module.is_app_shell_route("/jobs/42"))
         self.assertFalse(module.is_app_shell_route("/api/jobs/open"))
@@ -2297,8 +3829,62 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             module.app_login_url("/client/jobs/12?bids=pending"),
             "/login?next=/client/jobs/12%3Fbids%3Dpending",
         )
+        self.assertEqual(
+            entry_module.auth_redirect_for_user(
+                contractor,
+                "/leads?family=outdoor-yard&service=pressure-washing",
+            ),
+            "/leads?family=outdoor-yard&service=pressure-washing",
+        )
+        self.assertEqual(
+            entry_module.auth_redirect_for_user(
+                client,
+                "/jobs/new?family=outdoor-yard&service=pressure-washing",
+            ),
+            "/jobs/new?family=outdoor-yard&service=pressure-washing",
+        )
         self.assertEqual(module.dashboard_path_for_user(client), "/client/dashboard")
         self.assertEqual(module.dashboard_path_for_user(contractor), "/contractor/dashboard")
+        self.assertEqual(module.dashboard_path_for_user({"role": ""}), "/create-account")
+        anonymous_nav = module.nav_links(None, "/post-project")
+        self.assertIn(
+            'href="/post-project" aria-current="page">Post project</a>',
+            anonymous_nav,
+        )
+        self.assertNotIn('href="/jobs/new">Post project</a>', anonymous_nav)
+        client_nav = module.nav_links(client, "/client/dashboard")
+        self.assertIn('href="/account">Account</a>', client_nav)
+        self.assertIn('data-json-action="/api/auth/logout"', client_nav)
+        self.assertIn('class="nav-link-button"', client_nav)
+        self.assertNotIn('href="/logout"', client_nav)
+        self.assertEqual(module.parse_app_client_job_edit_id("/client/jobs/12/edit"), 12)
+        self.assertEqual(module.parse_app_client_job_edit_id("/client/jobs/12"), 0)
+
+        safety_html = module.safety_page_html()
+        self.assertIn("Safety - Workdoe", safety_html)
+        self.assertIn("Share only what the job needs.", safety_html)
+        self.assertIn('href="/safety" aria-current="page"', safety_html)
+        self.assertIn('href="/login">Sign in</a>', safety_html)
+        self.assertNotIn('href="/logout"', safety_html)
+        self.assertNotIn("Cloudflare", safety_html)
+        self.assertNotIn("MVP", safety_html)
+
+        privacy_html = module.privacy_page_html()
+        terms_html = module.terms_page_html()
+        self.assertIn("Privacy Policy - Workdoe", privacy_html)
+        self.assertIn("We do not sell personal information", privacy_html)
+        self.assertIn("Terms of Use - Workdoe", terms_html)
+        self.assertIn("Prohibited work", terms_html)
+        self.assertIn('href="/privacy" aria-current="page"', privacy_html)
+        self.assertIn('href="/terms" aria-current="page"', terms_html)
+        self.assertIn('href="/privacy">Privacy</a>', safety_html)
+        self.assertIn("Disallow: /api/", module.public_robots_txt())
+        self.assertIn("https://workdoe.com/privacy", module.public_sitemap_xml())
+        self.assertNotIn("/client/", module.public_sitemap_xml())
+        self.assertIn(
+            "Canonical: https://workdoe.com/.well-known/security.txt",
+            module.public_security_txt(),
+        )
 
         client_html = module.client_dashboard_html(
             client,
@@ -2328,6 +3914,30 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('aria-label="Review pending bids for Power wash steps"', client_html)
         self.assertIn("Review bids", client_html)
         self.assertNotIn("private@example.com", client_html)
+
+        request_inbox_html = module.client_request_inbox_html(
+            client,
+            {
+                "jobs": [
+                    {
+                        "id": 12,
+                        "title": "Power wash steps",
+                        "category": "Power washing",
+                        "city": "Arlington",
+                        "state": "VA",
+                        "description": "Townhouse front steps.",
+                        "status": "open",
+                        "pending_count": 2,
+                        "review_url": "/client/jobs/12?bids=pending#mini-bids",
+                    }
+                ],
+                "stats": {"pending_requests": 2, "review_jobs": 1, "approved_requests": 0},
+            },
+        )
+        self.assertIn("Bid Requests - Workdoe", request_inbox_html)
+        self.assertIn('href="/client/requests" aria-current="page"', request_inbox_html)
+        self.assertIn("2 pending", request_inbox_html)
+        self.assertIn("/client/jobs/12?bids=pending#mini-bids", request_inbox_html)
 
         contractor_dashboard_html = module.contractor_dashboard_html(
             contractor,
@@ -2373,6 +3983,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('list="job-zip-options"', form_html)
         self.assertIn('id="job-zip-options"', form_html)
         self.assertIn('value="20003"', form_html)
+        self.assertIn('name="budget_min" type="number"', form_html)
+        self.assertIn('name="budget_max" type="number"', form_html)
         self.assertIn('enterkeyhint="done"', form_html)
         self.assertIn('aria-describedby="job-photos-help"', form_html)
         self.assertIn('id="job-photos-help"', form_html)
@@ -2381,6 +3993,94 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('class="cf-turnstile"', form_html)
         self.assertIn('data-sitekey="turnstile-site-key"', form_html)
         self.assertIn("Post project", form_html)
+        family_form_html = module.job_form_html(
+            client,
+            job={"service_group_slug": "outdoor-yard"},
+        )
+        self.assertIn('data-project-initial-step="2"', family_form_html)
+        task_form_html = module.job_form_html(
+            client,
+            job={
+                "service_group_slug": "outdoor-yard",
+                "service_slug": "pressure-washing",
+                "category": "Power washing",
+            },
+        )
+        self.assertIn('data-project-initial-step="3"', task_form_html)
+        family_draft_html = module.public_job_draft_html(
+            {"service_group_slug": "outdoor-yard"}
+        )
+        self.assertIn('data-project-initial-step="2"', family_draft_html)
+        task_draft_html = module.public_job_draft_html(
+            {
+                "service_group_slug": "outdoor-yard",
+                "service_slug": "pressure-washing",
+                "category": "Power washing",
+            }
+        )
+        self.assertIn('data-project-initial-step="3"', task_draft_html)
+        selected_composer = module.project_composer_fields_html(
+            {
+                "service_group_slug": "outdoor-yard",
+                "service_slug": "pressure-washing",
+                "category": "Power washing",
+            },
+            include_photos=False,
+            submit_label="Continue",
+            cancel_url="/",
+        )
+        self.assertIn('<details class="service-option-more" open>', selected_composer)
+
+        draft_html = module.public_job_draft_html(
+            {
+                "title": "Wash the front walk",
+                "category": "Power washing",
+                "city": "Washington",
+                "state": "DC",
+                "zip_code": "20003",
+                "budget_min": "450",
+                "budget_max": "700",
+                "description": "Clean the walk and steps before a family gathering.",
+            },
+            [],
+            "turnstile-site-key",
+        )
+        self.assertIn('action="/post-project"', draft_html)
+        self.assertIn('aria-label="Project draft"', draft_html)
+        self.assertIn('value="Wash the front walk"', draft_html)
+        self.assertIn('value="450"', draft_html)
+        self.assertIn('data-action="job-draft"', draft_html)
+        self.assertNotIn('name="photos"', draft_html)
+        self.assertNotIn('src="/worker-actions.js"', draft_html)
+
+        edit_form_html = module.job_form_html(
+            client,
+            site_key="turnstile-site-key",
+            job={
+                "id": 12,
+                "title": "Power wash steps",
+                "category": "Power washing",
+                "service_slug": "pressure-washing",
+                "city": "Arlington",
+                "state": "VA",
+                "zip_code": "22201",
+                "description": "Townhouse front steps and patio.",
+                "desired_date": "2026-09-01",
+                "budget_min": 450,
+                "budget_max": 700,
+            },
+            mode="edit",
+        )
+        self.assertIn("Edit Project - Workdoe", edit_form_html)
+        self.assertIn('data-json-action="/api/jobs/12/update"', edit_form_html)
+        self.assertIn('value="Power wash steps"', edit_form_html)
+        self.assertIn('<option value="Power washing" selected>', edit_form_html)
+        self.assertIn('<option value="VA" selected>', edit_form_html)
+        self.assertIn('value="22201"', edit_form_html)
+        self.assertIn('name="budget_min" type="number" value="450"', edit_form_html)
+        self.assertIn('name="budget_max" type="number" value="700"', edit_form_html)
+        self.assertIn("Townhouse front steps and patio.", edit_form_html)
+        self.assertIn("Save changes", edit_form_html)
 
         profile_html = module.contractor_profile_html(
             contractor,
@@ -2411,9 +4111,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('inputmode="numeric"', profile_html)
         self.assertIn('id="profile-website"', profile_html)
         self.assertIn('autocomplete="url"', profile_html)
+        self.assertIn("Storefront readiness", profile_html)
+        self.assertIn("7 of 7 ready", profile_html)
+        self.assertNotIn('id="profile-phone"', profile_html)
         self.assertIn('id="profile-intro"', profile_html)
         self.assertIn('enterkeyhint="done"', profile_html)
-        self.assertIn('name="trades" value="Power washing" checked', profile_html)
+        self.assertIn(
+            'name="service_slugs" value="pressure-washing" checked',
+            profile_html,
+        )
+        self.assertIn(
+            'name="service_zone_slugs" value="district-of-columbia" checked',
+            profile_html,
+        )
         self.assertIn('name="portfolio_photo"', profile_html)
         self.assertIn('id="profile-photos"', profile_html)
         self.assertIn('aria-describedby="profile-photos-help"', profile_html)
@@ -2435,14 +4145,20 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "license_number": "Not listed",
                     "years_in_business": 7,
                     "contact_policy": "Clients approve a contractor's mini bid before a private Workdoe message thread opens.",
-                    "photos": [{"id": 4, "url": "/media/contractors/4", "original_filename": "crew.webp"}],
+                    "photos": [{"id": 4, "url": "/media/contractors/4"}],
                     "email": "contractor@example.com",
                 }
             },
         )
         self.assertIn("Doe Exterior Care - Workdoe", public_profile_html)
         self.assertIn("/media/contractors/4", public_profile_html)
+        self.assertIn("Portfolio photo", public_profile_html)
+        self.assertNotIn("crew.webp", public_profile_html)
         self.assertIn("private Workdoe message thread", public_profile_html)
+        self.assertIn(
+            "Profile details are self-reported. A source-checked record means Workdoe reviewed the linked public source",
+            public_profile_html,
+        )
         self.assertNotIn("contractor@example.com", public_profile_html)
 
         messages_html = module.message_threads_html(
@@ -2526,6 +4242,46 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "audit_actions": 3,
                     "automation_events": 4,
                 },
+                "repeat_work_metrics": {
+                    "invitations_created": 3,
+                    "invitations_pending": 0,
+                    "invitations_bid_sent": 1,
+                    "invitations_declined": 1,
+                    "invitations_withdrawn": 1,
+                    "verified_repeat_projects": 1,
+                    "invitation_bid_rate": 33,
+                    "verified_repeat_rate": 100,
+                },
+                "repeat_invitations": [
+                    {
+                        "id": 8,
+                        "job_id": 61,
+                        "project_title": "Fresh patio wash invitation",
+                        "contractor_name": "Rivera Exterior Care",
+                        "city": "Washington",
+                        "state": "DC",
+                        "status": "bid_sent",
+                        "verified_complete": 1,
+                    }
+                ],
+                "lead_alert_metrics": {
+                    "opted_in_contractors": 4,
+                    "pending_alerts": 1,
+                    "queued_alerts": 2,
+                    "sent_alerts": 8,
+                    "failed_alerts": 0,
+                },
+                "recent_lead_alerts": [
+                    {
+                        "id": 91,
+                        "job_id": 72,
+                        "project_title": "Front walk wash",
+                        "contractor_name": "Rivera Exterior Care",
+                        "city": "Washington",
+                        "state": "DC",
+                        "status": "sent",
+                    }
+                ],
                 "reports": [
                     {
                         "id": 4,
@@ -2546,7 +4302,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 ],
                 "photos": [{"id": 2, "original_filename": "steps.jpg", "title": "Power wash steps", "is_hidden": 0}],
                 "contractor_photos": [{"id": 3, "original_filename": "crew.webp", "business_name": "Doe Exterior Care", "is_hidden": 1}],
-                "messages": [{"id": 9, "thread_id": 5, "sender_email": "crew@example.com", "job_title": "Window cleaning", "body": "Can start Tuesday.", "is_hidden": 0}],
+                "messages": [
+                    {"id": 9, "thread_id": 5, "sender_email": "crew@example.com", "job_title": "Window cleaning", "body": "Can start Tuesday.", "is_hidden": 0},
+                    {"id": 10, "thread_id": 5, "sender_email": "client@example.com", "job_title": "Window cleaning", "body": "Moderated message.", "is_hidden": 1},
+                ],
                 "actions": [{"action_type": "hide", "target_type": "message", "target_id": 9, "notes": "Hidden by admin.", "created_at": "2026-08-03T12:00:00+00:00"}],
                 "automation_events": [{"event_type": "stale-match-reminder", "target_type": "match_request", "target_id": 4, "status": "queued", "created_at": "2026-08-03T13:00:00+00:00"}],
             },
@@ -2555,6 +4314,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Moderation console", admin_html)
         self.assertIn("<span>Automation</span><strong>4</strong>", admin_html)
         self.assertIn("stale-match-reminder", admin_html)
+        self.assertIn("Invitation funnel", admin_html)
+        self.assertIn("Project-level only", admin_html)
+        self.assertIn("<span>Invited</span><strong>3</strong>", admin_html)
+        self.assertIn("33% of invitations", admin_html)
+        self.assertIn("Recent repeat invitations", admin_html)
+        self.assertIn("Fresh patio wash invitation", admin_html)
+        self.assertIn('href="/jobs/61"', admin_html)
+        self.assertIn("Matching project alerts", admin_html)
+        self.assertIn("Opt-in only", admin_html)
+        self.assertIn("<span>Contractors on</span><strong>4</strong>", admin_html)
+        self.assertIn("Recent matching alerts", admin_html)
+        self.assertIn("Front walk wash", admin_html)
+        self.assertIn('href="/jobs/72"', admin_html)
         self.assertEqual(module.dom_id_fragment("/api/admin/reports/4/resolve"), "api-admin-reports-4-resolve")
         self.assertIn('data-json-action="/api/admin/reports/4/resolve"', admin_html)
         self.assertIn('aria-label="Resolve"', admin_html)
@@ -2565,6 +4337,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('data-json-action="/api/admin/photos/job/2/hide"', admin_html)
         self.assertIn('data-json-action="/api/admin/photos/contractor/3/restore"', admin_html)
         self.assertIn('data-json-action="/api/admin/messages/9/hide"', admin_html)
+        self.assertIn('data-json-action="/api/admin/messages/10/restore"', admin_html)
         self.assertIn('href="/messages/5"', admin_html)
         self.assertNotIn("/api/admin/summary", admin_html)
 
@@ -2598,6 +4371,27 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "action_label": "View",
                     }
                 ],
+                "filters": {
+                    "family": "cleaning-upkeep",
+                    "service": "window-cleaning",
+                    "category": "Window cleaning",
+                    "q": "Alexandria",
+                    "sort": "newest",
+                },
+                "view": "all",
+                "preferences": {
+                    "has_saved_lead_view": True,
+                    "saved_category": "Window cleaning",
+                    "saved_service_group_slug": "cleaning-upkeep",
+                    "saved_service_slug": "window-cleaning",
+                    "saved_service_label": "Window cleaning",
+                    "saved_family_label": "Cleaning & upkeep",
+                    "saved_query": "Alexandria",
+                    "saved_sort": "newest",
+                    "lead_alert_preference": "email",
+                    "lead_alert_enabled": True,
+                },
+                "saved_lead_view_url": "/leads?family=cleaning-upkeep&service=window-cleaning&category=Window+cleaning&q=Alexandria",
             },
         )
         self.assertIn('id="lead-map"', lead_html)
@@ -2612,7 +4406,28 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('role="listitem"', lead_html)
         self.assertIn('data-job-id="21"', lead_html)
         self.assertIn('aria-label="View Clean windows"', lead_html)
+        self.assertIn('class="job-service-chip"', lead_html)
+        self.assertIn('/vendor/tabler-icons/window.svg', lead_html)
         self.assertIn("Ground-floor exterior glass.", lead_html)
+        self.assertIn('id="saved-lead-alerts"', lead_html)
+        self.assertIn('name="lead_alert_preference"', lead_html)
+        self.assertEqual(lead_html.count('class="service-family-filter-link'), 7)
+        self.assertIn('/vendor/tabler-icons/spray.svg', lead_html)
+        self.assertIn('name="family" value="cleaning-upkeep"', lead_html)
+        self.assertIn('id="market-service" name="service" data-market-service', lead_html)
+        self.assertIn('value="window-cleaning" selected', lead_html)
+        self.assertIn(
+            'name="saved_service_group_slug" value="cleaning-upkeep"',
+            lead_html,
+        )
+        self.assertIn(
+            'name="saved_service_slug" value="window-cleaning"',
+            lead_html,
+        )
+        self.assertIn("Window cleaning near Alexandria", lead_html)
+        self.assertIn('value="email" checked', lead_html)
+        self.assertIn("Email alerts on", lead_html)
+        self.assertIn("selected services and DMV zones", lead_html)
         self.assertNotIn("22314", lead_html)
         marker = '<script id="map-jobs-data" type="application/json">'
         parsed = json.loads(lead_html.split(marker, 1)[1].split("</script>", 1)[0])
@@ -2702,6 +4517,44 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     },
                 ],
                 "stats": {"pending": 1, "approved": 1, "total": 2},
+                "comparison": {
+                    "order_label": "Received order",
+                    "count": 1,
+                    "offers": [
+                        {
+                            "id": 31,
+                            "offer_label": "Offer 1",
+                            "contractor_name": "Doe Exterior Care",
+                            "trades": "Power washing",
+                            "profile_url": "/contractors/7",
+                            "price_range": "$450-$650",
+                            "timeline": "Two days",
+                            "availability": "Tuesday",
+                            "provider_facts": [
+                                {
+                                    "label": "Years active",
+                                    "value": "5 years",
+                                    "qualifier": "Self-reported",
+                                },
+                                {
+                                    "label": "Source checked",
+                                    "value": "1 credential",
+                                    "qualifier": "Current records",
+                                },
+                                {
+                                    "label": "Workdoe-completed",
+                                    "value": "2 projects",
+                                    "qualifier": "Both sides confirmed",
+                                },
+                                {
+                                    "label": "Insurance",
+                                    "value": "Self-reported",
+                                    "qualifier": "Not verified by Workdoe",
+                                },
+                            ],
+                        }
+                    ],
+                },
                 "view_links": [
                     {"value": "all", "label": "All", "url": "/client/jobs/12#mini-bids"},
                     {"value": "pending", "label": "Pending", "url": "/client/jobs/12?bids=pending#mini-bids"},
@@ -2722,10 +4575,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', client_job_html)
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', client_job_html)
         self.assertIn("Job controls", client_job_html)
+        self.assertIn('href="/client/jobs/12/edit"', client_job_html)
         self.assertIn('data-json-action="/api/jobs/12/close"', client_job_html)
         self.assertIn('aria-label="Close Power wash steps"', client_job_html)
         self.assertIn('aria-describedby="job-status-form-status"', client_job_html)
         self.assertIn('id="job-status-form-status"', client_job_html)
+        self.assertIn('data-inline-dialog-open="close-job-dialog"', client_job_html)
+        self.assertIn("Where did this project land?", client_job_html)
+        self.assertIn('value="workdoe-match"', client_job_html)
         self.assertIn('data-file-action="/api/media/jobs/12/upload"', client_job_html)
         self.assertIn('aria-label="Upload job photo"', client_job_html)
         self.assertIn('for="job-photo-upload"', client_job_html)
@@ -2741,6 +4598,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('aria-describedby="match-request-31-reject-status"', client_job_html)
         self.assertIn('id="match-request-31-reject-status"', client_job_html)
         self.assertIn('href="/messages/5"', client_job_html)
+        self.assertIn("Compare pending offers", client_job_html)
+        self.assertIn("Received order", client_job_html)
+        self.assertIn("Compare terms", client_job_html)
+        self.assertIn("Open profiles", client_job_html)
+        self.assertIn("Approve one", client_job_html)
+        self.assertIn("Source checked", client_job_html)
+        self.assertIn("Workdoe-completed", client_job_html)
+        self.assertIn('href="#bid-title-31"', client_job_html)
+        self.assertIn('id="bid-title-31"', client_job_html)
+        self.assertIn("Lowest price is not automatically the best fit", client_job_html)
         self.assertIn('src="/worker-actions.js"', client_job_html)
         self.assertNotIn("contractor@example.com", client_job_html)
 
@@ -2753,6 +4620,32 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("https://*.tile.openstreetmap.org", headers["Content-Security-Policy"])
         self.assertIn("https://challenges.cloudflare.com", headers["Content-Security-Policy"])
 
+        account_html = module.account_security_html(
+            {**client, "email": "client@example.com"},
+            clerk_publishable_key="pk_live_workdoe",
+            clerk_frontend_api_url="https://workdoe.com/__clerk",
+        )
+        self.assertIn("Account &amp; security", account_html)
+        self.assertIn("client@example.com", account_html)
+        self.assertIn('data-clerk-account', account_html)
+        self.assertIn('src="/clerk-account.js"', account_html)
+        self.assertIn("@clerk/ui@1/dist/ui.browser.js", account_html)
+        self.assertIn('data-clerk-proxy-url="https://workdoe.com/__clerk"', account_html)
+        self.assertNotIn("accounts.workdoe.com", account_html)
+        account_headers = module.app_shell_headers(
+            include_clerk=True,
+            clerk_publishable_key="pk_live_workdoe",
+            clerk_frontend_api_url="https://workdoe.com/__clerk",
+        )
+        account_csp = account_headers["Content-Security-Policy"]
+        self.assertIn("https://*.protect.clerk.com", account_csp)
+        self.assertIn("https://img.clerk.com", account_csp)
+        self.assertIn("worker-src 'self' blob:", account_csp)
+        clerk_account_script = (ROOT / "workdoe" / "static" / "clerk-account.js").read_text(encoding="utf-8")
+        self.assertIn('mountUserProfile(node, { routing: "hash" })', clerk_account_script)
+        self.assertIn("telemetry: false", clerk_account_script)
+        self.assertIn("window.__internal_ClerkUICtor", clerk_account_script)
+
         script = (ROOT / "workdoe" / "static" / "worker-actions.js").read_text(encoding="utf-8")
         self.assertIn("[data-json-action]", script)
         self.assertIn("[data-file-action]", script)
@@ -2764,6 +4657,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("uploadData.append(\"photo\"", script)
         self.assertIn("Array.isArray(data[key])", script)
         self.assertIn("\"Content-Type\": \"application/json\"", script)
+        self.assertIn('"X-Workdoe-Request": "same-origin"', script)
         self.assertIn("[data-form-status]", script)
         self.assertIn("payload.field_errors", script)
         self.assertIn("showFieldErrors", script)
@@ -2779,6 +4673,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("details.open = true", script)
         self.assertIn("control.name === field", script)
         self.assertNotIn("CSS.escape", script)
+        for shell_html in (form_html, profile_html, detail_html, thread_html, client_job_html):
+            with self.subTest(page_title=shell_html.split("<title>", 1)[-1].split("</title>", 1)[0]):
+                self.assertIn('<html lang="en">', shell_html)
+                self.assertIn('<a class="skip-link" href="#main-content">Skip to content</a>', shell_html)
+                self.assertIn('<nav class="main-nav" aria-label="Primary">', shell_html)
+                self.assertIn('id="main-content"', shell_html)
+                self.assertIn('tabindex="-1"', shell_html)
+                self.assertLess(shell_html.index('class="skip-link"'), shell_html.index('<header class="site-header">'))
+                self.assertLess(shell_html.index('<header class="site-header">'), shell_html.index('id="main-content"'))
         entrypoint = (ROOT / "cloudflare" / "worker" / "entry.py").read_text(encoding="utf-8")
         self.assertIn('"field_errors": exc.field_errors', entrypoint)
         self.assertIn('environment != "production" and result_action == "test"', entrypoint)
@@ -2790,19 +4693,123 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("node.dataset.signUpUrl", clerk_script)
         self.assertIn("clerkUserEmail", clerk_script)
         self.assertIn("onboardPayload.email = email", clerk_script)
-        self.assertIn('strategy: "email_code"', clerk_script)
-        self.assertIn("prepareFirstFactor", clerk_script)
-        self.assertIn("attemptFirstFactor", clerk_script)
-        self.assertIn("prepareEmailAddressVerification", clerk_script)
-        self.assertIn("attemptEmailAddressVerification", clerk_script)
-        self.assertIn("window.Clerk.setActive", clerk_script)
-        self.assertIn("window.crypto.getRandomValues", clerk_script)
-        self.assertIn('needsSignUpField(signUpAttempt, "password")', clerk_script)
+        self.assertIn("window.__internal_ClerkUICtor", clerk_script)
+        self.assertIn("window.Clerk.mountSignIn", clerk_script)
+        self.assertIn("withSignUp: true", clerk_script)
+        self.assertIn("forceRedirectUrl: returnUrl", clerk_script)
+        self.assertIn("signUpForceRedirectUrl: returnUrl", clerk_script)
+        self.assertIn("window.sessionStorage.setItem", clerk_script)
+        self.assertIn("PROFILE_STATE_MAX_AGE_MS", clerk_script)
+        self.assertIn('routing: "hash"', clerk_script)
+        self.assertNotIn("window.Clerk.client.signIn", clerk_script)
+        self.assertNotIn("window.Clerk.client.signUp", clerk_script)
+        self.assertNotIn("prepareFirstFactor", clerk_script)
+        self.assertNotIn("attemptFirstFactor", clerk_script)
+        self.assertNotIn("prepareEmailAddressVerification", clerk_script)
+        self.assertNotIn("attemptEmailAddressVerification", clerk_script)
         self.assertNotIn("Math.random", clerk_script)
-        self.assertNotIn("mountSignIn", clerk_script)
-        self.assertIn("setBusy(form, false);", clerk_script)
+        self.assertIn('"X-Workdoe-Request": "same-origin"', clerk_script)
+        email_code_script = (ROOT / "workdoe" / "static" / "email-code-entry.js").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"X-Workdoe-Request": "same-origin"', email_code_script)
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
         self.assertIn(".clerk-entry-status", styles)
+
+    def test_cloudflare_app_shell_escapes_marketplace_content(self):
+        module = load_app_shell_module()
+        hostile = '<script>alert("workdoe")</script>'
+        escaped = "&lt;script&gt;alert(&quot;workdoe&quot;)&lt;/script&gt;"
+        client = {"id": 8, "role": "client", "status": "active", "display_name": hostile}
+        contractor = {"id": 7, "role": "contractor", "status": "active", "display_name": hostile}
+        admin = {"id": 1, "role": "admin", "status": "active", "display_name": "Admin"}
+
+        rendered = [
+            module.client_dashboard_html(
+                client,
+                {
+                    "jobs": [
+                        {
+                            "id": 12,
+                            "title": hostile,
+                            "category": hostile,
+                            "city": hostile,
+                            "state": "VA",
+                            "description": hostile,
+                            "status": "open",
+                            "url": "/client/jobs/12",
+                            "row_cue": hostile,
+                        }
+                    ],
+                    "stats": {},
+                },
+            ),
+            module.contractor_profile_html(
+                contractor,
+                {
+                    "business_name": hostile,
+                    "trades": "Painting",
+                    "service_area": hostile,
+                    "intro": hostile,
+                    "insurance_status": hostile,
+                    "license_number": hostile,
+                    "website": "",
+                    "phone": "",
+                },
+                [{"id": 4, "original_filename": hostile}],
+            ),
+            module.message_thread_detail_html(
+                client,
+                {
+                    "thread": {
+                        "id": 5,
+                        "title": hostile,
+                        "category": hostile,
+                        "city": hostile,
+                        "state": "VA",
+                        "client_name": hostile,
+                        "contractor_name": hostile,
+                    },
+                    "messages": [
+                        {
+                            "id": 9,
+                            "sender_id": 7,
+                            "sender_name": hostile,
+                            "body": hostile,
+                            "created_at": "2026-08-16T12:00:00+00:00",
+                        }
+                    ],
+                },
+                can_reply=True,
+            ),
+            module.admin_dashboard_html(
+                admin,
+                {
+                    "stats": {},
+                    "reports": [
+                        {
+                            "id": 4,
+                            "target_type": "job",
+                            "target_id": 12,
+                            "reason": hostile,
+                            "reporter_email": hostile,
+                            "job_title": hostile,
+                        }
+                    ],
+                    "users": [],
+                    "jobs": [],
+                    "photos": [],
+                    "contractor_photos": [],
+                    "messages": [],
+                    "actions": [],
+                    "automation_events": [],
+                },
+            ),
+        ]
+
+        for html in rendered:
+            self.assertNotIn(hostile, html)
+            self.assertIn(escaped, html)
 
     def test_cloudflare_contractor_leads_helper_matches_lead_board_contract(self):
         module = load_contractor_leads_module()
@@ -2813,19 +4820,33 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         filters = module.contractor_lead_filters_from_query(
             {
                 "category": ["Painting"],
+                "family": ["remodel-finish"],
+                "service": ["interior-painting"],
                 "q": ["  Arlington   VA  "],
                 "sort": ["soonest"],
             }
         )
         self.assertEqual(
             filters,
-            {"category": "Painting", "q": "Arlington VA", "sort": "soonest"},
+            {
+                "category": "Painting",
+                "family": "remodel-finish",
+                "service": "interior-painting",
+                "q": "Arlington VA",
+                "sort": "soonest",
+            },
         )
         self.assertEqual(
             module.contractor_lead_filters_from_query(
-                {"category": ["Unknown"], "q": ["A" * 120], "sort": ["bad"]}
+                {
+                    "category": ["Unknown"],
+                    "family": ["unknown-family"],
+                    "service": ["unknown-task"],
+                    "q": ["A" * 120],
+                    "sort": ["bad"],
+                }
             ),
-            {"category": "", "q": "A" * 80, "sort": "newest"},
+            {"category": "", "family": "", "service": "", "q": "A" * 80, "sort": "newest"},
         )
         contractor = {"id": 7, "role": "contractor", "status": "active"}
         client = {"id": 8, "role": "client", "status": "active"}
@@ -2839,6 +4860,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "id": 12,
                 "title": "Power wash steps",
                 "category": "Power washing",
+                "service_group_slug": "outdoor-yard",
                 "city": "Arlington",
                 "state": "VA",
                 "zip_code": "22201",
@@ -2856,6 +4878,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "id": 13,
                 "title": "Clean storefront windows",
                 "category": "Window cleaning",
+                "service_group_slug": "cleaning-upkeep",
+                "service_slug": "window-cleaning",
                 "city": "Alexandria",
                 "state": "VA",
                 "zip_code": "22314",
@@ -2868,7 +4892,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "request_status": None,
             },
         ]
-        payload = module.contractor_leads_payload(rows, filters=filters, view="sent")
+        payload = module.contractor_leads_payload(
+            rows,
+            filters=filters,
+            view="sent",
+            service_slugs=["pressure-washing"],
+            service_zone_slugs=["arlington-county-va"],
+        )
         self.assertEqual(payload["view"], "sent")
         self.assertEqual(payload["stats"]["all_jobs"], 2)
         self.assertEqual(payload["stats"]["visible_jobs"], 1)
@@ -2878,6 +4908,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(payload["jobs"][0]["url"], "/jobs/12")
         self.assertEqual(payload["jobs"][0]["request_status"], "pending")
         self.assertFalse(payload["jobs"][0]["can_request_match"])
+        self.assertEqual(payload["jobs"][0]["fit_label"], "Best fit")
+        self.assertEqual(payload["jobs"][0]["fit_score"], 3)
         self.assertEqual(payload["map_jobs"][0]["action_label"], "View sent bid")
         self.assertEqual(payload["map_jobs"][0]["description"], "Townhouse front steps need cleaning.")
         self.assertEqual(payload["map_jobs"][0]["desired_date"], "2026-09-01")
@@ -2886,11 +4918,343 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertNotIn("zip_code", payload["jobs"][0])
         self.assertNotIn("client_id", payload["jobs"][0])
         self.assertNotIn("client_email", payload["jobs"][0])
+        self.assertEqual(payload["jobs"][0]["service_group_slug"], "outdoor-yard")
 
         new_payload = module.contractor_leads_payload(rows, filters=filters, view="new")
         self.assertEqual(len(new_payload["jobs"]), 1)
         self.assertEqual(new_payload["jobs"][0]["id"], 13)
         self.assertEqual(new_payload["count"], 0)
+
+    def test_cloudflare_contractor_preferences_are_deterministic_and_private(self):
+        module = load_contractor_preferences_module()
+        availability = module.availability_payload(
+            {"availability_status": "limited", "available_from": "2030-06-15"}
+        )
+        self.assertEqual(
+            availability,
+            {"availability_status": "limited", "available_from": "2030-06-15"},
+        )
+        saved = module.saved_lead_view_payload(
+            {
+                "saved_category": "Painting",
+                "saved_service_group_slug": "remodel-finish",
+                "saved_service_slug": "interior-painting",
+                "saved_query": "  Arlington   VA  ",
+                "saved_sort": "soonest",
+            },
+            categories={"Painting", "Plumbing"},
+            sorts={"newest", "soonest", "city"},
+            families={"remodel-finish", "home-systems"},
+        )
+        self.assertEqual(
+            saved,
+            {
+                "saved_category": "Painting",
+                "saved_service_group_slug": "remodel-finish",
+                "saved_service_slug": "interior-painting",
+                "saved_query": "Arlington VA",
+                "saved_sort": "soonest",
+                "lead_alert_preference": "workdoe",
+            },
+        )
+        row = {
+            **availability,
+            **saved,
+            "saved_at": "2026-08-17T12:00:00+00:00",
+            "updated_at": "2026-08-17T12:00:00+00:00",
+        }
+        response = module.contractor_preferences_response(row)
+        self.assertTrue(response["has_saved_lead_view"])
+        self.assertEqual(
+            module.saved_lead_view_url(row),
+            "/leads?family=remodel-finish&service=interior-painting&category=Painting&q=Arlington+VA&sort=soonest",
+        )
+        self.assertEqual(
+            response["availability"]["label"],
+            "Taking new work from 2030-06-15",
+        )
+        consented = module.saved_lead_view_payload(
+            {
+                "saved_category": "Painting",
+                "saved_service_group_slug": "remodel-finish",
+                "saved_service_slug": "interior-painting",
+                "saved_query": "Arlington VA",
+                "saved_sort": "soonest",
+                "lead_alert_preference": "email",
+            },
+            categories={"Painting"},
+            sorts={"soonest"},
+            families={"remodel-finish"},
+        )
+        consented_response = module.contractor_preferences_response(
+            {
+                **consented,
+                "saved_at": "2026-08-17T12:00:00+00:00",
+                "lead_alert_consent_at": "2026-08-17T12:00:00+00:00",
+            }
+        )
+        self.assertTrue(consented_response["lead_alert_enabled"])
+        self.assertEqual(consented_response["lead_alert_preference"], "email")
+        self.assertEqual(
+            module.contractor_preferences_response(consented)["lead_alert_preference"],
+            "workdoe",
+        )
+        migration = (
+            ROOT
+            / "cloudflare"
+            / "d1"
+            / "migrations"
+            / "0018_contractor_lead_alerts.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ADD COLUMN lead_alert_preference", migration)
+        self.assertIn("ADD COLUMN lead_alert_consent_at", migration)
+        self.assertIn(
+            "CREATE TABLE IF NOT EXISTS contractor_lead_alert_deliveries",
+            migration,
+        )
+        self.assertIn("UNIQUE(contractor_id, job_id)", migration)
+        self.assertNotIn("zip_code", migration)
+        self.assertNotIn("client_email", migration)
+        family_migration = (
+            ROOT
+            / "cloudflare"
+            / "d1"
+            / "migrations"
+            / "0021_saved_lead_work_family.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ADD COLUMN saved_service_group_slug", family_migration)
+        self.assertIn("idx_contractor_lead_preferences_family", family_migration)
+        self.assertNotIn("zip_code", family_migration)
+        task_migration = (
+            ROOT
+            / "cloudflare"
+            / "d1"
+            / "migrations"
+            / "0025_saved_lead_task.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ADD COLUMN saved_service_slug", task_migration)
+        self.assertIn("idx_contractor_lead_preferences_service", task_migration)
+        self.assertNotIn("zip_code", task_migration)
+        with self.assertRaises(module.ContractorPreferenceError):
+            module.saved_lead_view_payload(
+                {
+                    "saved_service_group_slug": "home-systems",
+                    "saved_service_slug": "interior-painting",
+                    "saved_sort": "newest",
+                },
+                categories={"Painting"},
+                sorts={"newest"},
+                families={"remodel-finish", "home-systems"},
+            )
+        with self.assertRaises(module.ContractorPreferenceError):
+            module.saved_lead_view_payload(
+                {
+                    "saved_category": "Unknown",
+                    "saved_service_group_slug": "unknown-family",
+                    "saved_sort": "paid-first",
+                },
+                categories={"Painting"},
+                sorts={"newest"},
+                families={"remodel-finish"},
+            )
+
+        public_profiles = load_contractor_public_profiles_module()
+        payload = public_profiles.public_contractor_profile_payload(
+            {
+                "id": 7,
+                "status": "active",
+                "business_name": "Doe Exterior Care",
+                **availability,
+            },
+            [],
+            None,
+            availability={**availability, "saved_query": "private search"},
+        )
+        contractor = payload["contractor"]
+        self.assertEqual(contractor["availability"]["status"], "limited")
+        self.assertNotIn("saved_query", contractor)
+        self.assertNotIn("private search", json.dumps(payload))
+
+    def test_cloudflare_consumer_project_templates_copy_only_reusable_scope(self):
+        module = load_client_project_templates_module()
+        request = module.project_template_request_payload(
+            {"name": "  Monthly   exterior reset  ", "source_job_id": "17"}
+        )
+        self.assertEqual(
+            request,
+            {"name": "Monthly exterior reset", "source_job_id": 17},
+        )
+        with self.assertRaises(module.ProjectTemplateError):
+            module.project_template_request_payload(
+                {"name": "", "source_job_id": "another-client"}
+            )
+        row = {
+            "id": 4,
+            "name": "Monthly exterior reset",
+            "source_job_id": 17,
+            "service_group_slug": "outdoor-yard",
+            "service_slug": "pressure-washing",
+            "category": "Power washing",
+            "title": "Wash storefront entrance",
+            "description": "Clean the entrance and protect adjacent surfaces.",
+            "project_setting": "business",
+            "budget_min": 450,
+            "budget_max": 700,
+            "city": "Private city must not copy",
+            "zip_code": "99999",
+            "desired_date": "2030-01-01",
+            "stored_path": "private/object.webp",
+        }
+        response = module.project_template_response(row)
+        self.assertEqual(response["use_url"], "/jobs/new?template=4")
+        self.assertNotIn("city", response)
+        self.assertNotIn("zip_code", response)
+        self.assertNotIn("desired_date", response)
+        self.assertNotIn("stored_path", response)
+        form = module.project_template_job_form(row)
+        self.assertEqual(form["city"], "")
+        self.assertEqual(form["zip_code"], "")
+        self.assertEqual(form["desired_date"], "")
+        self.assertEqual(form["title"], "Wash storefront entrance")
+
+        shell = load_app_shell_module()
+        html = shell.client_profile_html(
+            {"id": 8, "role": "client", "status": "active", "display_name": "Client"},
+            {
+                "organization_name": "Main Street Shop",
+                "account_type": "small-business",
+                "notification_preference": "workdoe",
+                "profile_note": "",
+            },
+            [],
+            [response],
+            [{"id": 17, "title": "Wash storefront entrance", "status": "closed"}],
+            17,
+        )
+        self.assertIn('data-json-action="/api/client/templates"', html)
+        self.assertIn('value="17" selected', html)
+        self.assertIn("Location, date, photos, bids, and messages are never copied.", html)
+        self.assertIn('href="/jobs/new?template=4"', html)
+        self.assertNotIn("Private city must not copy", html)
+
+        migration = (
+            ROOT
+            / "cloudflare"
+            / "d1"
+            / "migrations"
+            / "0016_client_project_templates.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CREATE TABLE IF NOT EXISTS client_project_templates", migration)
+        self.assertIn("UNIQUE(client_id, name)", migration)
+        self.assertNotIn("zip_code", migration)
+        self.assertNotIn("desired_date", migration)
+        self.assertNotIn("photo", migration)
+
+    def test_cloudflare_contractor_proposal_templates_require_a_fresh_price(self):
+        module = load_contractor_proposal_templates_module()
+        request = module.proposal_template_request_payload(
+            {"name": "  Exterior   standard  ", "source_match_request_id": "41"}
+        )
+        self.assertEqual(
+            request,
+            {"name": "Exterior standard", "source_match_request_id": 41},
+        )
+        with self.assertRaises(module.ProposalTemplateError):
+            module.proposal_template_request_payload(
+                {"name": "", "source_match_request_id": "another-contractor"}
+            )
+        row = {
+            "id": 7,
+            "name": "Exterior standard",
+            "source_match_request_id": 41,
+            "scope_note": "Protect adjacent surfaces and clean the work area.",
+            "price_range": "$900-$1,200",
+            "timeline": "Two business days",
+            "experience": "Five similar storefront projects completed.",
+            "questions": "Is exterior water access available?",
+            "availability": "Weekday mornings",
+            "email": "private@example.com",
+            "exact_address": "123 Private Street",
+        }
+        response = module.proposal_template_response(row)
+        self.assertNotIn("price_range", response)
+        self.assertNotIn("email", response)
+        self.assertNotIn("exact_address", response)
+        form = module.proposal_template_bid_form(row)
+        self.assertEqual(form["price_range"], "")
+        self.assertEqual(form["timeline"], "Two business days")
+        self.assertEqual(
+            module.parse_proposal_template_delete_path(
+                "/api/contractor/proposal-templates/7/delete"
+            ),
+            7,
+        )
+        with self.assertRaises(module.ProposalTemplateError):
+            module.parse_proposal_template_delete_path(
+                "/api/contractor/proposal-templates/not-a-number/delete"
+            )
+
+        shell = load_app_shell_module()
+        dashboard_html = shell.contractor_dashboard_html(
+            {"id": 8, "role": "contractor", "status": "active"},
+            {
+                "profile": {"business_name": "Doe Exterior Care"},
+                "stats": {},
+                "proposal_templates": [response],
+                "proposal_template_limit": 6,
+            },
+        )
+        self.assertIn('id="proposal-templates"', dashboard_html)
+        self.assertIn("Exterior standard", dashboard_html)
+        self.assertIn(
+            'data-json-action="/api/contractor/proposal-templates/7/delete"',
+            dashboard_html,
+        )
+        self.assertIn("requires a fresh price", dashboard_html)
+        self.assertNotIn("$900-$1,200", dashboard_html)
+
+        detail_html = shell.contractor_job_detail_html(
+            {"id": 8, "role": "contractor", "status": "active"},
+            {
+                "job": {
+                    "id": 41,
+                    "title": "Wash storefront entrance",
+                    "category": "Power washing",
+                    "area_label": "Arlington, VA 222xx",
+                    "description": "Clean the entrance and protect adjacent surfaces.",
+                    "status": "open",
+                    "can_request_match": True,
+                    "location_privacy": "Contractors see city/state and ZIP prefix only.",
+                },
+                "photos": [],
+                "proposal_templates": [response],
+                "proposal_template_limit": 6,
+                "proposal_template_name_max_length": 60,
+                "selected_proposal_template": response,
+                "bid_form": form,
+            },
+            site_key="turnstile-site-key",
+        )
+        self.assertIn("Template applied", detail_html)
+        self.assertIn("Exterior standard", detail_html)
+        self.assertIn("add a project-specific price", detail_html)
+        self.assertIn('placeholder="Add a fresh estimate"', detail_html)
+        self.assertIn(
+            "Protect adjacent surfaces and clean the work area.", detail_html
+        )
+        self.assertNotIn("$900-$1,200", detail_html)
+
+        migration = (
+            ROOT
+            / "cloudflare"
+            / "d1"
+            / "migrations"
+            / "0023_contractor_proposal_templates.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CREATE TABLE IF NOT EXISTS contractor_proposal_templates", migration)
+        self.assertIn("UNIQUE(contractor_id, name)", migration)
+        for forbidden in ("price_range", "email", "phone", "address", "zip_code", "media"):
+            self.assertNotIn(forbidden, migration)
 
     def test_cloudflare_contractor_bids_helper_matches_dashboard_contract(self):
         module = load_contractor_bids_module()
@@ -3082,6 +5446,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "experience": "Five years of exterior cleaning in the DMV.",
                 "questions": "Is there hose access?",
                 "availability": "Tuesday",
+                "years_in_business": 5,
+                "insurance_status": "Policy available on request",
+                "source_checked_credential_count": 1,
+                "verified_work_count": 2,
                 "created_at": "2026-08-03T12:00:00+00:00",
                 "updated_at": "2026-08-03T12:00:00+00:00",
                 "thread_id": None,
@@ -3130,7 +5498,17 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         payload = module.client_job_requests_payload(job, rows, "pending")
         self.assertEqual(payload["view"], "pending")
         self.assertEqual(payload["job"]["url"], "/client/jobs/42")
-        self.assertEqual(payload["stats"], {"visible": 1, "total": 3, "pending": 1, "approved": 1, "rejected": 1})
+        self.assertEqual(
+            payload["stats"],
+            {
+                "visible": 1,
+                "total": 3,
+                "pending": 1,
+                "approved": 1,
+                "rejected": 1,
+                "verified": 0,
+            },
+        )
         self.assertEqual(len(payload["requests"]), 1)
         request_payload = payload["requests"][0]
         self.assertEqual(request_payload["contractor_name"], "Doe Exterior Care")
@@ -3140,6 +5518,22 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(request_payload["row_cue"], "Review")
         self.assertNotIn("email", request_payload)
         self.assertNotIn("phone", request_payload)
+        self.assertEqual(payload["comparison"]["count"], 1)
+        self.assertEqual(
+            payload["comparison"]["offers"][0]["contractor_name"],
+            "Doe Exterior Care",
+        )
+        self.assertEqual(
+            payload["comparison"]["offers"][0]["provider_facts"][1]["value"],
+            "1 credential",
+        )
+        self.assertEqual(
+            payload["comparison"]["offers"][0]["provider_facts"][2]["value"],
+            "2 projects",
+        )
+        comparison_json = json.dumps(payload["comparison"]).lower()
+        self.assertNotIn("contractor@example.com", comparison_json)
+        self.assertNotIn("202) 555", comparison_json)
 
         approved_payload = module.client_job_requests_payload(job, rows, "approved")
         approved = approved_payload["requests"][0]
@@ -3147,6 +5541,61 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(approved["row_cue"], "Message")
         self.assertFalse(approved["can_approve"])
         self.assertEqual(approved["trades"], "Contractor profile")
+        self.assertEqual(approved_payload["comparison"]["offers"], [])
+
+    def test_cloudflare_bid_comparison_matches_local_received_order_contract(self):
+        worker = load_bid_comparison_module()
+        from workdoe.bid_comparison import bid_comparison
+
+        rows = [
+            {
+                "id": 42,
+                "contractor_id": 9,
+                "business_name": "Second Offer",
+                "trades": "Moving",
+                "status": "pending",
+                "price_range": "$700-$850",
+                "timeline": "Friday",
+                "availability": "Friday morning",
+                "scope_note": "Two movers and one truck.",
+                "experience": "Local apartment moves.",
+                "questions": "Freight elevator?",
+                "years_in_business": 4,
+                "insurance_status": "Available",
+                "source_checked_credential_count": 1,
+                "verified_work_count": 2,
+                "created_at": "2026-08-17T14:00:00+00:00",
+                "email": "private@example.com",
+                "exact_address": "100 Private Street",
+            },
+            {
+                "id": 41,
+                "contractor_id": 8,
+                "business_name": "First Offer",
+                "trades": "Moving",
+                "status": "pending",
+                "price_range": "$750 flat",
+                "timeline": "Thursday",
+                "availability": "Thursday morning",
+                "scope_note": "Three movers and one truck.",
+                "experience": "DMV residential moving.",
+                "questions": "",
+                "years_in_business": None,
+                "insurance_status": "",
+                "source_checked_credential_count": 0,
+                "verified_work_count": 0,
+                "created_at": "2026-08-17T13:00:00+00:00",
+            },
+        ]
+        local_result = bid_comparison(rows, "pending")
+        worker_result = worker.bid_comparison(rows, "pending")
+        self.assertEqual(worker_result, local_result)
+        self.assertEqual(
+            [offer["contractor_name"] for offer in worker_result["offers"]],
+            ["First Offer", "Second Offer"],
+        )
+        self.assertNotIn("private@example.com", json.dumps(worker_result))
+        self.assertNotIn("Private Street", json.dumps(worker_result))
 
     def test_cloudflare_job_detail_payload_redacts_contractor_location(self):
         module = load_job_details_module()
@@ -3167,6 +5616,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "description": "Clean front and side windows before opening.",
             "desired_date": "2026-09-01",
             "status": "open",
+            "close_reason": "plans-changed",
+            "close_note": "Timing moved.",
+            "closed_at": "2026-08-17T12:00:00+00:00",
         }
         photos = [
             {
@@ -3188,6 +5640,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(contractor_job["zip_prefix"], "222xx")
         self.assertTrue(contractor_job["can_request_match"])
         self.assertNotIn("zip_code", contractor_job)
+        self.assertNotIn("close_note", contractor_job)
         self.assertNotIn("stored_path", contractor_payload["photos"][0])
         self.assertNotIn("is_hidden", contractor_payload["photos"][0])
 
@@ -3213,9 +5666,55 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         owner_payload = module.job_detail_payload(client, job, photos=photos)
         self.assertEqual(owner_payload["viewer"], "owner")
         self.assertEqual(owner_payload["job"]["zip_code"], "22201")
+        self.assertEqual(owner_payload["job"]["close_note"], "Timing moved.")
         self.assertEqual(owner_payload["photos"][0]["is_hidden"], 0)
         with self.assertRaisesRegex(module.JobDetailError, "Unsupported"):
             module.parse_job_detail_id("/api/jobs/0")
+
+    def test_cloudflare_bid_window_rules_are_deterministic(self):
+        module = load_job_posts_module()
+        open_window = module.bid_window(
+            {
+                "status": "open",
+                "bid_limit": 4,
+                "request_count": 2,
+                "bidding_closes_at": "2026-08-24T12:00:00+00:00",
+            },
+            now="2026-08-17T12:00:00+00:00",
+        )
+        self.assertTrue(open_window["accepting"])
+        self.assertEqual(open_window["remaining"], 2)
+        self.assertEqual(open_window["usage_label"], "2 of 4 bids")
+
+        full_window = module.bid_window(
+            {
+                "status": "open",
+                "bid_limit": 4,
+                "request_count": 4,
+                "bidding_closes_at": "2026-08-24T12:00:00+00:00",
+            },
+            now="2026-08-17T12:00:00+00:00",
+        )
+        self.assertFalse(full_window["accepting"])
+        self.assertEqual(full_window["state"], "full")
+
+        expired_window = module.bid_window(
+            {
+                "status": "open",
+                "request_count": 1,
+                "bidding_closes_at": "2026-08-16T12:00:00+00:00",
+            },
+            now="2026-08-17T12:00:00+00:00",
+        )
+        self.assertFalse(expired_window["accepting"])
+        self.assertTrue(expired_window["can_extend"])
+        self.assertEqual(
+            module.extended_bidding_closes_at(
+                "2026-08-16T12:00:00+00:00",
+                "2026-08-17T12:00:00+00:00",
+            ),
+            "2026-08-24T12:00:00+00:00",
+        )
 
     def test_cloudflare_job_status_helper_matches_client_control_contract(self):
         module = load_job_status_module()
@@ -3238,8 +5737,149 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             module.job_status_response(42, "closed"),
             {"ok": True, "job_id": 42, "status": "closed", "url": "/client/jobs/42"},
         )
+        self.assertEqual(
+            module.validate_project_close_payload(
+                {"reason_code": "plans-changed", "note": "Schedule moved."},
+                has_approved_match=False,
+            ),
+            {"reason_code": "plans-changed", "note": "Schedule moved."},
+        )
+        with self.assertRaisesRegex(module.JobStatusError, "Approve a Workdoe bid"):
+            module.validate_project_close_payload(
+                {"reason_code": "workdoe-match"},
+                has_approved_match=False,
+            )
+        self.assertEqual(
+            module.validate_project_close_payload(
+                {"reason_code": "workdoe-match"},
+                has_approved_match=True,
+            )["reason_code"],
+            "workdoe-match",
+        )
+        match_request = {"job_id": 42, "contractor_id": 7}
+        self.assertTrue(
+            module.can_submit_lead_quality_feedback(contractor, job, match_request)
+        )
+        self.assertFalse(
+            module.can_submit_lead_quality_feedback(
+                contractor,
+                {**job, "status": "hidden"},
+                match_request,
+            )
+        )
+        self.assertEqual(
+            module.parse_job_quality_feedback_path("/api/jobs/42/quality-feedback"),
+            42,
+        )
+        self.assertEqual(
+            module.validate_lead_quality_payload(
+                {"reason_code": "insufficient-detail", "note": "Need dimensions."}
+            ),
+            {"reason_code": "insufficient-detail", "note": "Need dimensions."},
+        )
         with self.assertRaisesRegex(module.JobStatusError, "Unsupported"):
             module.parse_job_status_path("/api/jobs/42/delete")
+
+    def test_cloudflare_consumer_profile_helper_supports_private_recurring_workspaces(self):
+        module = load_client_profiles_module()
+        profile = module.client_profile_payload(
+            {
+                "organization_name": "  Meridian Corner Store  ",
+                "account_type": "small_business",
+                "notification_preference": "workdoe",
+                "profile_note": "  Schedule noisy work before opening.  ",
+            }
+        )
+        self.assertEqual(profile["organization_name"], "Meridian Corner Store")
+        self.assertEqual(profile["account_type"], "small_business")
+        self.assertEqual(profile["notification_preference"], "workdoe")
+        self.assertEqual(
+            module.client_profile_response(
+                {"notification_preference": "email", "email_reminder_consent_at": None}
+            )["notification_preference"],
+            "workdoe",
+        )
+        self.assertEqual(
+            module.client_profile_response(
+                {
+                    "notification_preference": "email",
+                    "email_reminder_consent_at": "2026-08-17T14:00:00+00:00",
+                }
+            )["notification_preference"],
+            "email",
+        )
+
+        location = module.saved_location_payload(
+            {
+                "label": " Main shop ",
+                "city": " Washington ",
+                "state": "dc",
+                "zip_code": "20003",
+            }
+        )
+        self.assertEqual(
+            location,
+            {
+                "label": "Main shop",
+                "city": "Washington",
+                "state": "DC",
+                "zip_code": "20003",
+            },
+        )
+        self.assertEqual(
+            module.parse_saved_location_delete_path(
+                "/api/client/locations/17/delete"
+            ),
+            17,
+        )
+        with self.assertRaises(module.SavedLocationError):
+            module.saved_location_payload(
+                {"label": "Shop", "city": "Washington", "state": "NY", "zip_code": "12"}
+            )
+
+        client = {"role": "client", "status": "active"}
+        contractor = {"role": "contractor", "status": "active"}
+        self.assertTrue(module.can_update_client_profile(client))
+        self.assertFalse(module.can_update_client_profile(contractor))
+
+    def test_cloudflare_consumer_profile_shell_and_saved_location_prefill(self):
+        module = load_app_shell_module()
+        user = {"id": 4, "role": "client", "status": "active"}
+        profile_html = module.client_profile_html(
+            user,
+            {
+                "organization_name": "Meridian Corner Store",
+                "account_type": "small_business",
+                "notification_preference": "email",
+                "profile_note": "Schedule work before opening.",
+            },
+            [
+                {
+                    "id": 17,
+                    "label": "Main shop",
+                    "city": "Washington",
+                    "state": "DC",
+                    "zip_code": "20003",
+                }
+            ],
+        )
+        self.assertIn("/api/client/profile", profile_html)
+        self.assertIn("/api/client/locations", profile_html)
+        self.assertIn("/api/client/locations/17/delete", profile_html)
+        self.assertIn("200xx", profile_html)
+        self.assertIn("records your consent", profile_html)
+        self.assertIn('id="bid-reminders"', profile_html)
+        self.assertNotIn("name=\"phone\"", profile_html)
+
+        composer_html = module.job_form_html(
+            user,
+            job={"city": "Washington", "state": "DC", "zip_code": "20003"},
+            saved_locations=[{"id": 17, "label": "Main shop"}],
+        )
+        self.assertIn("Start with a saved area", composer_html)
+        self.assertIn("/jobs/new?location=17", composer_html)
+        self.assertIn('value="Washington"', composer_html)
+        self.assertIn('value="20003"', composer_html)
 
     def test_cloudflare_contractor_profile_helper_matches_local_validation_contract(self):
         module = load_contractor_profiles_module()
@@ -3261,6 +5901,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(profile["service_area"], "DC and Northern Virginia")
         self.assertEqual(profile["years_in_business_value"], 7)
         self.assertEqual(profile["insurance_status"], "COI available")
+        self.assertEqual(profile["website"], "https://better.example")
+        self.assertNotIn("phone", profile)
         contractor = {"id": 7, "role": "contractor", "status": "active"}
         client = {"id": 8, "role": "client", "status": "active"}
         suspended = {"id": 7, "role": "contractor", "status": "suspended"}
@@ -3272,6 +5914,31 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(response["business_name"], "Better Exterior Care")
         self.assertNotIn("user_id", response)
         self.assertNotIn("email", response)
+
+        structured = module.contractor_profile_payload(
+            {
+                "market_fit_version": "1",
+                "business_name": "Better Exterior Care",
+                "service_slugs": ["pressure-washing", "window-cleaning", "unknown"],
+                "service_zone_slugs": ["district-of-columbia", "arlington-county-va"],
+                "years_in_business": "7",
+                "insurance_status": "COI available",
+                "license_number": "VA-1234",
+                "website": "https://better.example",
+                "phone": "(202) 555-0180",
+                "intro": "We handle exterior cleaning jobs around the DMV with careful site protection.",
+            }
+        )
+        self.assertEqual(
+            structured["service_slugs"],
+            ["pressure-washing", "window-cleaning"],
+        )
+        self.assertEqual(
+            structured["service_zone_slugs"],
+            ["district-of-columbia", "arlington-county-va"],
+        )
+        self.assertEqual(structured["trades"], "Power washing, Window cleaning")
+        self.assertIn("Arlington County, VA", structured["service_area"])
 
         with self.assertRaises(module.ContractorProfileError) as invalid:
             module.contractor_profile_payload(
@@ -3289,7 +5956,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Add a service area.", invalid.exception.errors)
         self.assertIn("Add at least 20 characters about your business.", invalid.exception.errors)
         self.assertIn("Use 0 to 100 for years in business.", invalid.exception.errors)
-        self.assertIn("Use a full website URL that starts with http:// or https://.", invalid.exception.errors)
+        self.assertIn("Use a public HTTPS website such as https://example.com.", invalid.exception.errors)
         self.assertEqual(
             invalid.exception.field_errors["business_name"],
             ["Add a business name."],
@@ -3306,8 +5973,22 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertEqual(
             invalid.exception.field_errors["website"],
-            ["Use a full website URL that starts with http:// or https://."],
+            ["Use a public HTTPS website such as https://example.com."],
         )
+
+        for unsafe_website in (
+            "http://example.com",
+            "https://localhost",
+            "https://127.0.0.1",
+            "https://user:pass@example.com",
+            "https://example.com:8443",
+        ):
+            with self.subTest(unsafe_website=unsafe_website):
+                unsafe = {**profile, "website": unsafe_website}
+                self.assertIn(
+                    "Use a public HTTPS website such as https://example.com.",
+                    module.validate_contractor_profile_payload(unsafe),
+                )
 
     def test_cloudflare_public_contractor_profile_helper_keeps_contact_private(self):
         module = load_contractor_public_profiles_module()
@@ -3330,6 +6011,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "status": "active",
             "email": "private@example.com",
             "phone": "(202) 555-0199",
+            "website": "https://www.doe-exterior.example/work",
             "stored_path": "contractors/42/private.webp",
         }
         inactive_contractor = {**public_contractor, "status": "suspended"}
@@ -3339,6 +6021,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertTrue(module.can_view_public_contractor_profile(client, public_contractor))
         self.assertFalse(module.can_view_public_contractor_profile(client, inactive_contractor))
         self.assertTrue(module.can_view_public_contractor_profile(admin, inactive_contractor))
+        self.assertFalse(module.can_view_contractor_website(None, 42))
+        self.assertFalse(module.can_view_contractor_website(client, 42))
+        self.assertTrue(module.can_view_contractor_website(client, 42, True))
+        self.assertTrue(module.can_view_contractor_website(admin, 42))
+        self.assertTrue(
+            module.can_view_contractor_website(
+                {"id": 42, "role": "contractor", "status": "active"},
+                42,
+            )
+        )
 
         payload = module.public_contractor_profile_payload(
             public_contractor,
@@ -3359,9 +6051,120 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertNotIn("email", contractor)
         self.assertNotIn("phone", contractor)
         self.assertNotIn("website", contractor)
+        self.assertNotIn("original_filename", contractor["photos"][0])
         self.assertNotIn("stored_path", contractor["photos"][0])
         admin_payload = module.public_contractor_profile_payload(inactive_contractor, [], admin)
         self.assertEqual(admin_payload["contractor"]["status"], "suspended")
+        related_payload = module.public_contractor_profile_payload(
+            public_contractor,
+            [],
+            client,
+            website_visible=True,
+        )
+        self.assertEqual(
+            related_payload["contractor"]["website"],
+            "https://www.doe-exterior.example/work",
+        )
+        self.assertEqual(
+            related_payload["contractor"]["website_label"],
+            "doe-exterior.example",
+        )
+        self.assertNotIn("phone", related_payload["contractor"])
+
+    def test_cloudflare_contractor_credentials_fail_closed_and_publish_only_current_records(self):
+        module = load_contractor_credentials_module()
+        claim = module.contractor_credential_claim_payload(
+            {
+                "credential_type": "trade_license",
+                "jurisdiction": "va",
+                "claimed_identifier": "  VA-1234  ",
+                "claimed_name": " Rivera Exterior Care ",
+                "source_url": "https://registry.example/VA-1234",
+                "expires_at": "2027-12-31",
+            }
+        )
+        self.assertEqual(claim["jurisdiction"], "VA")
+        self.assertEqual(claim["claimed_identifier"], "VA-1234")
+        self.assertEqual(claim["source_url"], "https://registry.example/VA-1234")
+
+        for unsafe_source in (
+            "http://registry.example/VA-1234",
+            "https://localhost/record",
+            "https://127.0.0.1/record",
+            "https://user:pass@registry.example/record",
+        ):
+            with self.subTest(unsafe_source=unsafe_source):
+                with self.assertRaises(module.ContractorCredentialError):
+                    module.contractor_credential_claim_payload(
+                        {**claim, "source_url": unsafe_source}
+                    )
+
+        with self.assertRaises(module.ContractorCredentialError):
+            module.contractor_credential_review_payload(
+                {"source_url": "", "expires_at": "2027-12-31"},
+                "verify",
+            )
+        with self.assertRaises(module.ContractorCredentialError):
+            module.contractor_credential_review_payload(
+                {"source_url": "https://registry.example/record"},
+                "pending",
+            )
+
+        reviewed = module.contractor_credential_review_payload(
+            {
+                "source_url": "https://registry.example/VA-1234",
+                "expires_at": "2027-12-31",
+                "review_note": "Public registry checked.",
+            },
+            "verify",
+        )
+        self.assertEqual(reviewed["status"], "verified")
+
+        base = {
+            "id": 8,
+            **claim,
+            "checked_at": "2026-08-17T14:00:00+00:00",
+            "review_note": "Private admin note",
+            "created_at": "2026-08-17T13:00:00+00:00",
+            "updated_at": "2026-08-17T14:00:00+00:00",
+        }
+        pending = {**base, "status": "self_reported"}
+        current = {**base, "status": "verified"}
+        expired = {**base, "status": "verified", "expires_at": "2025-01-01"}
+        public = module.public_credential_responses([pending, current, expired])
+        self.assertEqual(len(public), 1)
+        self.assertEqual(public[0]["status_label"], "Source checked")
+        self.assertNotIn("claimed_identifier", public[0])
+        self.assertNotIn("review_note", public[0])
+        private = module.credential_response(current, include_private=True)
+        self.assertEqual(private["claimed_identifier"], "VA-1234")
+        self.assertEqual(
+            module.parse_contractor_credential_remove_path(
+                "/api/contractor/credentials/8/remove"
+            ),
+            8,
+        )
+
+        public_profile_module = load_contractor_public_profiles_module()
+        profile_payload = public_profile_module.public_contractor_profile_payload(
+            {
+                "id": 42,
+                "business_name": "Rivera Exterior Care",
+                "status": "active",
+            },
+            [],
+            None,
+            credentials=[pending, current, expired],
+        )
+        self.assertEqual(len(profile_payload["contractor"]["credentials"]), 1)
+
+        admin_module = load_admin_moderation_module()
+        self.assertEqual(
+            admin_module.parse_admin_moderation_path(
+                "/api/admin/credentials/8/verify"
+            ),
+            {"target_type": "credential", "target_id": 8, "action": "verify"},
+        )
 
     def test_cloudflare_job_post_payload_matches_local_validation_contract(self):
         module = load_job_posts_module()
@@ -3369,11 +6172,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             {
                 "title": "  Clean storefront windows  ",
                 "category": "Window cleaning",
+                "project_setting": "business-space",
                 "city": " Alexandria ",
                 "state": "va",
                 "zip_code": "22314-0010",
                 "desired_date": "2026-09-01",
                 "description": "Need first-floor storefront windows cleaned before opening.",
+                "budget_min": "500",
+                "budget_max": "900",
             },
             today=module.date(2026, 8, 3),
         )
@@ -3382,6 +6188,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(payload["zip_code"], "22314")
         self.assertEqual(payload["approx_lat"], 38.8048)
         self.assertEqual(payload["approx_lng"], -77.0469)
+        self.assertEqual(payload["budget_min"], "500")
+        self.assertEqual(payload["budget_max"], "900")
+        self.assertEqual(payload["project_setting"], "business-space")
+        self.assertEqual(module.project_setting_label(payload["project_setting"]), "Business or office")
+        self.assertEqual(module.budget_label(payload), "$500-$900")
         self.assertEqual(
             payload["location_privacy"],
             "Approximate city or ZIP-level pins only.",
@@ -3392,21 +6203,29 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 {
                     "title": "",
                     "category": "Mystery",
+                    "project_setting": "private-address-record",
                     "city": "",
                     "state": "PA",
                     "zip_code": "22A",
                     "desired_date": "2020-01-01",
                     "description": "Too short",
+                    "budget_min": "900",
+                    "budget_max": "500",
                 },
                 today=module.date(2026, 8, 3),
             )
         self.assertIn("Add a job title.", invalid.exception.errors)
         self.assertIn("Choose a curated category.", invalid.exception.errors)
+        self.assertIn("Choose a listed project setting.", invalid.exception.errors)
         self.assertIn("Use DC, MD, or VA for the first DMV beta.", invalid.exception.errors)
         self.assertIn("Use a 5-digit DMV ZIP code.", invalid.exception.errors)
         self.assertIn("Choose today or a future desired date.", invalid.exception.errors)
         self.assertEqual(invalid.exception.field_errors["title"], ["Add a job title."])
         self.assertEqual(invalid.exception.field_errors["category"], ["Choose a curated category."])
+        self.assertEqual(
+            invalid.exception.field_errors["project_setting"],
+            ["Choose a listed project setting."],
+        )
         self.assertEqual(
             invalid.exception.field_errors["state"],
             ["Use DC, MD, or VA for the first DMV beta."],
@@ -3415,6 +6234,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             invalid.exception.field_errors["city"],
             ["Add the city so the lead can be mapped approximately."],
         )
+        self.assertIn(
+            "Make the budget maximum at least the minimum budget.",
+            invalid.exception.errors,
+        )
+
         self.assertEqual(
             invalid.exception.field_errors["zip_code"],
             ["Use a 5-digit DMV ZIP code."],
@@ -3427,6 +6251,34 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             invalid.exception.field_errors["description"],
             ["Add at least 20 characters about the work."],
         )
+
+        owner = {"id": 8, "role": "client", "status": "active"}
+        other = {"id": 9, "role": "client", "status": "active"}
+        job = {"id": 12, "client_id": 8, "status": "open"}
+        self.assertEqual(module.parse_job_update_id("/api/jobs/12/update"), 12)
+        with self.assertRaises(module.JobPostError):
+            module.parse_job_update_id("/api/jobs/12")
+        self.assertTrue(module.can_update_job(owner, job))
+        self.assertFalse(module.can_update_job(other, job))
+        self.assertFalse(module.can_update_job(owner, {**job, "status": "hidden"}))
+
+    def test_cloudflare_account_roles_are_permanent_and_budget_migration_is_incremental(self):
+        auth = load_email_code_auth_module()
+        self.assertEqual(auth.fixed_account_role("client", "contractor"), "client")
+        self.assertEqual(auth.fixed_account_role("contractor", "client"), "contractor")
+        self.assertEqual(auth.fixed_account_role(None, "contractor"), "contractor")
+
+        migration = (
+            ROOT
+            / "cloudflare"
+            / "d1"
+            / "migrations"
+            / "0003_project_drafts_and_budgets.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ALTER TABLE jobs ADD COLUMN budget_min INTEGER;", migration)
+        self.assertIn("CREATE TABLE IF NOT EXISTS job_drafts", migration)
+        self.assertIn("token_hash TEXT NOT NULL UNIQUE", migration)
+        self.assertNotIn("email", migration.lower())
 
     def test_cloudflare_turnstile_helper_builds_safe_siteverify_payloads(self):
         module = load_turnstile_module()
@@ -3541,6 +6393,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertFalse(module.can_decide_match_request(other_client, match))
         self.assertFalse(module.can_decide_match_request(contractor, match))
         self.assertFalse(module.can_decide_match_request(suspended_admin, match))
+        self.assertEqual(module.d1_change_count({"meta": {"changes": 1}}), 1)
+        self.assertEqual(
+            module.d1_change_count({"result": {"meta": {"changes": "0"}}}),
+            0,
+        )
+        self.assertEqual(
+            module.d1_change_count(SimpleNamespace(meta=SimpleNamespace(changes=1))),
+            1,
+        )
+        self.assertEqual(module.d1_change_count({"meta": {"changes": "bad"}}), 0)
 
         approved = module.match_decision_response(
             42,
@@ -3686,8 +6548,24 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             {"target_type": "message", "target_id": 8, "action": "hide"},
         )
         self.assertEqual(
+            module.parse_admin_moderation_path("/api/admin/messages/8/restore"),
+            {"target_type": "message", "target_id": 8, "action": "restore"},
+        )
+        self.assertEqual(
             module.parse_admin_moderation_path("/api/admin/reports/9/resolve"),
             {"target_type": "report", "target_id": 9, "action": "resolve"},
+        )
+        self.assertEqual(
+            module.parse_admin_moderation_path("/api/admin/reviews/10/hide"),
+            {"target_type": "match_review", "target_id": 10, "action": "hide"},
+        )
+        self.assertEqual(
+            module.parse_admin_moderation_path("/api/admin/review-reports/11/resolve"),
+            {
+                "target_type": "match_review_report",
+                "target_id": 11,
+                "action": "resolve",
+            },
         )
         with self.assertRaisesRegex(module.AdminModerationError, "Unsupported"):
             module.parse_admin_moderation_path("/api/admin/users/42/delete")
@@ -3717,6 +6595,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(user_notes, "Set user status to active.")
         self.assertEqual(user_state, "active")
 
+        message_sql, message_params, message_notes, message_state = module.admin_update_statement(
+            {"target_type": "message", "target_id": 8, "action": "restore"},
+            "2026-08-03T12:00:00+00:00",
+        )
+        self.assertEqual(message_sql, "UPDATE messages SET is_hidden = ? WHERE id = ?")
+        self.assertEqual(message_params, [0, 8])
+        self.assertEqual(message_notes, "Set message hidden=0.")
+        self.assertEqual(message_state, "visible")
+
         report_sql, report_params, report_notes, report_state = module.admin_update_statement(
             {"target_type": "report", "target_id": 9, "action": "resolve"},
             "2026-08-03T12:00:00+00:00",
@@ -3728,9 +6615,49 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(report_params, ["2026-08-03T12:00:00+00:00", 9])
         self.assertEqual(report_notes, "Marked report resolved.")
         self.assertEqual(report_state, "resolved")
+        review_sql, review_params, review_notes, review_state = (
+            module.admin_update_statement(
+                {"target_type": "match_review", "target_id": 10, "action": "hide"},
+                "2026-08-03T12:00:00+00:00",
+            )
+        )
+        self.assertEqual(
+            review_sql,
+            "UPDATE match_reviews SET is_hidden = ?, updated_at = ? WHERE id = ?",
+        )
+        self.assertEqual(review_params, [1, "2026-08-03T12:00:00+00:00", 10])
+        self.assertEqual(review_notes, "Set completed-work feedback hidden=1.")
+        self.assertEqual(review_state, "hidden")
+        review_report_sql, review_report_params, review_report_notes, review_report_state = (
+            module.admin_update_statement(
+                {
+                    "target_type": "match_review_report",
+                    "target_id": 11,
+                    "action": "resolve",
+                },
+                "2026-08-03T12:00:00+00:00",
+            )
+        )
+        self.assertEqual(
+            review_report_sql,
+            "UPDATE match_review_reports SET status = 'resolved', resolved_at = ? WHERE id = ?",
+        )
+        self.assertEqual(
+            review_report_params,
+            ["2026-08-03T12:00:00+00:00", 11],
+        )
+        self.assertEqual(
+            review_report_notes,
+            "Marked completed-work feedback report resolved.",
+        )
+        self.assertEqual(review_report_state, "resolved")
         self.assertEqual(
             module.admin_target_query("message"),
             "SELECT 1 FROM messages WHERE id = ? LIMIT 1",
+        )
+        self.assertEqual(
+            module.admin_target_query("match_review"),
+            "SELECT 1 FROM match_reviews WHERE id = ? LIMIT 1",
         )
         response = module.admin_moderation_response(
             {"target_type": "message", "target_id": 8, "action": "hide"},
@@ -3881,13 +6808,26 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn("Wrangler keeps required secret names out of vars", result.checks)
         self.assertIn("Cloudflare Worker Python compiles", result.checks)
+        self.assertIn(
+            "Pilot metrics cover response, closure, and report health without private fields",
+            result.checks,
+        )
         self.assertIn("Cloudflare authenticated app shell helper compiles", result.checks)
         self.assertIn("Clerk onboarding helper compiles", result.checks)
         self.assertIn("Clerk session verification helper compiles", result.checks)
+        self.assertIn("Cloudflare email-code auth helper compiles", result.checks)
+        self.assertIn(
+            "Cloudflare native email codes are rate-limited and consumed atomically",
+            result.checks,
+        )
         self.assertIn("Clerk Frontend API proxy helper compiles", result.checks)
         self.assertIn("Cloudflare email payload helper compiles", result.checks)
         self.assertIn("Cloudflare admin moderation helper compiles", result.checks)
         self.assertIn("Cloudflare contractor profile helper compiles", result.checks)
+        self.assertIn(
+            "Cloudflare contractor proposal-template helper compiles",
+            result.checks,
+        )
         self.assertIn("Cloudflare public contractor profile helper compiles", result.checks)
         self.assertIn("Cloudflare client jobs helper compiles", result.checks)
         self.assertIn("Cloudflare client requests helper compiles", result.checks)
@@ -3897,6 +6837,32 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Wrangler configures Workdoe transactional email vars", result.checks)
         self.assertIn("Wrangler restricts Cloudflare Email sender binding", result.checks)
         self.assertIn("Cloudflare job posting helper compiles", result.checks)
+        self.assertIn(
+            "Cloudflare Worker redacts transactional email audit metadata",
+            result.checks,
+        )
+        self.assertIn(
+            "Cloudflare public contractor profiles redact upload filenames",
+            result.checks,
+        )
+        self.assertIn("Cloudflare project draft helper compiles", result.checks)
+        self.assertIn("D1 project draft and budget migration is incremental", result.checks)
+        self.assertIn(
+            "D1 contractor proposal templates exclude price and location",
+            result.checks,
+        )
+        self.assertIn(
+            "Contractor proposal templates stay owner-only and require a fresh price",
+            result.checks,
+        )
+        self.assertIn(
+            "Cloudflare Worker preserves an expiring pre-verification project draft",
+            result.checks,
+        )
+        self.assertIn(
+            "Cloudflare Worker preserves visual task selection and native fallback",
+            result.checks,
+        )
         self.assertIn("Cloudflare Turnstile helper compiles", result.checks)
         self.assertIn("Cloudflare match request helper compiles", result.checks)
         self.assertIn("Cloudflare match decision helper compiles", result.checks)
@@ -3942,6 +6908,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "Cloudflare Worker serves authenticated post-login app pages",
             result.checks,
         )
+        self.assertIn(
+            "Cloudflare Worker serves public trust pages and discovery files",
+            result.checks,
+        )
+        self.assertIn(
+            "D1 email reminders require affirmative consent",
+            result.checks,
+        )
         self.assertIn("Cloudflare contractor leads helper compiles", result.checks)
         self.assertIn("Cloudflare contractor bids helper compiles", result.checks)
         self.assertIn("Cloudflare public jobs helper compiles", result.checks)
@@ -3976,7 +6950,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             result.checks,
         )
         self.assertIn(
-            "Cloudflare Worker creates client jobs with Turnstile and approximate pins",
+            "Cloudflare Worker creates and edits client jobs with Turnstile and owner checks",
             result.checks,
         )
         self.assertIn(
@@ -4012,7 +6986,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             result.checks,
         )
         self.assertIn(
-            "Cloudflare Clerk proxy proof helper is confirm-gated",
+            "Cloudflare Clerk controlled-beta proof helper is confirm-gated",
             result.checks,
         )
         self.assertIn(
@@ -4065,6 +7039,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Worker has private R2 serving route", local.checks)
         self.assertIn("Cloudflare secret presence was not checked; pass --secret-list-json for deploy proof.", local.warnings)
         self.assertIn("wrangler secret put WORKDOE_SECRET_KEY", local.next_steps)
+        self.assertIn(
+            "python ..\\scripts\\cloudflare_clerk_proxy_proof.py --confirm --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent --output ..\\clerk-proxy-proof.local.json",
+            local.next_steps,
+        )
+        for command in (
+            "python ..\\scripts\\cloudflare_release_evidence.py",
+            "python ..\\scripts\\cloudflare_readiness.py",
+            "python scripts\\cloudflare_production_deploy.py --json",
+            "python scripts\\cloudflare_production_deploy.py --execute --yes",
+        ):
+            matching = [step for step in local.next_steps if step.startswith(command)]
+            self.assertEqual(len(matching), 1, command)
+            self.assertIn("--clerk-proxy-proof-json", matching[0])
 
         strict = module.run_readiness(ROOT, strict_production=True)
         self.assertFalse(strict.ready)
@@ -4097,7 +7084,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 + "\nCLERK_PROXY_URL=https://workdoe.com/__clerk"
                 + "\nCLERK_FAPI=https://frontend-api.clerk.dev"
                 + "\nWORKDOE_AUTH_PROVIDER=clerk"
-                + "\nWORKDOE_LOGIN_MODE=same_domain_email_code",
+                + "\nWORKDOE_LOGIN_MODE=same_domain_email_code"
+                + "\nWORKDOE_ENFORCE_SERVICE_ACTIVATION=true",
                 encoding="utf-8",
             )
             secret_list_path = tmp_path / "secret-list.json"
@@ -4118,6 +7106,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://workdoe.com/__clerk",
                         "confirmed": True,
+                        "restricted_sign_up_mode": True,
+                        "email_code_sign_in": True,
+                        "password_sign_in_disabled": True,
+                        "custom_sign_up_url": "https://workdoe.com/create-account",
+                        "express_legal_consent": True,
+                        "terms_url": "https://workdoe.com/terms",
+                        "privacy_url": "https://workdoe.com/privacy",
                     }
                 ),
                 encoding="utf-8",
@@ -4169,6 +7164,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://clerk.workdoe.com",
                         "confirmed": True,
+                        "restricted_sign_up_mode": True,
+                        "email_code_sign_in": True,
+                        "password_sign_in_disabled": True,
+                        "custom_sign_up_url": "https://workdoe.com/create-account",
+                        "express_legal_consent": True,
+                        "terms_url": "https://workdoe.com/terms",
+                        "privacy_url": "https://workdoe.com/privacy",
                     }
                 ),
                 encoding="utf-8",
@@ -4197,6 +7199,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://workdoe.com/__clerk",
                         "confirmed": True,
+                        "restricted_sign_up_mode": True,
+                        "email_code_sign_in": True,
+                        "password_sign_in_disabled": True,
+                        "custom_sign_up_url": "https://workdoe.com/create-account",
+                        "express_legal_consent": True,
+                        "terms_url": "https://workdoe.com/terms",
+                        "privacy_url": "https://workdoe.com/privacy",
                     }
                 ),
                 encoding="utf-8",
@@ -4226,7 +7235,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 + "\nCLERK_PROXY_URL=https://evilworkdoe.com"
                 + "\nCLERK_FAPI=https://frontend-api.clerk.dev"
                 + "\nWORKDOE_AUTH_PROVIDER=clerk"
-                + "\nWORKDOE_LOGIN_MODE=same_domain_email_code",
+                + "\nWORKDOE_LOGIN_MODE=same_domain_email_code"
+                + "\nWORKDOE_ENFORCE_SERVICE_ACTIVATION=true",
                 encoding="utf-8",
             )
             off_domain = module.run_readiness(
@@ -4341,6 +7351,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://workdoe.com/__clerk",
                         "confirmed": True,
+                        "restricted_sign_up_mode": True,
+                        "email_code_sign_in": True,
+                        "password_sign_in_disabled": True,
+                        "custom_sign_up_url": "https://workdoe.com/create-account",
+                        "express_legal_consent": True,
+                        "terms_url": "https://workdoe.com/terms",
+                        "privacy_url": "https://workdoe.com/privacy",
                     }
                 ),
                 encoding="utf-8",
@@ -4377,6 +7394,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://workdoe.com/__clerk",
                         "confirmed": True,
+                        "restricted_sign_up_mode": True,
+                        "email_code_sign_in": True,
+                        "password_sign_in_disabled": True,
+                        "custom_sign_up_url": "https://workdoe.com/create-account",
+                        "express_legal_consent": True,
+                        "terms_url": "https://workdoe.com/terms",
+                        "privacy_url": "https://workdoe.com/privacy",
                     }
                 ),
                 encoding="utf-8",
@@ -4407,6 +7431,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('test "${{ github.ref }}" = "refs/heads/main"', workflow)
         self.assertIn("github.ref == 'refs/heads/main'", workflow)
         self.assertIn('test "${{ inputs.deploy }}" = "DEPLOY"', workflow)
+        self.assertIn('test "${{ inputs.clerk_proxy_confirmed }}" = "true"', workflow)
+        self.assertIn('test "${{ inputs.restricted_signup_confirmed }}" = "true"', workflow)
+        self.assertIn('test "${{ inputs.email_code_only_confirmed }}" = "true"', workflow)
+        self.assertIn('test "${{ inputs.legal_consent_confirmed }}" = "true"', workflow)
         self.assertNotIn("inputs.clerk_proxy_url", workflow)
         self.assertIn("Check Cloudflare credentials are configured", workflow)
         self.assertIn('test -n "$CLOUDFLARE_API_TOKEN"', workflow)
@@ -4414,8 +7442,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("pull_request:", workflow)
         self.assertIn("concurrency:", workflow)
         self.assertIn("Validate Cloudflare Worker bundle", workflow)
-        self.assertIn("Record same-domain Clerk proxy release proof", workflow)
-        self.assertIn("npm run cf:clerk:proof", workflow)
+        self.assertIn("Record operator-confirmed Clerk release proof", workflow)
+        self.assertIn("npm run cf:clerk:proof:confirm", workflow)
+        self.assertIn("npm run security:all", workflow)
         self.assertIn("wrangler deploy --dry-run", workflow)
         self.assertIn("Smoke test Cloudflare Worker runtime", workflow)
         self.assertIn("wrangler d1 migrations apply workdoe --local", workflow)
@@ -4434,6 +7463,21 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5",
             workflow,
         )
+
+    def test_release_security_gate_pins_runtime_error_scan(self):
+        package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+        audit_requirements = (ROOT / "requirements-audit.txt").read_text(
+            encoding="utf-8"
+        )
+        notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+
+        self.assertIn("ruff==0.16.4", audit_requirements)
+        self.assertIn(
+            "ruff check workdoe cloudflare/worker scripts tests --select E9,F401,F541,F63,F7,F82,F841,B033",
+            package["scripts"]["security:python"],
+        )
+        self.assertIn("Ruff 0.16.4", notices)
+        self.assertIn("Ruff is distributed under the MIT License", notices)
 
     def test_github_release_status_validates_environment_policy_and_secret_names(self):
         module = load_github_release_status_script()
@@ -4578,6 +7622,20 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(plan["command"][0:4], ["gh", "workflow", "run", "cloudflare-deploy.yml"])
         self.assertIn("--ref", plan["command"])
         self.assertIn("deploy=DEPLOY", plan["command"])
+        self.assertIn("clerk_proxy_confirmed=false", plan["command"])
+        self.assertIn("restricted_signup_confirmed=false", plan["command"])
+        self.assertIn("email_code_only_confirmed=false", plan["command"])
+        self.assertIn("legal_consent_confirmed=false", plan["command"])
+        confirmed_command = module.dispatch_command(
+            clerk_proxy_confirmed=True,
+            restricted_signup_confirmed=True,
+            email_code_only_confirmed=True,
+            legal_consent_confirmed=True,
+        )
+        self.assertIn("clerk_proxy_confirmed=true", confirmed_command)
+        self.assertIn("restricted_signup_confirmed=true", confirmed_command)
+        self.assertIn("email_code_only_confirmed=true", confirmed_command)
+        self.assertIn("legal_consent_confirmed=true", confirmed_command)
         self.assertNotIn("clerk_proxy_url=https://workdoe.com/__clerk", plan["command"])
         self.assertFalse(git_blocked_plan["ready_to_dispatch"])
         self.assertIn("Local branch must be main before dispatch.", git_blocked_plan["blockers"])
@@ -4619,6 +7677,58 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertFalse(payload["ready_to_dispatch"])
         self.assertTrue(payload["executes_commands"])
         self.assertIn("Dispatch requires --execute and --yes.", payload["blockers"])
+
+    def test_github_deploy_dispatch_execute_requires_clerk_confirmations(self):
+        module = load_github_deploy_dispatch_script()
+        original_plan = module.build_dispatch_plan
+        original_run_dispatch = module.run_dispatch
+        original_argv = sys.argv
+        try:
+            module.build_dispatch_plan = lambda *args, **kwargs: {
+                "service": "workdoe",
+                "domain": "workdoe.com",
+                "safe_by_default": True,
+                "executes_commands": False,
+                "ready_to_dispatch": False,
+                "repository": "Yami566/workdoe",
+                "workflow": "cloudflare-deploy.yml",
+                "ref": "main",
+                "operator_confirmations": {
+                    "clerk_proxy_confirmed": False,
+                    "restricted_signup_confirmed": False,
+                    "email_code_only_confirmed": False,
+                    "legal_consent_confirmed": False,
+                },
+                "command": ["gh", "workflow", "run", "cloudflare-deploy.yml"],
+                "command_text": "gh workflow run cloudflare-deploy.yml",
+                "git": {},
+                "doctor": {},
+                "blockers": [
+                    "Dispatch requires explicit confirmation of the Clerk same-domain proxy, restricted sign-up, email-code-only sign-in, and express legal consent settings."
+                ],
+            }
+            module.run_dispatch = lambda *args, **kwargs: self.fail(
+                "run_dispatch should not run without Clerk confirmations"
+            )
+            sys.argv = [
+                "github_deploy_dispatch.py",
+                "--execute",
+                "--yes",
+                "--json",
+            ]
+            with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                self.assertEqual(module.main(), 1)
+            payload = json.loads(stdout.getvalue())
+        finally:
+            module.run_dispatch = original_run_dispatch
+            module.build_dispatch_plan = original_plan
+            sys.argv = original_argv
+
+        self.assertFalse(payload["ready_to_dispatch"])
+        self.assertIn(
+            "Dispatch requires explicit confirmation of the Clerk same-domain proxy, restricted sign-up, email-code-only sign-in, and express legal consent settings.",
+            payload["blockers"],
+        )
 
     def test_workdoe_launch_handoff_renders_redacted_operator_checklist(self):
         module = load_workdoe_launch_handoff_script()
@@ -4709,13 +7819,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         groups = {group["name"]: group["actions"] for group in payload["action_groups"]}
         self.assertIn("GitHub Deployment Secrets", groups)
         self.assertIn("Cloudflare Account And Resources", groups)
-        self.assertIn("DNS And Domain Activation", groups)
-        self.assertIn("Final Deployment And Smoke", groups)
         self.assertIn(
             "gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe --env production",
             groups["GitHub Deployment Secrets"],
         )
-        self.assertIn(
+        self.assertNotIn(
             "gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe --env production",
             groups["GitHub Deployment Secrets"],
         )
@@ -4723,35 +7831,29 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "set CLOUDFLARE_API_TOKEN in this shell without committing it",
             groups["Cloudflare Account And Resources"],
         )
-        self.assertIn("npm run cf:resources:plan", groups["Cloudflare Account And Resources"])
+        self.assertNotIn("npm run cf:resources:plan", groups["Cloudflare Account And Resources"])
         self.assertIn("npm run cf:resources:apply", groups["Cloudflare Account And Resources"])
-        self.assertIn(
-            ".\\node_modules\\.bin\\wrangler.cmd secret put CLERK_SECRET_KEY --config cloudflare\\wrangler.jsonc",
-            groups["Worker Secrets And Clerk"],
-        )
-        self.assertIn("npm run cf:secrets:evidence", groups["Worker Secrets And Clerk"])
-        self.assertIn("npm run cf:clerk:proof", groups["Worker Secrets And Clerk"])
-        self.assertIn("npm run launch:dns", groups["DNS And Domain Activation"])
-        self.assertIn("npm run launch:smoke:strict", groups["Final Deployment And Smoke"])
+        self.assertNotIn("Worker Secrets And Clerk", groups)
+        self.assertNotIn("DNS And Domain Activation", groups)
+        self.assertNotIn("Final Deployment And Smoke", groups)
         self.assertIn("# Workdoe Launch Handoff", markdown)
         self.assertIn("Status: Blocked before production dispatch", markdown)
         self.assertIn("This private local handoff", markdown)
+        self.assertIn("## Required Next Actions", markdown)
         self.assertIn("### GitHub Deployment Secrets", markdown)
         self.assertIn("### Cloudflare Account And Resources", markdown)
         self.assertIn("### Final Deployment Gate", markdown)
-        self.assertIn("### DNS And Domain Activation", markdown)
-        self.assertIn("### Final Deployment And Smoke", markdown)
         self.assertIn(
             "GitHub deployment secret CLOUDFLARE_API_TOKEN is missing from both repository and production environment secrets.",
             markdown,
         )
         self.assertIn("gh secret set CLOUDFLARE_API_TOKEN --repo Yami566/workdoe --env production", markdown)
-        self.assertIn("gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe --env production", markdown)
-        self.assertIn("npm run cf:resources:plan", markdown)
-        self.assertIn("npm run cf:secrets:evidence", markdown)
-        self.assertIn("npm run launch:dns", markdown)
+        self.assertNotIn("gh secret set CLOUDFLARE_ACCOUNT_ID --repo Yami566/workdoe --env production", markdown)
+        self.assertNotIn("npm run cf:resources:plan", markdown)
+        self.assertNotIn("npm run cf:secrets:evidence", markdown)
+        self.assertNotIn("npm run launch:dns", markdown)
         self.assertIn("npm run github:deploy:plan", markdown)
-        self.assertIn("npm run launch:smoke:strict", markdown)
+        self.assertNotIn("npm run launch:smoke:strict", markdown)
         self.assertIn("cloudflare-secret-list.local.json", markdown)
         self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz123456", markdown)
         self.assertIn("CLOUDFLARE_API_TOKEN=<redacted>", markdown)
@@ -4783,7 +7885,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "name": "clerk-proxy",
                         "status": "pending",
                         "summary": "Clerk proxy proof is still pending.",
-                        "next_command": "npm run cf:clerk:proof",
+                        "next_command": "npm run cf:clerk:proof:confirm",
                     },
                 ],
             }
@@ -4924,7 +8026,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 headers = {}
                 body = ""
                 status_code = 200
-                if url.endswith("/start"):
+                if url.endswith("/login"):
+                    body = '<div data-clerk-publishable-key="pk_live_workdoe"></div>'
+                    headers = {"Content-Type": "text/html; charset=utf-8"}
+                elif url.endswith("/start"):
                     headers = {
                         "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
                         "Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'",
@@ -4938,7 +8043,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         {
                             "ok": True,
                             "service": "workdoe-cloudflare-worker",
-                            "bindings": {"d1": True},
+                            "bindings": {
+                                "d1": True,
+                                "email_sender": True,
+                                "email_queue": True,
+                                "media_queue": True,
+                                "r2_media": True,
+                                "write_rate_limiter": True,
+                            },
                         }
                     )
                     headers = {"Content-Type": "application/json; charset=utf-8"}
@@ -4952,6 +8064,26 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         }
                     )
                     headers = {"Content-Type": "application/json; charset=utf-8"}
+                elif url.endswith("/safety"):
+                    body = "<h1>Safety</h1><p>Share only what the job needs.</p>"
+                    headers = {"Content-Type": "text/html; charset=utf-8"}
+                elif url.endswith("/privacy"):
+                    body = "<h1>Privacy Policy</h1>"
+                    headers = {"Content-Type": "text/html; charset=utf-8"}
+                elif url.endswith("/terms"):
+                    body = "<h1>Terms of Use</h1>"
+                    headers = {"Content-Type": "text/html; charset=utf-8"}
+                elif url.endswith("/workdoe-share.png"):
+                    headers = {"Content-Type": "image/png"}
+                elif url.rstrip("/") == "https://workdoe.com":
+                    body = (
+                        '<meta property="og:title" content="Workdoe - a local Work Exchange">'
+                        '<meta property="og:image" content="https://workdoe.com/workdoe-share.png">'
+                        '<meta property="og:image:width" content="1200">'
+                        '<meta property="og:image:height" content="630">'
+                        '<meta name="twitter:card" content="summary_large_image">'
+                    )
+                    headers = {"Content-Type": "text/html; charset=utf-8"}
                 elif url.endswith(module.CLERK_ASSET_PATH):
                     body = "window.Clerk = window.Clerk || {};"
                     headers = {"Content-Type": "application/javascript; charset=utf-8"}
@@ -4977,7 +8109,83 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(checks["health-json"]["status"], "ready")
         self.assertEqual(checks["public-jobs-api"]["status"], "ready")
         self.assertEqual(checks["entry-security-headers"]["status"], "ready")
+        self.assertEqual(checks["public-trust-pages"]["status"], "ready")
+        self.assertEqual(checks["social-share-card"]["status"], "ready")
+        self.assertEqual(checks["public-discovery-files"]["status"], "ready")
+        self.assertEqual(checks["clerk-production-key"]["status"], "ready")
         self.assertEqual(checks["clerk-same-domain-proxy"]["status"], "ready")
+
+    def test_workdoe_production_smoke_rejects_missing_public_trust_page(self):
+        module = load_workdoe_production_smoke_script()
+        original_fetch_url = module.fetch_url
+        try:
+            def fake_fetch(url, **kwargs):
+                if url.endswith("/privacy"):
+                    return module.FetchResult(ok=False, status_code=404, elapsed_ms=4)
+                markers = {
+                    "/safety": "Share only what the job needs.",
+                    "/terms": "Terms of Use",
+                }
+                body = next((value for path, value in markers.items() if url.endswith(path)), "")
+                return module.FetchResult(
+                    ok=True,
+                    status_code=200,
+                    headers={"Content-Type": "text/html; charset=utf-8"},
+                    body=body,
+                    elapsed_ms=4,
+                )
+
+            module.fetch_url = fake_fetch
+            check = module.public_trust_pages_check(
+                "https://workdoe.com",
+                module.DEFAULT_TIMEOUT,
+            )
+        finally:
+            module.fetch_url = original_fetch_url
+
+        self.assertEqual(check.status, "failed")
+        self.assertIn("/privacy returned HTTP 404", check.summary)
+
+    def test_workdoe_production_smoke_warns_on_missing_discovery_files(self):
+        module = load_workdoe_production_smoke_script()
+        original_fetch_url = module.fetch_url
+        try:
+            module.fetch_url = lambda *args, **kwargs: module.FetchResult(
+                ok=False,
+                status_code=404,
+                elapsed_ms=3,
+            )
+            check = module.discovery_files_check(
+                "https://workdoe.com",
+                module.DEFAULT_TIMEOUT,
+            )
+        finally:
+            module.fetch_url = original_fetch_url
+
+        self.assertEqual(check.status, "warning")
+        self.assertFalse(check.required)
+        self.assertIn("/.well-known/security.txt", check.summary)
+
+    def test_workdoe_production_smoke_rejects_clerk_development_key(self):
+        module = load_workdoe_production_smoke_script()
+        original_fetch_url = module.fetch_url
+        try:
+            module.fetch_url = lambda *args, **kwargs: module.FetchResult(
+                ok=True,
+                status_code=200,
+                headers={"Content-Type": "text/html; charset=utf-8"},
+                body='<div data-clerk-publishable-key="pk_test_workdoe"></div>',
+                elapsed_ms=7,
+            )
+            check = module.clerk_production_key_check(
+                "https://workdoe.com",
+                module.DEFAULT_TIMEOUT,
+            )
+        finally:
+            module.fetch_url = original_fetch_url
+
+        self.assertEqual(check.status, "failed")
+        self.assertIn("not using a Clerk production instance", check.summary)
 
     def test_workdoe_production_smoke_reports_dns_and_header_failures(self):
         module = load_workdoe_production_smoke_script()
@@ -5167,6 +8375,74 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn("confirm workdoe.com DNS in Cloudflare", live_payload["next_actions"])
 
+    def test_workdoe_launch_doctor_detects_ambient_encrypted_wrangler_login(self):
+        module = load_workdoe_launch_doctor_script()
+        original_run = module.subprocess.run
+        calls = []
+
+        def fake_run(command, **kwargs):
+            calls.append({"command": command, "env": kwargs.get("env")})
+            if len(calls) == 1:
+                return SimpleNamespace(
+                    returncode=1,
+                    stdout="",
+                    stderr="You are not authenticated. Please run wrangler login.",
+                )
+            return SimpleNamespace(
+                returncode=0,
+                stdout="You are logged in with an OAuth Token.",
+                stderr="",
+            )
+
+        try:
+            module.subprocess.run = fake_run
+            ready, summary = module.wrangler_auth_status(ROOT)
+        finally:
+            module.subprocess.run = original_run
+
+        self.assertTrue(ready)
+        self.assertEqual(len(calls), 2)
+        self.assertIn("XDG_CONFIG_HOME", calls[0]["env"])
+        self.assertIsNone(calls[1]["env"])
+        self.assertIn("ambient encrypted OAuth profile", summary)
+        self.assertIn("CLOUDFLARE_API_TOKEN", summary)
+
+    def test_workdoe_launch_doctor_reads_only_secret_binding_names(self):
+        module = load_workdoe_launch_doctor_script()
+        original_run = module.subprocess.run
+        calls = []
+
+        def fake_run(command, **kwargs):
+            calls.append({"command": command, "env": kwargs.get("env")})
+            if len(calls) == 1:
+                return SimpleNamespace(
+                    returncode=1,
+                    stdout="",
+                    stderr="You are not authenticated. Please run wrangler login.",
+                )
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(
+                    [
+                        {"name": "CLERK_SECRET_KEY", "type": "secret_text"},
+                        {"name": "WORKDOE_SECRET_KEY", "type": "secret_text"},
+                    ]
+                ),
+                stderr="",
+            )
+
+        try:
+            module.subprocess.run = fake_run
+            ready, names, summary = module.wrangler_secret_names_status(ROOT)
+        finally:
+            module.subprocess.run = original_run
+
+        self.assertTrue(ready)
+        self.assertEqual(names, {"CLERK_SECRET_KEY", "WORKDOE_SECRET_KEY"})
+        self.assertIn("2 production secret binding name", summary)
+        self.assertEqual(calls[1]["command"][-4:], ["secret", "list", "--config", "wrangler.jsonc"])
+        self.assertIsNone(calls[1]["env"])
+
     def test_workdoe_launch_doctor_prioritizes_cloudflare_token_phase(self):
         module = load_workdoe_launch_doctor_script()
         original_head_ok = module.http_head_ok
@@ -5197,6 +8473,96 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertNotIn("npm run cf:resources:apply", payload["next_actions"])
         self.assertFalse(
             any("wrangler.cmd secret put" in action for action in payload["next_actions"])
+        )
+
+    def test_workdoe_launch_doctor_uses_ready_github_release_credentials(self):
+        module = load_workdoe_launch_doctor_script()
+        github_status = load_github_release_status_script().GithubReleaseStatus(
+            repository="Yami566/workdoe",
+            environment="production",
+            live=True,
+            ready=True,
+            environment_ready=True,
+            secrets_ready=True,
+            blockers=[],
+            warnings=[],
+        )
+        original_head_ok = module.http_head_ok
+        original_cloudflare = module.build_launch_status
+        original_github_live = module.build_github_live_status
+        original_wrangler_auth = module.wrangler_auth_status
+        original_wrangler_secrets = module.wrangler_secret_names_status
+        original_dns_diagnostic = module.build_dns_diagnostic
+        try:
+            module.http_head_ok = lambda url: (True, "HTTP 200")
+            module.build_launch_status = lambda repo_root=ROOT: {
+                "ready_to_deploy": False,
+                "current_phase": "cloudflare-token",
+                "next_command": "set CLOUDFLARE_API_TOKEN in this shell without committing it",
+                "blockers": [
+                    "CLOUDFLARE_API_TOKEN is not set; local Cloudflare resource bootstrap, secret evidence, and deploy execute commands cannot run.",
+                    "Cloudflare is missing required secret bindings: CLERK_WEBHOOK_SECRET",
+                    "Clerk proxy proof JSON is missing or invalid: clerk-proxy-proof.local.json",
+                ],
+                "warnings": [],
+            }
+            module.build_github_live_status = lambda: github_status
+            module.wrangler_auth_status = lambda repo_root=ROOT: (
+                True,
+                "Wrangler is authenticated through the ambient encrypted OAuth profile.",
+            )
+            module.wrangler_secret_names_status = lambda repo_root=ROOT: (
+                False,
+                set(),
+                "Noninteractive secret listing requires CLOUDFLARE_API_TOKEN.",
+            )
+            module.build_dns_diagnostic = lambda: {
+                "ready": True,
+                "checks": [],
+                "blockers": [],
+                "next_actions": [],
+            }
+            payload = module.build_doctor(ROOT, live=True)
+        finally:
+            module.http_head_ok = original_head_ok
+            module.build_launch_status = original_cloudflare
+            module.build_github_live_status = original_github_live
+            module.wrangler_auth_status = original_wrangler_auth
+            module.wrangler_secret_names_status = original_wrangler_secrets
+            module.build_dns_diagnostic = original_dns_diagnostic
+
+        self.assertFalse(payload["ready"])
+        self.assertFalse(
+            any("CLOUDFLARE_API_TOKEN is not set" in blocker for blocker in payload["blockers"])
+        )
+        self.assertNotIn(
+            "set CLOUDFLARE_API_TOKEN in this shell without committing it",
+            payload["next_actions"],
+        )
+        self.assertFalse(payload["secret_bindings"]["checked"])
+        self.assertEqual(payload["secret_bindings"]["source"], "sanitized-evidence")
+        self.assertEqual(payload["secret_bindings"]["present_count"], 6)
+        self.assertEqual(payload["secret_bindings"]["missing"], ["CLERK_WEBHOOK_SECRET"])
+        self.assertIn(
+            ".\\node_modules\\.bin\\wrangler.cmd secret put CLERK_WEBHOOK_SECRET --config cloudflare\\wrangler.jsonc",
+            payload["next_actions"],
+        )
+        self.assertFalse(
+            any(
+                "wrangler.cmd secret put CLERK_SECRET_KEY" in action
+                for action in payload["next_actions"]
+            )
+        )
+        self.assertIn("npm run cf:clerk:proof:confirm", payload["next_actions"])
+        cloudflare_phase = next(
+            phase for phase in payload["phases"] if phase["name"] == "cloudflare-release"
+        )
+        self.assertEqual(cloudflare_phase["status"], "pending")
+        self.assertIn("GitHub production automation credentials are ready", cloudflare_phase["summary"])
+        self.assertIn("6/7 required present", cloudflare_phase["summary"])
+        self.assertIn("CLERK_WEBHOOK_SECRET", cloudflare_phase["next_command"])
+        self.assertTrue(
+            any("verified GitHub production environment" in warning for warning in payload["warnings"])
         )
 
     def test_cloudflare_wrangler_resolver_accepts_env_or_local_binary(self):
@@ -5275,6 +8641,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "CLOUDFLARE_API_TOKEN is not set; local Cloudflare resource bootstrap, secret evidence, and deploy execute commands cannot run.",
             status["blockers"],
         )
+        self.assertIn(
+            "Confirm Cloudflare Images Paid is active and complete one live valid-image plus invalid-image upload test before enabling public uploads.",
+            status["warnings"],
+        )
         rendered = module.render_text(status)
         self.assertIn("Workdoe Cloudflare launch status", rendered)
         self.assertIn("Current phase: cloudflare-token", rendered)
@@ -5326,6 +8696,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://workdoe.com/__clerk",
                         "confirmed": True,
+                        "restricted_sign_up_mode": True,
+                        "email_code_sign_in": True,
+                        "password_sign_in_disabled": True,
+                        "custom_sign_up_url": "https://workdoe.com/create-account",
+                        "express_legal_consent": True,
+                        "terms_url": "https://workdoe.com/terms",
+                        "privacy_url": "https://workdoe.com/privacy",
                     }
                 ),
                 encoding="utf-8",
@@ -5376,6 +8753,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://workdoe.com/__clerk",
                         "confirmed": True,
+                        "restricted_sign_up_mode": True,
+                        "email_code_sign_in": True,
+                        "password_sign_in_disabled": True,
+                        "custom_sign_up_url": "https://workdoe.com/create-account",
+                        "express_legal_consent": True,
+                        "terms_url": "https://workdoe.com/terms",
+                        "privacy_url": "https://workdoe.com/privacy",
                     }
                 ),
                 encoding="utf-8",
@@ -5443,6 +8827,820 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         helper = (ROOT / "scripts" / "cloudflare_wrangler.py").read_text(encoding="utf-8")
         self.assertIn("GitHub production environment secret", helper)
+
+
+    def test_cloudflare_dialog_shell_and_work_history_match_local_contract(self):
+        entry_shell = load_entry_shell_module()
+        embedded_entry = entry_shell.build_entry_shell_html(
+            "/login",
+            {"embed": ["1"]},
+            [],
+            "pk_test_workdoe",
+            "https://clerk.workdoe.com",
+        )
+        self.assertIn('class="market-entry-body dialog-frame-body"', embedded_entry)
+        self.assertNotIn('src="/map.js"', embedded_entry)
+        self.assertNotIn("data-site-dialog", embedded_entry)
+        frame_headers = entry_shell.shell_headers(
+            "https://clerk.workdoe.com",
+            allow_same_origin_frame=True,
+        )
+        self.assertEqual(frame_headers["X-Frame-Options"], "SAMEORIGIN")
+        self.assertIn("frame-ancestors 'self'", frame_headers["Content-Security-Policy"])
+
+        app_shell = load_app_shell_module()
+        client = {"id": 4, "role": "client", "status": "active"}
+        embedded_form = app_shell.job_form_html(client, embedded=True)
+        self.assertIn('<body class="dialog-frame-body">', embedded_form)
+        self.assertNotIn("data-site-dialog", embedded_form)
+        self.assertNotIn('aria-label="Posting safeguards"', embedded_form)
+        embedded_draft = app_shell.public_job_draft_html(embedded=True)
+        self.assertNotIn("What needs doing?", embedded_draft)
+        self.assertNotIn('aria-label="Project draft steps"', embedded_draft)
+        app_headers = app_shell.app_shell_headers(allow_same_origin_frame=True)
+        self.assertEqual(app_headers["X-Frame-Options"], "SAMEORIGIN")
+        self.assertIn("frame-ancestors 'self'", app_headers["Content-Security-Policy"])
+
+        client_jobs = load_client_jobs_module()
+        client_payload = client_jobs.client_jobs_payload(
+            [
+                {
+                    "id": 12,
+                    "title": "Wash front steps",
+                    "category": "Power washing",
+                    "city": "Washington",
+                    "state": "DC",
+                    "zip_code": "20003",
+                    "description": "Cleaned the walk and steps.",
+                    "status": "closed",
+                }
+            ],
+            "all",
+        )
+        self.assertEqual(len(client_payload["history"]), 1)
+        self.assertEqual(client_payload["history"][0]["repeat_url"], "/jobs/new?repeat=12")
+        client_html = app_shell.client_dashboard_html(client, client_payload)
+        self.assertIn("Project history", client_html)
+        self.assertIn("Cleaned the walk and steps.", client_html)
+        self.assertIn("Post again", client_html)
+        self.assertIn("/jobs/new?repeat=12", client_html)
+
+        contractor_bids = load_contractor_bids_module()
+        contractor_payload = contractor_bids.contractor_bids_payload(
+            [
+                {
+                    "id": 31,
+                    "job_id": 12,
+                    "title": "Wash front steps",
+                    "category": "Power washing",
+                    "city": "Washington",
+                    "state": "DC",
+                    "job_status": "closed",
+                    "close_reason": "workdoe-match",
+                    "status": "approved",
+                    "scope_note": "Washed the steps and protected nearby brickwork.",
+                    "price_range": "$450-$600",
+                    "timeline": "One day",
+                    "availability": "Weekday mornings",
+                }
+            ],
+            "all",
+        )
+        self.assertEqual(len(contractor_payload["completed_work"]), 1)
+        contractor_html = app_shell.contractor_dashboard_html(
+            {"id": 7, "role": "contractor", "status": "active"},
+            contractor_payload,
+        )
+        self.assertIn("Matched work", contractor_html)
+        self.assertIn("Awaiting both confirmations", contractor_html)
+        self.assertIn("Washed the steps and protected nearby brickwork.", contractor_html)
+        self.assertIn("Specific addresses stay private.", contractor_html)
+        self.assertNotIn("20003", contractor_html)
+
+    def test_cloudflare_completion_contract_requires_two_match_participants(self):
+        module = load_match_completions_module()
+        client = {"id": 8, "role": "client", "status": "active"}
+        contractor = {"id": 7, "role": "contractor", "status": "active"}
+        outsider = {"id": 9, "role": "contractor", "status": "active"}
+        match = {
+            "match_request_id": 31,
+            "client_id": 8,
+            "contractor_id": 7,
+            "match_status": "approved",
+            "job_status": "closed",
+            "close_reason": "workdoe-match",
+            "client_confirmed_at": "",
+            "contractor_confirmed_at": "",
+            "verified_at": "",
+        }
+
+        self.assertEqual(
+            module.parse_match_completion_path("/api/match-requests/31/complete"),
+            31,
+        )
+        self.assertEqual(module.validate_completion_confirmation(client, match), "client")
+        self.assertEqual(
+            module.validate_completion_confirmation(contractor, match),
+            "contractor",
+        )
+        with self.assertRaises(module.MatchCompletionError) as forbidden:
+            module.validate_completion_confirmation(outsider, match)
+        self.assertEqual(forbidden.exception.status, 403)
+        with self.assertRaises(module.MatchCompletionError) as open_project:
+            module.validate_completion_confirmation(
+                contractor,
+                {**match, "job_status": "open"},
+            )
+        self.assertEqual(open_project.exception.status, 409)
+        with self.assertRaises(module.MatchCompletionError) as pending_match:
+            module.validate_completion_confirmation(
+                client,
+                {**match, "match_status": "pending"},
+            )
+        self.assertEqual(pending_match.exception.status, 409)
+
+        contractor_signal = {
+            **match,
+            "contractor_confirmed_at": "2026-08-16T12:00:00+00:00",
+        }
+        self.assertEqual(
+            module.completion_label(contractor_signal, "client"),
+            "Contractor confirmed - confirm completion",
+        )
+        verified = {
+            **contractor_signal,
+            "client_confirmed_at": "2026-08-16T12:05:00+00:00",
+            "verified_at": "2026-08-16T12:05:00+00:00",
+        }
+        self.assertEqual(module.completion_state(verified), "verified")
+        self.assertTrue(module.completion_response(verified)["verified"])
+
+        migration = (
+            ROOT / "cloudflare" / "d1" / "migrations" / "0008_match_completions.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CREATE TABLE IF NOT EXISTS match_completions", migration)
+        self.assertIn("match_request_id INTEGER PRIMARY KEY", migration)
+        self.assertIn("client_confirmed_at", migration)
+        self.assertIn("contractor_confirmed_at", migration)
+        self.assertIn("verified_at", migration)
+
+        entrypoint = WORKER_ENTRY_PATH.read_text(encoding="utf-8")
+        self.assertIn("async def confirm_match_completion", entrypoint)
+        self.assertIn('"match-completion-confirmed"', entrypoint)
+        self.assertIn("A project with completion confirmation cannot be reopened.", entrypoint)
+
+    def test_cloudflare_six_step_taxonomy_and_incremental_d1_migration(self):
+        job_posts = load_job_posts_module()
+        worker_scope = load_service_scope_module()
+        worker_taxonomy = load_service_taxonomy_module()
+        worker_market_fit = load_market_fit_module()
+        from workdoe.market_fit import DMV_SERVICE_ZONES
+        from workdoe.service_taxonomy import (
+            SERVICE_ALIASES,
+            SERVICE_GROUPS,
+            SERVICE_ICON_BY_SLUG,
+        )
+
+        self.assertEqual(worker_taxonomy.SERVICE_GROUPS, SERVICE_GROUPS)
+        self.assertEqual(worker_taxonomy.SERVICE_ALIASES, SERVICE_ALIASES)
+        self.assertEqual(worker_taxonomy.SERVICE_ICON_BY_SLUG, SERVICE_ICON_BY_SLUG)
+        self.assertEqual(worker_market_fit.DMV_SERVICE_ZONES, DMV_SERVICE_ZONES)
+        payload = job_posts.job_post_payload(
+            {
+                "title": "Mow and edge the back lawn",
+                "category": "Other",
+                "service_group_slug": "outdoor-yard",
+                "service_slug": "lawn-mowing",
+                "project_setting": "outdoor-area",
+                "city": "Arlington",
+                "state": "VA",
+                "zip_code": "22201",
+                "desired_date": "2026-12-01",
+                "description": "Mow and edge a small fenced back lawn and remove the clippings.",
+                "budget_min": "120",
+                "budget_max": "180",
+                "scope_area_size": "small",
+                "scope_grass_height": "6_12",
+                "scope_terrain": "obstacles",
+                "scope_recurrence": "one_time",
+            },
+            today=job_posts.date(2026, 8, 16),
+        )
+        self.assertEqual(payload["service_group_slug"], "outdoor-yard")
+        self.assertEqual(payload["service_slug"], "lawn-mowing")
+        self.assertEqual(payload["category"], "Landscaping")
+        self.assertEqual(payload["project_setting"], "outdoor-area")
+        self.assertEqual(len(payload["scope_answers"]), 4)
+        self.assertEqual(
+            worker_scope.scope_readiness("lawn-mowing", payload["scope_answers"])[
+                "percent"
+            ],
+            100,
+        )
+
+        app_shell = load_app_shell_module()
+        html = app_shell.job_form_html({"id": 4, "role": "client", "status": "active"})
+        self.assertEqual(html.count('data-project-step="'), 6)
+        self.assertEqual(html.count('class="service-family-option"'), 6)
+        self.assertEqual(html.count('class="service-option"'), 53)
+        self.assertEqual(html.count('class="service-option-more"'), 6)
+        self.assertEqual(html.count('class="service-option-heading"'), 6)
+        self.assertIn("Common tasks", html)
+        self.assertIn("More yard &amp; landscaping services", html)
+        self.assertIn('src="/project-composer.js?v=workdoe-service-tiles"', html)
+        self.assertIn('/vendor/tabler-icons/trees.svg', html)
+        self.assertIn('/vendor/tabler-icons/lawn-mower.svg', html)
+        self.assertIn('/vendor/tabler-icons/seedling.svg', html)
+        self.assertIn('/vendor/tabler-icons/plant.svg', html)
+        self.assertIn('name="service_choice"', html)
+        self.assertIn('data-selected-service-family', html)
+        self.assertIn('class="service-select-control"', html)
+        self.assertEqual(html.count('class="project-setting-option"'), 6)
+        self.assertIn('data-review-setting', html)
+        self.assertIn('data-service-scope-set="lawn-mowing"', html)
+        self.assertIn('name="scope_grass_height"', html)
+        self.assertIn('data-review-scope', html)
+        self.assertIn('data-review-brief', html)
+
+        for service_slug, icon_name in SERVICE_ICON_BY_SLUG.items():
+            service_block = html.split(
+                f'id="service-choice-{service_slug}"', 1
+            )[1].split("</label>", 1)[0]
+            self.assertIn(
+                f'/vendor/tabler-icons/{icon_name}',
+                service_block,
+                service_slug,
+            )
+
+        worker_readiness = load_project_readiness_module()
+        from workdoe.project_readiness import project_brief_readiness
+
+        readiness_row = {
+            "service_slug": "lawn-mowing",
+            "description": "Mow and edge the fenced back lawn and remove all clippings.",
+            "project_setting": "outdoor-area",
+            "desired_date": "2026-12-01",
+            "budget_max": 180,
+            "scope_answer_count": 4,
+            "photo_count": 0,
+        }
+        self.assertEqual(
+            worker_readiness.project_brief_readiness(readiness_row),
+            project_brief_readiness(readiness_row),
+        )
+
+        scope_migration = (
+            ROOT / "cloudflare" / "d1" / "migrations" / "0020_job_scope_answers.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CREATE TABLE IF NOT EXISTS job_scope_answers", scope_migration)
+        self.assertIn("CREATE TABLE IF NOT EXISTS job_draft_scope_answers", scope_migration)
+        self.assertIn("question_key, answer_code, schema_version", scope_migration)
+        self.assertNotIn("email", scope_migration.lower())
+        self.assertNotIn("address", scope_migration.lower())
+
+        migration = (
+            ROOT / "cloudflare" / "d1" / "migrations" / "0004_service_taxonomy.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CREATE TABLE IF NOT EXISTS service_groups", migration)
+        self.assertIn("CREATE TABLE IF NOT EXISTS service_types", migration)
+        self.assertIn("CREATE TABLE IF NOT EXISTS service_aliases", migration)
+        self.assertIn("ALTER TABLE jobs ADD COLUMN service_slug", migration)
+        self.assertIn("idx_jobs_service_status", migration)
+
+        labels_migration = (
+            ROOT / "cloudflare" / "d1" / "migrations" / "0024_service_family_labels.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("UPDATE service_groups", labels_migration)
+        self.assertIn("Yard & landscaping", labels_migration)
+        self.assertIn("Plumbing & systems", labels_migration)
+
+        aliases_icons_migration = (
+            ROOT
+            / "cloudflare"
+            / "d1"
+            / "migrations"
+            / "0026_service_aliases_and_icons.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ALTER TABLE service_types ADD COLUMN icon_name TEXT", aliases_icons_migration)
+        self.assertIn("'grass cutting', 'lawn-mowing'", aliases_icons_migration)
+        self.assertIn("'kitchen renovation', 'kitchen-remodel'", aliases_icons_migration)
+        self.assertIn("WHEN 'lawn-mowing' THEN 'lawn-mower.svg'", aliases_icons_migration)
+
+        market_fit_migration = (
+            ROOT / "cloudflare" / "d1" / "migrations" / "0006_contractor_market_fit.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CREATE TABLE IF NOT EXISTS service_zones", market_fit_migration)
+        self.assertIn("contractor_service_capabilities", market_fit_migration)
+        self.assertIn("contractor_service_zones", market_fit_migration)
+        self.assertIn("idx_contractor_capabilities_service", market_fit_migration)
+
+        client_profile_migration = (
+            ROOT
+            / "cloudflare"
+            / "d1"
+            / "migrations"
+            / "0007_client_profiles_and_saved_locations.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ADD COLUMN account_type", client_profile_migration)
+        self.assertIn("ADD COLUMN notification_preference", client_profile_migration)
+        self.assertIn("CREATE TABLE IF NOT EXISTS client_saved_locations", client_profile_migration)
+        self.assertIn("idx_client_saved_locations_owner", client_profile_migration)
+
+        completion_migration = (
+            ROOT / "cloudflare" / "d1" / "migrations" / "0008_match_completions.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CREATE TABLE IF NOT EXISTS match_completions", completion_migration)
+        self.assertIn("idx_match_completions_verified", completion_migration)
+
+        bid_window_migration = (
+            ROOT / "cloudflare" / "d1" / "migrations" / "0009_bid_windows.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ADD COLUMN bid_limit", bid_window_migration)
+        self.assertIn("ADD COLUMN bidding_closes_at", bid_window_migration)
+        self.assertIn("idx_jobs_bidding_window", bid_window_migration)
+
+        project_outcomes_migration = (
+            ROOT / "cloudflare" / "d1" / "migrations" / "0010_project_outcomes.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ADD COLUMN close_reason", project_outcomes_migration)
+        self.assertIn("ADD COLUMN close_note", project_outcomes_migration)
+        self.assertIn("ADD COLUMN closed_at", project_outcomes_migration)
+        self.assertIn("CREATE TABLE IF NOT EXISTS job_lead_feedback", project_outcomes_migration)
+        self.assertIn("idx_job_lead_feedback_reason", project_outcomes_migration)
+
+        service_activation_migration = (
+            ROOT / "cloudflare" / "d1" / "migrations" / "0011_service_zone_activations.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ADD COLUMN service_zone_slug", service_activation_migration)
+        self.assertIn(
+            "CREATE TABLE IF NOT EXISTS service_zone_activations",
+            service_activation_migration,
+        )
+        self.assertIn("minimum_eligible_contractors", service_activation_migration)
+        self.assertIn("idx_service_zone_activations_status", service_activation_migration)
+
+        project_settings_migration = (
+            ROOT / "cloudflare" / "d1" / "migrations" / "0012_project_settings.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ALTER TABLE jobs ADD COLUMN project_setting", project_settings_migration)
+        self.assertIn(
+            "ALTER TABLE job_drafts ADD COLUMN project_setting",
+            project_settings_migration,
+        )
+
+        reminder_consent_migration = (
+            ROOT / "cloudflare" / "d1" / "migrations" / "0013_email_reminder_consent.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ADD COLUMN email_reminder_consent_at", reminder_consent_migration)
+        self.assertIn("notification_preference = 'workdoe'", reminder_consent_migration)
+
+        credential_migration = (
+            ROOT / "cloudflare" / "d1" / "migrations" / "0014_contractor_credentials.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CREATE TABLE IF NOT EXISTS contractor_credentials", credential_migration)
+        self.assertIn("reviewed_by INTEGER REFERENCES users", credential_migration)
+        self.assertIn("idx_contractor_credentials_review", credential_migration)
+
+    def test_cloudflare_repeat_provider_invitation_contract_is_private_and_role_bound(self):
+        module = load_repeat_provider_invitations_module()
+        consumer = {"id": 11, "role": "client", "status": "active"}
+        contractor = {"id": 22, "role": "contractor", "status": "active"}
+        source = {
+            "source_job_id": 31,
+            "source_match_request_id": 41,
+            "client_id": 11,
+            "contractor_id": 22,
+            "source_job_status": "closed",
+            "close_reason": "workdoe-match",
+            "match_status": "approved",
+            "verified_at": "2026-08-17T12:00:00+00:00",
+            "contractor_status": "active",
+            "contractor_name": "Verified Contractor",
+            "service_slug": "pressure-washing",
+            "category": "Power washing",
+        }
+        normalized = module.validate_repeat_invitation_source(consumer, source)
+        self.assertEqual(normalized["contractor_id"], 22)
+        module.validate_repeat_invitation_service(normalized, "pressure-washing")
+        with self.assertRaises(module.RepeatProviderInvitationError):
+            module.validate_repeat_invitation_service(normalized, "window-cleaning")
+
+        invitation = {
+            "id": 51,
+            "job_id": 61,
+            "source_job_id": 31,
+            "source_match_request_id": 41,
+            "client_id": 11,
+            "contractor_id": 22,
+            "status": "pending",
+            "service_slug": "pressure-washing",
+            "project_title": "Wash the patio",
+            "category": "Power washing",
+            "city": "Washington",
+            "state": "DC",
+            "exact_address": "Must never leave storage",
+            "phone": "202-555-0100",
+        }
+        response = module.repeat_invitation_response(invitation)
+        self.assertEqual(response["status_label"], "Waiting for contractor")
+        self.assertNotIn("exact_address", response)
+        self.assertNotIn("phone", response)
+        module.validate_invitation_action(contractor, invitation, "decline")
+        module.validate_invitation_action(consumer, invitation, "withdraw")
+        with self.assertRaises(module.RepeatProviderInvitationError):
+            module.validate_invitation_action(consumer, invitation, "decline")
+        self.assertEqual(
+            module.parse_invitation_action_path(
+                "/api/repeat-invitations/51/withdraw"
+            ),
+            (51, "withdraw"),
+        )
+
+        migration = (
+            ROOT
+            / "cloudflare"
+            / "d1"
+            / "migrations"
+            / "0017_repeat_provider_invitations.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CREATE TABLE IF NOT EXISTS repeat_provider_invitations", migration)
+        self.assertIn("source_match_request_id", migration)
+        self.assertNotIn("address", migration.lower())
+        self.assertNotIn("message", migration.lower())
+        self.assertNotIn("photo", migration.lower())
+
+        entry_source = WORKER_ENTRY_PATH.read_text(encoding="utf-8")
+        shell_source = APP_SHELL_PATH.read_text(encoding="utf-8")
+        self.assertIn("respond_repeat_invitation", entry_source)
+        self.assertIn("repeat-provider-invitation-bid-sent", entry_source)
+        self.assertIn('"request_id": request_id', entry_source)
+        self.assertIn("repeat-invitation-banner", shell_source)
+        self.assertIn("Invited back", shell_source)
+
+    def test_cloudflare_match_review_contract_is_completion_gated_and_private(self):
+        module = load_match_reviews_module()
+        client = {"id": 11, "role": "client", "status": "active"}
+        contractor = {"id": 22, "role": "contractor", "status": "active"}
+        verified_match = {
+            "id": 41,
+            "job_id": 31,
+            "client_id": 11,
+            "contractor_id": 22,
+            "match_status": "approved",
+            "verified_at": "2026-08-17T12:00:00+00:00",
+        }
+        self.assertEqual(
+            module.validate_review_eligibility(client, verified_match),
+            "client",
+        )
+        self.assertEqual(
+            module.validate_review_eligibility(contractor, verified_match),
+            "contractor",
+        )
+        self.assertEqual(module.review_subject_id("client", verified_match), 22)
+        self.assertEqual(module.review_subject_id("contractor", verified_match), 11)
+        self.assertEqual(
+            module.parse_match_review_create_path("/api/match-requests/41/review"),
+            41,
+        )
+        self.assertEqual(
+            module.parse_match_review_action_path("/api/reviews/51/response"),
+            (51, "response"),
+        )
+        self.assertEqual(
+            module.parse_match_review_action_path("/api/reviews/51/report"),
+            (51, "report"),
+        )
+
+        values = module.validate_review_payload(
+            {
+                "communication": "met",
+                "scope_accuracy": "mixed",
+                "timeliness": "met",
+                "work_outcome": "met",
+                "would_work_again": "yes",
+                "comment": "  Clear updates and careful work.  ",
+            }
+        )
+        self.assertEqual(values["comment"], "Clear updates and careful work.")
+        self.assertEqual(values["scope_accuracy"], "mixed")
+
+        review = {
+            "id": 51,
+            "match_request_id": 41,
+            "reviewer_id": 11,
+            "subject_id": 22,
+            "reviewer_role": "client",
+            **values,
+            "response": "",
+            "response_at": "",
+            "created_at": "2026-08-17T12:30:00+00:00",
+            "verified_at": "2026-08-17T12:00:00+00:00",
+            "is_hidden": 0,
+        }
+        response = module.review_response(review)
+        self.assertTrue(response["verified_project"])
+        self.assertEqual(response["communication_label"], "Met expectations")
+        self.assertNotIn("reviewer_id", response)
+        self.assertNotIn("subject_id", response)
+        self.assertEqual(
+            module.validate_review_response(contractor, review, "Thank you for the clear scope."),
+            "Thank you for the clear scope.",
+        )
+        self.assertEqual(
+            module.validate_review_report(client, review, "Please review this wording."),
+            "Please review this wording.",
+        )
+
+        with self.assertRaisesRegex(module.MatchReviewError, "must confirm"):
+            module.validate_review_eligibility(
+                client,
+                {**verified_match, "verified_at": None},
+            )
+        with self.assertRaisesRegex(module.MatchReviewError, "already left"):
+            module.validate_review_eligibility(client, verified_match, review)
+        with self.assertRaisesRegex(module.MatchReviewError, "participants"):
+            module.validate_review_eligibility(
+                {"id": 99, "role": "client", "status": "active"},
+                verified_match,
+            )
+        with self.assertRaisesRegex(module.MatchReviewError, "recipient"):
+            module.validate_review_response(client, review, "Not allowed")
+
+        migration = (
+            ROOT
+            / "cloudflare"
+            / "d1"
+            / "migrations"
+            / "0019_match_reviews.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("CREATE TABLE IF NOT EXISTS match_reviews", migration)
+        self.assertIn("UNIQUE(match_request_id, reviewer_id)", migration)
+        self.assertIn("CREATE TABLE IF NOT EXISTS match_review_reports", migration)
+        for forbidden_column in ("email", "address", "zip_code", "phone", "photo"):
+            self.assertNotIn(forbidden_column, migration.lower())
+
+        entry_source = WORKER_ENTRY_PATH.read_text(encoding="utf-8")
+        self.assertIn("create_match_review", entry_source)
+        self.assertIn("match_review_action", entry_source)
+        self.assertIn("INSERT OR IGNORE INTO match_reviews", entry_source)
+        self.assertIn('"has_comment": bool(values["comment"])', entry_source)
+        self.assertIn('payload = {"reporter_role": row_value(user, "role")}', entry_source)
+        self.assertNotIn('payload={"comment": values["comment"]}', entry_source)
+        self.assertNotIn('payload={"reason": reason}', entry_source)
+
+    def test_cloudflare_match_review_shell_covers_both_participants_and_admin(self):
+        module = load_app_shell_module()
+        client = {"id": 11, "role": "client", "status": "active", "display_name": "Client"}
+        contractor = {
+            "id": 22,
+            "role": "contractor",
+            "status": "active",
+            "display_name": "Crew",
+        }
+        review = {
+            "id": 51,
+            "match_request_id": 41,
+            "reviewer_id": 11,
+            "subject_id": 22,
+            "reviewer_role": "client",
+            "communication": "met",
+            "communication_label": "Met expectations",
+            "scope_accuracy": "met",
+            "scope_accuracy_label": "Met expectations",
+            "timeliness": "mixed",
+            "timeliness_label": "Mixed",
+            "work_outcome": "met",
+            "work_outcome_label": "Met expectations",
+            "would_work_again": "yes",
+            "would_work_again_label": "Yes",
+            "comment": "Clear updates and careful work.",
+            "response": "",
+            "created_at": "2026-08-17T12:30:00+00:00",
+            "verified_at": "2026-08-17T12:00:00+00:00",
+            "is_hidden": False,
+            "service_name": "Power washing",
+        }
+        contractor_html = module.contractor_dashboard_html(
+            contractor,
+            {
+                "bids": [],
+                "completed_work": [
+                    {
+                        "id": 41,
+                        "title": "Wash the front steps",
+                        "category": "Power washing",
+                        "city": "Washington",
+                        "state": "DC",
+                        "scope_note": "Wash the masonry steps.",
+                        "timeline": "One day",
+                        "price_range": "$300-$400",
+                        "availability": "This week",
+                        "completion_state": "verified",
+                        "completion_label": "Workdoe-completed",
+                        "verified_at": "2026-08-17T12:00:00+00:00",
+                        "url": "/messages/5",
+                    }
+                ],
+                "reviews_by_request": {41: {"client": review}},
+                "stats": {},
+            },
+        )
+        self.assertIn("Leave completed-work feedback", contractor_html)
+        self.assertIn('data-json-action="/api/match-requests/41/review"', contractor_html)
+        self.assertIn('data-json-action="/api/reviews/51/response"', contractor_html)
+        self.assertIn('data-json-action="/api/reviews/51/report"', contractor_html)
+        self.assertIn("does not create a star score", contractor_html)
+
+        client_html = module.client_job_detail_html(
+            client,
+            {
+                "job": {
+                    "id": 31,
+                    "title": "Wash the front steps",
+                    "service_name": "Power washing",
+                    "category": "Power washing",
+                    "area_label": "Washington, DC 20003",
+                    "status": "closed",
+                    "close_reason": "workdoe-match",
+                },
+                "photos": [],
+            },
+            {
+                "requests": [
+                    {
+                        "id": 41,
+                        "status": "approved",
+                        "contractor_name": "Doe Exterior Care",
+                        "verified_at": "2026-08-17T12:00:00+00:00",
+                        "completion_state": "verified",
+                        "completion_label": "Workdoe-completed",
+                    }
+                ],
+                "reviews_by_request": {41: {}},
+                "stats": {"approved": 1, "verified": 1, "total": 1},
+            },
+        )
+        self.assertIn("Leave completed-work feedback", client_html)
+        self.assertIn('data-json-action="/api/match-requests/41/review"', client_html)
+
+        public_html = module.public_contractor_profile_html(
+            client,
+            {
+                "contractor": {
+                    "id": 22,
+                    "business_name": "Doe Exterior Care",
+                    "trades": "Power washing",
+                    "service_area": "DMV",
+                    "intro": "Careful exterior cleaning.",
+                    "completed_work_reviews": [review],
+                }
+            },
+        )
+        self.assertIn("Completed-work feedback", public_html)
+        self.assertIn("Consumer feedback", public_html)
+        self.assertIn("No star score or paid ranking", public_html)
+        self.assertNotIn("client@example.com", public_html)
+        self.assertNotIn("20003", public_html)
+
+        admin_html = module.admin_dashboard_html(
+            {"id": 1, "role": "admin", "status": "active", "display_name": "Admin"},
+            {
+                "stats": {},
+                "match_review_metrics": {
+                    "total_reviews": 1,
+                    "client_reviews": 1,
+                    "contractor_reviews": 0,
+                    "responses": 0,
+                    "open_reports": 1,
+                    "hidden_reviews": 0,
+                },
+                "match_review_reports": [
+                    {
+                        "id": 61,
+                        "project_title": "Wash the front steps",
+                        "reporter_email": "client@example.com",
+                        "reason": "Review wording",
+                    }
+                ],
+                "recent_match_reviews": [
+                    {
+                        "id": 51,
+                        "project_title": "Wash the front steps",
+                        "reviewer_role": "client",
+                        "reviewer_email": "client@example.com",
+                        "subject_email": "contractor@example.com",
+                        "is_hidden": 0,
+                    }
+                ],
+            },
+        )
+        self.assertIn("Participant feedback", admin_html)
+        self.assertIn('data-json-action="/api/admin/reviews/51/hide"', admin_html)
+        self.assertIn(
+            'data-json-action="/api/admin/review-reports/61/resolve"',
+            admin_html,
+        )
+
+    def test_cloudflare_pilot_metrics_match_local_contract_and_render_privately(self):
+        worker_metrics = load_pilot_metrics_module()
+        from workdoe.pilot_metrics import pilot_cell_metrics
+
+        projects = [
+            {
+                "service_slug": "house-cleaning",
+                "service_zone_slug": "district-of-columbia",
+                "service_name": "House cleaning",
+                "zone_name": "District of Columbia",
+                "created_at": "2026-08-17T13:00:00+00:00",
+                "description": "Deep clean a two-bedroom apartment before the next tenant arrives.",
+                "project_setting": "inside-home",
+                "desired_date": "2026-08-22",
+                "budget_max": 350,
+                "scope_answer_count": 3,
+                "photo_count": 0,
+                "bid_count": 3,
+                "first_bid_at": "2026-08-17T13:45:00+00:00",
+                "matched_count": 1,
+                "verified_completion_count": 0,
+                "status": "closed",
+                "close_reason": "no-qualified-bid",
+                "open_report_count": 1,
+                "email": "private@example.com",
+                "exact_address": "100 Private Street",
+                "close_note": "Private project note",
+                "report_reason": "Private report narrative",
+            }
+        ]
+        supply = [
+            {
+                "service_slug": "house-cleaning",
+                "zone_slug": "district-of-columbia",
+                "current_eligible_contractors": 4,
+                "minimum_eligible_contractors": 3,
+                "activation_status": "active",
+            }
+        ]
+        local = pilot_cell_metrics(projects, supply, as_of="2026-08-17")
+        worker = worker_metrics.pilot_cell_metrics(
+            projects, supply, as_of="2026-08-17"
+        )
+        self.assertEqual(worker, local)
+        self.assertEqual(worker["cells"][0]["state"], "matched")
+        self.assertEqual(worker["summary"]["median_first_bid_minutes"], 45)
+        self.assertEqual(worker["summary"]["median_first_bid_label"], "45 min")
+        self.assertEqual(worker["summary"]["no_match_or_cancelled_projects"], 1)
+        self.assertEqual(worker["summary"]["open_report_projects"], 1)
+        self.assertNotIn("private@example.com", json.dumps(worker))
+        self.assertNotIn("Private project note", json.dumps(worker))
+        self.assertNotIn("Private report narrative", json.dumps(worker))
+
+        app_shell = load_app_shell_module()
+        html = app_shell.admin_dashboard_html(
+            {"id": 1, "role": "admin", "status": "active", "display_name": "Admin"},
+            {
+                "stats": {},
+                "pilot_metrics": worker,
+                "marketplace_metrics": {},
+                "repeat_work_metrics": {},
+                "lead_alert_metrics": {},
+                "match_review_metrics": {},
+            },
+        )
+        self.assertIn("Service-zone pulse", html)
+        self.assertIn("Aggregate only", html)
+        self.assertIn("House cleaning", html)
+        self.assertIn("Current supply", html)
+        self.assertIn("Median first bid", html)
+        self.assertIn("45 min", html)
+        self.assertIn("Open project reports", html)
+        self.assertNotIn("private@example.com", html)
+        self.assertNotIn("100 Private Street", html)
+
+    def test_cloudflare_service_zone_activation_fails_closed(self):
+        module = load_service_activation_module()
+        ready = {
+            "status": "active",
+            "allowed_scope": "Interior cleaning.",
+            "excluded_scope": "No alteration of real property.",
+            "requirements_summary": "Operator review recorded.",
+            "approved_at": "2026-08-17T12:00:00+00:00",
+            "reviewed_at": "2026-08-17T12:00:00+00:00",
+            "minimum_eligible_contractors": 3,
+            "eligible_contractors": 3,
+        }
+        self.assertTrue(
+            module.activation_is_live(ready, now="2026-08-17T13:00:00+00:00")
+        )
+        self.assertFalse(module.activation_is_live({**ready, "status": "paused"}))
+        self.assertFalse(module.activation_is_live({**ready, "eligible_contractors": 2}))
+        self.assertFalse(module.activation_is_live({**ready, "approved_at": None}))
+        self.assertFalse(
+            module.activation_is_live(
+                {**ready, "expires_at": "2026-08-17T12:30:00+00:00"},
+                now="2026-08-17T13:00:00+00:00",
+            )
+        )
 
 
 if __name__ == "__main__":

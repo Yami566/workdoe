@@ -4,7 +4,7 @@ This is the production direction for `workdoe.com`: keep users on Workdoe pages,
 
 ## Decisions
 
-- Keep `/login` and `/start` on `workdoe.com`; do not use hosted Clerk Account Portal redirects for public login.
+- Keep `/login`, `/create-account`, and `/post-project` on `workdoe.com`; do not use hosted Clerk Account Portal redirects for public login.
 - Use Clerk email-code OTP as the production login strategy.
 - Keep the current local email-code flow as the fallback strategy until Clerk is live.
 - Keep Workdoe roles, profiles, job permissions, match visibility, moderation, and audit history in Workdoe D1 tables.
@@ -17,7 +17,7 @@ Clerk can support this without sending users away from Workdoe:
 
 1. Configure a Clerk production instance for `workdoe.com`.
 2. Enable email sign-up and sign-in with email verification code.
-3. Mount Clerk login inside Workdoe's `/login` or `/start` page using a vetted Clerk component or a custom Clerk email-code flow.
+3. Mount Clerk's maintained `SignIn` component inside Workdoe's `/login`, `/create-account`, or `/post-project` page with `withSignUp: true`; do not maintain a custom Clerk OTP state machine.
 4. Prefer Clerk's `signUpIfMissing` email-code flow when the selected Clerk SDK supports it, because it sends a verification step before revealing whether the account exists.
 5. Configure Clerk's Frontend API proxy to `https://workdoe.com/__clerk` from the Clerk Domains page so Clerk requests stay on Workdoe's primary domain. A Clerk Frontend API CNAME is only an alternate deployment shape.
 6. Verify Clerk session tokens server-side before loading a Workdoe D1 user. Use `CLERK_JWT_KEY` for networkless JWT verification where the runtime supports it.
@@ -59,11 +59,11 @@ Use Cloudflare Email Service for Workdoe-owned transactional email:
 - `cloudflare/wrangler.jsonc` declares `workdoe.com` custom domains, Python Workers, D1, R2, static assets, queues, cron triggers, and observability.
 - `cloudflare/wrangler.jsonc` includes `CLERK_FRONTEND_API_URL`, `CLERK_PROXY_URL`, and `CLERK_FAPI` so the in-page Clerk script uses Workdoe's same-domain `/__clerk` Frontend API proxy.
 - `cloudflare/wrangler.jsonc` declares required Clerk, Turnstile, and Workdoe secrets so Wrangler blocks deploys when production auth values are missing.
-- `/login` and `/start` now render an in-page Clerk mount when `WORKDOE_AUTH_PROVIDER=clerk`; local mode keeps the Workdoe one-time-code forms.
-- The Cloudflare Worker now serves `/`, `/login`, and `/start` as same-domain entry pages with the live lead map/list, the existing Workdoe CSS, and the same Clerk email-code mount; the pages do not send users to hosted Clerk URLs.
+- `/login`, `/create-account`, and `/post-project` now render an in-page Clerk mount when `WORKDOE_AUTH_PROVIDER=clerk`; local mode keeps the Workdoe one-time-code forms.
+- The Cloudflare Worker now serves `/`, `/login`, `/create-account`, and `/post-project` as same-domain entry pages with the live lead map/list, the existing Workdoe CSS, and the same Clerk email-code mount; the pages do not send users to hosted Clerk URLs.
 - The Cloudflare Worker now proxies `/__clerk/*` to Clerk's Frontend API, sets `Clerk-Proxy-Url`, `Clerk-Secret-Key`, and `X-Forwarded-For`, and derives the forwarded IP from Cloudflare's `CF-Connecting-IP` header.
-- `/login` stays a lightweight same-domain sign-in page. It checks the Workdoe session bridge after Clerk signs in, opens the requested Workdoe path for linked users, and sends unlinked Clerk identities to `/start` with the selected job preserved.
-- `/start` remains the Workdoe onboarding page. It creates the app-owned client or contractor row only after Clerk verifies the email code and the person chooses a workspace.
+- `/login` stays a lightweight same-domain sign-in page. It checks the Workdoe session bridge after Clerk signs in, opens the requested Workdoe path for linked users, and sends unlinked Clerk identities to `/create-account` with the selected job preserved.
+- `/create-account` is the Workdoe onboarding page. It creates the app-owned client or contractor row only after Clerk verifies the email code and the person chooses a workspace. `/start` remains a compatibility alias.
 - `cloudflare/worker/entry.py` contains the first Python Worker handlers for health checks, scheduled jobs, queue consumption, and Clerk webhook intake.
 - `cloudflare/worker/clerk_sessions.py` prepares the same-domain Clerk session bridge: it extracts `__session` or bearer tokens, verifies RS256 signatures with Web Crypto, checks Clerk timing and authorized-party claims, and fails closed when verification is unavailable.
 - `cloudflare/worker/email_payloads.py` renders queued login-code fallback, password-reset fallback, stale-match-reminder, and moderation-digest emails with escaped HTML, plain text, normalized recipients, Workdoe-domain reset URL enforcement, and strict payload validation.
@@ -75,7 +75,7 @@ Use Cloudflare Email Service for Workdoe-owned transactional email:
 - The admin console shows recent automation events beside moderation audit rows so cron, queue, email, media review, Clerk onboarding, and webhook activity can be checked from `workdoe.com`.
 - `cloudflare/.dev.vars.example` lists the Clerk, Turnstile, and Workdoe secret values needed for local Wrangler previews.
 - The Clerk webhook endpoint rejects unsigned or stale events, updates already-linked Clerk user rows, blocks email conflicts, and suspends deleted/locked users.
-- `GET /api/auth/session` verifies a Clerk session and maps it to an already-linked D1 `users` row. If the Clerk identity is valid but no Workdoe row exists yet, it returns `onboarding_required` so `/start` can finish role/profile setup on Workdoe.
+- `GET /api/auth/session` verifies a Clerk session and maps it to an already-linked D1 `users` row. If the Clerk identity is valid but no Workdoe row exists yet, it returns `onboarding_required` so `/create-account` can finish role/profile setup on Workdoe.
 - `POST /api/auth/onboard` verifies the Clerk session again, requires a verified Clerk email claim, then creates the app-owned `users`, `client_profiles`, or `contractor_profiles` rows after the person chooses client or contractor.
 - `GET /api/client/jobs` verifies the Clerk session, requires an active client account, lists only that client's jobs, and returns open/review/closed dashboard counts from D1.
 - `GET /api/client/jobs/:job_id/requests` verifies the Clerk session, requires the owning client or active admin, lists contractor mini bids for one job, and returns review counts plus profile/message links without contractor contact fields.
@@ -110,14 +110,29 @@ Use Cloudflare Email Service for Workdoe-owned transactional email:
 
 1. Keep the current local prototype passing all tests.
 2. Create the Clerk production app and configure email-code authentication.
-3. Configure Clerk's Frontend API proxy URL as `https://workdoe.com/__clerk`, confirm the Worker route is deployed before enabling it in Clerk, then write `clerk-proxy-proof.local.json` from the verified Clerk Domains settings.
+3. Configure Clerk's Frontend API proxy URL as `https://workdoe.com/__clerk`, enable Restricted sign-up mode, set the custom sign-up URL to `https://workdoe.com/create-account`, enable email-code sign-in, and disable password sign-in. Confirm the Worker route is deployed before enabling the proxy, then write `clerk-proxy-proof.local.json` from the verified Clerk settings.
 4. Run `python scripts\cloudflare_resource_bootstrap.py --json --no-secret-probe`, then `python scripts\cloudflare_resource_bootstrap.py --execute --yes --no-secret-probe` to create D1/R2/Queue resources and apply validated D1 IDs without manual editing. The R2 and Queue steps can be rerun; existing resources are reported as `done-existing`.
 5. Configure the Clerk session token template to include a verified primary email claim for Workdoe onboarding, or replace that claim with a verified Clerk Backend API lookup before enabling production account creation.
-6. Confirm `/login` and `/start` load Clerk from `CLERK_FRONTEND_API_URL` and finish onboarding through `/api/auth/session` and `/api/auth/onboard`.
+6. Confirm `/login`, `/create-account`, and `/post-project` load Clerk from `CLERK_FRONTEND_API_URL` and finish onboarding through `/api/auth/session` and `/api/auth/onboard`.
 7. Move SQLite to D1 and route uploads through the Workdoe Worker into R2.
 8. Enable Cron Triggers and Queues from `cloudflare/wrangler.jsonc`.
 9. Turn on Cloudflare Email Service for Workdoe operational mail.
 10. Run a beta with local fallback auth disabled only after Clerk session verification and webhooks are stable.
+
+## Legal Consent Boundary
+
+Observed platform behavior: Clerk's Legal Compliance setting can require express
+consent before sign-up, and its maintained `<SignUp />` component renders and
+handles the checkbox. The Clerk JavaScript SDK used by that component is MIT
+licensed. Workdoe therefore keeps the consent interaction inside the existing
+Clerk component instead of maintaining a second custom checkbox or custom auth
+flow.
+
+Release decision: the non-secret Clerk proof is invalid unless an operator
+confirms express consent is enabled for `https://workdoe.com/terms` and
+`https://workdoe.com/privacy`. This proves configuration, not legal approval.
+Workdoe still needs an owner-approved policy version, change-notice rule, and a
+decision about when existing users must re-accept revised documents.
 
 ## Secret Setup
 
@@ -143,15 +158,24 @@ python scripts\cloudflare_launch_status.py
 cd cloudflare
 python ..\scripts\cloudflare_secret_evidence.py --execute --yes --output ..\cloudflare-secret-list.local.json
 cd ..
-python scripts\cloudflare_clerk_proxy_proof.py --confirm
+python scripts\cloudflare_clerk_proxy_proof.py --confirm --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent
 python scripts\cloudflare_release_evidence.py --json
 python scripts\cloudflare_readiness.py --strict-production --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
 python scripts\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
 python scripts\cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
 ```
 
-This verifies the required secret names without exposing secret values, and verifies that Clerk was explicitly checked for the same-domain Frontend API proxy.
+This verifies the required secret names without exposing secret values, and verifies that Clerk was explicitly checked for the same-domain Frontend API proxy, Restricted sign-up, email-code-only access, and Legal Compliance express consent to Workdoe's Terms and Privacy URLs. Clerk's maintained sign-up component owns the checkbox; Workdoe does not implement a parallel custom consent control.
 `cloudflare_launch_status.py` is read-only and safe to rerun between each step; it reports the current phase and the next command without touching Cloudflare.
+
+For the approved GitHub-to-Cloudflare release path, `workdoe_launch_doctor.py --live`
+accepts a verified GitHub `production` environment with both Cloudflare deploy
+secret names as the noninteractive deployment credential. A second token does
+not need to be copied into the local shell. Wrangler's encrypted OAuth profile
+can still prove the signed-in account, but current noninteractive `secret list`
+calls require `CLOUDFLARE_API_TOKEN`; when that probe is unavailable, the doctor
+uses the sanitized secret-name evidence and reports only the missing binding
+names. Secret values are never read or printed.
 
 ## Email Service Setup
 
@@ -173,6 +197,8 @@ Before production deploy, onboard `workdoe.com` in Cloudflare Email Sending and 
 - Cloudflare Email Service: https://developers.cloudflare.com/email-service/get-started/send-emails/
 - Cloudflare required Worker secrets: https://developers.cloudflare.com/changelog/post/2026-03-24-secrets-config-property/
 - Clerk custom sign-in-or-up email code flow: https://clerk.com/docs/guides/development/custom-flows/authentication/sign-in-or-up
+- Clerk Legal Compliance: https://clerk.com/docs/guides/secure/legal-compliance
+- Clerk JavaScript SDK source and MIT license: https://github.com/clerk/javascript
 - Clerk JavaScript SignIn component mounting: https://clerk.com/docs/js-frontend/reference/components/authentication/sign-in
 - Clerk production deployment DNS: https://clerk.com/docs/guides/development/deployment/production
 - Clerk Frontend API proxying: https://clerk.com/docs/guides/dashboard/dns-domains/proxy-fapi

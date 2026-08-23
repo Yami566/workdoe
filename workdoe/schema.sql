@@ -12,6 +12,27 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS idempotency_requests (
+    id INTEGER PRIMARY KEY,
+    actor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    action TEXT NOT NULL CHECK (length(action) BETWEEN 1 AND 80),
+    key_hash TEXT NOT NULL CHECK (length(key_hash) = 64),
+    resource_type TEXT NOT NULL CHECK (
+        resource_type IN ('job', 'message', 'report', 'job_photo', 'contractor_photo')
+    ),
+    resource_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'processing' CHECK (
+        status IN ('processing', 'completed')
+    ),
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    expires_at TEXT NOT NULL,
+    UNIQUE(actor_id, action, key_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_idempotency_requests_expiry
+ON idempotency_requests(status, expires_at);
+
 CREATE TABLE IF NOT EXISTS client_profiles (
     user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     organization_name TEXT NOT NULL,
@@ -30,6 +51,89 @@ CREATE TABLE IF NOT EXISTS contractor_profiles (
     website TEXT DEFAULT '',
     phone TEXT DEFAULT '',
     updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS contractor_credentials (
+    id INTEGER PRIMARY KEY,
+    contractor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    credential_type TEXT NOT NULL CHECK (
+        credential_type IN ('trade_license', 'business_registration', 'insurance')
+    ),
+    jurisdiction TEXT NOT NULL CHECK (
+        jurisdiction IN ('DC', 'MD', 'VA', 'FEDERAL', 'OTHER')
+    ),
+    claimed_identifier TEXT NOT NULL,
+    claimed_name TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'self_reported' CHECK (
+        status IN ('self_reported', 'pending', 'verified', 'expired', 'rejected')
+    ),
+    source_url TEXT NOT NULL DEFAULT '',
+    checked_at TEXT,
+    expires_at TEXT,
+    reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    review_note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(contractor_id, credential_type, jurisdiction, claimed_identifier)
+);
+
+CREATE TABLE IF NOT EXISTS contractor_lead_preferences (
+    contractor_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    availability_status TEXT NOT NULL DEFAULT 'available' CHECK (
+        availability_status IN ('available', 'limited', 'unavailable')
+    ),
+    available_from TEXT,
+    saved_query TEXT NOT NULL DEFAULT '',
+    saved_category TEXT NOT NULL DEFAULT '',
+    saved_service_group_slug TEXT NOT NULL DEFAULT '',
+    saved_service_slug TEXT NOT NULL DEFAULT '',
+    saved_sort TEXT NOT NULL DEFAULT 'newest' CHECK (
+        saved_sort IN ('newest', 'soonest', 'city')
+    ),
+    saved_at TEXT,
+    lead_alert_preference TEXT NOT NULL DEFAULT 'workdoe' CHECK (
+        lead_alert_preference IN ('workdoe', 'email')
+    ),
+    lead_alert_consent_at TEXT,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_contractor_lead_preferences_family
+ON contractor_lead_preferences(saved_service_group_slug, saved_at);
+
+CREATE TABLE IF NOT EXISTS contractor_lead_alert_deliveries (
+    id INTEGER PRIMARY KEY,
+    contractor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (
+        status IN ('pending', 'queued', 'sent', 'failed')
+    ),
+    created_at TEXT NOT NULL,
+    queued_at TEXT,
+    sent_at TEXT,
+    updated_at TEXT NOT NULL,
+    UNIQUE(contractor_id, job_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_contractor_lead_alert_deliveries_status
+ON contractor_lead_alert_deliveries(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS client_project_templates (
+    id INTEGER PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL COLLATE NOCASE,
+    source_job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
+    service_group_slug TEXT,
+    service_slug TEXT,
+    category TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    project_setting TEXT NOT NULL DEFAULT '',
+    budget_min INTEGER,
+    budget_max INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(client_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -92,6 +196,84 @@ CREATE TABLE IF NOT EXISTS match_requests (
     updated_at TEXT NOT NULL,
     UNIQUE(job_id, contractor_id)
 );
+
+CREATE TABLE IF NOT EXISTS contractor_proposal_templates (
+    id INTEGER PRIMARY KEY,
+    contractor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL COLLATE NOCASE CHECK (length(name) BETWEEN 1 AND 60),
+    source_match_request_id INTEGER REFERENCES match_requests(id) ON DELETE SET NULL,
+    scope_note TEXT NOT NULL,
+    timeline TEXT NOT NULL,
+    experience TEXT NOT NULL,
+    questions TEXT NOT NULL DEFAULT '',
+    availability TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(contractor_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS repeat_provider_invitations (
+    id INTEGER PRIMARY KEY,
+    job_id INTEGER NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE CASCADE,
+    source_job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
+    source_match_request_id INTEGER REFERENCES match_requests(id) ON DELETE SET NULL,
+    client_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    contractor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    service_slug TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (
+        status IN ('pending', 'bid_sent', 'declined', 'withdrawn')
+    ),
+    created_at TEXT NOT NULL,
+    responded_at TEXT,
+    updated_at TEXT NOT NULL,
+    UNIQUE(job_id, contractor_id)
+);
+
+CREATE TABLE IF NOT EXISTS match_reviews (
+    id INTEGER PRIMARY KEY,
+    match_request_id INTEGER NOT NULL REFERENCES match_requests(id) ON DELETE CASCADE,
+    reviewer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    subject_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reviewer_role TEXT NOT NULL CHECK (reviewer_role IN ('client', 'contractor')),
+    communication TEXT NOT NULL CHECK (
+        communication IN ('met', 'mixed', 'concern', 'not_applicable')
+    ),
+    scope_accuracy TEXT NOT NULL CHECK (
+        scope_accuracy IN ('met', 'mixed', 'concern', 'not_applicable')
+    ),
+    timeliness TEXT NOT NULL CHECK (
+        timeliness IN ('met', 'mixed', 'concern', 'not_applicable')
+    ),
+    work_outcome TEXT NOT NULL CHECK (
+        work_outcome IN ('met', 'mixed', 'concern', 'not_applicable')
+    ),
+    would_work_again TEXT NOT NULL CHECK (
+        would_work_again IN ('yes', 'unsure', 'no')
+    ),
+    comment TEXT NOT NULL DEFAULT '',
+    response TEXT NOT NULL DEFAULT '',
+    response_at TEXT,
+    is_hidden INTEGER NOT NULL DEFAULT 0 CHECK (is_hidden IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(match_request_id, reviewer_id)
+);
+
+CREATE TABLE IF NOT EXISTS match_review_reports (
+    id INTEGER PRIMARY KEY,
+    review_id INTEGER NOT NULL REFERENCES match_reviews(id) ON DELETE CASCADE,
+    reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    UNIQUE(review_id, reporter_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_match_reviews_subject
+ON match_reviews(subject_id, reviewer_role, is_hidden, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_match_review_reports_status
+ON match_review_reports(status, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS threads (
     id INTEGER PRIMARY KEY,
@@ -170,9 +352,18 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status_category ON jobs(status, category);
 CREATE INDEX IF NOT EXISTS idx_jobs_location ON jobs(state, city, zip_code);
 CREATE INDEX IF NOT EXISTS idx_match_requests_job ON match_requests(job_id, status);
 CREATE INDEX IF NOT EXISTS idx_match_requests_contractor ON match_requests(contractor_id, status);
+CREATE INDEX IF NOT EXISTS idx_contractor_proposal_templates_owner
+ON contractor_proposal_templates(contractor_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_repeat_provider_invitations_contractor
+ON repeat_provider_invitations(contractor_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_repeat_provider_invitations_client
+ON repeat_provider_invitations(client_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_threads_parties ON threads(client_id, contractor_id);
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_login_codes_email ON login_codes(email, expires_at);
 CREATE INDEX IF NOT EXISTS idx_automation_events_type_target ON automation_events(event_type, target_type, target_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_contractor_credentials_owner ON contractor_credentials(contractor_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_contractor_credentials_review ON contractor_credentials(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_client_project_templates_owner ON client_project_templates(client_id, updated_at DESC);

@@ -1,0 +1,2 @@
+ALTER TABLE jobs ADD COLUMN project_setting TEXT NOT NULL DEFAULT '';
+ALTER TABLE job_drafts ADD COLUMN project_setting TEXT NOT NULL DEFAULT '';

@@ -36,6 +36,17 @@ def can_decide_match_request(user, match) -> bool:
     return row_value(user, "role") == "client" and row_value(user, "id") == row_value(match, "client_id")
 
 
+def d1_change_count(result) -> int:
+    if isinstance(result, dict):
+        meta = result.get("meta") or result.get("result", {}).get("meta") or {}
+    else:
+        meta = getattr(result, "meta", {}) or {}
+    try:
+        return max(0, int(row_value(meta, "changes", 0) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def match_decision_response(
     request_id: int,
     status: str,

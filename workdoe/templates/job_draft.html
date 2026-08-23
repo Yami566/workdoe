@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Post Project - Workdoe{% endblock %}
+{% block content %}
+{% if not embedded_dialog_mode() %}
+  <section class="page-header">
+    <p class="eyebrow">Consumer workspace</p>
+    <h1>What needs doing?</h1>
+    <p>Start the project now. Verify your email before it goes live.</p>
+  </section>
+
+  <ul class="form-checklist" aria-label="Project draft steps">
+    <li>Save scope</li>
+    <li>Verify email</li>
+    <li>Add private photos</li>
+  </ul>
+{% endif %}
+
+{% set field_errors = error_feedback.fields %}
+<form class="form-grid" method="post" aria-label="Project draft" data-project-composer data-project-initial-step="{{ 3 if form.service_slug else (2 if form.service_group_slug else 1) }}" {% if error_feedback.summary %}aria-describedby="job-form-errors"{% endif %}>
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  {% if error_feedback.summary %}
+    <section id="job-form-errors" class="form-error-summary wide" role="alert" aria-labelledby="job-form-errors-title">
+      <h2 id="job-form-errors-title">Fix {{ error_feedback.summary|length }} item{{ "" if error_feedback.summary|length == 1 else "s" }}</h2>
+      <ul>{% for item in error_feedback.summary %}<li>{% if item.field_id %}<a href="#{{ item.field_id }}">{{ item.message }}</a>{% else %}{{ item.message }}{% endif %}</li>{% endfor %}</ul>
+    </section>
+  {% endif %}
+  {% set composer_include_photos = false %}
+  {% set composer_submit_label = 'Save draft and verify email' %}
+  {% set composer_cancel_url = url_for('home') %}
+  {% set composer_turnstile_action = 'job-draft' %}
+  {% include "_project_composer.html" %}
+</form>
+{% endblock %}
+{% block scripts %}<script defer src="{{ url_for('static', filename='project-composer.js') }}?v=workdoe-service-tiles"></script>{% endblock %}

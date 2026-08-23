@@ -25,16 +25,16 @@
     <meta name="twitter:image" content="https://workdoe.com/workdoe-share.png">
     <meta name="twitter:image:alt" content="Workdoe deer logo with the slogan a local Work Exchange">
     <title>{% block title %}Workdoe{% endblock %}</title>
-    <link rel="canonical" href="https://workdoe.com/">
+    <link rel="canonical" href="https://workdoe.com{{ request.path if request.endpoint in ['safety', 'privacy', 'terms'] else '/' }}">
     <link rel="icon" href="{{ url_for('static', filename='deer.svg') }}" type="image/svg+xml">
     <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=workdoe-entry-auth-first">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=workdoe-account-security">
     {% if turnstile_enabled() %}
       <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     {% endif %}
     {% block head %}{% endblock %}
   </head>
-  <body>
+  <body{% if embedded_dialog_mode() %} class="dialog-frame-body"{% endif %}>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <header class="site-header">
       <a class="brand" href="{{ url_for('home') }}" aria-label="Workdoe home" title="Workdoe home">
@@ -55,15 +55,22 @@
             <a href="{{ url_for('message_threads') }}" {% if request.endpoint in ['message_threads', 'thread_detail'] %}aria-current="page"{% endif %}>Messages</a>
           {% elif g.user.role == 'client' %}
             <a href="{{ url_for('client_dashboard') }}" {% if request.endpoint in ['client_dashboard', 'client_job_detail', 'edit_job'] %}aria-current="page"{% endif %}>Projects</a>
+            <a href="{{ url_for('client_requests') }}" {% if request.endpoint == 'client_requests' %}aria-current="page"{% endif %}>Requests</a>
             <a href="{{ url_for('new_job') }}" {% if request.endpoint == 'new_job' %}aria-current="page"{% endif %}>Post project</a>
+            <a href="{{ url_for('client_profile') }}" {% if request.endpoint in ['client_profile', 'add_client_saved_location', 'delete_client_saved_location'] %}aria-current="page"{% endif %}>Profile</a>
             <a href="{{ url_for('message_threads') }}" {% if request.endpoint in ['message_threads', 'thread_detail'] %}aria-current="page"{% endif %}>Messages</a>
           {% elif g.user.role == 'admin' %}
             <a href="{{ url_for('admin_dashboard') }}" {% if request.endpoint == 'admin_dashboard' %}aria-current="page"{% endif %}>Admin</a>
           {% endif %}
-          <a href="{{ url_for('logout') }}">Sign out</a>
+          <a href="{{ url_for('account') }}" {% if request.endpoint == 'account' %}aria-current="page"{% endif %}>Account</a>
+          <form class="nav-action-form" method="post" action="{{ url_for('logout') }}">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <button class="nav-link-button" type="submit">Sign out</button>
+          </form>
         {% else %}
+          <a href="{{ url_for('post_project') }}" {% if request.endpoint == 'post_project' %}aria-current="page"{% endif %}>Post project</a>
           <a href="{{ url_for('login') }}" {% if request.endpoint == 'login' %}aria-current="page"{% endif %}>Sign in</a>
-          <a class="button compact" href="{{ url_for('start') }}" {% if request.endpoint in ['start', 'verify_start'] %}aria-current="page"{% endif %}>Join</a>
+          <a class="button compact" href="{{ url_for('create_account') }}" {% if request.endpoint in ['start', 'create_account', 'verify_start'] %}aria-current="page"{% endif %}>Create account</a>
         {% endif %}
       </nav>
     </header>
@@ -84,7 +91,17 @@
 
     <footer class="site-footer">
       <span>workdoe.com</span>
+      <nav class="site-footer-links" aria-label="Policies">
+        <a href="{{ url_for('safety') }}" {% if request.endpoint == 'safety' %}aria-current="page"{% endif %}>Safety</a>
+        <a href="{{ url_for('privacy') }}" {% if request.endpoint == 'privacy' %}aria-current="page"{% endif %}>Privacy</a>
+        <a href="{{ url_for('terms') }}" {% if request.endpoint == 'terms' %}aria-current="page"{% endif %}>Terms</a>
+      </nav>
       <span>Serving DC, Maryland &amp; Virginia</span>
     </footer>
+    {% if not embedded_dialog_mode() %}
+      {% include "_site_dialog.html" %}
+      <script defer src="{{ url_for('static', filename='site-dialogs.js') }}?v=workdoe-overlay-dialog"></script>
+    {% endif %}
+    {% block scripts %}{% endblock %}
   </body>
 </html>

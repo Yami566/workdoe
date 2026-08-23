@@ -14,6 +14,26 @@ on:
         description: Type DEPLOY to run the production Cloudflare deployment.
         required: true
         type: string
+      clerk_proxy_confirmed:
+        description: Confirm Clerk Domains shows the Workdoe same-domain proxy.
+        required: true
+        type: boolean
+        default: false
+      restricted_signup_confirmed:
+        description: Confirm Clerk Restricted sign-up mode is enabled.
+        required: true
+        type: boolean
+        default: false
+      email_code_only_confirmed:
+        description: Confirm email-code sign-in is enabled and passwords are disabled.
+        required: true
+        type: boolean
+        default: false
+      legal_consent_confirmed:
+        description: Confirm Clerk requires express consent to Workdoe Terms and Privacy.
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -37,6 +57,10 @@ jobs:
         run: |
           test "${{ github.ref }}" = "refs/heads/main"
           test "${{ inputs.deploy }}" = "DEPLOY"
+          test "${{ inputs.clerk_proxy_confirmed }}" = "true"
+          test "${{ inputs.restricted_signup_confirmed }}" = "true"
+          test "${{ inputs.email_code_only_confirmed }}" = "true"
+          test "${{ inputs.legal_consent_confirmed }}" = "true"
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -52,8 +76,16 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt
 
+      - name: Install release security tools
+        if: github.event_name == 'workflow_dispatch'
+        run: python -m pip install -r requirements-audit.txt
+
       - name: Install Wrangler
         run: npm ci
+
+      - name: Run release security gates
+        if: github.event_name == 'workflow_dispatch'
+        run: npm run security:all
 
       - name: Run local tests
         run: npm test
@@ -147,8 +179,8 @@ jobs:
       - name: Capture sanitized Worker secret names
         run: npm run cf:secrets:evidence
 
-      - name: Record same-domain Clerk proxy release proof
-        run: npm run cf:clerk:proof
+      - name: Record operator-confirmed Clerk release proof
+        run: npm run cf:clerk:proof:confirm -- --checked-by "github:${{ github.actor }}"
 
       - name: Validate release evidence
         run: npm run cf:release:evidence

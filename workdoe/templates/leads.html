@@ -37,19 +37,25 @@
   {% endfor %}
 </nav>
 
+{% set family_filter_label = "Filter contractor leads by work family" %}
+{% include "_service_family_filter.html" %}
+
 <form class="filter-bar lead-filter" method="get" role="search" aria-label="Filter contractor leads" aria-controls="lead-results lead-map">
   {% if lead_view != "all" %}
     <input type="hidden" name="view" value="{{ lead_view }}">
   {% endif %}
-  <label class="category-field" for="lead-category">
-    Category
-    <select id="lead-category" name="category">
-      <option value="">All categories</option>
-      {% for category in job_categories %}
-        <option value="{{ category }}" {% if filters.category == category %}selected{% endif %}>{{ category }}</option>
-      {% endfor %}
-    </select>
-  </label>
+  {% if filters.family %}<input type="hidden" name="family" value="{{ filters.family }}">{% endif %}
+  {% if selected_family %}
+    <label class="category-field" for="lead-service">
+      Task
+      <select id="lead-service" name="service" data-market-service>
+        <option value="">All {{ selected_family.name|lower }} tasks</option>
+        {% for service_slug, service_name, _category in selected_family.services %}
+          <option value="{{ service_slug }}" {% if filters.service == service_slug %}selected{% endif %}>{{ service_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  {% endif %}
   <label class="search-field" for="lead-search">
     Search DMV area
     <input id="lead-search" name="q" type="search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, state, ZIP, or title" maxlength="{{ filter_query_max }}">
@@ -70,6 +76,36 @@
   </div>
 </form>
 
+<div id="saved-lead-alerts" class="saved-lead-toolbar" aria-label="Saved lead view and alerts">
+  <form method="post" action="{{ url_for('contractor_saved_lead_view_update') }}">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="saved_service_group_slug" value="{{ filters.family }}">
+    <input type="hidden" name="saved_service_slug" value="{{ filters.service }}">
+    <input type="hidden" name="saved_category" value="{{ filters.category }}">
+    <input type="hidden" name="saved_query" value="{{ filters.q }}">
+    <input type="hidden" name="saved_sort" value="{{ filters.sort }}">
+    <fieldset class="lead-alert-choice">
+      <legend>New matching projects</legend>
+      <div class="lead-alert-options">
+        {% for value, label in lead_alert_options %}
+          <label>
+            <input type="radio" name="lead_alert_preference" value="{{ value }}" {% if preferences.lead_alert_preference == value %}checked{% endif %} required>
+            <span>{{ label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+      <small>Email uses this saved view plus your selected services and DMV zones. Change it here at any time.</small>
+    </fieldset>
+    <button class="button secondary compact" type="submit">Save this view</button>
+  </form>
+  {% if preferences.has_saved_lead_view %}
+    <a class="button secondary compact" href="{{ saved_lead_view_url }}">Use saved view</a>
+    <span>{{ preferences.saved_service_label or preferences.saved_family_label or preferences.saved_category or "All work" }}{% if preferences.saved_query %} near “{{ preferences.saved_query }}”{% endif %} · {{ preferences.saved_sort|capitalize }}{% if preferences.lead_alert_enabled %} · Email alerts on{% endif %}</span>
+  {% else %}
+    <span>Keep a useful task, area, or sort for your next visit.</span>
+  {% endif %}
+</div>
+
 <section class="lead-layout">
   <div id="lead-results" class="job-list lead-job-list" aria-label="Open leads" {% if jobs %}role="list"{% endif %}>
     {% for job in jobs %}
@@ -78,10 +114,14 @@
       <a class="job-row link-row" role="listitem" data-job-id="{{ job.id }}" href="{{ url_for('contractor_job_detail', job_id=job.id) }}" aria-label="{{ row_label }}">
         <div>
           <div class="row-meta">
-            <span>{{ job.category }}</span>
+            {% if job.fit_label %}<span class="lead-fit fit-{{ job.fit_score }}">{{ job.fit_label }}</span>{% endif %}
+            <span class="job-service-chip"><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(job.service_slug or job.category)) }}" alt="" width="16" height="16">{{ job.service_slug|service_name(job.category) }}</span>
             <span>{{ job.city }}, {{ job.state }}</span>
             {% if job.desired_date %}<span>Target <time datetime="{{ job.desired_date }}">{{ job.desired_date|date_label }}</time></span>{% endif %}
+            <span>{{ job|budget_label }}</span>
             <span>{{ job.photo_count|photo_count_label }}</span>
+            <span class="brief-pill {{ job.brief_readiness.state }}">{{ job.brief_readiness.label }}</span>
+            <span class="bid-availability {{ job.bid_window.state }}">{{ job.bid_window.availability_label }}</span>
             {% if job.request_status %}<span class="status {{ job.request_status }}">bid {{ job.request_status }}</span>{% endif %}
           </div>
           <h2>{{ job.title }}</h2>

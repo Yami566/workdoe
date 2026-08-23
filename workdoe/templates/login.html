@@ -6,7 +6,6 @@
 {% block content %}
 <section class="login-market">
   {% if clerk_entry_enabled() %}
-    {% set login_sign_up_url = url_for('start', intent='find-work', job_id=selected_job.id) if selected_job else url_for('start') %}
     {% set login_clerk_proxy_url = clerk_proxy_url() %}
     <section id="signin" class="form-panel login-form-panel clerk-entry-panel" aria-labelledby="signin-title">
       <div>
@@ -34,25 +33,7 @@
         data-dashboard-url="{{ url_for('dashboard') }}"
         {% if login_clerk_proxy_url %}data-clerk-proxy-url="{{ login_clerk_proxy_url }}"{% endif %}
       >
-        <form class="email-code-form" data-clerk-email-code-form>
-          <div data-clerk-request-step>
-            <label for="clerk-login-email">
-              Email address
-              <input type="email" name="email" id="clerk-login-email" autocomplete="email" maxlength="254" required>
-            </label>
-            <div id="clerk-captcha" data-cl-theme="light" data-cl-size="flexible" data-cl-language="en-US"></div>
-            <button class="button primary" type="submit" data-clerk-request-code disabled>Email me a code</button>
-          </div>
-          <div class="email-code-verify" data-clerk-code-step hidden>
-            <label for="clerk-login-code">
-              6-digit code
-              <input name="code" id="clerk-login-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" aria-describedby="clerk-login-code-help">
-              <span id="clerk-login-code-help" class="help-text">The code expires in 10 minutes.</span>
-            </label>
-            <button class="button primary" type="submit" data-clerk-verify-code disabled>Verify and continue</button>
-            <button class="button secondary" type="button" data-clerk-restart-code>Use a different email</button>
-          </div>
-        </form>
+        <p class="help-text clerk-entry-loading">Loading secure email sign-in...</p>
       </div>
       <div class="auth-switch clerk-entry-note">
         <span>No password needed. Your one-time code arrives by email.</span>
@@ -109,18 +90,23 @@
       <h2>{{ open_jobs|length }} open projects</h2>
       <a class="entry-shortcut" href="#signin">Sign in</a>
     </div>
-    {% set login_clear_url = url_for('login', next=next_url) if next_url else url_for('login') %}
+    {% set login_clear_url = url_for('login', next=clear_next_url) if clear_next_url else url_for('login') %}
+    {% set family_filter_label = "Filter projects at sign in by work family" %}
+    {% include "_service_family_filter.html" %}
     <form class="filter-bar compact-filter entry-filter" method="get" role="search" aria-label="Filter open jobs before signing in" aria-controls="login-open-jobs lead-map">
       {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-      <label for="login-category">
-        Category
-        <select name="category" id="login-category">
-          <option value="">All</option>
-          {% for category in job_categories %}
-            <option value="{{ category }}" {% if filters.category == category %}selected{% endif %}>{{ category }}</option>
+      {% if filters.family %}<input type="hidden" name="family" value="{{ filters.family }}">{% endif %}
+      {% if selected_family %}
+      <label for="login-service">
+        Task
+        <select name="service" id="login-service">
+          <option value="">All {{ selected_family.name|lower }} tasks</option>
+          {% for service_slug, service_name, legacy_category in selected_family.services %}
+            <option value="{{ service_slug }}" {% if filters.service == service_slug %}selected{% endif %}>{{ service_name }}</option>
           {% endfor %}
         </select>
       </label>
+      {% endif %}
       <label for="login-search">
         Search
         <input name="q" type="search" id="login-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}">
@@ -160,7 +146,7 @@
           >
             <div>
               <div class="row-meta">
-                <span>{{ job.category }}</span>
+                <span class="job-service-chip"><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(job.service_slug or job.category)) }}" alt="" width="16" height="16">{{ job.service_slug|service_name(job.category) }}</span>
                 <span>{{ job.city }}, {{ job.state }}</span>
                 {% if job.desired_date %}<span>Target <time datetime="{{ job.desired_date }}">{{ job.desired_date|date_label }}</time></span>{% endif %}
                 <span>{{ job.photo_count|photo_count_label }}</span>
@@ -190,6 +176,7 @@
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
 <script src="{{ url_for('static', filename='map.js') }}"></script>
 {% if clerk_entry_enabled() %}
+  <script defer crossorigin="anonymous" src="{{ clerk_frontend_api_url() }}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
   <script defer crossorigin="anonymous" data-clerk-publishable-key="{{ clerk_publishable_key() }}" {% if clerk_proxy_url() %}data-clerk-proxy-url="{{ clerk_proxy_url() }}"{% endif %} src="{{ clerk_frontend_api_url() }}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
   <script defer src="{{ url_for('static', filename='clerk-entry.js') }}"></script>
 {% endif %}

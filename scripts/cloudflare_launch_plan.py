@@ -12,7 +12,6 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from cloudflare_readiness import (  # noqa: E402
-    DEFAULT_CLERK_PROXY_PROOF_PATH,
     REQUIRED_SECRETS,
     REPO_ROOT,
     ZERO_UUID,
@@ -122,7 +121,7 @@ def build_launch_plan(
             title="Refresh and validate checked-in Cloudflare artifacts",
             status="ready" if local.ready else "blocked",
             why=(
-                "The generated D1 migration, Wrangler config, Worker scaffold, "
+                "The immutable D1 migration chain, Wrangler config, Worker scaffold, "
                 "and same-domain Clerk settings are internally consistent."
                 if local.ready
                 else "Local Cloudflare artifacts have blockers that must be fixed first."
@@ -212,7 +211,7 @@ def build_launch_plan(
             commands=command_block(
                 [
                     "confirm Clerk Domains uses proxy URL https://workdoe.com/__clerk",
-                    "python scripts\\cloudflare_clerk_proxy_proof.py --confirm",
+                    "python scripts\\cloudflare_clerk_proxy_proof.py --confirm --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent",
                 ]
             ),
         ),

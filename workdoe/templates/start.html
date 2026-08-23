@@ -1,5 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Start - Workdoe{% endblock %}
+{% set is_create_account = request.endpoint == 'create_account' %}
+{% set is_post_project = request.endpoint == 'post_project' %}
+{% set account_endpoint = 'post_project' if is_post_project else ('create_account' if is_create_account else 'start') %}
+{% set account_label = 'Post project' if is_post_project else ('Create account' if is_create_account else 'Join') %}
+{% set account_heading = 'Post a project' if is_post_project else ('Create your Workdoe account' if is_create_account else 'Join Workdoe') %}
+{% set account_eyebrow = 'Consumer workspace' if is_post_project else 'Choose your role' %}
+{% block title %}{{ "Post Project" if is_post_project else ("Create Account" if is_create_account else "Start") }} - Workdoe{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
 {% endblock %}
@@ -9,21 +15,31 @@
     <div class="section-heading compact-heading">
       <p class="eyebrow">Area scan // DMV</p>
       <h1>{{ open_jobs|length }} open projects</h1>
-      <a class="entry-shortcut" href="#start-account">Join</a>
+      <a class="entry-shortcut" href="#start-account">{{ account_label }}</a>
     </div>
-    {% set start_clear_url = url_for('start', intent=intent, job_id=selected_job.id) if selected_job else url_for('start', intent=intent) %}
+    {% if selected_job %}
+      {% set start_clear_url = url_for(account_endpoint, intent=intent, job_id=selected_job.id, next=clear_next_url) if clear_next_url else url_for(account_endpoint, intent=intent, job_id=selected_job.id) %}
+    {% else %}
+      {% set start_clear_url = url_for(account_endpoint, intent=intent, next=clear_next_url) if clear_next_url else url_for(account_endpoint, intent=intent) %}
+    {% endif %}
+    {% set family_filter_label = "Filter projects while starting by work family" %}
+    {% include "_service_family_filter.html" %}
     <form class="filter-bar compact-filter entry-filter" method="get" role="search" aria-label="Filter open jobs while starting" aria-controls="start-open-jobs lead-map">
       <input type="hidden" name="intent" value="{{ intent }}">
       {% if selected_job %}<input type="hidden" name="job_id" value="{{ selected_job.id }}">{% endif %}
-      <label for="start-category">
-        Category
-        <select name="category" id="start-category">
-          <option value="">All</option>
-          {% for category in job_categories %}
-            <option value="{{ category }}" {% if filters.category == category %}selected{% endif %}>{{ category }}</option>
+      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+      {% if filters.family %}<input type="hidden" name="family" value="{{ filters.family }}">{% endif %}
+      {% if selected_family %}
+      <label for="start-service">
+        Task
+        <select name="service" id="start-service">
+          <option value="">All {{ selected_family.name|lower }} tasks</option>
+          {% for service_slug, service_name, legacy_category in selected_family.services %}
+            <option value="{{ service_slug }}" {% if filters.service == service_slug %}selected{% endif %}>{{ service_name }}</option>
           {% endfor %}
         </select>
       </label>
+      {% endif %}
       <label for="start-search">
         Search
         <input name="q" type="search" id="start-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}">
@@ -57,13 +73,13 @@
             class="job-row link-row compact-lead-row{% if is_selected %} is-selected{% endif %}"
             role="listitem"
             data-job-id="{{ job.id }}"
-            href="{{ url_for('start', intent='find-work', job_id=job.id) }}"
+            href="{{ url_for(account_endpoint, intent='find-work', job_id=job.id) }}"
             aria-label="{{ row_cue }} lead {{ job.title }}"
             {% if is_selected %}aria-current="true"{% endif %}
           >
             <div>
               <div class="row-meta">
-                <span>{{ job.category }}</span>
+                <span class="job-service-chip"><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(job.service_slug or job.category)) }}" alt="" width="16" height="16">{{ job.service_slug|service_name(job.category) }}</span>
                 <span>{{ job.city }}, {{ job.state }}</span>
                 {% if job.desired_date %}<span>Target <time datetime="{{ job.desired_date }}">{{ job.desired_date|date_label }}</time></span>{% endif %}
                 <span>{{ job.photo_count|photo_count_label }}</span>
@@ -92,9 +108,10 @@
     {% set start_clerk_proxy_url = clerk_proxy_url() %}
     <section id="start-account" class="form-panel login-form-panel start-form-panel clerk-entry-panel" aria-labelledby="start-title">
       <div>
-        <p class="eyebrow">Choose your role</p>
-        <h2 id="start-title">Join Workdoe</h2>
-        <nav class="entry-shortcuts" aria-label="Join shortcuts">
+        <p class="eyebrow">{{ account_eyebrow }}</p>
+        <h2 id="start-title">{{ account_heading }}</h2>
+        {% if draft_saved %}<div class="selected-lead-pill"><span>Draft saved</span><strong>Verify your email to finish posting</strong></div>{% endif %}
+        <nav class="entry-shortcuts" aria-label="{{ account_label }} shortcuts">
           <a href="#live-jobs">Open projects</a>
         </nav>
         {% if selected_job %}
@@ -118,47 +135,29 @@
       </fieldset>
       <label for="start-display-name">
         Name
-        <input name="display_name" id="start-display-name" autocomplete="name" aria-describedby="start-name-help" data-clerk-display-name>
+        <input name="display_name" id="start-display-name" autocomplete="name" maxlength="120" aria-describedby="start-name-help" data-clerk-display-name>
         <span id="start-name-help" class="help-text">Shown on your Workdoe profile.</span>
       </label>
       <label for="start-company-name">
         Business or household name <span class="optional-label">Optional</span>
-        <input name="company_name" id="start-company-name" autocomplete="organization" data-clerk-company-name>
+        <input name="company_name" id="start-company-name" autocomplete="organization" maxlength="120" data-clerk-company-name>
       </label>
       <div
         id="clerk-start"
         class="clerk-entry-mount"
         data-clerk-entry
         data-clerk-mode="start"
-        data-redirect-url="{{ url_for('start', intent=intent, job_id=selected_job.id) if selected_job else url_for('start', intent=intent) }}"
-        data-sign-up-url="{{ url_for('start') }}"
+        data-redirect-url="{{ next_url or (url_for(account_endpoint, intent=intent, job_id=selected_job.id) if selected_job else url_for(account_endpoint, intent=intent)) }}"
+        data-sign-up-url="{{ url_for('create_account') }}"
         data-session-url="/api/auth/session"
         data-onboard-url="/api/auth/onboard"
         data-selected-job-id="{{ selected_job.id if selected_job else '' }}"
         data-post-job-url="{{ url_for('new_job') }}"
-        data-leads-url="{{ url_for('leads') }}"
+        data-leads-url="{{ next_url if intent == 'find-work' and next_url else url_for('leads') }}"
         data-dashboard-url="{{ url_for('dashboard') }}"
         {% if start_clerk_proxy_url %}data-clerk-proxy-url="{{ start_clerk_proxy_url }}"{% endif %}
       >
-        <form class="email-code-form" data-clerk-email-code-form>
-          <div data-clerk-request-step>
-            <label for="clerk-start-email">
-              Email address
-              <input type="email" name="email" id="clerk-start-email" autocomplete="email" maxlength="254" required>
-            </label>
-            <div id="clerk-captcha" data-cl-theme="light" data-cl-size="flexible" data-cl-language="en-US"></div>
-            <button class="button primary" type="submit" data-clerk-request-code disabled>Email me a code</button>
-          </div>
-          <div class="email-code-verify" data-clerk-code-step hidden>
-            <label for="clerk-start-code">
-              6-digit code
-              <input name="code" id="clerk-start-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" aria-describedby="clerk-start-code-help">
-              <span id="clerk-start-code-help" class="help-text">The code expires in 10 minutes.</span>
-            </label>
-            <button class="button primary" type="submit" data-clerk-verify-code disabled>Verify and continue</button>
-            <button class="button secondary" type="button" data-clerk-restart-code>Use a different email</button>
-          </div>
-        </form>
+        <p class="help-text clerk-entry-loading">Loading secure email sign-in...</p>
       </div>
       <div class="auth-switch clerk-entry-note">
         <span>No password needed. Your one-time code arrives by email.</span>
@@ -172,10 +171,12 @@
     <form id="start-account" class="form-panel login-form-panel start-form-panel" method="post">
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
       {% if selected_job %}<input type="hidden" name="job_id" value="{{ selected_job.id }}">{% endif %}
+      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
       <div>
-        <p class="eyebrow">Choose your role</p>
-        <h2>Join Workdoe</h2>
-        <nav class="entry-shortcuts" aria-label="Join shortcuts">
+        <p class="eyebrow">{{ account_eyebrow }}</p>
+        <h2>{{ account_heading }}</h2>
+        {% if draft_saved %}<div class="selected-lead-pill"><span>Draft saved</span><strong>Verify your email to finish posting</strong></div>{% endif %}
+        <nav class="entry-shortcuts" aria-label="{{ account_label }} shortcuts">
           <a href="#live-jobs">Open projects</a>
         </nav>
         {% if selected_job %}
@@ -220,6 +221,7 @@
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
 <script src="{{ url_for('static', filename='map.js') }}"></script>
 {% if clerk_entry_enabled() %}
+  <script defer crossorigin="anonymous" src="{{ clerk_frontend_api_url() }}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
   <script defer crossorigin="anonymous" data-clerk-publishable-key="{{ clerk_publishable_key() }}" {% if clerk_proxy_url() %}data-clerk-proxy-url="{{ clerk_proxy_url() }}"{% endif %} src="{{ clerk_frontend_api_url() }}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
   <script defer src="{{ url_for('static', filename='clerk-entry.js') }}"></script>
 {% endif %}

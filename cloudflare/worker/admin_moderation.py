@@ -8,8 +8,11 @@ ADMIN_ACTION_RE = re.compile(
     r"|(jobs)/([1-9][0-9]*)/(hide|restore)"
     r"|(photos)/(job)/([1-9][0-9]*)/(hide|restore)"
     r"|(photos)/(contractor)/([1-9][0-9]*)/(hide|restore)"
-    r"|(messages)/([1-9][0-9]*)/(hide)"
-    r"|(reports)/([1-9][0-9]*)/(resolve))/?$"
+    r"|(messages)/([1-9][0-9]*)/(hide|restore)"
+    r"|(reports)/([1-9][0-9]*)/(resolve)"
+    r"|(credentials)/([1-9][0-9]*)/(verify|pending|reject|expire)"
+    r"|(reviews)/([1-9][0-9]*)/(hide|restore)"
+    r"|(review-reports)/([1-9][0-9]*)/(resolve))/?$"
 )
 
 
@@ -46,7 +49,17 @@ def parse_admin_moderation_path(path: str) -> dict:
         }
     if groups[14]:
         return {"target_type": "message", "target_id": int(groups[15]), "action": groups[16]}
-    return {"target_type": "report", "target_id": int(groups[18]), "action": groups[19]}
+    if groups[17]:
+        return {"target_type": "report", "target_id": int(groups[18]), "action": groups[19]}
+    if groups[20]:
+        return {"target_type": "credential", "target_id": int(groups[21]), "action": groups[22]}
+    if groups[23]:
+        return {"target_type": "match_review", "target_id": int(groups[24]), "action": groups[25]}
+    return {
+        "target_type": "match_review_report",
+        "target_id": int(groups[27]),
+        "action": groups[28],
+    }
 
 
 def admin_target_query(target_type: str) -> str:
@@ -57,6 +70,9 @@ def admin_target_query(target_type: str) -> str:
         "contractor_photo": "SELECT 1 FROM contractor_photos WHERE id = ? LIMIT 1",
         "message": "SELECT 1 FROM messages WHERE id = ? LIMIT 1",
         "report": "SELECT 1 FROM reports WHERE id = ? LIMIT 1",
+        "credential": "SELECT 1 FROM contractor_credentials WHERE id = ? LIMIT 1",
+        "match_review": "SELECT 1 FROM match_reviews WHERE id = ? LIMIT 1",
+        "match_review_report": "SELECT 1 FROM match_review_reports WHERE id = ? LIMIT 1",
     }
     try:
         return queries[target_type]
@@ -101,17 +117,33 @@ def admin_update_statement(action: dict, now: str) -> tuple[str, list, str, str]
             "hidden" if hidden else "visible",
         )
     if target_type == "message":
+        hidden = 1 if action_name == "hide" else 0
         return (
-            "UPDATE messages SET is_hidden = 1 WHERE id = ?",
-            [target_id],
-            "Hidden by admin.",
-            "hidden",
+            "UPDATE messages SET is_hidden = ? WHERE id = ?",
+            [hidden, target_id],
+            f"Set message hidden={hidden}.",
+            "hidden" if hidden else "visible",
         )
     if target_type == "report":
         return (
             "UPDATE reports SET status = 'resolved', resolved_at = ? WHERE id = ?",
             [now, target_id],
             "Marked report resolved.",
+            "resolved",
+        )
+    if target_type == "match_review":
+        hidden = 1 if action_name == "hide" else 0
+        return (
+            "UPDATE match_reviews SET is_hidden = ?, updated_at = ? WHERE id = ?",
+            [hidden, now, target_id],
+            f"Set completed-work feedback hidden={hidden}.",
+            "hidden" if hidden else "visible",
+        )
+    if target_type == "match_review_report":
+        return (
+            "UPDATE match_review_reports SET status = 'resolved', resolved_at = ? WHERE id = ?",
+            [now, target_id],
+            "Marked completed-work feedback report resolved.",
             "resolved",
         )
     raise AdminModerationError("Unsupported admin moderation target.")

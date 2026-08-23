@@ -147,7 +147,6 @@ def smoke_output_excerpt(completed: subprocess.CompletedProcess) -> str:
 
 def execute_steps(
     steps: list[DeployStep],
-    continue_on_smoke_failure: bool = True,
 ) -> tuple[list[DeployStep], list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -157,7 +156,7 @@ def execute_steps(
         except OSError as exc:  # pragma: no cover - depends on operator machine PATH
             step.status = "failed"
             message = f"{step.name}: {exc}"
-            if step.required or not continue_on_smoke_failure:
+            if step.required:
                 errors.append(message)
             else:
                 warnings.append(message)
@@ -172,11 +171,11 @@ def execute_steps(
         detail = command_output(completed)
         step.status = "failed"
         message = f"{step.name}: {detail or 'command failed'}"
-        if step.required or not continue_on_smoke_failure:
+        if step.required:
             errors.append(message)
         else:
             warnings.append(message)
-        if step.required or not continue_on_smoke_failure:
+        if step.required:
             break
     return steps, errors, warnings
 
@@ -217,11 +216,6 @@ def main() -> int:
         "--no-smoke",
         action="store_true",
         help="Skip post-deploy smoke checks.",
-    )
-    parser.add_argument(
-        "--fail-on-smoke",
-        action="store_true",
-        help="Treat smoke-check failures as deployment failures.",
     )
     args = parser.parse_args()
     include_smoke = not args.no_smoke
@@ -299,7 +293,6 @@ def main() -> int:
 
     steps, errors, warnings = execute_steps(
         build_deploy_steps(include_smoke=include_smoke),
-        continue_on_smoke_failure=not args.fail_on_smoke,
     )
     payload = {
         "ok": not errors,

@@ -36,6 +36,7 @@
             <summary>Report message</summary>
             <form class="inline-report" method="post" action="{{ url_for('report_content') }}">
               <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="idempotency_key" value="{{ new_idempotency_key() }}">
               <input type="hidden" name="target_type" value="message">
               <input type="hidden" name="target_id" value="{{ message.id }}">
               <label for="message-report-reason-{{ message.id }}">
@@ -56,6 +57,7 @@
     {% set message_field_errors = message_error_feedback.fields %}
     <form class="message-form" method="post" aria-label="New message" {% if message_error_feedback.summary %}aria-describedby="message-form-errors"{% endif %}>
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="idempotency_key" value="{{ request.form.get('idempotency_key') or new_idempotency_key() }}">
       {% if message_error_feedback.summary %}
         <section id="message-form-errors" class="form-error-summary" role="alert" aria-labelledby="message-form-errors-title">
           <h2 id="message-form-errors-title">Fix {{ message_error_feedback.summary|length }} item{{ "" if message_error_feedback.summary|length == 1 else "s" }}</h2>
