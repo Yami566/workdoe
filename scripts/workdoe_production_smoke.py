@@ -43,6 +43,9 @@ OPTIONAL_DISCOVERY_PATHS = (
 CLERK_PUBLISHABLE_KEY_PATTERN = re.compile(
     r'data-clerk-publishable-key=["\']([^"\']+)["\']'
 )
+CLERK_INVITATION_SMOKE_PATH = (
+    "/create-account?__clerk_status=sign_up&__clerk_ticket=workdoe-smoke-ticket"
+)
 HTTPS_REDIRECT_PATHS = ("/", "/styles.css")
 
 
@@ -544,6 +547,46 @@ def clerk_production_key_check(base_url: str, timeout: float) -> SmokeCheck:
     )
 
 
+def clerk_invitation_entry_check(base_url: str, timeout: float) -> SmokeCheck:
+    url = check_url(base_url, CLERK_INVITATION_SMOKE_PATH)
+    result = fetch_url(url, timeout=timeout, body_limit=200000)
+    if not result.ok:
+        return response_check(
+            "clerk-invitation-entry",
+            url,
+            result,
+            expected_summary="Invitation account page returned HTTP success.",
+        )
+    content_type = header_value(result.headers, "Content-Type").lower()
+    if "text/html" not in content_type or "data-clerk-entry" not in result.body:
+        return SmokeCheck(
+            name="clerk-invitation-entry",
+            status="failed",
+            summary="Invitation deep link did not return the Workdoe account HTML shell.",
+            url=url,
+            status_code=result.status_code,
+            elapsed_ms=result.elapsed_ms,
+        )
+    match = CLERK_PUBLISHABLE_KEY_PATTERN.search(result.body)
+    if not match or not match.group(1).startswith("pk_live_"):
+        return SmokeCheck(
+            name="clerk-invitation-entry",
+            status="failed",
+            summary="Invitation account page is not using a Clerk production instance.",
+            url=url,
+            status_code=result.status_code,
+            elapsed_ms=result.elapsed_ms,
+        )
+    return SmokeCheck(
+        name="clerk-invitation-entry",
+        status="ready",
+        summary="Invitation deep links open the Workdoe account shell with production Clerk.",
+        url=url,
+        status_code=result.status_code,
+        elapsed_ms=result.elapsed_ms,
+    )
+
+
 def build_smoke_payload(
     *,
     domain: str = DEFAULT_DOMAIN,
@@ -581,6 +624,7 @@ def build_smoke_payload(
             social_share_check(base_url, timeout),
             discovery_files_check(base_url, timeout),
             clerk_production_key_check(base_url, timeout),
+            clerk_invitation_entry_check(base_url, timeout),
             clerk_proxy_check(base_url, timeout),
         ]
     )

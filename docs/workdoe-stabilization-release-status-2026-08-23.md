@@ -85,6 +85,10 @@ deployment has been performed during this stabilization pass.
   handoff no longer asks an operator to repeat confirmed configuration work.
   Launch-status tests now ignore operator-local evidence unless a test supplies
   it explicitly.
+- Added a production invitation deep-link smoke gate after the controlled beta
+  invitation exposed a stale Worker route. The gate uses a synthetic Clerk
+  ticket, requires the Workdoe account HTML shell, and rejects development
+  Clerk publishable keys without logging or replaying a real invitation token.
 
 ## Verification evidence
 
@@ -183,6 +187,19 @@ deployment has been performed during this stabilization pass.
   known vulnerabilities; Bandit reported no medium/high findings; full Ruff,
   the secret gate across 463 non-ignored files, and dependency provenance all
   passed.
+- After adding the invitation regression gate, the full suite passed 228 tests
+  in 94.752 seconds. The complete security/provenance command remained clean,
+  Cloudflare preflight reported no errors or warnings, D1 query-plan checks used
+  both expected public indexes without a hot-table scan, and Wrangler 4.125.0
+  again packaged 48 Python modules and 86 assets at 893.80 KiB / 163.74 KiB
+  gzip without deploying.
+- A read-only smoke run against the older live Worker correctly remained not
+  ready: `/create-account` returned 404, sign-in used a Clerk development key,
+  the health payload lacked the write-rate-limiter binding, and Safety, Privacy,
+  and Terms returned 404. HTTPS redirects, the public jobs API, security
+  headers, social share card, and same-domain Clerk asset proxy passed. These
+  failures are release evidence for replacing the stale Worker, not candidate
+  regressions.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.
@@ -225,10 +242,12 @@ performance, accessibility, and live gates run on the final commit.
   to fail closed until Images Paid is enabled and tested.
 - Created a 30-day application-level invitation for the account owner from the
   production Clerk Users > Invitations view. Clerk reports the invitation as
-  pending through 2026-09-22. The separate header-level dashboard-collaborator
-  invitation was not used. Acceptance and the resulting Workdoe-hosted
-  email-code journey still require the recipient to act from the invitation
-  email.
+  pending through 2026-09-22. The recipient opened that invitation, but the
+  older production Worker returned a JSON `Not found` response for
+  `/create-account`; inspection also found that the live `/start` page still
+  embeds a Clerk development publishable key. The candidate fixes both defects,
+  and its production smoke now blocks a release that regresses either one. The
+  separate header-level dashboard-collaborator invitation was not used.
 
 ## Remaining production gates
 
@@ -237,11 +256,13 @@ performance, accessibility, and live gates run on the final commit.
    support/privacy/security ownership. The `admin@workdoe.com` route now exists,
    but received-mail evidence, a named monitor, and a response target remain.
 2. Accept the pending controlled-beta application invitation and prove the
-   complete Workdoe-hosted email-code journey. The Clerk dashboard currently
-   has no accepted production application users. The production instance,
-   verified domain and mail DNS, same-domain proxy, restricted access,
-   email-code-only settings, disabled passwords, express legal consent, JWT
-   verification, and webhook configuration are evidenced.
+   complete Workdoe-hosted email-code journey after the reviewed candidate is
+   deployed. The current production Worker cannot complete this gate because it
+   lacks `/create-account` and serves an obsolete Clerk development key. The
+   Clerk dashboard currently has no accepted production application users. The
+   production instance, verified domain and mail DNS, same-domain proxy,
+   restricted access, email-code-only settings, disabled passwords, express
+   legal consent, JWT verification, and webhook configuration are evidenced.
 3. Enable Cloudflare Images Paid and prove one valid sanitized upload plus one
    invalid upload rejection. Then repeat dependency, secret, Bandit, migration,
    query-plan, and Worker checks on the final commit; complete live private-media,

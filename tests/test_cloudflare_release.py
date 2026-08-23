@@ -8613,6 +8613,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 elif url.endswith("/login"):
                     body = '<div data-clerk-publishable-key="pk_live_workdoe"></div>'
                     headers = {"Content-Type": "text/html; charset=utf-8"}
+                elif "/create-account?__clerk_status=sign_up" in url:
+                    body = (
+                        '<main data-clerk-entry="sign-up"></main>'
+                        '<script data-clerk-publishable-key="pk_live_workdoe"></script>'
+                    )
+                    headers = {"Content-Type": "text/html; charset=utf-8"}
                 elif url.endswith("/start"):
                     headers = {
                         "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
@@ -8698,6 +8704,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(checks["social-share-card"]["status"], "ready")
         self.assertEqual(checks["public-discovery-files"]["status"], "ready")
         self.assertEqual(checks["clerk-production-key"]["status"], "ready")
+        self.assertEqual(checks["clerk-invitation-entry"]["status"], "ready")
         self.assertEqual(checks["clerk-same-domain-proxy"]["status"], "ready")
 
     def test_workdoe_production_smoke_rejects_static_asset_without_https_redirect(self):
@@ -8790,6 +8797,51 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 elapsed_ms=7,
             )
             check = module.clerk_production_key_check(
+                "https://workdoe.com",
+                module.DEFAULT_TIMEOUT,
+            )
+        finally:
+            module.fetch_url = original_fetch_url
+
+        self.assertEqual(check.status, "failed")
+        self.assertIn("not using a Clerk production instance", check.summary)
+
+    def test_workdoe_production_smoke_rejects_missing_invitation_route(self):
+        module = load_workdoe_production_smoke_script()
+        original_fetch_url = module.fetch_url
+        try:
+            module.fetch_url = lambda *args, **kwargs: module.FetchResult(
+                ok=False,
+                status_code=404,
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                body='{"ok": false, "error": "Not found."}',
+                elapsed_ms=7,
+            )
+            check = module.clerk_invitation_entry_check(
+                "https://workdoe.com",
+                module.DEFAULT_TIMEOUT,
+            )
+        finally:
+            module.fetch_url = original_fetch_url
+
+        self.assertEqual(check.status, "failed")
+        self.assertIn("HTTP 404", check.summary)
+
+    def test_workdoe_production_smoke_rejects_invitation_development_key(self):
+        module = load_workdoe_production_smoke_script()
+        original_fetch_url = module.fetch_url
+        try:
+            module.fetch_url = lambda *args, **kwargs: module.FetchResult(
+                ok=True,
+                status_code=200,
+                headers={"Content-Type": "text/html; charset=utf-8"},
+                body=(
+                    '<main data-clerk-entry="sign-up"></main>'
+                    '<script data-clerk-publishable-key="pk_test_workdoe"></script>'
+                ),
+                elapsed_ms=7,
+            )
+            check = module.clerk_invitation_entry_check(
                 "https://workdoe.com",
                 module.DEFAULT_TIMEOUT,
             )
