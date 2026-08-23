@@ -69,6 +69,23 @@ reduces long-scroll friction, and avoids inventing another controller.
     metrics on phones while retaining them in the DOM and on wider layouts. The
     first project now begins at 553 pixels and is actionable in the first
     viewport.
+11. `20-consumer-comparison-desktop-before.jpg` and
+    `21-consumer-comparison-mobile-before.jpg` show the former bid-decision
+    flow. Repeated status metrics and a three-step instruction strip delayed
+    the first contractor card, while reviewed credential signals remained
+    inside dense fact tables.
+12. `22-consumer-comparison-desktop-after.jpg` and
+    `23-consumer-comparison-mobile-after.jpg` remove the duplicate summary
+    cards and instruction strip, keep status counts in the existing tabs, and
+    move the first contractor into the first mobile viewport.
+13. The accepted cards distinguish license source checked, other record source
+    checked, and no source-checked record states without implying that Workdoe
+    guarantees credentials. Every pending card retains profile and full-offer
+    access and adds a direct Choose contractor action.
+14. `24-consumer-comparison-desktop-before-after.jpg` and
+    `25-consumer-comparison-mobile-before-after.jpg` hold the same-state visual
+    comparisons used for acceptance. `26-consumer-license-filter-mobile.jpg`
+    records the license-filtered card and its direct approval action.
 
 The implementation reuses the existing Worker workspace, Leaflet controller,
 green/gray tokens, service taxonomy, and Tabler icon set. No new dependency or
@@ -87,3 +104,9 @@ the contractor workspace.
 This pass does not claim complete screen-reader output, automated contrast, or
 reduced-motion certification. Those remain part of the final live acceptance
 profile rather than screenshot evidence.
+
+The consumer-choice interaction pass used temporary local-only contractors and
+offers. Filtering to a current source-checked trade-license record left one
+comparison card; choosing that contractor followed the established approval
+route and opened the private message thread. The temporary users, credentials,
+offers, thread, and message were removed after capture.

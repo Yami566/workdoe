@@ -2,17 +2,12 @@
   <section class="bid-comparison" aria-labelledby="bid-comparison-title">
     <div class="section-heading">
       <div>
-        <p class="eyebrow">Decision path</p>
-        <h3 id="bid-comparison-title">Compare pending offers</h3>
+        <p class="eyebrow">Contractor choice</p>
+        <h3 id="bid-comparison-title">Compare offers</h3>
       </div>
       <span class="privacy-label">{{ bid_comparison.order_label }}</span>
     </div>
-    <ol class="selection-path" aria-label="Three steps to choose a contractor">
-      <li><span>01</span><strong>Compare terms</strong></li>
-      <li><span>02</span><strong>Open profiles</strong></li>
-      <li><span>03</span><strong>Approve one</strong></li>
-    </ol>
-    <p class="bid-comparison-note">Compare scope, timing, price, and provider facts. Lowest price is not automatically the best fit.</p>
+    <p class="bid-comparison-note">Compare scope, price, timing, and reviewed records. Offers stay in received order; there is no paid ranking.</p>
     <nav class="comparison-filter-tabs" aria-label="Filter comparison by source-checked records">
       {% for item in bid_comparison.credential_filter_options %}
         <a href="{{ item.url }}"{% if item.value == bid_comparison.credential_filter %} aria-current="page"{% endif %}>
@@ -20,7 +15,7 @@
         </a>
       {% endfor %}
     </nav>
-    <p class="comparison-filter-note">These filters change the comparison cards only. Every offer remains in the received-order list below.</p>
+    <p class="comparison-filter-note">Filters change these cards only. Every offer remains in the full list below.</p>
     {% if bid_comparison.offers %}
       <div class="bid-comparison-grid bid-comparison-grid--{{ bid_comparison.count }}">
         {% for offer in bid_comparison.offers %}
@@ -35,6 +30,18 @@
             <div class="bid-reputation-strip">
               <img src="{{ url_for('static', filename='vendor/tabler-icons/sparkles.svg') }}" alt="">
               <span><strong>{{ offer.reputation.level_label }}</strong><small>{{ offer.reputation.completion_points }} completion points</small></span>
+            </div>
+            <div class="bid-credential-signals" aria-label="Reviewed credential signals">
+              {% for signal in offer.reputation.credential_signals %}
+                <span class="bid-credential-signal">
+                  <img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt="">
+                  <span><strong>{{ signal.label }}</strong><small>{{ signal.qualifier }}</small></span>
+                </span>
+              {% else %}
+                <span class="bid-credential-signal bid-credential-signal--empty">
+                  <span><strong>No source-checked record</strong><small>Review profile details</small></span>
+                </span>
+              {% endfor %}
             </div>
             <dl class="bid-compare-terms">
               <div><dt>Price</dt><dd>{{ offer.price_range }}</dd></div>
@@ -53,6 +60,10 @@
               <a class="button secondary compact" href="{{ offer.profile_url }}">Profile</a>
               <a class="button secondary compact" href="#bid-title-{{ offer.id }}">Full offer</a>
             </div>
+            <form class="bid-choose-form" method="post" action="{{ url_for('decide_request', request_id=offer.id, action='approve') }}">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <button class="button compact" type="submit" aria-label="Choose {{ offer.contractor_name }} for {{ job.title }}">Choose contractor</button>
+            </form>
           </article>
         {% endfor %}
       </div>

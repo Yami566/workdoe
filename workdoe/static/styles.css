@@ -1015,42 +1015,9 @@ button.compact {
   margin: 0;
 }
 
-.selection-path {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0;
-  margin: 0 0 12px;
-  padding: 0;
-  list-style: none;
-}
-
-.selection-path li {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
-  min-height: 44px;
-  border-block: 1px solid var(--line);
-  padding: 8px 10px;
-}
-
-.selection-path li + li {
-  border-left: 1px solid var(--line);
-}
-
-.selection-path span {
-  color: var(--accent);
-  font-size: 0.72rem;
-  font-weight: 900;
-}
-
-.selection-path strong {
-  font-size: 0.82rem;
-}
-
 .bid-comparison-note {
   max-width: 740px;
-  margin: 0 0 14px;
+  margin: 0 0 12px;
   color: var(--muted);
 }
 
@@ -1191,6 +1158,43 @@ button.compact {
   font-size: 0.66rem;
 }
 
+.bid-credential-signals {
+  min-height: 52px;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 12px;
+}
+
+.bid-credential-signal {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+  color: var(--accent-dark);
+}
+
+.bid-credential-signal img {
+  width: 18px;
+  height: 18px;
+}
+
+.bid-credential-signal span {
+  display: grid;
+}
+
+.bid-credential-signal strong {
+  font-size: 0.76rem;
+}
+
+.bid-credential-signal small {
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.bid-credential-signal--empty {
+  grid-template-columns: 1fr;
+  color: var(--muted);
+}
+
 .bid-offer-label {
   color: var(--accent);
   font-size: 0.68rem;
@@ -1247,6 +1251,15 @@ button.compact {
   width: 100%;
 }
 
+.bid-choose-form {
+  margin: 0;
+  padding: 0 12px 12px;
+}
+
+.bid-choose-form .button {
+  width: 100%;
+}
+
 @media (max-width: 980px) {
   .bid-comparison-grid--3,
   .bid-comparison-grid--4 {
@@ -1255,15 +1268,6 @@ button.compact {
 }
 
 @media (max-width: 620px) {
-  .selection-path {
-    grid-template-columns: 1fr;
-  }
-
-  .selection-path li + li {
-    border-left: 0;
-    border-top: 0;
-  }
-
   .bid-comparison-grid--1,
   .bid-comparison-grid--2,
   .bid-comparison-grid--3,

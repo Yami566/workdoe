@@ -4775,6 +4775,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                             "price_range": "$450-$650",
                             "timeline": "Two days",
                             "availability": "Tuesday",
+                            "reputation": {
+                                "level_label": "First finish",
+                                "completion_points": 100,
+                                "credential_signals": [
+                                    {
+                                        "label": "License source checked",
+                                        "qualifier": "Current public record",
+                                    }
+                                ],
+                            },
                             "provider_facts": [
                                 {
                                     "label": "Years active",
@@ -4843,16 +4853,24 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('aria-describedby="match-request-31-reject-status"', client_job_html)
         self.assertIn('id="match-request-31-reject-status"', client_job_html)
         self.assertIn('href="/messages/5"', client_job_html)
-        self.assertIn("Compare pending offers", client_job_html)
+        self.assertIn("Contractor choice", client_job_html)
+        self.assertIn("Compare offers", client_job_html)
         self.assertIn("Received order", client_job_html)
-        self.assertIn("Compare terms", client_job_html)
-        self.assertIn("Open profiles", client_job_html)
-        self.assertIn("Approve one", client_job_html)
+        self.assertNotIn('class="selection-path"', client_job_html)
         self.assertIn("Source checked", client_job_html)
+        self.assertIn("License source checked", client_job_html)
         self.assertIn("Workdoe-completed", client_job_html)
         self.assertIn('href="#bid-title-31"', client_job_html)
         self.assertIn('id="bid-title-31"', client_job_html)
-        self.assertIn("Lowest price is not automatically the best fit", client_job_html)
+        self.assertIn("there is no paid ranking", client_job_html)
+        self.assertIn(
+            'data-json-action="/api/match-requests/31/approve"', client_job_html
+        )
+        self.assertIn('data-success-url-template="/client/jobs/12"', client_job_html)
+        self.assertIn('aria-label="Choose Doe Exterior Care"', client_job_html)
+        self.assertIn('aria-describedby="compare-offer-31-status"', client_job_html)
+        self.assertIn('id="compare-offer-31-status"', client_job_html)
+        self.assertIn(">Choose contractor</button>", client_job_html)
         self.assertIn('src="/worker-actions.js"', client_job_html)
         self.assertNotIn("contractor@example.com", client_job_html)
 

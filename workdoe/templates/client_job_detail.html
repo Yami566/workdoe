@@ -153,24 +153,6 @@
     <p class="eyebrow">Mini bids</p>
     <h2 id="mini-bids-title">Review contractor requests</h2>
   </div>
-  <div class="dashboard-metrics compact-metrics" aria-label="Mini bid summary">
-    <div class="metric-card">
-      <span>Total</span>
-      <strong>{{ request_stats.total }}</strong>
-    </div>
-    <div class="metric-card">
-      <span>Pending</span>
-      <strong>{{ request_stats.pending }}</strong>
-    </div>
-    <div class="metric-card">
-      <span>Approved</span>
-      <strong>{{ request_stats.approved }}</strong>
-    </div>
-    <div class="metric-card">
-      <span>Rejected</span>
-      <strong>{{ request_stats.rejected }}</strong>
-    </div>
-  </div>
   <nav class="work-view-tabs bid-view-tabs" aria-label="Mini bid status">
     {% for item in bid_view_links %}
       {% set count = request_stats.total if item.value == "all" else (request_stats.pending if item.value == "pending" else (request_stats.approved if item.value == "approved" else request_stats.rejected)) %}

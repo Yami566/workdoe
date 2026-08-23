@@ -124,6 +124,30 @@ performance, identity-provider, or assistive-technology evidence.
   `docs/ux-audit/2026-08-23-current-journeys/`. The repeated full suite passed
   225 tests in 89.840 seconds.
 
+## Consumer contractor-choice follow-up
+
+- The prior 390x844 bid-review view spent the first viewport on four duplicate
+  summary cards and a three-step instruction strip. The accepted view keeps the
+  same counts in status tabs and begins the first contractor card in that
+  viewport.
+- The comparison cards now expose one of three factual states near the
+  contractor identity: License source checked, Record source checked, or No
+  source-checked record. The existing advisory remains visible and explicitly
+  says source review is not a guarantee of skill, safety, insurance coverage,
+  or legal eligibility.
+- Offers remain in received order and the screen states that there is no paid
+  ranking. Credential filters only change the comparison cards; every offer
+  remains in the full list below.
+- At 390x844, selecting License record reduced the comparison to the one
+  locally seeded contractor with a current source-checked trade-license record.
+  Choosing that contractor from the card approved the existing mini bid and
+  opened its private message thread.
+- The fixture contractors, credentials, offers, message, and thread were
+  deleted after the browser pass. The full suite then passed 225 tests in
+  82.326 seconds.
+- Accepted evidence is stored as captures `20` through `26` in
+  `docs/ux-audit/2026-08-23-current-journeys/`.
+
 ## Live gates not replaced by this check
 
 - A real screen-reader pass with VoiceOver, NVDA, or an equivalent remains

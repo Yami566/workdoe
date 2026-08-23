@@ -3163,7 +3163,7 @@ def contractor_job_detail_html(user, payload: dict, site_key: str = "") -> str:
     return layout(user, "/leads", job.get("title", "Lead"), body, include_actions=True, include_turnstile=bool(site_key))
 
 
-def bid_comparison_html(comparison: dict) -> str:
+def bid_comparison_html(comparison: dict, job_id: int = 0) -> str:
     offers = comparison.get("offers", [])
     if not offers and not comparison.get("pending_count"):
         return ""
@@ -3171,6 +3171,18 @@ def bid_comparison_html(comparison: dict) -> str:
     for offer in offers:
         offer_id = int(offer.get("id", 0) or 0)
         reputation = offer.get("reputation", {})
+        credential_signals = reputation.get("credential_signals", [])
+        credential_signal_html = "".join(
+            '<span class="bid-credential-signal">'
+            '<img src="/static/vendor/tabler-icons/home-check.svg" alt="">'
+            f'<span><strong>{escape(signal.get("label", "Source checked"))}</strong>'
+            f'<small>{escape(signal.get("qualifier", "Current public record"))}</small></span></span>'
+            for signal in credential_signals
+        ) or (
+            '<span class="bid-credential-signal bid-credential-signal--empty">'
+            '<span><strong>No source-checked record</strong>'
+            '<small>Review profile details</small></span></span>'
+        )
         provider_facts = "".join(
             f"""
             <div>
@@ -3193,6 +3205,7 @@ def bid_comparison_html(comparison: dict) -> str:
             <img src="/static/vendor/tabler-icons/sparkles.svg" alt="">
             <span><strong>{escape(reputation.get('level_label', 'New to Workdoe'))}</strong><small>{int(reputation.get('completion_points', 0) or 0)} completion points</small></span>
           </div>
+          <div class="bid-credential-signals" aria-label="Reviewed credential signals">{credential_signal_html}</div>
           <dl class="bid-compare-terms">
             <div><dt>Price</dt><dd>{escape(offer.get('price_range', 'Not provided'))}</dd></div>
             <div><dt>Timeline</dt><dd>{escape(offer.get('timeline', 'Not provided'))}</dd></div>
@@ -3203,6 +3216,10 @@ def bid_comparison_html(comparison: dict) -> str:
             <a class="button secondary compact" href="{escape(offer.get('profile_url', '#'))}">Profile</a>
             <a class="button secondary compact" href="#bid-title-{offer_id}">Full offer</a>
           </div>
+          <form class="bid-choose-form" method="post" data-json-action="/api/match-requests/{offer_id}/approve" data-success-url-template="/client/jobs/{job_id}">
+            <button class="button compact" type="submit" aria-label="Choose {escape(offer.get('contractor_name', 'contractor'))}" aria-describedby="compare-offer-{offer_id}-status">Choose contractor</button>
+            <span class="form-status" id="compare-offer-{offer_id}-status" role="status" aria-live="polite"></span>
+          </form>
         </article>"""
         )
     count = min(4, max(1, len(offers)))
@@ -3221,17 +3238,12 @@ def bid_comparison_html(comparison: dict) -> str:
     return f"""
     <section class="bid-comparison" aria-labelledby="bid-comparison-title">
       <div class="section-heading">
-        <div><p class="eyebrow">Decision path</p><h3 id="bid-comparison-title">Compare pending offers</h3></div>
+        <div><p class="eyebrow">Contractor choice</p><h3 id="bid-comparison-title">Compare offers</h3></div>
         <span class="privacy-label">{escape(comparison.get('order_label', 'Received order'))}</span>
       </div>
-      <ol class="selection-path" aria-label="Three steps to choose a contractor">
-        <li><span>01</span><strong>Compare terms</strong></li>
-        <li><span>02</span><strong>Open profiles</strong></li>
-        <li><span>03</span><strong>Approve one</strong></li>
-      </ol>
-      <p class="bid-comparison-note">Compare scope, timing, price, and provider facts. Lowest price is not automatically the best fit.</p>
+      <p class="bid-comparison-note">Compare scope, price, timing, and reviewed records. Offers stay in received order; there is no paid ranking.</p>
       <nav class="comparison-filter-tabs" aria-label="Filter comparison by source-checked records">{filter_tabs}</nav>
-      <p class="comparison-filter-note">These filters change the comparison cards only. Every offer remains in the received-order list below.</p>
+      <p class="comparison-filter-note">Filters change these cards only. Every offer remains in the full list below.</p>
       {comparison_grid}
       <p class="help-text">A source-checked record means Workdoe reviewed a current public source. It does not guarantee skill, safety, insurance coverage, or legal eligibility.</p>
     </section>"""
@@ -3246,11 +3258,13 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
     view_links = requests_payload.get("view_links", [])
     photos = detail_payload.get("photos", [])
     view = requests_payload.get("view", "all")
-    comparison_html = bid_comparison_html(requests_payload.get("comparison", {}))
+    job_id = int(job.get("id", 0) or 0)
+    comparison_html = bid_comparison_html(
+        requests_payload.get("comparison", {}), job_id=job_id
+    )
     reviews_by_request = requests_payload.get("reviews_by_request", {})
     scope_html = quote_ready_details_html(detail_payload.get("scope_answers", []))
     brief_html = brief_readiness_html(job.get("brief_readiness"))
-    job_id = int(job.get("id", 0) or 0)
     photo_html = "\n".join(
         f'<figure><img src="{escape(photo.get("url", ""))}" alt="Job photo"><figcaption>{escape(photo.get("original_filename", ""))}</figcaption></figure>'
         for photo in photos
@@ -3430,12 +3444,6 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
     </ol>
     {bid_window_html(bidding, owner=True, job_id=job_id)}
     {invitation_banner}
-    <section class="dashboard-metrics" aria-label="Mini-bid queue">
-      <div class="metric-card"><span>Pending</span><strong>{int(stats.get('pending', 0))}</strong></div>
-      <div class="metric-card"><span>Approved</span><strong>{int(stats.get('approved', 0))}</strong></div>
-      <div class="metric-card"><span>Verified</span><strong>{int(stats.get('verified', 0))}</strong></div>
-      <div class="metric-card"><span>Total bids</span><strong>{int(stats.get('total', 0))}</strong></div>
-    </section>
     <section class="detail-grid">
       <article class="panel">
         <h2>Job details</h2>
