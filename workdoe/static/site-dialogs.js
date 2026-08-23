@@ -72,7 +72,13 @@
   }
 
   function kindFor(url) {
-    return url.pathname === "/login" || url.pathname === "/start/verify" ? "auth" : "flow";
+    if (url.pathname === "/login" || url.pathname === "/start/verify") {
+      return "auth";
+    }
+    if (url.pathname === "/post-project" || url.pathname === "/jobs/new") {
+      return "project";
+    }
+    return "flow";
   }
 
   function canonicalPath(url) {

@@ -1772,6 +1772,10 @@ button.compact {
   display: none;
 }
 
+.project-composer-step[hidden] .project-step-actions {
+  display: none;
+}
+
 .project-composer-step > legend {
   color: var(--ink);
   font-size: 1.25rem;
@@ -2541,6 +2545,76 @@ button.compact {
   overflow-wrap: anywhere;
 }
 
+@media (min-width: 760px) {
+  .site-dialog-content .project-composer-step[data-project-step="6"] {
+    gap: 10px;
+    padding: 20px 22px;
+  }
+
+  .site-dialog-content .project-composer-step[data-project-step="6"] .project-review {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .site-dialog-content .project-composer-step[data-project-step="6"] .project-review > div {
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 10px;
+    padding: 7px 10px;
+  }
+
+  .site-dialog-content .project-composer-step[data-project-step="6"] .project-review > div:nth-child(odd) {
+    border-right: 1px solid var(--line-soft);
+  }
+
+  .site-dialog-content .project-composer-step[data-project-step="6"] .service-policy-advisory {
+    gap: 8px;
+    padding: 10px;
+    font-size: 0.9rem;
+    line-height: 1.35;
+  }
+}
+
+.service-policy-advisory {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--gold);
+  border-left-width: 5px;
+  border-radius: 4px;
+  background: #fff8f1;
+}
+
+.service-policy-advisory[hidden] {
+  display: none;
+}
+
+.service-policy-advisory strong,
+.service-policy-advisory p {
+  display: block;
+  margin: 0;
+}
+
+.service-policy-advisory .eyebrow {
+  color: var(--gold);
+}
+
+.service-policy-confirmation {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  font-weight: 700;
+}
+
+.service-policy-confirmation input {
+  width: 18px;
+  height: 18px;
+  margin: 3px 0 0;
+}
+
+.compact-policy {
+  padding: 14px;
+}
+
 label,
 fieldset {
   display: grid;
@@ -3226,6 +3300,22 @@ textarea:focus {
 .site-dialog-content > .market-auth-rail {
   width: 100%;
   margin: 0;
+}
+
+.site-dialog[data-dialog-kind="project"] .project-composer-step {
+  padding-bottom: 92px;
+}
+
+.site-dialog[data-dialog-kind="project"] .project-step-actions {
+  position: fixed;
+  bottom: max(18px, calc((100dvh - 820px) / 2));
+  left: 50%;
+  width: min(674px, calc(100vw - 72px));
+  margin: 0;
+  padding: 12px 4px;
+  background: var(--surface);
+  transform: translateX(-50%);
+  z-index: 4;
 }
 
 .site-dialog-content > .form-panel {
@@ -5354,6 +5444,12 @@ textarea:focus {
 
   .site-dialog-content {
     padding: 12px;
+  }
+
+  .site-dialog[data-dialog-kind="project"] .project-step-actions {
+    bottom: 0;
+    width: calc(100vw - 24px);
+    padding: 10px 0;
   }
 
   .history-heading,

@@ -82,7 +82,8 @@
       {% for group in service_groups %}
         <optgroup label="{{ group.name }}" data-service-group="{{ group.slug }}">
           {% for service in group.services %}
-            <option value="{{ service[0] }}" data-group="{{ group.slug }}" data-category="{{ service[2] }}" {% if form.service_slug == service[0] %}selected{% endif %}>{{ service[1] }}</option>
+            {% set policy = service_policy_for(service[0]) %}
+            <option value="{{ service[0] }}" data-group="{{ group.slug }}" data-category="{{ service[2] }}" data-policy-tier="{{ policy.risk_tier }}" data-policy-version="{{ policy.version }}" data-policy-advisory="{{ policy.advisory }}" data-policy-required="{{ 'true' if policy.acknowledgement_required else 'false' }}" data-policy-disabled="{{ 'true' if policy.emergency_disabled else 'false' }}" {% if form.service_slug == service[0] %}selected{% endif %}>{{ service[1] }}</option>
           {% endfor %}
         </optgroup>
       {% endfor %}
@@ -193,6 +194,7 @@
 
 <fieldset class="project-composer-step wide" data-project-step="6" data-step-title="Review the project">
   <legend>Ready to send the signal?</legend>
+  {% set selected_policy = service_policy_for(form.service_slug) %}
   <dl class="project-review" aria-label="Project summary">
     <div><dt>Work</dt><dd data-review-service>Choose a service</dd></div>
     <div><dt>Project</dt><dd data-review-title>Add a title</dd></div>
@@ -203,6 +205,18 @@
     <div><dt>Timing</dt><dd data-review-timing>Flexible</dd></div>
     <div><dt>Budget</dt><dd data-review-budget>Open</dd></div>
   </dl>
+  <section class="service-policy-advisory" data-service-policy-advisory data-policy-service="{{ form.service_slug }}" {% if not selected_policy.acknowledgement_required and not selected_policy.emergency_disabled %}hidden{% endif %}>
+    <div>
+      <span class="eyebrow" data-service-policy-tier>{{ "Local rules check" if selected_policy.risk_tier == "regulated" else "Safety check" }}</span>
+      <strong>Confirm before posting</strong>
+      <p data-service-policy-copy>{{ selected_policy.advisory }}</p>
+    </div>
+    <label class="service-policy-confirmation" for="job-service-policy-acknowledgement">
+      <input id="job-service-policy-acknowledgement" type="checkbox" name="service_policy_acknowledgement" value="{{ selected_policy.version }}" data-service-policy-checkbox {% if selected_policy.acknowledgement_required %}required{% else %}disabled{% endif %} {% if form.service_policy_acknowledgement == selected_policy.version %}checked{% endif %} {% if field_errors.service_policy_acknowledgement %}aria-invalid="true" aria-describedby="job-service-policy-acknowledgement-error"{% endif %}>
+      <span>I understand that I must confirm qualifications, insurance, permits, and a safe work plan directly.</span>
+    </label>
+    {% if field_errors.service_policy_acknowledgement %}<span id="job-service-policy-acknowledgement-error" class="field-error">{{ field_errors.service_policy_acknowledgement[0] }}</span>{% endif %}
+  </section>
   {% if composer_include_photos %}
     <label for="job-photos">
       Photos <span class="optional-label">Optional</span>

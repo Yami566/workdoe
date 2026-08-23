@@ -30,6 +30,12 @@ from workdoe.contractor_proposal_templates import PROPOSAL_TEMPLATE_LIMIT
 from workdoe.pilot_metrics import pilot_cell_metrics
 from workdoe.project_readiness import project_brief_readiness
 from workdoe.service_activation import activation_is_live
+from workdoe.service_policy import (
+    EMERGENCY_DISABLED_SERVICES,
+    SERVICE_POLICY_REGISTRY,
+    SERVICE_POLICY_VERSION,
+    service_policy_error,
+)
 from workdoe.service_scope import (
     clean_scope_answers,
     scope_answer_projection,
@@ -669,6 +675,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "zip_code": "22314",
                 "desired_date": "2026-09-01",
                 "description": "Need first-floor storefront windows cleaned before reopening.",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
                 "photos": (
                     BytesIO(b"\x89PNG\r\n\x1a\nfake image bytes"),
                     "storefront.png",
@@ -725,6 +732,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "zip_code": "20003",
                 "desired_date": "2026-09-01",
                 "description": "Need the patio cleaned before weekend guests arrive.",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             },
             follow_redirects=True,
         )
@@ -768,6 +776,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "zip_code": "22314",
                 "desired_date": "2026-09-03",
                 "description": "Need patio doors and exterior glass cleaned before weekend guests arrive.",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
                 "photos": (
                     BytesIO(b"\xff\xd8\xff\xe0updated image bytes"),
                     "after.jpg",
@@ -780,10 +789,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Job updated", updated.data)
         edited = self.one("SELECT * FROM jobs WHERE id = ?", (job["id"],))
         self.assertEqual(edited["title"], "Revised patio wash")
-        self.assertEqual(edited["category"], "Window cleaning")
+        self.assertEqual(edited["category"], "Power washing")
         self.assertEqual(edited["city"], "Alexandria")
         self.assertEqual(edited["state"], "VA")
         self.assertEqual(edited["zip_code"], "22314")
+        self.assertEqual(edited["service_slug"], "pressure-washing")
         edited_photo = self.one("SELECT * FROM job_photos WHERE job_id = ?", (job["id"],))
         self.assertIsNotNone(edited_photo)
 
@@ -1067,6 +1077,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "experience": "Five years of exterior cleaning work in the DMV.",
                 "questions": "Is there hose access?",
                 "availability": "Tuesday and Thursday afternoons",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             },
             follow_redirects=True,
         )
@@ -1351,6 +1362,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "experience": "Five years completing similar DMV projects.",
                 "questions": "",
                 "availability": "Weekday afternoons",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             },
             follow_redirects=True,
         )
@@ -1381,6 +1393,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             "experience": "Five years completing similar DMV projects.",
             "questions": "",
             "availability": "Weekday afternoons",
+            "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
         }
         self.login("contractor@workdoe.local", "workdoe-contractor")
         expired = self.client.post(
@@ -1431,6 +1444,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "experience": "Several similar jobs in the DMV area.",
                 "questions": "",
                 "availability": "Weekday afternoons",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             },
             follow_redirects=True,
         )
@@ -2100,6 +2114,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "desired_date": "2030-06-20",
                 "budget_min": "300",
                 "budget_max": "500",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             },
             follow_redirects=True,
         )
@@ -2142,6 +2157,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "desired_date": "2030-06-21",
                 "budget_min": "200",
                 "budget_max": "400",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             },
             follow_redirects=True,
         )
@@ -2632,6 +2648,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "experience": "Five years handling exterior jobs across the DMV.",
                 "questions": "",
                 "availability": "Weekday mornings",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             },
             follow_redirects=True,
         )
@@ -3481,6 +3498,150 @@ class WorkdoeFlowTests(unittest.TestCase):
             "b52f6c73b3afb6b19df964190046fd51748cce40d15c090054909f7007e8fcfe",
         )
 
+    def test_service_policy_registry_covers_every_service_without_launch_disables(self):
+        from workdoe.service_taxonomy import SERVICE_BY_SLUG
+
+        self.assertEqual(len(SERVICE_BY_SLUG), 53)
+        self.assertEqual(set(SERVICE_POLICY_REGISTRY), set(SERVICE_BY_SLUG))
+        self.assertEqual(EMERGENCY_DISABLED_SERVICES, frozenset())
+        self.assertTrue(
+            all(
+                policy["version"] == SERVICE_POLICY_VERSION
+                for policy in SERVICE_POLICY_REGISTRY.values()
+            )
+        )
+        self.assertEqual(service_policy_error("house-cleaning", ""), "")
+        self.assertEqual(
+            service_policy_error("pressure-washing", "stale-policy"),
+            "Confirm the current service safety advisory.",
+        )
+        self.assertEqual(
+            service_policy_error("pressure-washing", SERVICE_POLICY_VERSION),
+            "",
+        )
+
+    def test_service_policy_acknowledgements_gate_risky_projects_and_bids(self):
+        project = {
+            "title": "Policy gate patio wash",
+            "category": "Power washing",
+            "service_group_slug": "outdoor-yard",
+            "service_slug": "pressure-washing",
+            "project_setting": "outdoor-area",
+            "city": "Washington",
+            "state": "DC",
+            "zip_code": "20003",
+            "desired_date": "2030-10-10",
+            "description": "Wash the patio and front steps while protecting nearby plants.",
+        }
+        self.login("client@workdoe.local", "workdoe-client")
+
+        missing = self.client.post("/jobs/new", data=project)
+        self.assertEqual(missing.status_code, 200)
+        self.assertIn(b"Confirm the current service safety advisory.", missing.data)
+        self.assertIsNone(
+            self.one("SELECT id FROM jobs WHERE title = ?", (project["title"],))
+        )
+
+        stale = self.client.post(
+            "/jobs/new",
+            data={**project, "service_policy_acknowledgement": "2026-01-01"},
+        )
+        self.assertEqual(stale.status_code, 200)
+        self.assertIn(b"Confirm the current service safety advisory.", stale.data)
+
+        created = self.client.post(
+            "/jobs/new",
+            data={
+                **project,
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
+            },
+            follow_redirects=True,
+        )
+        self.assertIn(b"Job posted", created.data)
+        job = self.one("SELECT * FROM jobs WHERE title = ?", (project["title"],))
+        client_ack = self.one(
+            "SELECT * FROM service_policy_acknowledgements WHERE job_id = ?",
+            (job["id"],),
+        )
+        self.assertEqual(client_ack["actor_role"], "client")
+        self.assertEqual(client_ack["context"], "project-post")
+        self.assertEqual(client_ack["service_slug"], "pressure-washing")
+        self.assertEqual(client_ack["policy_version"], SERVICE_POLICY_VERSION)
+        self.assertIsNone(client_ack["match_request_id"])
+        self.assertTrue(client_ack["acknowledged_at"])
+
+        self.logout()
+        self.login("contractor@workdoe.local", "workdoe-contractor")
+        bid = {
+            "scope_note": "I can wash these surfaces while protecting adjacent planting beds.",
+            "price_range": "$350-$500",
+            "timeline": "One business day",
+            "experience": "Five years completing exterior cleaning work across the DMV.",
+            "questions": "Is exterior water access available?",
+            "availability": "Weekday mornings",
+        }
+        missing_bid = self.client.post(
+            f"/jobs/{job['id']}/request",
+            data=bid,
+            follow_redirects=True,
+        )
+        self.assertIn(b"Confirm the current service safety advisory.", missing_bid.data)
+        self.assertIsNone(
+            self.one("SELECT id FROM match_requests WHERE job_id = ?", (job["id"],))
+        )
+
+        accepted_bid = self.client.post(
+            f"/jobs/{job['id']}/request",
+            data={
+                **bid,
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
+            },
+            follow_redirects=True,
+        )
+        self.assertIn(b"Mini bid sent", accepted_bid.data)
+        match = self.one(
+            "SELECT * FROM match_requests WHERE job_id = ?",
+            (job["id"],),
+        )
+        contractor_ack = self.one(
+            """
+            SELECT * FROM service_policy_acknowledgements
+            WHERE job_id = ? AND context = 'mini-bid'
+            """,
+            (job["id"],),
+        )
+        self.assertEqual(contractor_ack["actor_role"], "contractor")
+        self.assertEqual(contractor_ack["match_request_id"], match["id"])
+        self.assertEqual(contractor_ack["policy_version"], SERVICE_POLICY_VERSION)
+
+    def test_standard_service_does_not_create_policy_acknowledgement(self):
+        self.login("client@workdoe.local", "workdoe-client")
+        created = self.client.post(
+            "/jobs/new",
+            data={
+                "title": "Policy standard apartment cleaning",
+                "category": "House cleaning",
+                "service_group_slug": "cleaning-upkeep",
+                "service_slug": "house-cleaning",
+                "project_setting": "apartment-condo",
+                "city": "Washington",
+                "state": "DC",
+                "zip_code": "20003",
+                "desired_date": "2030-10-11",
+                "description": "Clean the kitchen, bathroom, floors, and reachable surfaces.",
+            },
+            follow_redirects=True,
+        )
+        self.assertIn(b"Job posted", created.data)
+        job = self.one(
+            "SELECT * FROM jobs WHERE title = 'Policy standard apartment cleaning'"
+        )
+        self.assertIsNone(
+            self.one(
+                "SELECT id FROM service_policy_acknowledgements WHERE job_id = ?",
+                (job["id"],),
+            )
+        )
     def test_contractor_lead_filters_have_clear_empty_state(self):
         self.login("contractor@workdoe.local", "workdoe-contractor")
         board = self.client.get("/leads")
@@ -4267,6 +4428,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "scope_area_size": "small",
                 "scope_water_access": "yes",
                 "scope_height": "ground",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             },
             follow_redirects=True,
         )
@@ -4328,6 +4490,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "scope_area_size": "small",
                 "scope_water_access": "yes",
                 "scope_height": "ground",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             },
             follow_redirects=True,
         )
@@ -4696,6 +4859,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "experience": "Five years handling this type of local work.",
                 "questions": "",
                 "availability": "Weekday mornings",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             },
             follow_redirects=True,
         )
@@ -4823,6 +4987,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('event.key === "Escape"', script)
         self.assertIn('returnFocus.focus({ preventScroll: true })', script)
         self.assertIn('fragmentFromDocument', script)
+        self.assertIn('return "project";', script)
         self.assertIn('dialog.dataset.dialogKind = kindFor(url)', script)
         self.assertIn('delete dialog.dataset.dialogKind', script)
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
@@ -4839,6 +5004,18 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertRegex(
             styles,
             r"\.project-step-actions\s*\{[^}]*position: sticky;[^}]*bottom: 0;",
+        )
+        self.assertIn(
+            '.site-dialog[data-dialog-kind="project"] .project-step-actions',
+            styles,
+        )
+        self.assertIn(
+            'bottom: max(18px, calc((100dvh - 820px) / 2));',
+            styles,
+        )
+        self.assertIn(
+            '.project-composer-step[hidden] .project-step-actions',
+            styles,
         )
 
     def test_role_dashboards_show_private_project_and_closed_work_history(self):
@@ -5334,6 +5511,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             "budget_min": "350",
             "budget_max": "500",
             "description": "Wash the patio and front steps while protecting nearby surfaces.",
+            "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             "repeat_source_job_id": str(source_job_id),
             "repeat_match_request_id": str(source_match_id),
         }
@@ -5406,6 +5584,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "experience": "I completed the prior verified Workdoe project for this consumer.",
                 "questions": "Has the access route changed?",
                 "availability": "Weekday mornings",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             },
             follow_redirects=True,
         )

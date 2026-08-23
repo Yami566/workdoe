@@ -38,7 +38,6 @@ from entry_shell import (
 from job_posts import (
     DMV_ZIPS,
     JOB_BUDGET_MAX,
-    JOB_CATEGORIES,
     PROJECT_SETTINGS,
     job_field_errors,
 )
@@ -58,6 +57,7 @@ from match_reviews import (
     WOULD_WORK_AGAIN_OPTIONS,
 )
 from service_activation import activation_is_live
+from service_policy import SERVICE_POLICY_VERSION, service_policy
 from service_scope import SERVICE_SCOPE_QUESTIONS
 from service_taxonomy import (
     GROUP_BY_SLUG,
@@ -955,6 +955,10 @@ def safety_page_html() -> str:
         <p>Clients can compare the proposed scope, price range, timeline, experience, and availability before choosing who to contact.</p>
       </article>
       <article class="panel">
+        <h2>Check local requirements</h2>
+        <p>Workdoe does not verify provider credentials. Confirm licenses, permits, insurance, inspections, and safe-work requirements directly with the provider and the appropriate local authority.</p>
+      </article>
+      <article class="panel">
         <h2>Report concerns</h2>
         <p>Report suspicious projects, profiles, photos, or messages from the related Workdoe page. Workdoe moderators can review content and suspend accounts when needed.</p>
       </article>
@@ -1551,6 +1555,7 @@ def project_composer_fields_html(
     form = {**form, **selection}
     selected_group = str(form.get("service_group_slug") or "")
     selected_service = str(form.get("service_slug") or "")
+    selected_policy = service_policy(selected_service)
     selected_state = str(form.get("state") or "DC")
     selected_setting = str(form.get("project_setting") or "")
     scope_panels = scope_questions_html(
@@ -1570,10 +1575,19 @@ def project_composer_fields_html(
     )
     service_options = ['<option value="">Choose a service</option>']
     for group in SERVICE_GROUPS:
-        options = "".join(
-            f'<option value="{escape(service[0])}" data-group="{escape(group["slug"])}" data-category="{escape(service[2])}"{' selected' if selected_service == service[0] else ''}>{escape(service[1])}</option>'
-            for service in group["services"]
-        )
+        option_rows = []
+        for service in group["services"]:
+            policy = service_policy(service[0])
+            option_rows.append(
+                f'<option value="{escape(service[0])}" data-group="{escape(group["slug"])}" '
+                f'data-category="{escape(service[2])}" data-policy-tier="{escape(policy["risk_tier"])}" '
+                f'data-policy-version="{escape(policy["version"])}" '
+                f'data-policy-advisory="{escape(policy["advisory"])}" '
+                f'data-policy-required="{str(policy["acknowledgement_required"]).lower()}" '
+                f'data-policy-disabled="{str(policy["emergency_disabled"]).lower()}"'
+                f'{' selected' if selected_service == service[0] else ''}>{escape(service[1])}</option>'
+            )
+        options = "".join(option_rows)
         service_options.append(
             f'<optgroup label="{escape(group["name"])}" data-service-group="{escape(group["slug"])}">{options}</optgroup>'
         )
@@ -1653,6 +1667,31 @@ def project_composer_fields_html(
         if include_photos
         else '<p class="help-text">Photos stay private and can be added after email verification.</p>'
     )
+    policy_hidden = (
+        ""
+        if selected_policy["acknowledgement_required"]
+        or selected_policy["emergency_disabled"]
+        else " hidden"
+    )
+    policy_required = (
+        " required" if selected_policy["acknowledgement_required"] else " disabled"
+    )
+    policy_checked = (
+        " checked"
+        if str(form.get("service_policy_acknowledgement") or "")
+        == selected_policy["version"]
+        else ""
+    )
+    policy_invalid = invalid(
+        "service_policy_acknowledgement",
+        "job-service-policy-acknowledgement-error",
+    )
+    policy_panel = f"""
+        <section class="service-policy-advisory" data-service-policy-advisory data-policy-service="{escape(selected_service)}"{policy_hidden}>
+          <div><span class="eyebrow" data-service-policy-tier>{'Local rules check' if selected_policy['risk_tier'] == 'regulated' else 'Safety check'}</span><strong>Confirm before posting</strong><p data-service-policy-copy>{escape(selected_policy['advisory'])}</p></div>
+          <label class="service-policy-confirmation" for="job-service-policy-acknowledgement"><input id="job-service-policy-acknowledgement" type="checkbox" name="service_policy_acknowledgement" value="{escape(selected_policy['version'])}" data-service-policy-checkbox{policy_required}{policy_checked}{policy_invalid}><span>I understand that I must confirm qualifications, insurance, permits, and a safe work plan directly.</span></label>
+          {field_error('service_policy_acknowledgement', 'job-service-policy-acknowledgement-error')}
+        </section>"""
     return f"""
       <div class="project-composer-head wide">
         <div><p class="eyebrow" data-project-step-label>Step 1 of 6</p><h2 data-project-step-title>Choose a work family</h2></div>
@@ -1710,7 +1749,7 @@ def project_composer_fields_html(
       <fieldset class="project-composer-step wide" data-project-step="6" data-step-title="Review the project">
         <legend>Ready to send the signal?</legend>
         <dl class="project-review" aria-label="Project summary"><div><dt>Work</dt><dd data-review-service>Choose a service</dd></div><div><dt>Project</dt><dd data-review-title>Add a title</dd></div><div><dt>Setting</dt><dd data-review-setting>Not specified</dd></div><div><dt>Scope</dt><dd data-review-scope>Description only</dd></div><div><dt>Brief</dt><dd data-review-brief>Brief 0 of 6</dd></div><div><dt>Area</dt><dd data-review-location>Add a city and ZIP</dd></div><div><dt>Timing</dt><dd data-review-timing>Flexible</dd></div><div><dt>Budget</dt><dd data-review-budget>Open</dd></div></dl>
-        {photos_html}{turnstile}
+        {policy_panel}{photos_html}{turnstile}
         <div class="project-step-actions"><button class="button secondary" type="button" data-project-back>Back</button><button class="button" type="submit" aria-label="{escape(submit_label)}">{escape(submit_label)}</button></div>
       </fieldset>"""
 
@@ -1795,12 +1834,7 @@ def job_form_html(
             include_project_composer=True,
             body_class="dialog-fragment-body" if embedded else "",
         )
-    selected_category = str(row_value(job, "category", "") or "")
     selected_state = str(row_value(job, "state", "DC") or "DC")
-    category_options = "\n".join(
-        f'<option value="{escape(category)}"{" selected" if category == selected_category else ""}>{escape(category)}</option>'
-        for category in sorted(JOB_CATEGORIES)
-    )
     selected_setting = str(row_value(job, "project_setting", "") or "")
     project_setting_options = "\n".join(
         [
@@ -1817,6 +1851,20 @@ def job_form_html(
         str(row_value(job, "service_slug", "") or ""),
         dict(row_value(job, "scope_answers", {}) or {}),
     )
+    edit_policy = service_policy(str(row_value(job, "service_slug", "") or ""))
+    edit_service_slug = str(row_value(job, "service_slug", "") or "")
+    edit_service_group_slug = str(
+        row_value(job, "service_group_slug", "") or ""
+    )
+    edit_category = str(row_value(job, "category", "") or "")
+    edit_service_name = service_label(edit_service_slug, edit_category)
+    edit_policy_html = ""
+    if edit_policy["acknowledgement_required"] or edit_policy["emergency_disabled"]:
+        edit_policy_html = f"""
+      <section class="service-policy-advisory wide">
+        <div><span class="eyebrow">{'Local rules check' if edit_policy['risk_tier'] == 'regulated' else 'Safety check'}</span><strong>Confirm before updating</strong><p>{escape(edit_policy['advisory'])}</p></div>
+        <label class="service-policy-confirmation" for="job-service-policy-acknowledgement"><input id="job-service-policy-acknowledgement" type="checkbox" name="service_policy_acknowledgement" value="{escape(SERVICE_POLICY_VERSION)}" required><span>I understand that I must confirm qualifications, insurance, permits, and a safe work plan directly.</span></label>
+      </section>"""
     body = f"""
     <section class="dashboard-header">
       <div>
@@ -1832,7 +1880,10 @@ def job_form_html(
     </ul>
     <form class="form-grid" data-dialog-fragment data-json-action="{'/api/jobs/' + str(job_id) + '/update' if is_edit else '/api/jobs'}" data-upload-after-json-template="/api/media/jobs/{{job_id}}/upload" data-success-url-template="/client/jobs/{{id}}" aria-label="{'Edit project' if is_edit else 'Post a project.'}" aria-describedby="worker-form-status">
       <label class="wide" for="job-title">Project title <input id="job-title" name="title" value="{escape(str(row_value(job, 'title', '') or ''))}" maxlength="90" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Power wash front steps and patio" required></label>
-      <label for="job-category">Category <select id="job-category" name="category" required>{category_options}</select></label>
+      <div class="service-family-context"><span><small>Service</small><strong>{escape(edit_service_name)}</strong><small>Post a new project to change the service bucket.</small></span></div>
+      <input type="hidden" name="category" value="{escape(edit_category)}">
+      <input type="hidden" name="service_group_slug" value="{escape(edit_service_group_slug)}">
+      <input type="hidden" name="service_slug" value="{escape(edit_service_slug)}">
       <div class="wide">{edit_scope_html}</div>
       <label for="job-project-setting">Project setting <span class="optional-label">Optional</span> <select id="job-project-setting" name="project_setting">{project_setting_options}</select></label>
       <label for="job-desired-date">Desired date <input id="job-desired-date" name="desired_date" type="date" value="{escape(str(row_value(job, 'desired_date', '') or ''))}"></label>
@@ -1848,6 +1899,7 @@ def job_form_html(
       <label for="job-budget-min">Budget minimum <span class="optional-label">Optional</span> <input id="job-budget-min" name="budget_min" type="number" value="{escape(str(row_value(job, 'budget_min', '') if row_value(job, 'budget_min') is not None else ''))}" min="0" max="{JOB_BUDGET_MAX}" step="1" inputmode="numeric" placeholder="500"></label>
       <label for="job-budget-max">Budget maximum <span class="optional-label">Optional</span> <input id="job-budget-max" name="budget_max" type="number" value="{escape(str(row_value(job, 'budget_max', '') if row_value(job, 'budget_max') is not None else ''))}" min="0" max="{JOB_BUDGET_MAX}" step="1" inputmode="numeric" placeholder="1000"></label>
       <label class="wide" for="job-description">Description <textarea id="job-description" name="description" rows="5" minlength="20" maxlength="1200" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Scope, access, timing, and desired outcome." aria-describedby="job-description-help" required>{escape(str(row_value(job, 'description', '') or ''))}</textarea><span id="job-description-help" class="help-text">Do not include an exact street address, email, or phone number.</span></label>
+      {edit_policy_html}
       <label class="wide" for="job-photos">Photos <input id="job-photos" name="photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-describedby="job-photos-help"></label>
       <p id="job-photos-help" class="help-text wide">Private uploads. PNG, JPG, GIF, or WebP.</p>
       {turnstile_html(site_key, "job-post")}
@@ -2726,6 +2778,7 @@ def admin_dashboard_html(user, payload: dict) -> str:
 
 def contractor_job_detail_html(user, payload: dict, site_key: str = "") -> str:
     job = payload.get("job", {})
+    job_policy = service_policy(job.get("service_slug"))
     existing = payload.get("existing_request")
     repeat_invitation = payload.get("repeat_invitation")
     photos = payload.get("photos", [])
@@ -2813,6 +2866,22 @@ def contractor_job_detail_html(user, payload: dict, site_key: str = "") -> str:
         price_placeholder = (
             "Add a fresh estimate" if selected_proposal_template else "$450-$650"
         )
+        bid_policy_html = ""
+        if (
+            job_policy["acknowledgement_required"]
+            or job_policy["emergency_disabled"]
+        ):
+            bid_policy_checked = (
+                " checked"
+                if str(bid_form.get("service_policy_acknowledgement") or "")
+                == job_policy["version"]
+                else ""
+            )
+            bid_policy_html = f"""
+          <section class="service-policy-advisory compact-policy">
+            <div><span class="eyebrow">{'Local rules check' if job_policy['risk_tier'] == 'regulated' else 'Safety check'}</span><strong>Confirm before bidding</strong><p>{escape(job_policy['advisory'])}</p></div>
+            <label class="service-policy-confirmation" for="bid-service-policy-acknowledgement"><input id="bid-service-policy-acknowledgement" type="checkbox" name="service_policy_acknowledgement" value="{escape(job_policy['version'])}" required{bid_policy_checked}><span>I understand that I am responsible for the qualifications, permits, insurance, and safe work plan required for this project.</span></label>
+          </section>"""
         side = f"""
         <h2>Send mini bid</h2>
         {template_picker}
@@ -2841,6 +2910,7 @@ def contractor_job_detail_html(user, payload: dict, site_key: str = "") -> str:
             <option value="Weekend available"></option>
           </datalist>
           <details class="optional-field"{' open' if bid_form.get('questions') else ''}><summary>Questions (optional)</summary><label class="sr-only" for="bid-questions">Questions</label><textarea id="bid-questions" name="questions" rows="2" maxlength="500" placeholder="Optional" autocapitalize="sentences" spellcheck="true" enterkeyhint="done">{escape(bid_form.get('questions', ''))}</textarea></details>
+          {bid_policy_html}
           {turnstile_html(site_key, "match-request")}
           <button class="button full" type="submit" aria-label="Send mini bid">Send bid</button>
           <p id="bid-form-status" class="help-text" data-form-status aria-live="polite"></p>

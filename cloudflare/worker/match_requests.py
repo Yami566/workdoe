@@ -41,6 +41,9 @@ def cleaned_match_request_payload(payload: dict) -> dict[str, str]:
         "experience": (payload.get("experience") or "").strip(),
         "questions": (payload.get("questions") or "").strip(),
         "availability": compact_spaces(payload.get("availability")),
+        "service_policy_acknowledgement": compact_spaces(
+            payload.get("service_policy_acknowledgement")
+        ),
     }
 
 
@@ -84,6 +87,8 @@ def match_request_field_for_error(message: str) -> str:
         return "questions"
     if "availability" in message:
         return "availability"
+    if "service safety advisory" in message:
+        return "service_policy_acknowledgement"
     return ""
 
 

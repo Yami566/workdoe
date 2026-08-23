@@ -177,6 +177,10 @@ from .service_activation import (
     activation_is_live,
     enabled_flag,
 )
+from .service_policy import (
+    service_policy,
+    service_policy_error,
+)
 from .service_scope import (
     SCOPE_SCHEMA_VERSION,
     SERVICE_SCOPE_QUESTIONS,
@@ -434,6 +438,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.jinja_env.globals["service_groups"] = SERVICE_GROUPS
     app.jinja_env.globals["service_icon"] = service_icon
     app.jinja_env.globals["service_scope_sets"] = SERVICE_SCOPE_QUESTIONS
+    app.jinja_env.globals["service_policy_for"] = service_policy
     app.jinja_env.globals["job_sort_options"] = JOB_SORT_OPTIONS
     app.jinja_env.globals["report_reason_max"] = REPORT_REASON_MAX_LENGTH
     app.jinja_env.globals["filter_query_max"] = FILTER_QUERY_MAX_LENGTH
@@ -2821,6 +2826,15 @@ def register_routes(app: Flask) -> None:
                     ),
                 )
                 job_id = int(cur.lastrowid)
+                record_service_policy_acknowledgement(
+                    db,
+                    user_id=g.user["id"],
+                    actor_role="client",
+                    context="project-post",
+                    service_slug=form["service_slug"],
+                    acknowledgement_version=form["service_policy_acknowledgement"],
+                    job_id=job_id,
+                )
                 replace_job_scope_answers(
                     db,
                     job_id,
@@ -2899,7 +2913,11 @@ def register_routes(app: Flask) -> None:
             abort(403)
         form = job_to_form(job)
         if request.method == "POST":
-            form = cleaned_job_form(request.form)
+            submitted = request.form.copy()
+            submitted["category"] = job["category"]
+            submitted["service_group_slug"] = job["service_group_slug"]
+            submitted["service_slug"] = job["service_slug"]
+            form = cleaned_job_form(submitted)
             errors = validate_job_form(form)
             activation_open, service_zone_slug = service_activation_open_for_form(form)
             if not errors and service_activation_required() and not activation_open:
@@ -2956,6 +2974,18 @@ def register_routes(app: Flask) -> None:
                     form["service_slug"],
                     form.get("scope_answers", {}),
                 )
+                if g.user["role"] == "client":
+                    record_service_policy_acknowledgement(
+                        db,
+                        user_id=g.user["id"],
+                        actor_role="client",
+                        context="project-post",
+                        service_slug=form["service_slug"],
+                        acknowledgement_version=form[
+                            "service_policy_acknowledgement"
+                        ],
+                        job_id=job_id,
+                    )
                 save_job_photos(job_id, g.user["id"], request.files.getlist("photos"))
                 db.commit()
                 flash("Job updated.", "success")
@@ -4312,6 +4342,12 @@ def register_routes(app: Flask) -> None:
 
         bid_form = cleaned_bid_form(request.form)
         errors = validate_bid_form(bid_form)
+        policy_error = service_policy_error(
+            job["service_slug"],
+            bid_form["service_policy_acknowledgement"],
+        )
+        if policy_error:
+            errors.append(policy_error)
         if errors:
             photos = db.execute(
                 """
@@ -4415,6 +4451,17 @@ def register_routes(app: Flask) -> None:
             else:
                 flash("This lead is not available for a new mini bid.", "error")
             return redirect(url_for("contractor_job_detail", job_id=job_id))
+        match_request_id = int(created.lastrowid)
+        record_service_policy_acknowledgement(
+            db,
+            user_id=g.user["id"],
+            actor_role="contractor",
+            context="mini-bid",
+            service_slug=job["service_slug"],
+            acknowledgement_version=bid_form["service_policy_acknowledgement"],
+            job_id=job_id,
+            match_request_id=match_request_id,
+        )
         timestamp = now_iso()
         invitation_changed = db.execute(
             """
@@ -6174,6 +6221,7 @@ def blank_job_form() -> dict:
         "description": "",
         "budget_min": "",
         "budget_max": "",
+        "service_policy_acknowledgement": "",
         "scope_answers": {},
     }
 
@@ -6206,6 +6254,7 @@ def job_to_form(job) -> dict:
         "description": job["description"],
         "budget_min": str(job["budget_min"]) if job["budget_min"] is not None else "",
         "budget_max": str(job["budget_max"]) if job["budget_max"] is not None else "",
+        "service_policy_acknowledgement": "",
         "scope_answers": scope_answers,
     }
 
@@ -6415,6 +6464,7 @@ def job_error_feedback(errors: list[str]) -> dict:
             "budget_min",
             "budget_max",
             "description",
+            "service_policy_acknowledgement",
         ],
     )
 
@@ -6444,6 +6494,8 @@ def job_error_field(message: str) -> str:
         return "budget_max"
     if "about the work" in message or "description" in message:
         return "description"
+    if "service safety advisory" in message:
+        return "service_policy_acknowledgement"
     return ""
 
 
@@ -6844,6 +6896,9 @@ def cleaned_job_form(form) -> dict:
         "description": (form.get("description") or "").strip(),
         "budget_min": compact_spaces(form.get("budget_min")),
         "budget_max": compact_spaces(form.get("budget_max")),
+        "service_policy_acknowledgement": compact_spaces(
+            form.get("service_policy_acknowledgement")
+        ),
     }
     cleaned["scope_answers"] = clean_scope_answers(cleaned["service_slug"], form)
     return cleaned
@@ -6910,6 +6965,12 @@ def validate_job_form(form: dict) -> list[str]:
     errors.extend(
         validate_scope_answers(form.get("service_slug"), form.get("scope_answers", {}))
     )
+    policy_error = service_policy_error(
+        form.get("service_slug"),
+        form.get("service_policy_acknowledgement"),
+    )
+    if policy_error:
+        errors.append(policy_error)
     return errors
 
 
@@ -6921,6 +6982,7 @@ def blank_bid_form() -> dict[str, str]:
         "experience": "",
         "questions": "",
         "availability": "",
+        "service_policy_acknowledgement": "",
     }
 
 
@@ -6932,6 +6994,9 @@ def cleaned_bid_form(form) -> dict[str, str]:
         "experience": (form.get("experience") or "").strip(),
         "questions": (form.get("questions") or "").strip(),
         "availability": compact_spaces(form.get("availability")),
+        "service_policy_acknowledgement": compact_spaces(
+            form.get("service_policy_acknowledgement")
+        ),
     }
 
 
@@ -6966,7 +7031,15 @@ def bid_error_feedback(errors: list[str]) -> dict:
     return build_error_feedback(
         errors,
         bid_error_field,
-        ["scope_note", "price_range", "timeline", "experience", "questions", "availability"],
+        [
+            "scope_note",
+            "price_range",
+            "timeline",
+            "experience",
+            "questions",
+            "availability",
+            "service_policy_acknowledgement",
+        ],
     )
 
 
@@ -6983,7 +7056,45 @@ def bid_error_field(message: str) -> str:
         return "questions"
     if "availability" in message:
         return "availability"
+    if "service safety advisory" in message:
+        return "service_policy_acknowledgement"
     return ""
+
+
+def record_service_policy_acknowledgement(
+    db: sqlite3.Connection,
+    *,
+    user_id: int,
+    actor_role: str,
+    context: str,
+    service_slug: str,
+    acknowledgement_version: str,
+    job_id: int,
+    match_request_id: int | None = None,
+) -> None:
+    policy = service_policy(service_slug)
+    if not policy["acknowledgement_required"]:
+        return
+    if acknowledgement_version != policy["version"]:
+        raise ValueError("The service policy acknowledgement is not current.")
+    db.execute(
+        """
+        INSERT INTO service_policy_acknowledgements
+            (user_id, actor_role, context, service_slug, policy_version,
+             job_id, match_request_id, acknowledged_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            user_id,
+            actor_role,
+            context,
+            service_slug,
+            policy["version"],
+            job_id,
+            match_request_id,
+            now_iso(),
+        ),
+    )
 
 
 def message_error_feedback(errors: list[str]) -> dict:

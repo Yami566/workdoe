@@ -3,15 +3,12 @@
   <input id="job-title" name="title" value="{{ form.title }}" maxlength="{{ title_max }}" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Power wash front steps and patio" required {% if field_errors.title %}aria-invalid="true" aria-describedby="job-title-error"{% endif %}>
   {% if field_errors.title %}<span id="job-title-error" class="field-error">{{ field_errors.title[0] }}</span>{% endif %}
 </label>
-<label for="job-category">
-  Category
-  <select id="job-category" name="category" required {% if field_errors.category %}aria-invalid="true" aria-describedby="job-category-error"{% endif %}>
-    {% for category in job_categories %}
-      <option value="{{ category }}" {% if form.category == category %}selected{% endif %}>{{ category }}</option>
-    {% endfor %}
-  </select>
-  {% if field_errors.category %}<span id="job-category-error" class="field-error">{{ field_errors.category[0] }}</span>{% endif %}
-</label>
+<div class="service-family-context">
+  <span><small>Service</small><strong>{{ form.service_slug|service_name(form.category) }}</strong><small>Post a new project to change the service bucket.</small></span>
+</div>
+<input type="hidden" name="category" value="{{ form.category }}">
+<input type="hidden" name="service_group_slug" value="{{ form.service_group_slug }}">
+<input type="hidden" name="service_slug" value="{{ form.service_slug }}">
 {% from "_scope_questions.html" import scope_panel %}
 {% set edit_scope_questions = service_scope_sets.get(form.service_slug, ()) %}
 {% if edit_scope_questions %}
@@ -65,3 +62,18 @@
   <span id="job-description-help" class="help-text">Do not include an exact street address, email, or phone number.</span>
   {% if field_errors.description %}<span id="job-description-error" class="field-error">{{ field_errors.description[0] }}</span>{% endif %}
 </label>
+{% set edit_policy = service_policy_for(form.service_slug) %}
+{% if edit_policy.acknowledgement_required or edit_policy.emergency_disabled %}
+  <section class="service-policy-advisory wide">
+    <div>
+      <span class="eyebrow">{{ "Local rules check" if edit_policy.risk_tier == "regulated" else "Safety check" }}</span>
+      <strong>Confirm before updating</strong>
+      <p>{{ edit_policy.advisory }}</p>
+    </div>
+    <label class="service-policy-confirmation" for="job-service-policy-acknowledgement">
+      <input id="job-service-policy-acknowledgement" type="checkbox" name="service_policy_acknowledgement" value="{{ edit_policy.version }}" required {% if form.service_policy_acknowledgement == edit_policy.version %}checked{% endif %} {% if field_errors.service_policy_acknowledgement %}aria-invalid="true" aria-describedby="job-service-policy-acknowledgement-error"{% endif %}>
+      <span>I understand that I must confirm qualifications, insurance, permits, and a safe work plan directly.</span>
+    </label>
+    {% if field_errors.service_policy_acknowledgement %}<span id="job-service-policy-acknowledgement-error" class="field-error">{{ field_errors.service_policy_acknowledgement[0] }}</span>{% endif %}
+  </section>
+{% endif %}

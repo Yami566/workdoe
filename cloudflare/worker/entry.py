@@ -370,6 +370,7 @@ from service_activation import (
     activation_is_live,
     enabled_flag,
 )
+from service_policy import service_policy, service_policy_error
 from service_scope import (
     SCOPE_SCHEMA_VERSION,
     scope_answer_field_names,
@@ -455,6 +456,41 @@ async def db_run(env, sql: str, *params):
         d1_params = tuple(JS_NULL if value is None else value for value in params)
         statement = statement.bind(*d1_params)
     return await statement.run()
+
+
+async def record_service_policy_acknowledgement(
+    env,
+    *,
+    user_id: int,
+    actor_role: str,
+    context: str,
+    service_slug: str,
+    acknowledgement_version: str,
+    job_id: int,
+    match_request_id: int | None = None,
+) -> None:
+    policy = service_policy(service_slug)
+    if not policy["acknowledgement_required"]:
+        return
+    if acknowledgement_version != policy["version"]:
+        raise ValueError("The service policy acknowledgement is not current.")
+    await db_run(
+        env,
+        """
+        INSERT INTO service_policy_acknowledgements
+            (user_id, actor_role, context, service_slug, policy_version,
+             job_id, match_request_id, acknowledged_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        user_id,
+        actor_role,
+        context,
+        service_slug,
+        policy["version"],
+        job_id,
+        match_request_id,
+        utc_now(),
+    )
 
 
 async def begin_idempotent_request(
@@ -2701,19 +2737,27 @@ class Default(WorkerEntrypoint):
                 status=503,
                 headers={"Cache-Control": "no-store"},
             )
+        await record_service_policy_acknowledgement(
+            self.env,
+            user_id=row_value(user, "id"),
+            actor_role="client",
+            context="project-post",
+            service_slug=job["service_slug"],
+            acknowledgement_version=job["service_policy_acknowledgement"],
+            job_id=job_id,
+        )
+        await replace_job_scope_answers(
+            self.env,
+            job_id,
+            job["service_slug"],
+            job.get("scope_answers", {}),
+        )
         await complete_idempotent_request(
             self.env,
             row_value(user, "id"),
             request_state,
             job_id,
         )
-        if job_id:
-            await replace_job_scope_answers(
-                self.env,
-                job_id,
-                job["service_slug"],
-                job.get("scope_answers", {}),
-            )
         if repeat_source:
             await db_run(
                 self.env,
@@ -2822,6 +2866,14 @@ class Default(WorkerEntrypoint):
         try:
             body = await request_json_object(request, max_bytes=MAX_JOB_POST_BODY_BYTES)
             await verify_turnstile_for_request(self.env, request, body, action="job-post")
+            existing_selection = service_selection(
+                row_value(existing_job, "service_slug", ""),
+                row_value(existing_job, "service_group_slug", ""),
+                row_value(existing_job, "category", ""),
+            )
+            body["category"] = existing_selection["category"]
+            body["service_group_slug"] = existing_selection["service_group_slug"]
+            body["service_slug"] = existing_selection["service_slug"]
             job = job_post_payload(body)
         except (OnboardingError, TurnstileError) as exc:
             return json_response(
@@ -2895,6 +2947,18 @@ class Default(WorkerEntrypoint):
             job["service_slug"],
             job.get("scope_answers", {}),
         )
+        if row_value(user, "role") == "client":
+            await record_service_policy_acknowledgement(
+                self.env,
+                user_id=row_value(user, "id"),
+                actor_role="client",
+                context="project-post",
+                service_slug=job["service_slug"],
+                acknowledgement_version=job[
+                    "service_policy_acknowledgement"
+                ],
+                job_id=job_id,
+            )
         await record_event(
             self.env,
             "job-updated",
@@ -3004,6 +3068,12 @@ class Default(WorkerEntrypoint):
             body = await request_json_object(request, max_bytes=MAX_MATCH_REQUEST_BODY_BYTES)
             await verify_turnstile_for_request(self.env, request, body, action="match-request")
             bid = match_request_payload(body)
+            policy_error = service_policy_error(
+                row_value(job, "service_slug", ""),
+                bid["service_policy_acknowledgement"],
+            )
+            if policy_error:
+                raise MatchRequestError([policy_error])
         except (OnboardingError, TurnstileError) as exc:
             return json_response(
                 {"ok": False, "error": str(exc)},
@@ -3087,6 +3157,16 @@ class Default(WorkerEntrypoint):
                 headers={"Cache-Control": "no-store"},
             )
         request_id = last_insert_id(result)
+        await record_service_policy_acknowledgement(
+            self.env,
+            user_id=row_value(user, "id"),
+            actor_role="contractor",
+            context="mini-bid",
+            service_slug=row_value(job, "service_slug", ""),
+            acknowledgement_version=bid["service_policy_acknowledgement"],
+            job_id=job_id,
+            match_request_id=request_id,
+        )
         await record_event(
             self.env,
             "match-request-created",

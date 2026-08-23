@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
+from service_policy import service_policy_error
 from service_scope import clean_scope_answers, validate_scope_answers
 from service_taxonomy import GROUP_BY_SLUG, SERVICE_BY_SLUG, service_selection
 
@@ -254,6 +255,9 @@ def cleaned_job_payload(payload: dict) -> dict:
         "description": (payload.get("description") or "").strip(),
         "budget_min": compact_spaces(payload.get("budget_min")),
         "budget_max": compact_spaces(payload.get("budget_max")),
+        "service_policy_acknowledgement": compact_spaces(
+            payload.get("service_policy_acknowledgement")
+        ),
     }
     cleaned["scope_answers"] = clean_scope_answers(cleaned["service_slug"], payload)
     return cleaned
@@ -308,6 +312,12 @@ def validate_job_payload(form: dict, today: date | None = None) -> list[str]:
     errors.extend(
         validate_scope_answers(form.get("service_slug"), form.get("scope_answers", {}))
     )
+    policy_error = service_policy_error(
+        form.get("service_slug"),
+        form.get("service_policy_acknowledgement"),
+    )
+    if policy_error:
+        errors.append(policy_error)
     return errors
 
 
@@ -365,6 +375,8 @@ def job_field_for_error(message: str) -> str:
         return "budget_max"
     if "work" in message or "description" in message:
         return "description"
+    if "service safety advisory" in message:
+        return "service_policy_acknowledgement"
     return ""
 
 

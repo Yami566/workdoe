@@ -129,6 +129,7 @@
       </details>
     {% elif g.user.role == 'contractor' and bid_window.accepting %}
       <h2>Send mini bid</h2>
+      {% set job_policy = service_policy_for(job.service_slug) %}
       {% if proposal_templates %}
         <section class="proposal-template-picker" aria-labelledby="proposal-template-picker-title">
           <strong id="proposal-template-picker-title">Start from a saved proposal</strong>
@@ -208,6 +209,20 @@
           <textarea id="bid-questions" name="questions" rows="2" maxlength="{{ bid_limits.questions_max }}" placeholder="Optional" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" {% if bid_field_errors.questions %}aria-invalid="true" aria-describedby="bid-questions-error"{% endif %}>{{ bid_form.questions }}</textarea>
           {% if bid_field_errors.questions %}<span id="bid-questions-error" class="field-error">{{ bid_field_errors.questions[0] }}</span>{% endif %}
         </details>
+        {% if job_policy.acknowledgement_required or job_policy.emergency_disabled %}
+          <section class="service-policy-advisory compact-policy">
+            <div>
+              <span class="eyebrow">{{ "Local rules check" if job_policy.risk_tier == "regulated" else "Safety check" }}</span>
+              <strong>Confirm before bidding</strong>
+              <p>{{ job_policy.advisory }}</p>
+            </div>
+            <label class="service-policy-confirmation" for="bid-service-policy-acknowledgement">
+              <input id="bid-service-policy-acknowledgement" type="checkbox" name="service_policy_acknowledgement" value="{{ job_policy.version }}" required {% if bid_form.service_policy_acknowledgement == job_policy.version %}checked{% endif %} {% if bid_field_errors.service_policy_acknowledgement %}aria-invalid="true" aria-describedby="bid-service-policy-acknowledgement-error"{% endif %}>
+              <span>I understand that I am responsible for the qualifications, permits, insurance, and safe work plan required for this project.</span>
+            </label>
+            {% if bid_field_errors.service_policy_acknowledgement %}<span id="bid-service-policy-acknowledgement-error" class="field-error">{{ bid_field_errors.service_policy_acknowledgement[0] }}</span>{% endif %}
+          </section>
+        {% endif %}
         {% with action='match-request' %}{% include "_turnstile.html" %}{% endwith %}
         <button class="button full" type="submit" aria-label="Send mini bid">Send bid</button>
       </form>

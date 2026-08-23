@@ -63,6 +63,7 @@ JOB_STATUS_PATH = ROOT / "cloudflare" / "worker" / "job_status.py"
 JOB_POSTS_PATH = ROOT / "cloudflare" / "worker" / "job_posts.py"
 SERVICE_TAXONOMY_PATH = ROOT / "cloudflare" / "worker" / "service_taxonomy.py"
 SERVICE_SCOPE_PATH = ROOT / "cloudflare" / "worker" / "service_scope.py"
+SERVICE_POLICY_PATH = ROOT / "cloudflare" / "worker" / "service_policy.py"
 PROJECT_READINESS_PATH = ROOT / "cloudflare" / "worker" / "project_readiness.py"
 PILOT_METRICS_PATH = ROOT / "cloudflare" / "worker" / "pilot_metrics.py"
 SERVICE_ACTIVATION_PATH = ROOT / "cloudflare" / "worker" / "service_activation.py"
@@ -472,6 +473,7 @@ def load_job_status_module():
 
 def load_job_posts_module():
     load_service_taxonomy_module()
+    load_service_policy_module()
     load_service_scope_module()
     spec = importlib.util.spec_from_file_location("job_posts", JOB_POSTS_PATH)
     module = importlib.util.module_from_spec(spec)
@@ -493,6 +495,16 @@ def load_service_taxonomy_module():
 def load_service_scope_module():
     load_service_taxonomy_module()
     spec = importlib.util.spec_from_file_location("service_scope", SERVICE_SCOPE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_service_policy_module():
+    load_service_taxonomy_module()
+    spec = importlib.util.spec_from_file_location("service_policy", SERVICE_POLICY_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module
@@ -1137,7 +1149,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
     def test_fresh_d1_database_accepts_complete_migration_chain(self):
         migrations_dir = ROOT / "cloudflare" / "d1" / "migrations"
         migration_paths = sorted(migrations_dir.glob("[0-9][0-9][0-9][0-9]_*.sql"))
-        self.assertEqual(len(migration_paths), 27)
+        self.assertEqual(len(migration_paths), 28)
 
         connection = sqlite3.connect(":memory:")
         try:
@@ -4073,7 +4085,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Edit Project - Workdoe", edit_form_html)
         self.assertIn('data-json-action="/api/jobs/12/update"', edit_form_html)
         self.assertIn('value="Power wash steps"', edit_form_html)
-        self.assertIn('<option value="Power washing" selected>', edit_form_html)
+        self.assertIn("<strong>Pressure washing</strong>", edit_form_html)
+        self.assertIn('name="service_slug" value="pressure-washing"', edit_form_html)
         self.assertIn('<option value="VA" selected>', edit_form_html)
         self.assertIn('value="22201"', edit_form_html)
         self.assertIn('name="budget_min" type="number" value="450"', edit_form_html)
@@ -6168,21 +6181,20 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
     def test_cloudflare_job_post_payload_matches_local_validation_contract(self):
         module = load_job_posts_module()
-        payload = module.job_post_payload(
-            {
-                "title": "  Clean storefront windows  ",
-                "category": "Window cleaning",
-                "project_setting": "business-space",
-                "city": " Alexandria ",
-                "state": "va",
-                "zip_code": "22314-0010",
-                "desired_date": "2026-09-01",
-                "description": "Need first-floor storefront windows cleaned before opening.",
-                "budget_min": "500",
-                "budget_max": "900",
-            },
-            today=module.date(2026, 8, 3),
-        )
+        valid_form = {
+            "title": "  Clean storefront windows  ",
+            "category": "Window cleaning",
+            "project_setting": "business-space",
+            "city": " Alexandria ",
+            "state": "va",
+            "zip_code": "22314-0010",
+            "desired_date": "2026-09-01",
+            "description": "Need first-floor storefront windows cleaned before opening.",
+            "budget_min": "500",
+            "budget_max": "900",
+            "service_policy_acknowledgement": "2026-08-22",
+        }
+        payload = module.job_post_payload(valid_form, today=module.date(2026, 8, 3))
         self.assertEqual(payload["title"], "Clean storefront windows")
         self.assertEqual(payload["state"], "VA")
         self.assertEqual(payload["zip_code"], "22314")
@@ -6196,6 +6208,22 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(
             payload["location_privacy"],
             "Approximate city or ZIP-level pins only.",
+        )
+
+        with self.assertRaises(module.JobPostError) as missing_policy:
+            module.job_post_payload(
+                {
+                    key: value
+                    for key, value in valid_form.items()
+                    if key != "service_policy_acknowledgement"
+                },
+                today=module.date(2026, 8, 3),
+            )
+        self.assertEqual(
+            missing_policy.exception.field_errors[
+                "service_policy_acknowledgement"
+            ],
+            ["Confirm the current service safety advisory."],
         )
 
         with self.assertRaises(module.JobPostError) as invalid:
@@ -6262,6 +6290,60 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertFalse(module.can_update_job(other, job))
         self.assertFalse(module.can_update_job(owner, {**job, "status": "hidden"}))
 
+    def test_cloudflare_service_policy_registry_matches_flask_and_release_schema(self):
+        from workdoe.service_policy import (
+            EMERGENCY_DISABLED_SERVICES as LOCAL_DISABLED_SERVICES,
+        )
+        from workdoe.service_policy import (
+            SERVICE_POLICY_REGISTRY as LOCAL_POLICY_REGISTRY,
+        )
+        from workdoe.service_policy import (
+            SERVICE_POLICY_VERSION as LOCAL_POLICY_VERSION,
+        )
+
+        worker_policy = load_service_policy_module()
+        self.assertEqual(worker_policy.SERVICE_POLICY_VERSION, LOCAL_POLICY_VERSION)
+        self.assertEqual(worker_policy.SERVICE_POLICY_REGISTRY, LOCAL_POLICY_REGISTRY)
+        self.assertEqual(worker_policy.EMERGENCY_DISABLED_SERVICES, frozenset())
+        self.assertEqual(LOCAL_DISABLED_SERVICES, frozenset())
+        self.assertEqual(len(worker_policy.SERVICE_POLICY_REGISTRY), 53)
+        self.assertEqual(
+            worker_policy.service_policy_error("electrical", "stale-policy"),
+            "Confirm the current service safety advisory.",
+        )
+        self.assertEqual(
+            worker_policy.service_policy_error("electrical", LOCAL_POLICY_VERSION),
+            "",
+        )
+
+        migration = (
+            ROOT
+            / "cloudflare"
+            / "d1"
+            / "migrations"
+            / "0028_service_policy_acknowledgements.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "CREATE TABLE IF NOT EXISTS service_policy_acknowledgements",
+            migration,
+        )
+        self.assertIn("idx_service_policy_ack_user", migration)
+        self.assertIn("idx_service_policy_ack_resource", migration)
+
+        entrypoint = WORKER_ENTRY_PATH.read_text(encoding="utf-8")
+        create_job = entrypoint[
+            entrypoint.index("    async def create_job") : entrypoint.index(
+                "    async def update_job"
+            )
+        ]
+        self.assertLess(
+            create_job.index("await record_service_policy_acknowledgement("),
+            create_job.index("await complete_idempotent_request("),
+        )
+        app_shell = APP_SHELL_PATH.read_text(encoding="utf-8")
+        self.assertIn("Workdoe does not verify provider credentials.", app_shell)
+        self.assertIn("Confirm before updating", app_shell)
+
     def test_cloudflare_account_roles_are_permanent_and_budget_migration_is_incremental(self):
         auth = load_email_code_auth_module()
         self.assertEqual(auth.fixed_account_role("client", "contractor"), "client")
@@ -6324,6 +6406,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "experience": " Five years of exterior cleaning work in the DMV. ",
                 "questions": " Is there hose access? ",
                 "availability": " Tuesday and Thursday afternoons ",
+                "service_policy_acknowledgement": "2026-08-22",
             }
         )
         self.assertEqual(
@@ -6333,6 +6416,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(payload["price_range"], "$450 - $650")
         self.assertEqual(payload["timeline"], "Two business days after approval")
         self.assertEqual(payload["availability"], "Tuesday and Thursday afternoons")
+        self.assertEqual(payload["service_policy_acknowledgement"], "2026-08-22")
 
         with self.assertRaises(module.MatchRequestError) as invalid:
             module.match_request_payload(

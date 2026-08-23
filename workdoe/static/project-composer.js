@@ -17,6 +17,8 @@
   var selectedFamily = composer.querySelector("[data-selected-service-family]");
   var categoryInput = composer.querySelector('input[name="category"]');
   var scopePanels = Array.prototype.slice.call(composer.querySelectorAll("[data-service-scope-set]"));
+  var policyPanel = composer.querySelector("[data-service-policy-advisory]");
+  var policyCheckbox = composer.querySelector("[data-service-policy-checkbox]");
   var requestedInitialStep = Number(composer.dataset.projectInitialStep || 1);
   var currentStep = 1;
 
@@ -39,6 +41,34 @@
     var option = selectedServiceOption();
     if (categoryInput && option && option.dataset.category) {
       categoryInput.value = option.dataset.category;
+    }
+  }
+
+  function syncServicePolicy() {
+    if (!policyPanel || !policyCheckbox) {
+      return;
+    }
+    var option = selectedServiceOption();
+    var service = option && option.value ? option.value : "";
+    var required = Boolean(service && option.dataset.policyRequired === "true");
+    var disabled = Boolean(service && option.dataset.policyDisabled === "true");
+    if (policyPanel.dataset.policyService && policyPanel.dataset.policyService !== service) {
+      policyCheckbox.checked = false;
+    }
+    policyPanel.dataset.policyService = service;
+    policyPanel.hidden = !required && !disabled;
+    policyCheckbox.disabled = !required;
+    policyCheckbox.required = required;
+    policyCheckbox.value = option ? option.dataset.policyVersion || "" : "";
+    var tier = policyPanel.querySelector("[data-service-policy-tier]");
+    var copy = policyPanel.querySelector("[data-service-policy-copy]");
+    if (tier) {
+      tier.textContent = option && option.dataset.policyTier === "regulated"
+        ? "Local rules check"
+        : "Safety check";
+    }
+    if (copy) {
+      copy.textContent = option ? option.dataset.policyAdvisory || "" : "";
     }
   }
 
@@ -115,6 +145,7 @@
     syncServiceChoices();
     syncScopePanels();
     updateCategory();
+    syncServicePolicy();
   }
 
   function moneyValue(value) {
@@ -233,6 +264,7 @@
       syncServiceChoices();
       syncScopePanels();
       updateCategory();
+      syncServicePolicy();
       updateReview();
     });
   }
@@ -244,6 +276,7 @@
       serviceSelect.value = choice.value;
       syncScopePanels();
       updateCategory();
+      syncServicePolicy();
       updateReview();
     });
   });
