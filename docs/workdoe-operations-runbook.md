@@ -254,12 +254,20 @@ diagnostic command.
 1. Run the strict readiness and migration plan without deploying.
 2. Confirm the target database is `workdoe` and record D1 database information.
 3. Record a current Time Travel bookmark and release identifier in the private
-   release record.
+   release record. The guarded GitHub deployment captures this bookmark, the
+   active Worker deployment, its highest-traffic version ID, and a ready-to-use
+   rollback command before applying migrations.
 4. Create a D1 SQL export in restricted temporary runner storage and transfer it
    to a private backup location. Prefer an automated D1-to-R2 Workflow once the
    backup bucket, retention period, and access owner are approved.
 5. Validate that the export is non-empty and contains expected schema markers.
    Do not attach the export to a public issue or build artifact.
+
+The GitHub recovery artifact intentionally contains only the Time Travel
+bookmark, Worker deployment metadata, release SHA/timestamps, checksums, and
+rollback command. It does not contain a D1 export or marketplace user data. A
+full export remains blocked until the private backup bucket, access owner, and
+retention period are approved.
 
 ### Recovery
 
@@ -409,6 +417,7 @@ placeholders are resolved, the drills above pass, and evidence is reviewed.
 - [D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/)
 - [D1 import and export](https://developers.cloudflare.com/d1/best-practices/import-export-data/)
 - [D1 backup to R2 Workflow example](https://developers.cloudflare.com/workflows/examples/backup-d1/)
+- [Workers rollbacks](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/)
 - [R2 durability](https://developers.cloudflare.com/r2/reference/durability/)
 - [R2 object lifecycle rules](https://developers.cloudflare.com/r2/buckets/object-lifecycles/)
 - [R2 bucket locks](https://developers.cloudflare.com/r2/buckets/bucket-locks/)

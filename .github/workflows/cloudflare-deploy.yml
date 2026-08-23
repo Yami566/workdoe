@@ -188,6 +188,31 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
 
+      - name: Capture pre-deployment recovery point
+        run: |
+          set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/workdoe-release-evidence"
+          mkdir -p "$evidence_dir"
+          printf 'github_sha=%s\ncaptured_at=%s\n' \
+            "$GITHUB_SHA" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            > "$evidence_dir/release-before.txt"
+          npx wrangler d1 time-travel info workdoe \
+            --config cloudflare/wrangler.jsonc \
+            > "$evidence_dir/d1-time-travel-before.txt" 2>&1
+          npx wrangler deployments status --json \
+            --config cloudflare/wrangler.jsonc \
+            > "$evidence_dir/worker-deployment-before.json"
+          previous_version="$(jq -er '.versions | max_by(.percentage) | .version_id' \
+            "$evidence_dir/worker-deployment-before.json")"
+          printf '%s\n' "$previous_version" \
+            > "$evidence_dir/worker-rollback-version.txt"
+          printf 'npx wrangler rollback %s --message "Rollback Workdoe release %s" --config cloudflare/wrangler.jsonc\n' \
+            "$previous_version" "$GITHUB_SHA" \
+            > "$evidence_dir/worker-rollback-command.txt"
+          test -s "$evidence_dir/d1-time-travel-before.txt"
+          test -s "$evidence_dir/worker-deployment-before.json"
+          sha256sum "$evidence_dir"/* > "$evidence_dir/checksums-before.sha256"
+
       - name: Capture sanitized Worker secret names
         run: npm run cf:secrets:evidence
 
@@ -202,3 +227,27 @@ jobs:
 
       - name: Deploy guarded production release
         run: npm run cf:deploy
+
+      - name: Capture deployed Worker state
+        run: |
+          set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/workdoe-release-evidence"
+          npx wrangler deployments status --json \
+            --config cloudflare/wrangler.jsonc \
+            > "$evidence_dir/worker-deployment-after.json"
+          printf 'github_sha=%s\ncaptured_at=%s\n' \
+            "$GITHUB_SHA" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            > "$evidence_dir/release-after.txt"
+          test -s "$evidence_dir/worker-deployment-after.json"
+          sha256sum "$evidence_dir/worker-deployment-after.json" \
+            "$evidence_dir/release-after.txt" \
+            > "$evidence_dir/checksums-after.sha256"
+
+      - name: Retain release recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: workdoe-release-recovery-${{ github.sha }}
+          path: ${{ runner.temp }}/workdoe-release-evidence
+          if-no-files-found: error
+          retention-days: 30

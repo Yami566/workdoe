@@ -7913,6 +7913,23 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("http://127.0.0.1:8787/health", workflow)
         self.assertIn("Verify current main release candidate", workflow)
         self.assertIn("url: https://workdoe.com", workflow)
+        self.assertIn("Capture pre-deployment recovery point", workflow)
+        self.assertIn("wrangler d1 time-travel info workdoe", workflow)
+        self.assertIn("wrangler deployments status --json", workflow)
+        self.assertIn("worker-rollback-version.txt", workflow)
+        self.assertIn("worker-rollback-command.txt", workflow)
+        self.assertIn("Capture deployed Worker state", workflow)
+        self.assertIn("Retain release recovery evidence", workflow)
+        self.assertIn("if: always()", workflow)
+        self.assertIn("retention-days: 30", workflow)
+        self.assertLess(
+            workflow.index("Capture pre-deployment recovery point"),
+            workflow.index("Deploy guarded production release"),
+        )
+        self.assertLess(
+            workflow.index("Deploy guarded production release"),
+            workflow.index("Capture deployed Worker state"),
+        )
         self.assertIn(
             "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7",
             workflow,
@@ -7923,6 +7940,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn(
             "actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5",
+            workflow,
+        )
+        self.assertIn(
+            "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1",
             workflow,
         )
 

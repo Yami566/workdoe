@@ -73,6 +73,11 @@ deployment has been performed during this stabilization pass.
 - Corrected the 390x844 message-thread grid so the complete reply composer and
   Send action clear the fixed mobile task navigation without adding script or
   changing the desktop layout.
+- Hardened the guarded GitHub release path to capture a D1 Time Travel bookmark,
+  the active Worker deployment, a rollback version/command, release SHA and
+  checksums before migrations. The workflow captures the deployed Worker state
+  afterward and retains the non-user-data evidence as a pinned official GitHub
+  artifact even when a later release step fails.
 
 ## Verification evidence
 
@@ -160,6 +165,12 @@ deployment has been performed during this stabilization pass.
   `idx_job_photos_public_job` index without hot-table scans. Wrangler 4.125.0
   dry-run packaging succeeded with 48 Python modules and 86 assets at 893.80
   KiB / 163.74 KiB gzip.
+- The release-recovery workflow change passed the repeated 225-test suite in
+  81.921 seconds, the complete security/provenance gate, Cloudflare preflight,
+  YAML parsing, and the warning-free Wrangler dry run. Read-only production
+  checks also proved that the configured D1 returns a current Time Travel
+  bookmark and that the active Worker exposes deployment/version metadata;
+  neither command changed production state.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

@@ -34,6 +34,9 @@ the current requirements, policy gates, or release status.
 - `ux-audit/2026-08-22-stabilization/`: map, dialog, and stabilization evidence.
 - `ux-audit/2026-08-23-current-journeys/`: current consumer, contractor,
   messaging, and accepted contractor map-first workspace evidence.
+- `ux-audit/2026-08-23-project-lifecycle/`: current completed-project and
+  approved-match message hierarchy, responsive correction, and same-state
+  before/after evidence.
 - `release-evidence/2026-08-23-d1-worker-verification.md`: indexed D1 query
   plan, local Worker runtime, and rows-read telemetry evidence.
 - `release-evidence/2026-08-23-local-browser-acceptance.md`: repeated mobile
