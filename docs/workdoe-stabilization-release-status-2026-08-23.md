@@ -222,6 +222,12 @@ performance, accessibility, and live gates run on the final commit.
 - Confirmed in the Cloudflare dashboard that Hosted Images does not have the
   required paid subscription. Production photo upload sanitization is designed
   to fail closed until Images Paid is enabled and tested.
+- Created a 30-day application-level invitation for the account owner from the
+  production Clerk Users > Invitations view. Clerk reports the invitation as
+  pending through 2026-09-22. The separate header-level dashboard-collaborator
+  invitation was not used. Acceptance and the resulting Workdoe-hosted
+  email-code journey still require the recipient to act from the invitation
+  email.
 
 ## Remaining production gates
 
@@ -229,13 +235,12 @@ performance, accessibility, and live gates run on the final commit.
    operator identity, policy copy, retention/deletion rules, and monitored
    support/privacy/security ownership. The `admin@workdoe.com` route now exists,
    but received-mail evidence, a named monitor, and a response target remain.
-2. Create or invite one real controlled-beta application user and prove the
+2. Accept the pending controlled-beta application invitation and prove the
    complete Workdoe-hosted email-code journey. The Clerk dashboard currently
-   has no production application users. Its header-level Invite control is for
-   dashboard collaborators, so it was not used as an application invitation.
-   The production instance, verified domain and mail DNS, same-domain proxy,
-   restricted access, email-code-only settings, disabled passwords, express
-   legal consent, JWT verification, and webhook configuration are evidenced.
+   has no accepted production application users. The production instance,
+   verified domain and mail DNS, same-domain proxy, restricted access,
+   email-code-only settings, disabled passwords, express legal consent, JWT
+   verification, and webhook configuration are evidenced.
 3. Enable Cloudflare Images Paid and prove one valid sanitized upload plus one
    invalid upload rejection. Then repeat dependency, secret, Bandit, migration,
    query-plan, and Worker checks on the final commit; complete live private-media,
