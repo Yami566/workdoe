@@ -627,13 +627,13 @@ def layout(
             [
                 '<script src="/vendor/leaflet/leaflet.js"></script>',
                 '<script src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>',
-                '<script src="/map.js?v=workdoe-public-family-grid-v1"></script>',
+                '<script src="/map.js?v=workdoe-message-provider-v1"></script>',
             ]
         )
     if include_actions or authenticated:
         scripts.append('<script defer src="/worker-actions.js"></script>')
     if include_project_composer:
-        scripts.append('<script defer src="/project-composer.js?v=workdoe-public-family-grid-v1"></script>')
+        scripts.append('<script defer src="/project-composer.js?v=workdoe-message-provider-v1"></script>')
     if include_clerk:
         clerk_asset_base_url = clerk_runtime_frontend_api_url(
             clerk_publishable_key,
@@ -691,7 +691,7 @@ def layout(
   <link rel="canonical" href="{escape(canonical_url)}">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=workdoe-public-family-grid-v1">
+  <link rel="stylesheet" href="/styles.css?v=workdoe-message-provider-v1">
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet/leaflet.css\">" if include_map else ""}
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.css\"><link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.Default.css\">" if include_map else ""}
   {script_html}
@@ -2839,6 +2839,35 @@ def message_thread_detail_html(
         if can_reply and job_id
         else ""
     )
+    provider = thread.get("provider", {}) or {}
+    provider_reputation = provider.get("reputation", {}) or {}
+    provider_trust = provider_reputation.get("trust_record", {}) or {}
+    provider_profile_url = str(provider.get("profile_url", "") or "")
+    provider_name = str(provider.get("name", "Contractor") or "Contractor")
+    verified_completions = int(
+        provider_reputation.get("verified_completions", 0) or 0
+    )
+    provider_heading_html = ""
+    provider_limit_html = ""
+    if provider and provider_profile_url:
+        trust_state = str(provider_trust.get("state", "none") or "none")
+        reviewed_icon = (
+            '<img src="/vendor/tabler-icons/home-check.svg" alt="">'
+            if trust_state != "none"
+            else ""
+        )
+        provider_heading_html = f"""
+          <div class="thread-provider-summary">
+            <a href="{escape(provider_profile_url)}">{escape(provider_name)}</a>
+            <span class="thread-provider-signals" aria-label="Chosen provider work and reviewed-record signals">
+                <small class="thread-provider-signal"><img src="/vendor/tabler-icons/sparkles.svg" alt=""><span>{escape(provider_reputation.get('level_label', 'New to Workdoe'))} - {verified_completions} completed {'project' if verified_completions == 1 else 'projects'}</span></small>
+                <small class="thread-provider-signal{' is-reviewed' if trust_state != 'none' else ' is-muted'}">{reviewed_icon}<span>{escape(provider_trust.get('label', 'No source-checked record'))}</span></small>
+            </span>
+          </div>"""
+        provider_limit_html = (
+            '<p class="thread-trust-limit">Public-source status only. '
+            "Confirm project eligibility directly.</p>"
+        )
     inbox_rows = []
     for inbox_thread in inbox_threads:
         inbox_thread_id = int(inbox_thread.get("id", 0) or 0)
@@ -2933,13 +2962,17 @@ def message_thread_detail_html(
       {inbox_rail}
       <section class="message-shell thread-message-shell">
         <aside class="thread-match-context" aria-label="Approved match summary">
-          <p class="eyebrow">Approved match</p>
+          <div class="thread-match-heading">
+            <p class="eyebrow">Approved match</p>
+            {provider_heading_html}
+          </div>
           {project_link}
           <dl class="thread-match-facts">
             <div><dt>Price</dt><dd>{escape(thread.get('price_range') or 'Not provided')}</dd></div>
             <div><dt>Timeline</dt><dd>{escape(thread.get('timeline') or 'Not provided')}</dd></div>
             <div><dt>Availability</dt><dd>{escape(thread.get('availability') or 'Not provided')}</dd></div>
           </dl>
+          {provider_limit_html}
         </aside>
         <div class="message-list thread-message-list" aria-label="{escape(message_count_label(len(messages)))}">
 {messages_html}

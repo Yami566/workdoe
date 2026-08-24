@@ -42,7 +42,21 @@
   {% endif %}
   <section class="message-shell thread-message-shell">
     <aside class="thread-match-context" aria-label="Approved match summary">
-      <p class="eyebrow">Approved match</p>
+      {% set provider = thread.provider %}
+      {% set provider_reputation = provider.reputation %}
+      {% set provider_trust = provider_reputation.trust_record %}
+      <div class="thread-match-heading">
+        <p class="eyebrow">Approved match</p>
+        {% if provider %}
+          <div class="thread-provider-summary">
+            <a href="{{ provider.profile_url }}">{{ provider.name }}</a>
+            <span class="thread-provider-signals" aria-label="Chosen provider work and reviewed-record signals">
+              <small class="thread-provider-signal"><img src="{{ url_for('static', filename='vendor/tabler-icons/sparkles.svg') }}" alt=""><span>{{ provider_reputation.level_label }} · {{ provider_reputation.verified_completions }} completed {{ "project" if provider_reputation.verified_completions == 1 else "projects" }}</span></small>
+              <small class="thread-provider-signal{% if provider_trust.state != 'none' %} is-reviewed{% else %} is-muted{% endif %}">{% if provider_trust.state != 'none' %}<img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt="">{% endif %}<span>{{ provider_trust.label }}</span></small>
+            </span>
+          </div>
+        {% endif %}
+      </div>
       {% if can_reply %}
         <a class="button secondary compact" href="{{ url_for('client_job_detail', job_id=thread.job_id) if g.user.role == 'client' else url_for('contractor_job_detail', job_id=thread.job_id) }}">View project</a>
       {% endif %}
@@ -51,6 +65,7 @@
         <div><dt>Timeline</dt><dd>{{ thread.timeline or "Not provided" }}</dd></div>
         <div><dt>Availability</dt><dd>{{ thread.availability or "Not provided" }}</dd></div>
       </dl>
+      {% if provider %}<p class="thread-trust-limit">Public-source status only. Confirm project eligibility directly.</p>{% endif %}
     </aside>
     <div class="message-list thread-message-list" aria-label="{{ messages|length|message_count_label }}">
       {% for message in messages %}

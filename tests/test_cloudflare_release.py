@@ -592,6 +592,7 @@ def load_match_decisions_module():
 
 
 def load_message_threads_module():
+    load_contractor_reputation_module()
     spec = importlib.util.spec_from_file_location("message_threads", MESSAGE_THREADS_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -3769,13 +3770,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', html)
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', html)
         self.assertIn(
-            'href="/styles.css?v=workdoe-public-family-grid-v1"', html
+            'href="/styles.css?v=workdoe-message-provider-v1"', html
         )
         self.assertIn('href="/vendor/leaflet/leaflet.css"', html)
         self.assertIn('href="/vendor/leaflet-markercluster/MarkerCluster.css"', html)
         self.assertIn('src="/vendor/leaflet/leaflet.js"', html)
         self.assertIn('src="/vendor/leaflet-markercluster/leaflet.markercluster.js"', html)
-        self.assertIn('src="/map.js?v=workdoe-public-family-grid-v1"', html)
+        self.assertIn('src="/map.js?v=workdoe-message-provider-v1"', html)
         self.assertIn('getAttribute("data-asset-root")', map_script)
         self.assertIn("assetRoot + '/vendor/tabler-icons/home-check.svg\"", map_script)
         self.assertIn('src="/clerk-entry.js"', html)
@@ -4888,6 +4889,20 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "availability": "Tuesday morning",
                     "client_name": "Avery Client",
                     "contractor_name": "Doe Exterior Care",
+                    "provider": {
+                        "id": 7,
+                        "name": "Doe Exterior Care",
+                        "profile_url": "/contractors/7?job_id=12",
+                        "reputation": {
+                            "level_label": "Steady provider",
+                            "verified_completions": 3,
+                            "trust_record": {
+                                "state": "license-source-checked",
+                                "label": "1 license source checked",
+                            },
+                            "ranking_effect": "none",
+                        },
+                    },
                 },
                 "messages": [
                     {
@@ -4937,6 +4952,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("<dt>Price</dt><dd>$450-$650</dd>", thread_html)
         self.assertIn("<dt>Timeline</dt><dd>Two business days</dd>", thread_html)
         self.assertIn("<dt>Availability</dt><dd>Tuesday morning</dd>", thread_html)
+        self.assertIn("Chosen provider", thread_html)
+        self.assertIn(
+            'href="/contractors/7?job_id=12">Doe Exterior Care</a>',
+            thread_html,
+        )
+        self.assertIn("Steady provider - 3 completed projects", thread_html)
+        self.assertIn("1 license source checked", thread_html)
+        self.assertIn("Public-source status only", thread_html)
+        self.assertNotIn("claimed_identifier", thread_html)
         self.assertIn('src="/worker-actions.js"', thread_html)
         self.assertIn('data-json-action="/api/reports"', thread_html)
         self.assertIn('name="target_type" value="message"', thread_html)
@@ -5143,7 +5167,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('id="lead-map"', lead_html)
         self.assertEqual(module.photo_count_label(1), "1 photo")
         self.assertEqual(module.photo_count_label(None), "0 photos")
-        self.assertIn('src="/map.js?v=workdoe-public-family-grid-v1"', lead_html)
+        self.assertIn('src="/map.js?v=workdoe-message-provider-v1"', lead_html)
         self.assertIn('class="market-workspace signed-in-market-workspace"', lead_html)
         self.assertIn('id="lead-results" class="project-results" data-project-results aria-label="Open leads" role="list"', lead_html)
         self.assertIn('class="market-map-stage"', lead_html)
@@ -6529,7 +6553,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
     def test_cloudflare_contractor_reputation_matches_local_contract(self):
         worker = load_contractor_reputation_module()
-        from workdoe.contractor_reputation import contractor_reputation
+        from workdoe.contractor_reputation import (
+            contractor_match_provider,
+            contractor_reputation,
+        )
 
         self.assertEqual(
             worker.contractor_reputation(10, 2, 1),
@@ -6546,6 +6573,21 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             ["earned", "earned", "current", "next"],
         )
         self.assertEqual(reputation["ranking_effect"], "none")
+        self.assertEqual(
+            worker.contractor_match_provider(7, "Doe Powerwash", 42, 10, 2, 1),
+            contractor_match_provider(7, "Doe Powerwash", 42, 10, 2, 1),
+        )
+        provider = worker.contractor_match_provider(
+            7,
+            "Doe Powerwash",
+            42,
+            verified_completions=10,
+            source_checked_credentials=2,
+            source_checked_licenses=1,
+        )
+        self.assertEqual(provider["profile_url"], "/contractors/7?job_id=42")
+        self.assertEqual(provider["reputation"]["ranking_effect"], "none")
+        self.assertNotIn("claimed_identifier", json.dumps(provider))
 
     def test_cloudflare_job_detail_payload_redacts_contractor_location(self):
         module = load_job_details_module()
@@ -7534,7 +7576,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "timeline": "Two business days",
                 "availability": "Tuesday morning",
                 "client_name": "Avery Client",
+                "contractor_id": 7,
                 "contractor_name": "Doe Powerwash",
+                "verified_completion_count": 3,
+                "source_checked_credential_count": 2,
+                "source_checked_license_count": 1,
                 "last_message": "Can you start Tuesday?",
                 "last_message_id": 9,
                 "last_sender_id": 7,
@@ -7552,8 +7598,23 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(summary["price_range"], "$450-$650")
         self.assertEqual(summary["timeline"], "Two business days")
         self.assertEqual(summary["availability"], "Tuesday morning")
+        self.assertEqual(summary["provider"]["name"], "Doe Powerwash")
+        self.assertEqual(
+            summary["provider"]["profile_url"],
+            "/contractors/7?job_id=12",
+        )
+        self.assertEqual(
+            summary["provider"]["reputation"]["level_label"],
+            "Steady provider",
+        )
+        self.assertEqual(
+            summary["provider"]["reputation"]["trust_record"]["label"],
+            "1 license source checked",
+        )
+        self.assertEqual(summary["provider"]["reputation"]["ranking_effect"], "none")
         self.assertNotIn("client_email", summary)
         self.assertNotIn("last_sender_id", summary)
+        self.assertNotIn("claimed_identifier", json.dumps(summary))
         listing_rows = [
             summary,
             {
@@ -10410,14 +10471,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Choose one task. Add details next.", html)
         self.assertIn("More yard &amp; landscaping services", html)
         self.assertIn(
-            'src="/project-composer.js?v=workdoe-public-family-grid-v1"', html
+            'src="/project-composer.js?v=workdoe-message-provider-v1"', html
         )
         self.assertIn('/vendor/tabler-icons/trees.svg', html)
         self.assertIn('/vendor/tabler-icons/lawn-mower.svg', html)
         self.assertIn('/vendor/tabler-icons/seedling.svg', html)
         self.assertIn('/vendor/tabler-icons/plant.svg', html)
         self.assertIn(
-            'href="/styles.css?v=workdoe-public-family-grid-v1"', html
+            'href="/styles.css?v=workdoe-message-provider-v1"', html
         )
         self.assertIn('name="service_choice"', html)
         self.assertEqual(html.count('data-project-choice-advance'), 59)

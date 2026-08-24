@@ -1722,6 +1722,27 @@ class WorkdoeFlowTests(unittest.TestCase):
         )
         match = self.one("SELECT * FROM match_requests WHERE job_id = ?", (job["id"],))
 
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                """
+                INSERT INTO contractor_credentials
+                    (contractor_id, credential_type, jurisdiction,
+                     claimed_identifier, claimed_name, status, source_url,
+                     checked_at, expires_at, reviewed_by, review_note,
+                     created_at, updated_at)
+                VALUES (?, 'trade_license', 'VA', 'PRIVATE-THREAD-LICENSE',
+                        'Rivera Exterior Care', 'verified',
+                        'https://example.test/public-license',
+                        '2026-08-16T12:00:00+00:00', '2027-08-16', NULL,
+                        'Source reviewed for message-thread test.',
+                        '2026-08-16T12:00:00+00:00',
+                        '2026-08-16T12:00:00+00:00')
+                """,
+                (match["contractor_id"],),
+            )
+            db.commit()
+
         self.logout()
         self.login("client@workdoe.local", "workdoe-client")
         self.client.post(f"/client/requests/{match['id']}/approve", follow_redirects=True)
@@ -1769,6 +1790,19 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(
             b"<dt>Availability</dt><dd>Weekday afternoons</dd>", detail.data
         )
+        self.assertIn(b"Chosen provider", detail.data)
+        self.assertIn(b"Jordan Rivera", detail.data)
+        self.assertIn(b"New to Workdoe", detail.data)
+        self.assertIn(b"1 license source checked", detail.data)
+        self.assertIn(b"Public-source status only", detail.data)
+        self.assertIn(
+            f'href="/contractors/{match["contractor_id"]}?job_id={job["id"]}"'.encode(
+                "ascii"
+            ),
+            detail.data,
+        )
+        self.assertNotIn(b"PRIVATE-THREAD-LICENSE", detail.data)
+        self.assertNotIn(b"example.test/public-license", detail.data)
         self.assertNotIn(b"client@workdoe.local", detail.data)
         self.assertIn(b'for="message-body"', detail.data)
         self.assertIn(b'id="message-body"', detail.data)
@@ -1805,6 +1839,8 @@ class WorkdoeFlowTests(unittest.TestCase):
             f'href="/jobs/{job["id"]}">View project</a>'.encode("ascii"),
             contractor_detail.data,
         )
+        self.assertIn(b"1 license source checked", contractor_detail.data)
+        self.assertNotIn(b"PRIVATE-THREAD-LICENSE", contractor_detail.data)
         self.assertNotIn(b"client@workdoe.local", contractor_detail.data)
 
     def test_mini_bid_constraints_and_error_value_preservation(self):
@@ -4938,7 +4974,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         home = self.client.get("/")
         self.assertIn(b'data-asset-root="/static/"', home.data)
         self.assertIn(
-            b'/static/map.js?v=workdoe-public-family-grid-v1',
+            b'/static/map.js?v=workdoe-message-provider-v1',
             home.data,
         )
 
@@ -6499,11 +6535,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'/vendor/tabler-icons/seedling.svg', form.data)
         self.assertIn(b'/vendor/tabler-icons/plant.svg', form.data)
         self.assertIn(
-            b'/static/styles.css?v=workdoe-public-family-grid-v1',
+            b'/static/styles.css?v=workdoe-message-provider-v1',
             form.data,
         )
         self.assertIn(
-            b'/static/project-composer.js?v=workdoe-public-family-grid-v1',
+            b'/static/project-composer.js?v=workdoe-message-provider-v1',
             form.data,
         )
         self.assertIn(b'name="service_group_slug"', form.data)

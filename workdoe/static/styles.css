@@ -5038,6 +5038,65 @@ textarea:focus {
   font-weight: 800;
 }
 
+.thread-match-heading {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.thread-provider-summary {
+  display: flex;
+  align-items: center;
+  gap: 3px 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.thread-provider-summary > a {
+  color: var(--accent-dark);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.thread-provider-signals {
+  display: flex;
+  gap: 3px 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.thread-provider-signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.thread-provider-signal img {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+}
+
+.thread-provider-signal.is-reviewed {
+  color: var(--accent-dark);
+}
+
+.thread-provider-signal.is-muted {
+  color: var(--muted);
+}
+
+.thread-trust-limit {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.64rem;
+  line-height: 1.25;
+}
+
 .project-match-context {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

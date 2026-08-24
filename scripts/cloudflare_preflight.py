@@ -2437,7 +2437,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 'class="service-option"',
                 'class="service-select-control"',
                 "data-service-option-group",
-                "workdoe-public-family-grid-v1",
+                "workdoe-message-provider-v1",
                 "serviceChoices",
                 "syncServiceChoices",
                 "serviceSelect.value = choice.value",

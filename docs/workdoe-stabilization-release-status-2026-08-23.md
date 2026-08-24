@@ -194,6 +194,11 @@ deployment has been performed during this stabilization pass.
   selector. All six numbered lanes are now visible without horizontal
   scrolling, every lane remains a URL-backed icon link, and the stable
   300-pixel live map remains inside the first 390x844 viewport.
+- Kept provider trust context with an approved match after participants enter
+  private messaging. The chosen provider, mutually confirmed Workdoe milestone,
+  and aggregate current source-checked record state now sit beside accepted
+  terms in Flask and Worker threads. The shared projection excludes credential
+  identifiers, source URLs, contact details, addresses, and ranking effects.
 
 ## Verification evidence
 
@@ -615,6 +620,14 @@ deployment has been performed during this stabilization pass.
   4.125.0 packaged 48 Python modules and 87 assets at 933.56 KiB / 171.53 KiB
   gzip without deploying. Responsive and interaction evidence is recorded in
   `docs/ux-audit/2026-08-24-public-family-selector/`.
+- The provider-continuity batch passed all 235 tests in 81.819 seconds and the
+  complete security/provenance gate across 658 non-ignored files. Cloudflare
+  preflight remained warning-free; all 34 D1 migrations loaded with the
+  expected three public map/photo indexes and no table scan. Wrangler 4.125.0
+  packaged 48 Python modules and 87 assets at 938.51 KiB / 172.35 KiB gzip in
+  dry-run mode without deploying. The accepted 390x844 trust-context and
+  privacy evidence is recorded in
+  `docs/ux-audit/2026-08-24-message-provider-continuity/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

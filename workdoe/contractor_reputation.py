@@ -133,3 +133,28 @@ def contractor_reputation(
         "ranking_effect": "none",
         "method_label": "100 points per mutually confirmed Workdoe project",
     }
+
+
+def contractor_match_provider(
+    contractor_id,
+    contractor_name,
+    job_id,
+    verified_completions=0,
+    source_checked_credentials=0,
+    source_checked_licenses=0,
+) -> dict:
+    provider_id = nonnegative_count(contractor_id)
+    project_id = nonnegative_count(job_id)
+    profile_url = f"/contractors/{provider_id}" if provider_id else ""
+    if profile_url and project_id:
+        profile_url = f"{profile_url}?job_id={project_id}"
+    return {
+        "id": provider_id,
+        "name": str(contractor_name or "Contractor"),
+        "profile_url": profile_url,
+        "reputation": contractor_reputation(
+            verified_completions,
+            source_checked_credentials,
+            source_checked_licenses,
+        ),
+    }

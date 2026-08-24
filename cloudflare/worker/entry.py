@@ -10043,12 +10043,49 @@ async def thread_for_messages(env, thread_id: int):
                match_requests.price_range, match_requests.timeline,
                match_requests.availability,
                client.display_name AS client_name,
-               contractor.display_name AS contractor_name
+               COALESCE(
+                   NULLIF(contractor_profile.business_name, ''),
+                   NULLIF(contractor.company_name, ''),
+                   contractor.display_name
+               ) AS contractor_name,
+               (
+                   SELECT COUNT(*)
+                   FROM match_requests AS completed_request
+                   JOIN match_completions AS completed_match
+                     ON completed_match.match_request_id = completed_request.id
+                   WHERE completed_request.contractor_id = threads.contractor_id
+                     AND completed_match.verified_at IS NOT NULL
+               ) AS verified_completion_count,
+               (
+                   SELECT COUNT(*)
+                   FROM contractor_credentials AS current_credential
+                   WHERE current_credential.contractor_id = threads.contractor_id
+                     AND current_credential.status = 'verified'
+                     AND (
+                         current_credential.expires_at IS NULL
+                         OR current_credential.expires_at = ''
+                         OR date(current_credential.expires_at) >= date('now')
+                     )
+               ) AS source_checked_credential_count,
+               (
+                   SELECT COUNT(*)
+                   FROM contractor_credentials AS current_license
+                   WHERE current_license.contractor_id = threads.contractor_id
+                     AND current_license.credential_type = 'trade_license'
+                     AND current_license.status = 'verified'
+                     AND (
+                         current_license.expires_at IS NULL
+                         OR current_license.expires_at = ''
+                         OR date(current_license.expires_at) >= date('now')
+                     )
+               ) AS source_checked_license_count
         FROM threads
         JOIN jobs ON jobs.id = threads.job_id
         JOIN match_requests ON match_requests.id = threads.match_request_id
         JOIN users AS client ON client.id = threads.client_id
         JOIN users AS contractor ON contractor.id = threads.contractor_id
+        LEFT JOIN contractor_profiles AS contractor_profile
+          ON contractor_profile.user_id = threads.contractor_id
         WHERE threads.id = ?
         LIMIT 1
         """,

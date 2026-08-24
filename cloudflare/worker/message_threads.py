@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contractor_reputation import contractor_match_provider
+
 MESSAGE_BODY_MAX_LENGTH = 1000
 MAX_MESSAGE_BODY_BYTES = 4096
 MESSAGE_BODY_TOO_LONG = "Keep messages under 1000 characters."
@@ -94,9 +96,12 @@ def message_thread_summary(row, viewer_id: int | None = None) -> dict:
         needs_reply = bool(count_value(row, "last_message_id") and last_sender_id) and (
             last_sender_id != viewer_id
         )
+    job_id = row_value(row, "job_id")
+    contractor_id = row_value(row, "contractor_id")
+    contractor_name = row_value(row, "contractor_name")
     return {
         "id": row_value(row, "id"),
-        "job_id": row_value(row, "job_id"),
+        "job_id": job_id,
         "title": row_value(row, "title"),
         "category": row_value(row, "category"),
         "service_slug": row_value(row, "service_slug", ""),
@@ -106,7 +111,15 @@ def message_thread_summary(row, viewer_id: int | None = None) -> dict:
         "timeline": row_value(row, "timeline", "") or "",
         "availability": row_value(row, "availability", "") or "",
         "client_name": row_value(row, "client_name"),
-        "contractor_name": row_value(row, "contractor_name"),
+        "contractor_name": contractor_name,
+        "provider": contractor_match_provider(
+            contractor_id,
+            contractor_name,
+            job_id,
+            row_value(row, "verified_completion_count", 0),
+            row_value(row, "source_checked_credential_count", 0),
+            row_value(row, "source_checked_license_count", 0),
+        ),
         "last_message": row_value(row, "last_message", "") or "",
         "last_message_at": row_value(row, "last_message_at", "") or "",
         "message_count": count_value(row, "message_count"),
