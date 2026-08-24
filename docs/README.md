@@ -38,6 +38,8 @@ the current requirements, policy gates, or release status.
   dashboard, messaging, and unified contractor-offer review evidence.
 - `ux-audit/2026-08-24-contractor-bid-action-queue/`: current contractor
   approved-first bid triage, submitted-term, and responsive evidence.
+- `ux-audit/2026-08-24-contractor-opportunity-flow/`: current contractor
+  map-selection and synchronized project-detail evidence.
 - `ux-audit/2026-08-23-project-lifecycle/`: current completed-project and
   approved-match message hierarchy, responsive correction, and same-state
   before/after evidence.

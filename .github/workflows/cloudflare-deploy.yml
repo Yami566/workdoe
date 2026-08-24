@@ -226,7 +226,11 @@ jobs:
         run: npm run cf:deploy:plan
 
       - name: Deploy guarded production release
-        run: npm run cf:deploy
+        run: |
+          set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/workdoe-release-evidence"
+          npm run cf:deploy 2>&1 | tee "$evidence_dir/production-deploy.log"
+          test -s "$evidence_dir/production-deploy.log"
 
       - name: Capture deployed Worker state
         run: |

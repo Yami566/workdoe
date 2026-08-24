@@ -1981,7 +1981,6 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "--execute",
                     "--yes",
                     "--json",
-                    "--no-smoke",
                     "--secret-list-json",
                     str(Path(tmp) / "missing-secret-evidence.json"),
                 ]
@@ -2004,7 +2003,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 name="smoke-production",
                 command=[sys.executable, "scripts/workdoe_production_smoke.py"],
                 cwd=str(ROOT),
-                required=False,
+                required=True,
             ),
         ]
 
@@ -2031,6 +2030,30 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             {"returncode": 0, "stdout": "x" * (module.SMOKE_OUTPUT_MAX + 20), "stderr": ""},
         )()
         self.assertTrue(module.smoke_output_excerpt(long_result).endswith("[truncated]"))
+
+    def test_cloudflare_production_deploy_rejects_smoke_bypass(self):
+        module = load_production_deploy_script()
+        original_argv = sys.argv
+        try:
+            sys.argv = [
+                "cloudflare_production_deploy.py",
+                "--execute",
+                "--yes",
+                "--json",
+                "--no-smoke",
+            ]
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(module.main(), 2)
+            payload = json.loads(output.getvalue())
+        finally:
+            sys.argv = original_argv
+
+        self.assertFalse(payload["ok"])
+        self.assertEqual(
+            payload["error"],
+            "Production execution requires the post-deploy smoke check.",
+        )
 
     def test_cloudflare_production_deploy_requires_api_token_after_readiness(self):
         module = load_production_deploy_script()
@@ -8791,6 +8814,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("worker-rollback-version.txt", workflow)
         self.assertIn("worker-rollback-command.txt", workflow)
         self.assertIn("Capture deployed Worker state", workflow)
+        self.assertIn("production-deploy.log", workflow)
+        self.assertIn(
+            'npm run cf:deploy 2>&1 | tee "$evidence_dir/production-deploy.log"',
+            workflow,
+        )
         self.assertIn("Retain release recovery evidence", workflow)
         self.assertIn("if: always()", workflow)
         self.assertIn("retention-days: 30", workflow)

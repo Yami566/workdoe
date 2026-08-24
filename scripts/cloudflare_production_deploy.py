@@ -161,12 +161,12 @@ def execute_steps(
             if step.required:
                 break
             continue
-        if not step.required:
+        if step.name == "smoke-production":
             step.output_excerpt = smoke_output_excerpt(completed)
         if completed.returncode == 0:
             step.status = "done"
             continue
-        detail = command_output(completed)
+        detail = step.output_excerpt or command_output(completed)
         step.status = "failed"
         message = f"{step.name}: {detail or 'command failed'}"
         if step.required:
@@ -213,10 +213,23 @@ def main() -> int:
     parser.add_argument(
         "--no-smoke",
         action="store_true",
-        help="Skip post-deploy smoke checks.",
+        help="Omit smoke from a dry-run plan; production execution always includes it.",
     )
     args = parser.parse_args()
     include_smoke = not args.no_smoke
+
+    if args.execute and not include_smoke:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "Production execution requires the post-deploy smoke check.",
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 2
 
     if not args.execute:
         payload = plan_payload(

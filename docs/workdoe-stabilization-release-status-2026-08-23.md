@@ -679,6 +679,16 @@ deployment has been performed during this stabilization pass.
   received-order comparison, credentials, or completion points. Evidence and
   limits are recorded in
   `docs/ux-audit/2026-08-24-contractor-bid-action-queue/`.
+- A fresh contractor opportunity-flow audit found the current map-first mobile
+  and synchronized desktop workspace healthy, so no cosmetic churn was added.
+  The guarded deploy helper now refuses executable smoke bypasses, retains the
+  required production-smoke excerpt in its structured result, and streams the
+  guarded deploy result into the same 30-day GitHub artifact as the D1 Time
+  Travel and Worker rollback evidence. The batch passed all 239 tests in
+  82.376 seconds, the full security/provenance gate across 680 non-ignored
+  files, warning-free Cloudflare preflight, the 34-migration indexed D1 plan,
+  and the Wrangler 4.125.0 dry run without deploying. Current screenshots and
+  limits are in `docs/ux-audit/2026-08-24-contractor-opportunity-flow/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.
