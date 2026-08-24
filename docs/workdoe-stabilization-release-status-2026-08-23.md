@@ -154,6 +154,12 @@ deployment has been performed during this stabilization pass.
   internal taxonomy wording are gone; and the public mobile map gains a
   single-line heading. Flask and both Worker shells share a rotated stylesheet
   version so the accepted layout is not masked by a stale browser cache.
+- Made public map pins actionable without adding a route or public field. Each
+  Leaflet popup now presents the job's existing permission-aware action as a
+  44-pixel same-domain control; signed-out visitors open the existing email-code
+  dialog with the selected project retained, while map URL state and focus are
+  restored on close. The live-region message now describes the available next
+  step truthfully on both simple and detail-rail map surfaces.
 
 ## Verification evidence
 
@@ -443,6 +449,21 @@ deployment has been performed during this stabilization pass.
   unchanged desktop map-first layout. The aligned before/after comparisons and
   evidence limits are recorded in
   `docs/ux-audit/2026-08-24-public-map-post-flow/`.
+- The public-marker continuation correction passed all 232 tests in 79.458
+  seconds. The complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed secret
+  across 573 non-ignored files, and no dependency drift. The secret gate now
+  scans deterministic Windows-safe argument batches after the repository grew
+  beyond one Windows command line; the reviewed baseline and aggregate failure
+  behavior are unchanged. Cloudflare preflight remained warning-free; all 32
+  forward-only migrations and all three expected D1 indexes passed without a
+  table scan; and Wrangler 4.125.0 packaged 48 Python modules and 86 assets at
+  915.26 KiB / 168.32 KiB gzip without deploying.
+- Current-run public marker evidence at 390x844 and 1280x720 shows a specific
+  white-on-green 44-pixel action, truthful selected-project announcement,
+  same-page Sign in with `next=/jobs/5`, and restoration to `/?job_id=5` after
+  closing. The aligned before/after comparison and evidence limits are recorded
+  in `docs/ux-audit/2026-08-24-public-map-selection-flow/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

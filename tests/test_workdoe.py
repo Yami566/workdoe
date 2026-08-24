@@ -3205,6 +3205,14 @@ class WorkdoeFlowTests(unittest.TestCase):
             styles,
             r"\.site-footer-links a\s*\{[^}]*min-height: 44px;",
         )
+        self.assertRegex(
+            styles,
+            r"\.map-popup-action\s*\{[^}]*min-height: 44px;",
+        )
+        self.assertRegex(
+            styles,
+            r"\.leaflet-container a\.map-popup-action,[^}]*color: #fff;",
+        )
 
     def test_mobile_css_keeps_entry_header_visible_and_auth_first(self):
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
@@ -4699,6 +4707,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('map.on("popupclose"', script)
         self.assertIn("autoPanPaddingTopLeft: [64, 56]", script)
         self.assertIn("autoPanPaddingBottomRight: [16, 16]", script)
+        self.assertIn('class="map-popup-action"', script)
+        self.assertIn('data-dialog-title="\' + escapeAttribute(actionLabel)', script)
+        self.assertIn('escapeAttribute(actionUrl)', script)
+        self.assertIn("Use the popup action to continue.", script)
+        self.assertIn("Project details are open.", script)
         self.assertIn("map.getBounds()", script)
         self.assertIn("window.history.replaceState", script)
         self.assertIn('setOptionalParam(url, "job_id", activeJobId)', script)
@@ -4712,6 +4725,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn("buttons[nextIndex].focus()", script)
         self.assertIn("https://tile.openstreetmap.org/{z}/{x}/{y}.png", script)
         self.assertIn("if (!detailContent)", script)
+        home = self.client.get("/")
+        self.assertIn(
+            b'/static/map.js?v=workdoe-map-popup-action',
+            home.data,
+        )
 
     def test_local_password_reset_token_flow(self):
         reset_form = self.client.get("/forgot-password")
@@ -6214,7 +6232,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'/vendor/tabler-icons/seedling.svg', form.data)
         self.assertIn(b'/vendor/tabler-icons/plant.svg', form.data)
         self.assertIn(
-            b'/static/styles.css?v=workdoe-compact-project-choices-v2',
+            b'/static/styles.css?v=workdoe-map-popup-action',
             form.data,
         )
         self.assertIn(b'/static/project-composer.js?v=workdoe-service-tiles', form.data)

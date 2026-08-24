@@ -350,6 +350,8 @@
           return;
         }
         var label = markerLabel(job);
+        var actionLabel = job.action_label || "Open project";
+        var actionUrl = job.url || job.detail_url || "#";
         var marker = window.L.marker([lat, lng], { alt: label, title: label });
         marker.bindPopup(
           '<div class="map-popup">' +
@@ -357,6 +359,7 @@
             "<strong>" + escapeHtml(job.title || "Open project") + "</strong>" +
             "<span>" + escapeHtml(placeLabel(job)) + "</span>" +
             "<span>" + escapeHtml(job.budget || "Budget not provided") + "</span>" +
+            '<a class="map-popup-action" href="' + escapeAttribute(actionUrl) + '" data-dialog-title="' + escapeAttribute(actionLabel) + '" aria-label="' + escapeAttribute(actionLabel + " for " + (job.title || "open project")) + '">' + escapeHtml(actionLabel) + "</a>" +
           "</div>",
           {
             maxWidth: 220,
@@ -644,7 +647,10 @@
 
     function announceActiveJob(job) {
       if (job) {
-        setMapStatus((job.title || "Project") + " is selected. Details are available beside the map.");
+        var nextStep = detailContent
+          ? "Project details are open."
+          : "Use the popup action to continue.";
+        setMapStatus((job.title || "Project") + " is selected. " + nextStep);
       }
     }
 

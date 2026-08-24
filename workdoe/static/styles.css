@@ -5456,6 +5456,34 @@ textarea:focus {
   font-size: 0.74rem;
 }
 
+.map-popup-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin-top: 6px;
+  border-radius: 5px;
+  background: var(--accent-dark);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 850;
+  padding: 8px 10px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.map-popup-action:hover,
+.map-popup-action:focus-visible {
+  background: var(--ink);
+  color: #fff;
+}
+
+.leaflet-container a.map-popup-action,
+.leaflet-container a.map-popup-action:hover,
+.leaflet-container a.map-popup-action:focus-visible {
+  color: #fff;
+}
+
 .market-project-detail {
   align-content: start;
 }

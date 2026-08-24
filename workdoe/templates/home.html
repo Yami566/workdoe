@@ -131,5 +131,5 @@
 
 <script id="map-jobs-data" type="application/json">{{ map_jobs|tojson }}</script>
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
-<script src="{{ url_for('static', filename='map.js') }}"></script>
+<script src="{{ url_for('static', filename='map.js') }}?v=workdoe-map-popup-action"></script>
 {% endblock %}

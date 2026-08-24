@@ -79,6 +79,11 @@ formal certification against OWASP ASVS or WCAG.
   ranking signal, script, or storage path; Flask and Worker retain the same
   canonical service values, validation, policy acknowledgement, and fallback
   select contract.
+- The public map popup action is a presentation of each job's existing
+  permission-aware action label and same-domain URL. It adds no project field,
+  exact-location value, contact field, identity inference, recipient, storage,
+  or authorization bypass. Signed-out actions retain only the public project
+  ID in the validated `next` path and use the existing same-page auth dialog.
 - Production service publication and new bidding fail closed through a
   canonical service-zone activation record. A market requires reviewed scope,
   approval and freshness timestamps, an active status, and a live minimum count

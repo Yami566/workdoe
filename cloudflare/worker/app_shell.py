@@ -616,7 +616,7 @@ def layout(
             [
                 '<script src="/vendor/leaflet/leaflet.js"></script>',
                 '<script src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>',
-                '<script src="/map.js"></script>',
+                '<script src="/map.js?v=workdoe-map-popup-action"></script>',
             ]
         )
     if include_actions or authenticated:
@@ -680,7 +680,7 @@ def layout(
   <link rel="canonical" href="{escape(canonical_url)}">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=workdoe-compact-project-choices-v2">
+  <link rel="stylesheet" href="/styles.css?v=workdoe-map-popup-action">
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet/leaflet.css\">" if include_map else ""}
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.css\"><link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.Default.css\">" if include_map else ""}
   {script_html}

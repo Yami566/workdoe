@@ -9,6 +9,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASELINE = REPO_ROOT / ".secrets.baseline"
+MAX_SCAN_COMMAND_CHARS = 20_000
 
 
 def baseline_audit_error(baseline: Path) -> str:
@@ -66,6 +67,32 @@ def repository_files(repo_root: Path) -> list[str]:
     )
 
 
+def file_argument_batches(
+    files: list[str], *, max_chars: int = MAX_SCAN_COMMAND_CHARS
+) -> list[list[str]]:
+    batches: list[list[str]] = []
+    batch: list[str] = []
+    batch_chars = 0
+    for path in files:
+        argument_chars = len(path) + 3
+        if batch and batch_chars + argument_chars > max_chars:
+            batches.append(batch)
+            batch = []
+            batch_chars = 0
+        batch.append(path)
+        batch_chars += argument_chars
+    if batch:
+        batches.append(batch)
+    return batches
+
+
+def command_path(path: Path, repo_root: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(repo_root.resolve()))
+    except ValueError:
+        return str(path)
+
+
 def run_gate(repo_root: Path, baseline: Path) -> dict:
     hook = shutil.which("detect-secrets-hook")
     if not hook:
@@ -92,20 +119,28 @@ def run_gate(repo_root: Path, baseline: Path) -> dict:
         }
 
     files = repository_files(repo_root)
-    completed = subprocess.run(
-        [hook, "--baseline", str(baseline), *files],
-        cwd=repo_root,
-        check=False,
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-        text=True,
-    )
-    output = (completed.stdout + completed.stderr).strip()
+    baseline_argument = command_path(baseline, repo_root)
+    outputs: list[str] = []
+    ok = True
+    for batch in file_argument_batches(files):
+        completed = subprocess.run(
+            [hook, "--baseline", baseline_argument, *batch],
+            cwd=repo_root,
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            text=True,
+        )
+        batch_output = (completed.stdout + completed.stderr).strip()
+        if batch_output:
+            outputs.append(batch_output)
+        ok = completed.returncode == 0 and ok
+    output = "\n".join(outputs)
     return {
-        "ok": completed.returncode == 0,
-        "error": "" if completed.returncode == 0 else output,
-        "warnings": output.splitlines() if completed.returncode == 0 and output else [],
+        "ok": ok,
+        "error": "" if ok else output,
+        "warnings": output.splitlines() if ok and output else [],
         "file_count": len(files),
     }
 

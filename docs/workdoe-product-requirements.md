@@ -304,6 +304,11 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
 - The deer logo links to the homepage.
 - The first viewport prioritizes open projects, map/list navigation, and sign
   in rather than testimonials or technical explanation.
+- Selecting a public map pin preserves its project ID in the URL and exposes
+  one permission-aware popup action. Signed-out visitors continue through the
+  same-page email-code dialog with the selected project retained; authorized
+  contractors continue to the existing review/bid action. Closing a dialog
+  restores the selected pin, map state, URL, and invoking-action focus.
 - Public home, sign-in, account-start, and contractor lead-board views place a
   compact `00` all-work control plus numbered `01`-`06` family icon controls
   above the existing search and map/list results. Selecting a family is a real
