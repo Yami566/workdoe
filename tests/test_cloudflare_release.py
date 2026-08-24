@@ -1158,7 +1158,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 ],
             )
             self.assertEqual(wrangler["assets"]["binding"], "ASSETS")
-            self.assertFalse(wrangler["assets"]["run_worker_first"])
+            self.assertTrue(wrangler["assets"]["run_worker_first"])
             self.assertEqual(
                 {producer["binding"] for producer in wrangler["queues"]["producers"]},
                 {"EMAIL_QUEUE", "MEDIA_QUEUE"},

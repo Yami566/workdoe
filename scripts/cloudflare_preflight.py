@@ -1342,11 +1342,11 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "Wrangler static assets path exists",
             )
         require(
-            wrangler.get("assets", {}).get("run_worker_first") is False,
+            wrangler.get("assets", {}).get("run_worker_first") is True,
             errors,
-            "Wrangler must serve matching static assets directly from Cloudflare's asset layer.",
+            "Wrangler must run the Worker before static assets so HTTPS redirects cover every path.",
             checks,
-            "Wrangler bypasses the Worker for matching static assets",
+            "Wrangler runs HTTPS enforcement before matching static assets",
         )
         static_header_rules = parse_static_header_rules(static_headers)
         worker_manifest = manifest.get("cloudflare_targets", {}).get("worker", {})
