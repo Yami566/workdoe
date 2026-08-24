@@ -290,7 +290,7 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
         "assets": {
             "directory": "../workdoe/static",
             "binding": "ASSETS",
-            "run_worker_first": False,
+            "run_worker_first": True,
         },
         "d1_databases": [d1_config],
         "r2_buckets": [
