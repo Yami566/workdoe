@@ -2061,8 +2061,8 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'id="profile-photos"', form.data)
         self.assertIn(b'aria-describedby="profile-photos-help"', form.data)
         self.assertLess(
-            form.data.find(b'id="credential-claims"'),
             form.data.find(b'id="profile-details"'),
+            form.data.find(b'id="credential-claims"'),
         )
         self.assertEqual(form.data.count(b">Preview</a>"), 1)
 
@@ -2975,6 +2975,9 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('class="milestone-step is-next"', contractor_html)
         self.assertIn("0 verified projects", contractor_html)
         self.assertIn('aria-label="Progress to First finish" value="0" max="1"', contractor_html)
+        self.assertIn("<dt>Trust record</dt>", contractor_html)
+        self.assertIn("No source-checked record", contractor_html)
+        self.assertIn('href="/contractor/profile#credential-claims">Trust records</a>', contractor_html)
         self.assertLess(
             contractor_html.find('class="work-history contractor-bid-workspace"'),
             contractor_html.find('class="contractor-workspace-context"'),
@@ -6310,7 +6313,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'/vendor/tabler-icons/seedling.svg', form.data)
         self.assertIn(b'/vendor/tabler-icons/plant.svg', form.data)
         self.assertIn(
-            b'/static/styles.css?v=workdoe-message-action-queue',
+            b'/static/styles.css?v=workdoe-contractor-trust-paths',
             form.data,
         )
         self.assertIn(b'/static/project-composer.js?v=workdoe-service-tiles', form.data)

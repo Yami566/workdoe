@@ -520,6 +520,21 @@ deployment has been performed during this stabilization pass.
   active after read-state changed while Unread cleared. The aligned mobile
   comparison plus tablet, desktop, and thread captures are recorded in
   `docs/ux-audit/2026-08-24-message-action-queue/`.
+- The contractor trust-path batch passed all 233 tests in 81.728 seconds. It
+  keeps completion milestones ranking-neutral, gives source-checked license and
+  non-license records distinct deterministic states, replaces the dashboard's
+  ambiguous self-reported insurance snapshot with an explicit Trust record,
+  and adds direct profile and record actions in both runtimes. The profile task
+  order now matches the page source order: Availability, Profile details, then
+  optional Credentials.
+- The complete local security and provenance checks found no known Python or
+  Node vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed
+  secret, and no dependency drift. Cloudflare preflight remained warning-free,
+  the D1 verifier used all three expected public map/photo indexes without a
+  table scan, and Wrangler 4.125.0 packaged 48 Python modules and 86 assets at
+  920.46 KiB / 169.43 KiB gzip without deploying. Mobile, tablet, and desktop
+  evidence is recorded in
+  `docs/ux-audit/2026-08-24-contractor-trust-paths/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

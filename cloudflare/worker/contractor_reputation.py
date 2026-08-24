@@ -89,6 +89,33 @@ def contractor_reputation(
             }
         )
 
+    if licenses:
+        trust_record = {
+            "state": "license-source-checked",
+            "label": (
+                f"{licenses} license source checked"
+                if licenses == 1
+                else f"{licenses} licenses source checked"
+            ),
+            "qualifier": "Current public record",
+        }
+    elif credentials:
+        trust_record = {
+            "state": "record-source-checked",
+            "label": (
+                f"{credentials} record source checked"
+                if credentials == 1
+                else f"{credentials} records source checked"
+            ),
+            "qualifier": "Current public record",
+        }
+    else:
+        trust_record = {
+            "state": "none",
+            "label": "No source-checked record",
+            "qualifier": "Optional trust record",
+        }
+
     return {
         "completion_points": completions * COMPLETION_POINTS,
         "verified_completions": completions,
@@ -102,6 +129,7 @@ def contractor_reputation(
         "progress_value": progress_value,
         "progress_max": progress_max,
         "credential_signals": credential_signals,
+        "trust_record": trust_record,
         "ranking_effect": "none",
         "method_label": "100 points per mutually confirmed Workdoe project",
     }

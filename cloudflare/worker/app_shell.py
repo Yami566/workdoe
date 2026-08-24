@@ -691,7 +691,7 @@ def layout(
   <link rel="canonical" href="{escape(canonical_url)}">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=workdoe-message-action-queue">
+  <link rel="stylesheet" href="/styles.css?v=workdoe-contractor-trust-paths">
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet/leaflet.css\">" if include_map else ""}
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.css\"><link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.Default.css\">" if include_map else ""}
   {script_html}
@@ -1283,6 +1283,11 @@ def contractor_dashboard_html(user, payload: dict) -> str:
     proposal_template_limit = int(payload.get("proposal_template_limit", 6) or 6)
     stats = payload.get("stats", {})
     reputation = payload.get("reputation", {})
+    trust_record = reputation.get("trust_record", {})
+    trust_record_label = str(
+        trust_record.get("label", "No source-checked record")
+        or "No source-checked record"
+    )
     reviews_by_request = payload.get("reviews_by_request", {})
     bid_view = str(payload.get("view", "all") or "all")
     bid_view_links = payload.get("view_links", [])
@@ -1464,9 +1469,12 @@ def contractor_dashboard_html(user, payload: dict) -> str:
       <dl class="contractor-snapshot-facts">
         <div><dt>Trades</dt><dd>{escape(profile.get('trades') or 'Not set')}</dd></div>
         <div><dt>Service area</dt><dd>{escape(profile.get('service_area') or 'DMV area')}</dd></div>
-        <div><dt>Insurance</dt><dd>{escape(profile.get('insurance_status') or 'Not set')}</dd></div>
+        <div><dt>Trust record</dt><dd>{escape(trust_record_label)}</dd></div>
       </dl>
-      <a class="button secondary compact" href="/contractor/profile">Edit profile</a>
+      <div class="contractor-workspace-actions">
+        <a class="button secondary compact" href="/contractor/profile#profile-details">Edit profile</a>
+        <a class="button secondary compact" href="/contractor/profile#credential-claims">Trust records</a>
+      </div>
     </section>
     <section id="proposal-templates" class="work-history" aria-labelledby="proposal-templates-title">
       <div class="section-heading history-heading"><div><p class="eyebrow">Faster responses</p><h2 id="proposal-templates-title">Proposal templates</h2></div><span class="count-pill">{len(proposal_templates)}/{proposal_template_limit}</span></div>
@@ -2415,20 +2423,6 @@ def contractor_profile_html(
         <span id="availability-form-status" class="sr-only" data-form-status aria-live="polite"></span>
       </form>
     </section>
-    <section id="credential-claims" class="detail-grid credential-management" aria-labelledby="credential-claims-title">
-      <form class="panel stack-form" data-json-action="/api/contractor/credentials" data-success-url-template="/contractor/profile#credential-claims" aria-label="Submit credential claim" aria-describedby="credential-claim-status">
-        <div><p class="eyebrow">Trust record</p><h2 id="credential-claims-title">Submit a credential claim</h2><p class="help-text">Workdoe shows a public label only after an administrator checks the linked source. This is not an endorsement of skill, safety, or legal eligibility.</p></div>
-        <label for="credential-type">Credential <select id="credential-type" name="credential_type" required><option value="">Choose one</option>{credential_type_options}</select></label>
-        <label for="credential-jurisdiction">Jurisdiction <select id="credential-jurisdiction" name="jurisdiction" required><option value="">Choose one</option>{credential_jurisdiction_options}</select></label>
-        <label for="credential-identifier">Record identifier <input id="credential-identifier" name="claimed_identifier" maxlength="{CREDENTIAL_IDENTIFIER_MAX_LENGTH}" autocomplete="off" spellcheck="false" required></label>
-        <label for="credential-name">Name on record (optional) <input id="credential-name" name="claimed_name" maxlength="{CREDENTIAL_NAME_MAX_LENGTH}" autocomplete="organization" autocapitalize="words"></label>
-        <label for="credential-source">Public source (optional) <input id="credential-source" name="source_url" type="url" maxlength="300" placeholder="https://..." autocomplete="url" autocapitalize="off" spellcheck="false"><span class="help-text">A regulator, insurer, or public registry page helps the review.</span></label>
-        <label for="credential-expiry">Expiration (optional) <input id="credential-expiry" name="expires_at" type="date"></label>
-        <button class="button" type="submit">Send for review</button>
-        <p id="credential-claim-status" class="help-text" data-form-status aria-live="polite"></p>
-      </form>
-      <section class="panel" aria-labelledby="credential-status-title"><h2 id="credential-status-title">Your claims</h2>{''.join(credential_rows)}</section>
-    </section>
     <form id="profile-details" class="form-grid" data-json-action="/api/contractor/profile" data-success-url-template="/contractor/profile" aria-label="Contractor profile" aria-describedby="profile-form-status">
       <input type="hidden" name="market_fit_version" value="1">
       <label class="wide" for="profile-business-name">Business name <input id="profile-business-name" name="business_name" value="{escape(profile.get('business_name', ''))}" maxlength="120" autocomplete="organization" autocapitalize="words" spellcheck="false" enterkeyhint="next" required></label>
@@ -2463,6 +2457,20 @@ def contractor_profile_html(
       <section class="photo-grid profile-photos" aria-label="Portfolio photos">
 {photo_html}
       </section>
+    </section>
+    <section id="credential-claims" class="detail-grid credential-management" aria-labelledby="credential-claims-title">
+      <form class="panel stack-form" data-json-action="/api/contractor/credentials" data-success-url-template="/contractor/profile#credential-claims" aria-label="Submit credential claim" aria-describedby="credential-claim-status">
+        <div><p class="eyebrow">Trust record</p><h2 id="credential-claims-title">Submit a credential claim</h2><p class="help-text">Workdoe shows a public label only after an administrator checks the linked source. This is not an endorsement of skill, safety, or legal eligibility.</p></div>
+        <label for="credential-type">Credential <select id="credential-type" name="credential_type" required><option value="">Choose one</option>{credential_type_options}</select></label>
+        <label for="credential-jurisdiction">Jurisdiction <select id="credential-jurisdiction" name="jurisdiction" required><option value="">Choose one</option>{credential_jurisdiction_options}</select></label>
+        <label for="credential-identifier">Record identifier <input id="credential-identifier" name="claimed_identifier" maxlength="{CREDENTIAL_IDENTIFIER_MAX_LENGTH}" autocomplete="off" spellcheck="false" required></label>
+        <label for="credential-name">Name on record (optional) <input id="credential-name" name="claimed_name" maxlength="{CREDENTIAL_NAME_MAX_LENGTH}" autocomplete="organization" autocapitalize="words"></label>
+        <label for="credential-source">Public source (optional) <input id="credential-source" name="source_url" type="url" maxlength="300" placeholder="https://..." autocomplete="url" autocapitalize="off" spellcheck="false"><span class="help-text">A regulator, insurer, or public registry page helps the review.</span></label>
+        <label for="credential-expiry">Expiration (optional) <input id="credential-expiry" name="expires_at" type="date"></label>
+        <button class="button" type="submit">Send for review</button>
+        <p id="credential-claim-status" class="help-text" data-form-status aria-live="polite"></p>
+      </form>
+      <section class="panel" aria-labelledby="credential-status-title"><h2 id="credential-status-title">Your claims</h2>{''.join(credential_rows)}</section>
     </section>"""  # nosec B608
     return layout(user, "/contractor/profile", "Contractor Profile", body, include_actions=True)
 

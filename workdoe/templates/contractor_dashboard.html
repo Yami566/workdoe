@@ -94,9 +94,12 @@
   <dl class="contractor-snapshot-facts">
       <div><dt>Trades</dt><dd>{{ profile.trades or "Not set" }}</dd></div>
       <div><dt>Service area</dt><dd>{{ profile.service_area or "DMV area" }}</dd></div>
-      <div><dt>Insurance</dt><dd>{{ profile.insurance_status or "Not set" }}</dd></div>
+      <div><dt>Trust record</dt><dd>{{ reputation.trust_record.label or "No source-checked record" }}</dd></div>
   </dl>
-  <a class="button secondary compact" href="{{ url_for('contractor_profile') }}">Edit profile</a>
+  <div class="contractor-workspace-actions">
+    <a class="button secondary compact" href="{{ url_for('contractor_profile') }}#profile-details">Edit profile</a>
+    <a class="button secondary compact" href="{{ url_for('contractor_profile') }}#credential-claims">Trust records</a>
+  </div>
 </section>
 
 <section id="proposal-templates" class="work-history" aria-labelledby="proposal-templates-title">

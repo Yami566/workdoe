@@ -26,6 +26,14 @@ class ContractorReputationTests(unittest.TestCase):
             reputation["credential_signals"][0]["label"],
             "License source checked",
         )
+        self.assertEqual(
+            reputation["trust_record"],
+            {
+                "state": "license-source-checked",
+                "label": "1 license source checked",
+                "qualifier": "Current public record",
+            },
+        )
         self.assertEqual(reputation["ranking_effect"], "none")
 
     def test_reputation_normalizes_untrusted_counts_and_never_infers_a_license(self):
@@ -38,6 +46,7 @@ class ContractorReputationTests(unittest.TestCase):
         self.assertEqual(reputation["progress_value"], 0)
         self.assertEqual(reputation["progress_max"], 1)
         self.assertEqual(reputation["milestones"][0]["state"], "next")
+        self.assertEqual(reputation["trust_record"]["label"], "1 license source checked")
 
     def test_first_completion_shows_absolute_progress_to_the_next_milestone(self):
         reputation = contractor_reputation(1)
@@ -49,6 +58,16 @@ class ContractorReputationTests(unittest.TestCase):
             [milestone["state"] for milestone in reputation["milestones"]],
             ["current", "next", "locked", "locked"],
         )
+        self.assertEqual(reputation["trust_record"]["state"], "none")
+        self.assertEqual(reputation["trust_record"]["label"], "No source-checked record")
+
+    def test_non_license_source_checked_records_stay_distinct_from_licenses(self):
+        reputation = contractor_reputation(0, 2, 0)
+
+        self.assertEqual(reputation["source_checked_licenses"], 0)
+        self.assertEqual(reputation["credential_signals"][0]["label"], "Record source checked")
+        self.assertEqual(reputation["trust_record"]["state"], "record-source-checked")
+        self.assertEqual(reputation["trust_record"]["label"], "2 records source checked")
 
 
 if __name__ == "__main__":

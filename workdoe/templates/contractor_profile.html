@@ -59,46 +59,6 @@
   </form>
 </section>
 
-<section id="credential-claims" class="detail-grid credential-management" aria-labelledby="credential-claims-title">
-  <form class="panel stack-form" method="post" action="{{ url_for('contractor_credential_create') }}">
-    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-    <div>
-      <p class="eyebrow">Trust record</p>
-      <h2 id="credential-claims-title">Submit a credential claim</h2>
-      <p class="help-text">Workdoe shows a public label only after an administrator checks the linked source. This is not an endorsement of skill, safety, or legal eligibility.</p>
-    </div>
-    <label for="credential-type">Credential <select id="credential-type" name="credential_type" required><option value="">Choose one</option>{% for value, label in credential_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
-    <label for="credential-jurisdiction">Jurisdiction <select id="credential-jurisdiction" name="jurisdiction" required><option value="">Choose one</option>{% for value, label in credential_jurisdictions %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
-    <label for="credential-identifier">Record identifier <input id="credential-identifier" name="claimed_identifier" maxlength="{{ credential_identifier_max }}" autocomplete="off" spellcheck="false" required></label>
-    <label for="credential-name">Name on record (optional) <input id="credential-name" name="claimed_name" maxlength="{{ credential_name_max }}" autocomplete="organization" autocapitalize="words"></label>
-    <label for="credential-source">Public source (optional) <input id="credential-source" name="source_url" type="url" maxlength="300" placeholder="https://..." autocomplete="url" autocapitalize="off" spellcheck="false"><span class="help-text">A regulator, insurer, or public registry page helps the review.</span></label>
-    <label for="credential-expiry">Expiration (optional) <input id="credential-expiry" name="expires_at" type="date"></label>
-    <button class="button" type="submit">Send for review</button>
-  </form>
-  <section class="panel" aria-labelledby="credential-status-title">
-    <h2 id="credential-status-title">Your claims</h2>
-    {% for credential in credentials %}
-      <div class="admin-row credential-row">
-        <span>
-          <strong>{{ credential.credential_type_label }} - {{ credential.jurisdiction_label }}</strong>
-          <small>{{ credential.claimed_identifier }} - {{ credential.status_label }}{% if credential.expires_at %} - expires {{ credential.expires_at|date_label }}{% endif %}</small>
-          {% if credential.review_note %}<small>{{ credential.review_note }}</small>{% endif %}
-        </span>
-        {% if credential.status in ['self_reported', 'pending', 'rejected'] %}
-          <form method="post" action="{{ url_for('contractor_credential_remove', credential_id=credential.id) }}">
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-            <button class="button secondary compact" type="submit">Remove</button>
-          </form>
-        {% else %}
-          <span class="status {{ credential.status }}">{{ credential.status_label }}</span>
-        {% endif %}
-      </div>
-    {% else %}
-      <p class="empty">No credential claims submitted.</p>
-    {% endfor %}
-  </section>
-</section>
-
 <form id="profile-details" class="form-grid" method="post" enctype="multipart/form-data" aria-label="Contractor profile" {% if error_feedback.summary %}aria-describedby="profile-form-errors"{% endif %}>
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="market_fit_version" value="1">
@@ -206,5 +166,45 @@
       <figcaption>{{ photo.original_filename }}{% if photo.is_hidden %} - hidden{% endif %}</figcaption>
     </figure>
   {% endfor %}
+</section>
+
+<section id="credential-claims" class="detail-grid credential-management" aria-labelledby="credential-claims-title">
+  <form class="panel stack-form" method="post" action="{{ url_for('contractor_credential_create') }}">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <div>
+      <p class="eyebrow">Trust record</p>
+      <h2 id="credential-claims-title">Submit a credential claim</h2>
+      <p class="help-text">Workdoe shows a public label only after an administrator checks the linked source. This is not an endorsement of skill, safety, or legal eligibility.</p>
+    </div>
+    <label for="credential-type">Credential <select id="credential-type" name="credential_type" required><option value="">Choose one</option>{% for value, label in credential_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+    <label for="credential-jurisdiction">Jurisdiction <select id="credential-jurisdiction" name="jurisdiction" required><option value="">Choose one</option>{% for value, label in credential_jurisdictions %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+    <label for="credential-identifier">Record identifier <input id="credential-identifier" name="claimed_identifier" maxlength="{{ credential_identifier_max }}" autocomplete="off" spellcheck="false" required></label>
+    <label for="credential-name">Name on record (optional) <input id="credential-name" name="claimed_name" maxlength="{{ credential_name_max }}" autocomplete="organization" autocapitalize="words"></label>
+    <label for="credential-source">Public source (optional) <input id="credential-source" name="source_url" type="url" maxlength="300" placeholder="https://..." autocomplete="url" autocapitalize="off" spellcheck="false"><span class="help-text">A regulator, insurer, or public registry page helps the review.</span></label>
+    <label for="credential-expiry">Expiration (optional) <input id="credential-expiry" name="expires_at" type="date"></label>
+    <button class="button" type="submit">Send for review</button>
+  </form>
+  <section class="panel" aria-labelledby="credential-status-title">
+    <h2 id="credential-status-title">Your claims</h2>
+    {% for credential in credentials %}
+      <div class="admin-row credential-row">
+        <span>
+          <strong>{{ credential.credential_type_label }} - {{ credential.jurisdiction_label }}</strong>
+          <small>{{ credential.claimed_identifier }} - {{ credential.status_label }}{% if credential.expires_at %} - expires {{ credential.expires_at|date_label }}{% endif %}</small>
+          {% if credential.review_note %}<small>{{ credential.review_note }}</small>{% endif %}
+        </span>
+        {% if credential.status in ['self_reported', 'pending', 'rejected'] %}
+          <form method="post" action="{{ url_for('contractor_credential_remove', credential_id=credential.id) }}">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <button class="button secondary compact" type="submit">Remove</button>
+          </form>
+        {% else %}
+          <span class="status {{ credential.status }}">{{ credential.status_label }}</span>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="empty">No credential claims submitted.</p>
+    {% endfor %}
+  </section>
 </section>
 {% endblock %}

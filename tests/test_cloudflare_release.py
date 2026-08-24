@@ -3708,7 +3708,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('<meta name="twitter:card" content="summary_large_image">', html)
         self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', html)
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', html)
-        self.assertIn('href="/styles.css?v=workdoe-message-action-queue"', html)
+        self.assertIn('href="/styles.css?v=workdoe-contractor-trust-paths"', html)
         self.assertIn('href="/vendor/leaflet/leaflet.css"', html)
         self.assertIn('href="/vendor/leaflet-markercluster/MarkerCluster.css"', html)
         self.assertIn('src="/vendor/leaflet/leaflet.js"', html)
@@ -4392,6 +4392,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         },
                     ],
                     "credential_signals": [],
+                    "trust_record": {
+                        "state": "license-source-checked",
+                        "label": "1 license source checked",
+                        "qualifier": "Current public record",
+                    },
                 },
             },
         )
@@ -4415,6 +4420,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('class="milestone-track" aria-label="Verified completion milestones"', contractor_dashboard_html)
         self.assertIn('class="milestone-step is-next"', contractor_dashboard_html)
         self.assertIn("0 verified projects", contractor_dashboard_html)
+        self.assertIn("<dt>Trust record</dt>", contractor_dashboard_html)
+        self.assertIn("1 license source checked", contractor_dashboard_html)
+        self.assertIn('href="/contractor/profile#credential-claims">Trust records</a>', contractor_dashboard_html)
         self.assertIn('/vendor/tabler-icons/sparkles.svg', contractor_dashboard_html)
         self.assertNotIn('/static/vendor/tabler-icons/sparkles.svg', contractor_dashboard_html)
 
@@ -4606,8 +4614,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertNotIn("<details open>", profile_html)
         self.assertIn('id="profile-details"', profile_html)
         self.assertLess(
-            profile_html.find('id="credential-claims"'),
             profile_html.find('id="profile-details"'),
+            profile_html.find('id="credential-claims"'),
         )
         self.assertNotIn('id="profile-phone"', profile_html)
         self.assertIn('id="profile-intro"', profile_html)
@@ -6430,6 +6438,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(reputation["level_label"], "Local regular")
         self.assertEqual(reputation["progress_value"], 10)
         self.assertEqual(reputation["progress_max"], 25)
+        self.assertEqual(reputation["trust_record"]["label"], "1 license source checked")
         self.assertEqual(
             [milestone["state"] for milestone in reputation["milestones"]],
             ["earned", "earned", "current", "next"],
@@ -10270,7 +10279,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('/vendor/tabler-icons/lawn-mower.svg', html)
         self.assertIn('/vendor/tabler-icons/seedling.svg', html)
         self.assertIn('/vendor/tabler-icons/plant.svg', html)
-        self.assertIn('href="/styles.css?v=workdoe-message-action-queue"', html)
+        self.assertIn('href="/styles.css?v=workdoe-contractor-trust-paths"', html)
         self.assertIn('name="service_choice"', html)
         self.assertIn('data-selected-service-family', html)
         self.assertIn('class="service-select-control"', html)

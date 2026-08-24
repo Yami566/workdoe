@@ -7043,8 +7043,11 @@ textarea:focus {
   -webkit-line-clamp: 3;
 }
 
-.contractor-workspace-context .button {
-  justify-self: end;
+.contractor-workspace-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .work-progress {
@@ -7336,8 +7339,9 @@ textarea:focus {
     gap: 14px;
   }
 
-  .contractor-workspace-context .button {
+  .contractor-workspace-actions {
     justify-self: start;
+    justify-content: flex-start;
   }
 
   .consumer-profile-layout {
@@ -7464,8 +7468,14 @@ textarea:focus {
     justify-content: flex-start;
   }
 
-  .contractor-workspace-context .button {
+  .contractor-workspace-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
+  }
+
+  .contractor-workspace-actions .button {
+    width: auto;
   }
 
   .work-progress-heading {
