@@ -42,6 +42,9 @@ the current requirements, policy gates, or release status.
   map-selection and synchronized project-detail evidence.
 - `ux-audit/2026-08-24-next-workflow-pass/`: consumer project-name and
   ZIP-assisted location-entry before/after evidence plus contractor baseline.
+- `ux-audit/2026-08-24-consumer-offer-choice-followthrough/`: consumer
+  contractor-card hierarchy, early Choose action, and confirmation-dialog
+  evidence across mobile and desktop.
 - `ux-audit/2026-08-23-project-lifecycle/`: current completed-project and
   approved-match message hierarchy, responsive correction, and same-state
   before/after evidence.

@@ -175,11 +175,13 @@
 {% endif %}
 
 <section id="mini-bids" class="band subtle bid-review-section" tabindex="-1" aria-labelledby="mini-bids-title">
-  <div class="section-heading">
-    <p class="eyebrow">Mini bids</p>
-    <h2 id="mini-bids-title">Review contractor requests</h2>
+  <div class="section-heading bid-review-heading">
+    <div>
+      <p class="eyebrow">Mini bids</p>
+      <h2 id="mini-bids-title">{% if request_stats.pending %}Choose a contractor{% else %}Mini bids{% endif %}</h2>
+    </div>
   </div>
-  <nav class="work-view-tabs bid-view-tabs" aria-label="Mini bid status">
+  <nav class="work-view-tabs bid-view-tabs client-job-tabs" aria-label="Mini bid status">
     {% for item in bid_view_links %}
       {% set count = request_stats.total if item.value == "all" else (request_stats.pending if item.value == "pending" else (request_stats.approved if item.value == "approved" else request_stats.rejected)) %}
       <a class="work-view-tab{% if bid_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if bid_view == item.value %}aria-current="page"{% endif %}>

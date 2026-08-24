@@ -5631,8 +5631,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('aria-describedby="comparison-reject-31-status"', client_job_html)
         self.assertIn('id="comparison-reject-31-status"', client_job_html)
         self.assertIn('href="/messages/5"', client_job_html)
-        self.assertIn("Contractor choice", client_job_html)
-        self.assertIn("Compare offers", client_job_html)
+        self.assertIn("Choose a contractor", client_job_html)
+        self.assertIn('aria-label="Contractor offer comparison"', client_job_html)
+        self.assertNotIn("Contractor choice", client_job_html)
+        self.assertNotIn("Compare offers", client_job_html)
         self.assertIn("Received order", client_job_html)
         self.assertNotIn('class="selection-path"', client_job_html)
         self.assertIn("Work and reviewed-record signals", client_job_html)
@@ -5661,6 +5663,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('aria-describedby="choose-contractor-31-status"', client_job_html)
         self.assertIn('id="choose-contractor-31-status"', client_job_html)
         self.assertIn(">Choose contractor</button>", client_job_html)
+        self.assertIn(
+            'class="work-view-tabs bid-view-tabs client-job-tabs" aria-label="Mini bid status"',
+            client_job_html,
+        )
+        self.assertLess(
+            client_job_html.index('class="bid-choose-form"'),
+            client_job_html.index('class="bid-provider-facts"'),
+        )
         self.assertIn('src="/worker-actions.js"', client_job_html)
         self.assertNotIn("contractor@example.com", client_job_html)
 

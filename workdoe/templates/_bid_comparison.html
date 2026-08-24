@@ -1,13 +1,9 @@
 {% if bid_comparison.pending_count %}
-  <section class="bid-comparison" aria-labelledby="bid-comparison-title">
-    <div class="section-heading">
-      <div>
-        <p class="eyebrow">Contractor choice</p>
-        <h3 id="bid-comparison-title">Compare offers</h3>
-      </div>
+  <section class="bid-comparison" aria-label="Contractor offer comparison">
+    <div class="bid-comparison-intro">
       <span class="privacy-label">{{ bid_comparison.order_label }} / no paid ranking</span>
+      <p class="bid-comparison-note">{% if job.license_preference %}This project prefers a current license record. Compare that signal with price, timing, and completed work.{% else %}Compare price, timing, completed work, and reviewed records.{% endif %}</p>
     </div>
-    <p class="bid-comparison-note">{% if job.license_preference %}This project prefers a current license record. Compare that signal with price, timing, and completed work.{% else %}Compare price, timing, completed work, and reviewed records.{% endif %}</p>
     <nav class="comparison-filter-tabs" aria-label="Filter comparison by source-checked records">
       {% for item in bid_comparison.credential_filter_options %}
         <a href="{{ item.url }}"{% if item.value == bid_comparison.credential_filter %} aria-current="page"{% endif %}>
@@ -48,6 +44,9 @@
               <div><dt>Timeline</dt><dd>{{ offer.timeline }}</dd></div>
               <div><dt>Availability</dt><dd>{{ offer.availability }}</dd></div>
             </dl>
+            <div class="bid-choose-form">
+              <button class="button compact" type="button" data-inline-dialog-open="choose-contractor-{{ offer.id }}" aria-haspopup="dialog" aria-label="Choose {{ offer.contractor_name }} for {{ job.title }}">Choose contractor</button>
+            </div>
             <dl class="bid-provider-facts">
               {% for fact in offer.provider_facts %}
                 {% if fact.key in ['years-active', 'workdoe-completed', 'insurance'] %}
@@ -72,9 +71,6 @@
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <button class="button secondary compact" type="submit">Reject</button>
               </form>
-            </div>
-            <div class="bid-choose-form">
-              <button class="button compact" type="button" data-inline-dialog-open="choose-contractor-{{ offer.id }}" aria-haspopup="dialog" aria-label="Choose {{ offer.contractor_name }} for {{ job.title }}">Choose contractor</button>
             </div>
           </article>
         {% endfor %}

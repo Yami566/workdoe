@@ -1,3 +1,3 @@
 from __future__ import annotations
 
-ASSET_RELEASE_TOKEN = "asset-8a5c60070031ec5d"
+ASSET_RELEASE_TOKEN = "asset-2af50a12503bd5e0"

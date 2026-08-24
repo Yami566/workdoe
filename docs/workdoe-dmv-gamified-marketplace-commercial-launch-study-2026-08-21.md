@@ -54,6 +54,31 @@ identity; repeated credential rows are removed from the card presentation; and
 the legal qualification note moves into a native disclosure. Photo presence
 does not change received order, the four-bid cap, eligibility, or ranking.
 
+The 2026-08-24 consumer-choice follow-up removes duplicated comparison headings,
+keeps all four offer-status tabs in one mobile row, and places the factual
+Choose action immediately after price, timeline, and availability. Supporting
+self-reported facts, full offer wording, profile review, rejection, and the
+existing confirmation dialog remain available without changing offer order,
+credential meaning, or approval behavior.
+
+## 2026-08-24 market verification
+
+Nextdoor's August 19, 2026 product-policy update says business promotion now
+belongs on a free Business Page rather than a personal neighbor feed, while
+recommendations, mentions, and Faves remain free. This strengthens an incumbent
+local-business channel, but it also sharpens Workdoe's distinction: contractors
+respond inside a consumer-owned, structured project instead of promoting into a
+general neighborhood feed. [Nextdoor policy update](https://blog.nextdoor.com/self-promotion-update)
+
+Angi's current FAQ describes comparing and researching local professionals,
+requesting project quotes, and checking the relevant licensing agency through
+its License Check tool. The transferable product principle is factual comparison
+before commitment, not Angi's branding, copy, ranking, or implementation.
+[Angi FAQ](https://www.angi.com/faq/)
+
+No competitor code, visual asset, copy, private interface, or confidential
+material was used in the Workdoe implementation.
+
 ## Research method and limits
 
 This review uses public product pages, public help centers, public company
@@ -87,8 +112,8 @@ copy protected text, branding, imagery, screen composition, or implementation.
 | --- | --- |
 | Strengths | Structured six-step briefs, public approximate-location demand, four-offer caps, received-order fairness, role separation, source provenance, mutual completion, and no paid rank create a clearer service workflow than a general classified or social feed. |
 | Weaknesses | Workdoe has no established liquidity or reputation network, requires human credential moderation, carries Flask/Worker parity cost, and still lacks production proof for email, identity, media, and operator response. |
-| Opportunities | Meta's official policy leaves services such as home cleaning outside Marketplace; Uber's Trip Radar demonstrates provider-selected nearby opportunities; Nextdoor demonstrates demand for local reputation; and Thumbtack/Angi demonstrate consumer value in structured scope and comparison. Workdoe can combine those needs without selling the same lead broadly. |
-| Threats | Incumbent supply, completion collusion, jurisdiction-specific licensing, moderation load, tile-provider limits, paid-acquisition pressure, and the two-sided cold start can all undermine a DMV launch before the product earns reliable repeat use. |
+| Opportunities | Meta's official policy leaves services such as home cleaning outside Marketplace; Uber's Trip Radar demonstrates provider-selected nearby opportunities; Nextdoor's business-feed rules leave room for a purpose-built consumer project board; and Thumbtack/Angi demonstrate consumer value in structured scope and comparison. Workdoe can combine those needs without selling the same lead broadly. |
+| Threats | Incumbent supply, Nextdoor's increasing Business Page discoverability, completion collusion, jurisdiction-specific licensing, moderation load, tile-provider limits, paid-acquisition pressure, and the two-sided cold start can all undermine a DMV launch before the product earns reliable repeat use. |
 
 The competitive boundary remains intentional. Uber's driver app lets providers
 select interesting Trip Radar opportunities, while Nextdoor's recommendation

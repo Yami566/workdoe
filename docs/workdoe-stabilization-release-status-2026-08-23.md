@@ -113,6 +113,11 @@ deployment has been performed during this stabilization pass.
   suggestion; entering one of the curated DMV ZIPs fills and collapses
   city/state; and unknown ZIPs restore the original required fields. Flask and
   Worker HTML remain aligned, with no geolocation or third-party lookup.
+- Tightened consumer contractor choice without changing match semantics. The
+  pending-offer view now uses one decision heading, keeps all four status tabs
+  in one mobile row, and places Choose immediately after price, timeline, and
+  availability. Flask and Worker markup expose the same action order, factual
+  source-check labels, no-paid-ranking statement, and native confirmation.
 - Reduced the common pointer/touch project-start path from four taps to two by
   advancing valid family and service choices. Keyboard and no-JavaScript paths
   retain explicit Continue controls, while title and description guidance now

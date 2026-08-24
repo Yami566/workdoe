@@ -1194,15 +1194,17 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('id="mini-bids" class="band subtle bid-review-section" tabindex="-1" aria-labelledby="mini-bids-title"', review_html)
         self.assertIn('id="mini-bids-title"', review_html)
         self.assertNotIn('aria-label="Mini bid summary"', review_html)
-        self.assertIn('class="work-view-tabs bid-view-tabs" aria-label="Mini bid status"', review_html)
+        self.assertIn('class="work-view-tabs bid-view-tabs client-job-tabs" aria-label="Mini bid status"', review_html)
         self.assertRegex(review_html, r">All</span>\s*<strong>1</strong>")
         self.assertRegex(review_html, r">Pending</span>\s*<strong>1</strong>")
         self.assertRegex(review_html, r">Approved</span>\s*<strong>0</strong>")
         self.assertIn(f'href="/client/jobs/{job["id"]}?bids=pending"', review_html)
         self.assertNotIn('class="job-list bid-review-list" aria-live="polite"', review_html)
         self.assertIn('class="bid-comparison"', review_html)
-        self.assertIn("Contractor choice", review_html)
-        self.assertIn("Compare offers", review_html)
+        self.assertIn("Choose a contractor", review_html)
+        self.assertIn('aria-label="Contractor offer comparison"', review_html)
+        self.assertNotIn("Contractor choice", review_html)
+        self.assertNotIn("Compare offers", review_html)
         self.assertIn("Received order", review_html)
         self.assertIn("Offer 1", review_html)
         self.assertNotIn('class="selection-path"', review_html)
@@ -1224,6 +1226,10 @@ class WorkdoeFlowTests(unittest.TestCase):
             review_html,
         )
         self.assertIn(">Choose contractor</button>", review_html)
+        self.assertLess(
+            review_html.index('class="bid-choose-form"'),
+            review_html.index('class="bid-provider-facts"'),
+        )
         self.assertIn('class="bid-card-offer"', review_html)
         self.assertIn("Offer details", review_html)
         self.assertNotIn(f'href="#bid-title-{match["id"]}"', review_html)

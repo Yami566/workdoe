@@ -3765,6 +3765,9 @@ def bid_comparison_html(
             <div><dt>Timeline</dt><dd>{escape(offer.get('timeline', 'Not provided'))}</dd></div>
             <div><dt>Availability</dt><dd>{escape(offer.get('availability', 'Not provided'))}</dd></div>
           </dl>
+          <div class="bid-choose-form">
+            <button class="button compact" type="button" data-inline-dialog-open="choose-contractor-{offer_id}" aria-haspopup="dialog" aria-label="Choose {escape(offer.get('contractor_name', 'contractor'))}">Choose contractor</button>
+          </div>
           <dl class="bid-provider-facts">{provider_facts}</dl>
           <details class="bid-card-offer">
             <summary>Offer details</summary>
@@ -3780,9 +3783,6 @@ def bid_comparison_html(
               <button class="button secondary compact" type="submit">Reject</button>
               <span id="comparison-reject-{offer_id}-status" class="sr-only" data-form-status aria-live="polite"></span>
             </form>
-          </div>
-          <div class="bid-choose-form">
-            <button class="button compact" type="button" data-inline-dialog-open="choose-contractor-{offer_id}" aria-haspopup="dialog" aria-label="Choose {escape(offer.get('contractor_name', 'contractor'))}">Choose contractor</button>
           </div>
         </article>"""
         )
@@ -3800,12 +3800,11 @@ def bid_comparison_html(
         else '<p class="empty comparison-empty">No pending offers match this record filter. Switch to All offers to see every pending bid.</p>'
     )
     return f"""
-    <section class="bid-comparison" aria-labelledby="bid-comparison-title">
-      <div class="section-heading">
-        <div><p class="eyebrow">Contractor choice</p><h3 id="bid-comparison-title">Compare offers</h3></div>
+    <section class="bid-comparison" aria-label="Contractor offer comparison">
+      <div class="bid-comparison-intro">
         <span class="privacy-label">{escape(comparison.get('order_label', 'Received order'))} / no paid ranking</span>
+        <p class="bid-comparison-note">{'This project prefers a current license record. Compare that signal with price, timing, and completed work.' if license_preference else 'Compare price, timing, completed work, and reviewed records.'}</p>
       </div>
-      <p class="bid-comparison-note">{'This project prefers a current license record. Compare that signal with price, timing, and completed work.' if license_preference else 'Compare price, timing, completed work, and reviewed records.'}</p>
       <nav class="comparison-filter-tabs" aria-label="Filter comparison by source-checked records">{filter_tabs}</nav>
       {comparison_grid}
       <details class="comparison-trust-note"><summary>About source-checked records</summary><p class="help-text">A source-checked record means Workdoe reviewed a current public source. It does not guarantee skill, safety, insurance coverage, or legal eligibility.</p></details>
@@ -3840,8 +3839,18 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
         f'<figure><img src="{escape(photo.get("url", ""))}" alt="Job photo"><figcaption>{escape(photo.get("original_filename", ""))}</figcaption></figure>'
         for photo in photos
     )
+    request_counts = {
+        "all": int(stats.get("total", 0) or 0),
+        "pending": int(stats.get("pending", 0) or 0),
+        "approved": int(stats.get("approved", 0) or 0),
+        "rejected": int(stats.get("rejected", 0) or 0),
+    }
     link_html = "\n".join(
-        f'<a href="{escape(link.get("url", "#"))}"{" aria-current=\"page\"" if link.get("value") == view else ""}>{escape(link.get("label", ""))}</a>'
+        f'<a class="work-view-tab{" is-active" if link.get("value") == view else ""}" '
+        f'href="{escape(link.get("url", "#"))}"'
+        f'{" aria-current=\"page\"" if link.get("value") == view else ""}>'
+        f'<span>{escape(link.get("label", ""))}</span>'
+        f'<strong>{request_counts.get(str(link.get("value", "")), 0)}</strong></a>'
         for link in view_links
     )
     status = job.get("status", "")
@@ -4111,11 +4120,11 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
       </aside>
     </section>
     {close_dialog}
-    <section class="band subtle bid-review-section" id="mini-bids">
-      <div class="panel-heading">
-        <h2>Mini bids</h2>
-        <nav class="filter-links" aria-label="Mini-bid filters">{link_html}</nav>
+    <section id="mini-bids" class="band subtle bid-review-section" tabindex="-1" aria-labelledby="mini-bids-title">
+      <div class="section-heading bid-review-heading">
+        <div><p class="eyebrow">Mini bids</p><h2 id="mini-bids-title">{'Choose a contractor' if int(stats.get('pending', 0) or 0) else 'Mini bids'}</h2></div>
       </div>
+      <nav class="work-view-tabs bid-view-tabs client-job-tabs" aria-label="Mini bid status">{link_html}</nav>
       {comparison_html}
       <div class="bid-list">
 {requests_html}
