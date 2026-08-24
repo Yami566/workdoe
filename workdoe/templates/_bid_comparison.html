@@ -58,9 +58,20 @@
                 {% endif %}
               {% endfor %}
             </dl>
+            <details class="bid-card-offer">
+              <summary>Offer details</summary>
+              <div class="bid-card-offer-copy">
+                <p><strong>Plan</strong>{{ offer.scope_note }}</p>
+                <p><strong>Experience</strong>{{ offer.experience }}</p>
+                {% if offer.questions %}<p><strong>Questions</strong>{{ offer.questions }}</p>{% endif %}
+              </div>
+            </details>
             <div class="bid-compare-actions">
               <a class="button secondary compact" href="{{ offer.profile_url }}">Profile</a>
-              <a class="button secondary compact" href="#bid-title-{{ offer.id }}">Full offer</a>
+              <form method="post" action="{{ url_for('decide_request', request_id=offer.id, action='reject') }}">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <button class="button secondary compact" type="submit">Reject</button>
+              </form>
             </div>
             <div class="bid-choose-form">
               <button class="button compact" type="button" data-inline-dialog-open="choose-contractor-{{ offer.id }}" aria-haspopup="dialog" aria-label="Choose {{ offer.contractor_name }} for {{ job.title }}">Choose contractor</button>
@@ -69,7 +80,7 @@
         {% endfor %}
       </div>
     {% else %}
-      <p class="empty comparison-empty">No pending offers match this record filter. All pending offers remain below.</p>
+      <p class="empty comparison-empty">No pending offers match this record filter. Switch to All offers to see every pending bid.</p>
     {% endif %}
     <details class="comparison-trust-note">
       <summary>About source-checked records</summary>

@@ -5456,6 +5456,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                             "price_range": "$450-$650",
                             "timeline": "Two days",
                             "availability": "Tuesday",
+                            "scope_note": "I can protect surrounding surfaces.",
+                            "experience": "Five years in the DMV.",
+                            "questions": "Is there hose access?",
                             "reputation": {
                                 "level_label": "First finish",
                                 "completion_points": 100,
@@ -5541,8 +5544,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("closes the other pending offers", client_job_html)
         self.assertIn('data-json-action="/api/match-requests/31/reject"', client_job_html)
         self.assertIn('aria-label="Reject mini bid from Doe Exterior Care"', client_job_html)
-        self.assertIn('aria-describedby="match-request-31-reject-status"', client_job_html)
-        self.assertIn('id="match-request-31-reject-status"', client_job_html)
+        self.assertIn('aria-describedby="comparison-reject-31-status"', client_job_html)
+        self.assertIn('id="comparison-reject-31-status"', client_job_html)
         self.assertIn('href="/messages/5"', client_job_html)
         self.assertIn("Contractor choice", client_job_html)
         self.assertIn("Compare offers", client_job_html)
@@ -5558,8 +5561,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('alt="Doe Exterior Care portfolio"', client_job_html)
         self.assertIn('src="/vendor/tabler-icons/sparkles.svg"', client_job_html)
         self.assertNotIn('src="/static/vendor/tabler-icons/sparkles.svg"', client_job_html)
-        self.assertIn('href="#bid-title-31"', client_job_html)
-        self.assertIn('id="bid-title-31"', client_job_html)
+        self.assertIn('class="bid-card-offer"', client_job_html)
+        self.assertIn("Offer details", client_job_html)
+        self.assertIn("I can protect surrounding surfaces.", client_job_html)
+        self.assertIn("Five years in the DMV.", client_job_html)
+        self.assertIn("Is there hose access?", client_job_html)
+        self.assertNotIn('href="#bid-title-31"', client_job_html)
+        self.assertNotIn('id="bid-title-31"', client_job_html)
         self.assertIn("no paid ranking", client_job_html)
         self.assertIn(
             'data-json-action="/api/match-requests/31/approve"', client_job_html
@@ -6634,6 +6642,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(
             worker_result["offers"][1]["profile_photo_url"],
             "/media/contractors/14",
+        )
+        self.assertEqual(
+            worker_result["offers"][0]["scope_note"],
+            "Three movers and one truck.",
+        )
+        self.assertEqual(
+            worker_result["offers"][1]["questions"],
+            "Freight elevator?",
         )
         self.assertNotIn("private@example.com", json.dumps(worker_result))
         self.assertNotIn("Private Street", json.dumps(worker_result))

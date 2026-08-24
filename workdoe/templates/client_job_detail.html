@@ -189,8 +189,10 @@
     {% endfor %}
   </nav>
   {% include "_bid_comparison.html" %}
-  <div class="job-list bid-review-list" aria-live="polite">
-    {% for item in requests %}
+  {% set detailed_requests = requests if bid_view not in ['all', 'pending'] else requests|rejectattr('status', 'equalto', 'pending')|list %}
+  {% if detailed_requests %}
+    <div class="job-list bid-review-list" aria-live="polite">
+    {% for item in detailed_requests %}
       {% set contractor_name = item.business_name or item.company_name or item.display_name %}
       {% set item_reviews = reviews_by_request.get(item.id, {}) %}
       <article class="job-row bid-row bid-review-row{% if item.status == 'pending' %} needs-review{% endif %}" aria-labelledby="bid-title-{{ item.id }}">
@@ -256,10 +258,11 @@
           {% endif %}
         </div>
       </article>
-    {% else %}
-      <p class="empty">{% if bid_view == "pending" %}No pending bids.{% elif bid_view == "approved" %}No approved bids.{% elif bid_view == "rejected" %}No rejected bids.{% else %}No contractor mini bids yet.{% endif %}</p>
     {% endfor %}
-  </div>
+    </div>
+  {% elif not bid_comparison.pending_count %}
+    <p class="empty">{% if bid_view == "pending" %}No pending bids.{% elif bid_view == "approved" %}No approved bids.{% elif bid_view == "rejected" %}No rejected bids.{% else %}No contractor mini bids yet.{% endif %}</p>
+  {% endif %}
 </section>
 
 {% for item in requests if item.status == 'pending' %}

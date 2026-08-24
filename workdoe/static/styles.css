@@ -1262,6 +1262,42 @@ button.compact {
   font-weight: 600;
 }
 
+.bid-card-offer {
+  border-bottom: 1px solid var(--line);
+  padding: 0 12px;
+}
+
+.bid-card-offer summary {
+  min-height: 42px;
+  color: var(--accent-dark);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 850;
+  line-height: 42px;
+}
+
+.bid-card-offer-copy {
+  display: grid;
+  gap: 10px;
+  padding: 0 0 12px;
+}
+
+.bid-card-offer-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  white-space: pre-line;
+}
+
+.bid-card-offer-copy strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ink);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
 .comparison-trust-note {
   margin-top: 12px;
   color: var(--muted);
@@ -1291,6 +1327,10 @@ button.compact {
   width: 100%;
 }
 
+.bid-compare-actions form {
+  margin: 0;
+}
+
 .bid-choose-form {
   margin: 0;
   padding: 0 12px 12px;
@@ -1308,6 +1348,25 @@ button.compact {
 }
 
 @media (max-width: 620px) {
+  .comparison-filter-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow-x: visible;
+  }
+
+  .comparison-filter-tabs a {
+    justify-content: center;
+    min-width: 0;
+    padding-inline: 5px;
+    text-align: center;
+  }
+
+  .comparison-filter-tabs a span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    line-height: 1.1;
+  }
+
   .bid-comparison-grid--1,
   .bid-comparison-grid--2,
   .bid-comparison-grid--3,

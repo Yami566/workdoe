@@ -452,7 +452,7 @@ deployment has been performed during this stabilization pass.
 - Current-run contractor-choice evidence at 390x844, 820x1180, and 1280x720
   shows zero horizontal overflow, a real moderated portfolio photo with
   contractor-specific alternative text, compact comparison facts and signals,
-  complete Profile, Full offer, and Choose contractor actions, and a clean
+  complete Profile, Offer details, Reject, and Choose contractor actions, and a clean
   browser console. The aligned mobile before/after comparison and evidence
   limits are recorded in
   `docs/ux-audit/2026-08-23-contractor-choice-cards/`.
@@ -654,6 +654,18 @@ deployment has been performed during this stabilization pass.
   KiB / 172.47 KiB gzip without deploying. Repeated local HEAD checks confirmed
   immutable, `nosniff` responses for all three current-token assets and
   revalidation for unversioned `worker-actions.js`.
+- The unified contractor-offer batch passed all 237 tests in 81.523 seconds and
+  the complete security/provenance gate across 672 non-ignored files.
+  Cloudflare preflight remained warning-free; all 34 D1 migrations used the
+  expected three public map/photo indexes without a table scan; and Wrangler
+  4.125.0 packaged 49 Python modules plus 88 static assets at 940.27 KiB /
+  172.73 KiB gzip without deploying.
+- Current-run evidence at 390x844, 820x1180, and 1280x720 shows one complete
+  pending-offer card per contractor, zero duplicate pending rows, a native
+  in-card offer disclosure, complete Profile, Reject, and Choose contractor
+  actions, and no horizontal document or filter overflow. Evidence and limits
+  are recorded in
+  `docs/ux-audit/2026-08-24-current-workflow-followup/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

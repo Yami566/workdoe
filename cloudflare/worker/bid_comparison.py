@@ -99,6 +99,9 @@ def comparison_offer(row, position: int, job_id: int = 0) -> dict:
         "price_range": str(row_value(row, "price_range", "") or "Not provided"),
         "timeline": str(row_value(row, "timeline", "") or "Not provided"),
         "availability": str(row_value(row, "availability", "") or "Not provided"),
+        "scope_note": str(row_value(row, "scope_note", "") or "Not provided"),
+        "experience": str(row_value(row, "experience", "") or "Not provided"),
+        "questions": str(row_value(row, "questions", "") or ""),
         "reputation": reputation,
         "provider_facts": [
             {

@@ -3726,6 +3726,11 @@ def bid_comparison_html(
             else ""
         )
         header_class = "bid-compare-header has-photo" if photo_html else "bid-compare-header"
+        questions_html = (
+            f'<p><strong>Questions</strong>{escape(offer.get("questions", ""))}</p>'
+            if offer.get("questions")
+            else ""
+        )
         offer_cards.append(
             f"""
         <article class="bid-compare-card" aria-labelledby="compare-offer-{offer_id}">
@@ -3750,9 +3755,20 @@ def bid_comparison_html(
             <div><dt>Availability</dt><dd>{escape(offer.get('availability', 'Not provided'))}</dd></div>
           </dl>
           <dl class="bid-provider-facts">{provider_facts}</dl>
+          <details class="bid-card-offer">
+            <summary>Offer details</summary>
+            <div class="bid-card-offer-copy">
+              <p><strong>Plan</strong>{escape(offer.get('scope_note', 'Not provided'))}</p>
+              <p><strong>Experience</strong>{escape(offer.get('experience', 'Not provided'))}</p>
+              {questions_html}
+            </div>
+          </details>
           <div class="bid-compare-actions">
             <a class="button secondary compact" href="{escape(offer.get('profile_url', '#'))}">Profile</a>
-            <a class="button secondary compact" href="#bid-title-{offer_id}">Full offer</a>
+            <form data-json-action="/api/match-requests/{offer_id}/reject" data-success-url-template="/client/jobs/{job_id}" aria-label="Reject mini bid from {escape(offer.get('contractor_name', 'contractor'))}" aria-describedby="comparison-reject-{offer_id}-status">
+              <button class="button secondary compact" type="submit">Reject</button>
+              <span id="comparison-reject-{offer_id}-status" class="sr-only" data-form-status aria-live="polite"></span>
+            </form>
           </div>
           <div class="bid-choose-form">
             <button class="button compact" type="button" data-inline-dialog-open="choose-contractor-{offer_id}" aria-haspopup="dialog" aria-label="Choose {escape(offer.get('contractor_name', 'contractor'))}">Choose contractor</button>
@@ -3770,7 +3786,7 @@ def bid_comparison_html(
     comparison_grid = (
         f'<div class="bid-comparison-grid bid-comparison-grid--{count}">{"".join(offer_cards)}</div>'
         if offers
-        else '<p class="empty comparison-empty">No pending offers match this record filter. All pending offers remain below.</p>'
+        else '<p class="empty comparison-empty">No pending offers match this record filter. Switch to All offers to see every pending bid.</p>'
     )
     return f"""
     <section class="bid-comparison" aria-labelledby="bid-comparison-title">
@@ -3934,6 +3950,8 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
           </div>"""
         elif request.get("thread_url"):
             actions = f'<a class="button secondary" href="{escape(request.get("thread_url", ""))}">Message</a>'
+        if request_status == "pending" and view in {"all", "pending"}:
+            continue
         if (
             request_status == "approved"
             and job.get("status") == "closed"
@@ -4011,7 +4029,21 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
         {feedback_html}
       </article>"""
         )
-    requests_html = "\n".join(request_rows) if request_rows else empty_state("No mini bids yet", "/client/dashboard", "Back to dashboard")
+    if request_rows:
+        requests_html = "\n".join(request_rows)
+    elif comparison_html:
+        requests_html = ""
+    else:
+        empty_label = {
+            "pending": "No pending bids",
+            "approved": "No approved bids",
+            "rejected": "No rejected bids",
+        }.get(view, "No mini bids yet")
+        requests_html = empty_state(
+            empty_label,
+            "/client/dashboard",
+            "Back to dashboard",
+        )
     choice_dialogs_html = "\n".join(choice_dialogs)
     bid_window_markup = bid_window_html(bidding, owner=True, job_id=job_id) if status == "open" else ""
     body = f"""

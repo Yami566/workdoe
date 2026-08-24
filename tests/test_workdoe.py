@@ -1184,7 +1184,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertRegex(review_html, r">Pending</span>\s*<strong>1</strong>")
         self.assertRegex(review_html, r">Approved</span>\s*<strong>0</strong>")
         self.assertIn(f'href="/client/jobs/{job["id"]}?bids=pending"', review_html)
-        self.assertIn('class="job-list bid-review-list" aria-live="polite"', review_html)
+        self.assertNotIn('class="job-list bid-review-list" aria-live="polite"', review_html)
         self.assertIn('class="bid-comparison"', review_html)
         self.assertIn("Contractor choice", review_html)
         self.assertIn("Compare offers", review_html)
@@ -1209,17 +1209,18 @@ class WorkdoeFlowTests(unittest.TestCase):
             review_html,
         )
         self.assertIn(">Choose contractor</button>", review_html)
-        self.assertIn(f'href="#bid-title-{match["id"]}"', review_html)
-        self.assertIn('class="job-row bid-row bid-review-row needs-review"', review_html)
-        self.assertIn('class="bid-row-top"', review_html)
+        self.assertIn('class="bid-card-offer"', review_html)
+        self.assertIn("Offer details", review_html)
+        self.assertNotIn(f'href="#bid-title-{match["id"]}"', review_html)
+        self.assertNotIn('class="job-row bid-row bid-review-row needs-review"', review_html)
         self.assertIn(
             f'data-inline-dialog-open="choose-contractor-{match["id"]}"',
             review_html,
         )
         self.assertIn("Confirm match", review_html)
         self.assertIn("closes the other pending offers", review_html)
-        self.assertLess(review_html.index(">Choose</button>"), review_html.index("I can handle the cleaning"))
-        self.assertIn(b"class=\"profile-facts compact-facts bid-facts\"", review.data)
+        self.assertEqual(review_html.count("I can handle the cleaning"), 1)
+        self.assertIn(b"class=\"bid-compare-terms\"", review.data)
         self.assertIn(b"<dt>Price</dt><dd>$450-$650</dd>", review.data)
         self.assertIn(b"<dt>Timeline</dt><dd>Two business days after approval</dd>", review.data)
         self.assertIn(b"<dt>Availability</dt><dd>Tuesday and Thursday afternoons</dd>", review.data)
@@ -1348,7 +1349,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         prioritized_review = self.client.get(f"/client/jobs/{job['id']}")
         prioritized_html = prioritized_review.data.decode("utf-8")
         self.assertLess(
-            prioritized_html.index('<span class="status pending">pending</span>'),
+            prioritized_html.index('aria-labelledby="compare-offer-'),
             prioritized_html.index('<span class="status approved">approved</span>'),
         )
 
@@ -7057,6 +7058,14 @@ class WorkdoeFlowTests(unittest.TestCase):
             ["First Crew", "Later Crew"],
         )
         self.assertEqual(comparison["offers"][0]["offer_label"], "Offer 1")
+        self.assertEqual(
+            comparison["offers"][0]["scope_note"],
+            "Clean the apartment and remove bagged waste.",
+        )
+        self.assertEqual(
+            comparison["offers"][0]["experience"],
+            "Turnover cleaning across the District.",
+        )
         self.assertEqual(
             comparison["offers"][0]["provider_facts"][0]["value"],
             "New business",
