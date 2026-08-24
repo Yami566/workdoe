@@ -7589,6 +7589,74 @@ textarea:focus {
   margin-top: 2px;
 }
 
+.contractor-bid-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-left: 4px solid var(--line);
+  padding: 13px 14px 13px 12px;
+}
+
+.contractor-bid-row .row-cue {
+  align-self: center;
+}
+
+.contractor-bid-row.is-approved {
+  border-left-color: var(--blue);
+}
+
+.contractor-bid-row.is-pending {
+  border-left-color: var(--gold);
+}
+
+.contractor-bid-row.is-rejected {
+  border-left-color: var(--danger);
+}
+
+.contractor-bid-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.contractor-bid-copy > strong {
+  overflow-wrap: anywhere;
+}
+
+.contractor-bid-context {
+  display: block;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.contractor-bid-terms {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 5px;
+}
+
+.contractor-bid-term {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  font-size: 0.78rem;
+}
+
+.contractor-bid-term small {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.contractor-bid-term strong {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
 .repeat-invitation-banner {
   display: flex;
   align-items: center;

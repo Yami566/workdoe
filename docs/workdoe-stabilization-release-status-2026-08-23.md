@@ -666,6 +666,19 @@ deployment has been performed during this stabilization pass.
   actions, and no horizontal document or filter overflow. Evidence and limits
   are recorded in
   `docs/ux-audit/2026-08-24-current-workflow-followup/`.
+- The contractor bid action-queue batch passed all 238 tests in 83.129 seconds
+  and the complete security/provenance gate across 676 non-ignored files.
+  Cloudflare preflight remained warning-free; all 34 D1 migrations used the
+  expected three public map/photo indexes without a table scan; and Wrangler
+  4.125.0 packaged 49 Python modules plus 88 static assets at 941.19 KiB /
+  172.97 KiB gzip without deploying.
+- Current-run evidence at 390x844, 820x1180, and 1280x720 shows approved bids
+  before pending and rejected history, the contractor's submitted estimate and
+  timing in every private row, resolved accessible descriptions, and no
+  horizontal overflow. The change does not alter lead order, consumer
+  received-order comparison, credentials, or completion points. Evidence and
+  limits are recorded in
+  `docs/ux-audit/2026-08-24-contractor-bid-action-queue/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

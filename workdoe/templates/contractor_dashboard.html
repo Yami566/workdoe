@@ -24,17 +24,19 @@
   <div class="job-list compact-list" aria-label="Contractor mini bids">
     {% for item in requests %}
       {% set row_href = url_for('thread_detail', thread_id=item.thread_id) if item.status == 'approved' and item.thread_id else url_for('contractor_job_detail', job_id=item.job_id) %}
-      {% set row_cue = "Message" if item.status == "approved" and item.thread_id else "View" %}
+      {% set row_cue = "Message" if item.status == "approved" and item.thread_id else "Details" %}
       {% set row_label = "Message about " ~ item.title if row_cue == "Message" else "View mini bid for " ~ item.title %}
-      <a class="job-row link-row" href="{{ row_href }}" aria-label="{{ row_label }}">
-        <span>
+      <a class="job-row link-row contractor-bid-row is-{{ item.status }}" href="{{ row_href }}" aria-label="{{ row_label }}" aria-describedby="contractor-bid-terms-{{ item.id }}">
+        <span class="contractor-bid-copy">
           <strong>{{ item.title }}</strong>
-          <small>{{ item.category }} in {{ item.city }}, {{ item.state }}</small>
+          <small class="contractor-bid-context">{{ item.category }} in {{ item.city }}, {{ item.state }}</small>
+          <span id="contractor-bid-terms-{{ item.id }}" class="contractor-bid-terms" aria-label="Your submitted bid terms">
+            <span class="status {{ item.status }}">{{ item.status }}</span>
+            <span class="contractor-bid-term"><small>Estimate</small><strong>{{ item.price_range }}</strong></span>
+            <span class="contractor-bid-term"><small>Timing</small><strong>{{ item.timeline }}</strong></span>
+          </span>
         </span>
-        <span class="row-actions">
-          <span class="status {{ item.status }}">{{ item.status }}</span>
-          <span class="row-cue">{{ row_cue }}</span>
-        </span>
+        <span class="row-cue">{{ row_cue }}</span>
       </a>
     {% else %}
       <p class="empty">

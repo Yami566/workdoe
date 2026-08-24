@@ -317,6 +317,11 @@ BID_VIEW_OPTIONS = (
     ("approved", "Approved"),
     ("rejected", "Rejected"),
 )
+BID_STATUS_PRIORITY = {
+    "approved": 0,
+    "pending": 1,
+    "rejected": 2,
+}
 MESSAGE_THREAD_VIEW_OPTIONS = (
     ("all", "All"),
     ("reply", "Needs reply"),
@@ -8332,9 +8337,17 @@ def contractor_repeat_invitations(contractor_id: int) -> list[dict]:
 
 
 def filter_bids_by_view(bids, bid_view: str) -> list:
+    visible = (
+        list(bids)
+        if bid_view == "all"
+        else [bid for bid in bids if bid["status"] == bid_view]
+    )
+    visible.sort(key=lambda bid: str(bid["created_at"] or ""), reverse=True)
     if bid_view == "all":
-        return list(bids)
-    return [bid for bid in bids if bid["status"] == bid_view]
+        visible.sort(
+            key=lambda bid: BID_STATUS_PRIORITY.get(str(bid["status"] or ""), 3)
+        )
+    return visible
 
 
 def public_open_jobs(

@@ -3124,6 +3124,17 @@ class WorkdoeFlowTests(unittest.TestCase):
             'class="work-view-tabs bid-view-tabs contractor-bid-tabs" aria-label="Contractor mini bid status"',
             contractor_html,
         )
+        self.assertIn(
+            'class="job-row link-row contractor-bid-row is-pending"',
+            contractor_html,
+        )
+        self.assertIn('aria-describedby="contractor-bid-terms-', contractor_html)
+        self.assertIn('aria-label="Your submitted bid terms"', contractor_html)
+        self.assertIn("<small>Estimate</small><strong>$450-$650</strong>", contractor_html)
+        self.assertIn(
+            "<small>Timing</small><strong>Within two business days</strong>",
+            contractor_html,
+        )
         self.assertLess(
             contractor_html.find('class="work-history contractor-bid-workspace"'),
             contractor_html.find('class="work-progress"'),
@@ -3155,7 +3166,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             b'aria-label="View mini bid for Power wash townhouse front steps"',
             contractor_pending.data,
         )
-        self.assertIn(b'<span class="row-cue">View</span>', contractor_pending.data)
+        self.assertIn(b'<span class="row-cue">Details</span>', contractor_pending.data)
 
         contractor_approved = self.client.get("/contractor/dashboard?bids=approved")
         self.assertIn(b"No approved bids.", contractor_approved.data)
@@ -3235,6 +3246,23 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertNotIn(b"?bids=pending#mini-bids", paused_dashboard.data)
         refreshed_active = self.client.get("/client/dashboard")
         self.assertNotIn(b"Replace damaged fence panel", refreshed_active.data)
+
+    def test_contractor_all_bids_prioritize_matches_then_newest_within_status(self):
+        bids = [
+            {"id": 1, "status": "pending", "created_at": "2026-08-24T12:00:00+00:00"},
+            {"id": 2, "status": "approved", "created_at": "2026-08-22T12:00:00+00:00"},
+            {"id": 3, "status": "rejected", "created_at": "2026-08-24T13:00:00+00:00"},
+            {"id": 4, "status": "approved", "created_at": "2026-08-23T12:00:00+00:00"},
+        ]
+
+        self.assertEqual(
+            [bid["id"] for bid in workdoe.filter_bids_by_view(bids, "all")],
+            [4, 2, 1, 3],
+        )
+        self.assertEqual(
+            [bid["id"] for bid in workdoe.filter_bids_by_view(bids, "approved")],
+            [4, 2],
+        )
 
     def test_security_headers_support_map_without_inline_scripts(self):
         response = self.client.get("/")

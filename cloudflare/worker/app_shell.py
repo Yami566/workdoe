@@ -1296,7 +1296,8 @@ def contractor_dashboard_html(user, payload: dict) -> str:
     bid_view_links = payload.get("view_links", [])
     rows = []
     for bid in bids:
-        row_cue = str(bid.get("row_cue", "View") or "View")
+        bid_id = int(bid.get("id", 0) or bid.get("job_id", 0) or 0)
+        row_cue = str(bid.get("row_cue", "Details") or "Details")
         row_label = (
             f"Message about {bid.get('title', 'bid')}"
             if row_cue == "Message"
@@ -1304,9 +1305,17 @@ def contractor_dashboard_html(user, payload: dict) -> str:
         )
         rows.append(
             f"""
-    <a class="job-row link-row" href="{escape(bid.get('url', '#'))}" aria-label="{escape(row_label)}">
-      <span><strong>{escape(bid.get('title', ''))}</strong><small>{escape(bid.get('category', ''))} in {escape(bid.get('city', ''))}, {escape(bid.get('state', ''))}</small></span>
-      <span class="row-actions"><span class="status {escape(bid.get('status', ''))}">{escape(bid.get('status', ''))}</span><span class="row-cue">{escape(row_cue)}</span></span>
+    <a class="job-row link-row contractor-bid-row is-{escape(bid.get('status', ''))}" href="{escape(bid.get('url', '#'))}" aria-label="{escape(row_label)}" aria-describedby="contractor-bid-terms-{bid_id}">
+      <span class="contractor-bid-copy">
+        <strong>{escape(bid.get('title', ''))}</strong>
+        <small class="contractor-bid-context">{escape(bid.get('category', ''))} in {escape(bid.get('city', ''))}, {escape(bid.get('state', ''))}</small>
+        <span id="contractor-bid-terms-{bid_id}" class="contractor-bid-terms" aria-label="Your submitted bid terms">
+          <span class="status {escape(bid.get('status', ''))}">{escape(bid.get('status', ''))}</span>
+          <span class="contractor-bid-term"><small>Estimate</small><strong>{escape(bid.get('price_range', ''))}</strong></span>
+          <span class="contractor-bid-term"><small>Timing</small><strong>{escape(bid.get('timeline', ''))}</strong></span>
+        </span>
+      </span>
+      <span class="row-cue">{escape(row_cue)}</span>
     </a>"""
         )
     if rows:

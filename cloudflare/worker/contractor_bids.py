@@ -6,6 +6,11 @@ from match_completions import completion_label, completion_state
 BID_VIEWS = {"all", "pending", "approved", "rejected"}
 DEFAULT_BID_VIEW = "all"
 CONTRACTOR_BID_LIMIT = 100
+BID_STATUS_PRIORITY = {
+    "approved": 0,
+    "pending": 1,
+    "rejected": 2,
+}
 
 
 def row_value(row, key: str, default=None):
@@ -57,7 +62,7 @@ def contractor_bid_card(row) -> dict:
         "verified_at": row_value(row, "verified_at", "") or "",
         "job_url": f"/jobs/{job_id}",
         "url": thread_url if status == "approved" and thread_url else f"/jobs/{job_id}",
-        "row_cue": "Message" if status == "approved" and thread_url else "View",
+        "row_cue": "Message" if status == "approved" and thread_url else "Details",
     }
     card["completion_state"] = completion_state(card)
     card["completion_label"] = completion_label(card, "contractor")
@@ -72,9 +77,15 @@ def contractor_bid_card(row) -> dict:
 
 def filter_contractor_bid_cards(cards: list[dict], view: str) -> list[dict]:
     normalized_view = normalize_contractor_bid_view(view)
+    visible = (
+        list(cards)
+        if normalized_view == "all"
+        else [bid for bid in cards if bid["status"] == normalized_view]
+    )
+    visible.sort(key=lambda bid: str(bid.get("created_at", "")), reverse=True)
     if normalized_view == "all":
-        return list(cards)
-    return [bid for bid in cards if bid["status"] == normalized_view]
+        visible.sort(key=lambda bid: BID_STATUS_PRIORITY.get(bid.get("status", ""), 3))
+    return visible
 
 
 def contractor_bid_stats(all_bids: list[dict], visible_bids: list[dict]) -> dict:

@@ -4496,11 +4496,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 },
                 "bids": [
                     {
+                        "id": 31,
                         "title": "Power wash steps",
                         "category": "Power washing",
                         "city": "Arlington",
                         "state": "VA",
                         "scope_note": "Careful exterior cleaning.",
+                        "price_range": "$450-$650",
+                        "timeline": "Two business days",
                         "url": "/messages/5",
                         "row_cue": "Message",
                         "status": "approved",
@@ -4569,6 +4572,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('href="/contractor/dashboard" aria-current="page"', contractor_dashboard_html)
         self.assertIn('aria-label="Message about Power wash steps"', contractor_dashboard_html)
         self.assertIn('<span class="row-cue">Message</span>', contractor_dashboard_html)
+        self.assertIn('class="job-row link-row contractor-bid-row is-approved"', contractor_dashboard_html)
+        self.assertIn('aria-describedby="contractor-bid-terms-31"', contractor_dashboard_html)
+        self.assertIn('id="contractor-bid-terms-31"', contractor_dashboard_html)
+        self.assertIn('aria-label="Your submitted bid terms"', contractor_dashboard_html)
+        self.assertIn("<small>Estimate</small><strong>$450-$650</strong>", contractor_dashboard_html)
+        self.assertIn("<small>Timing</small><strong>Two business days</strong>", contractor_dashboard_html)
         self.assertIn('class="milestone-track" aria-label="Verified completion milestones"', contractor_dashboard_html)
         self.assertIn('class="milestone-step is-next"', contractor_dashboard_html)
         self.assertIn("0 verified projects", contractor_dashboard_html)
@@ -6312,7 +6321,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
         pending_payload = module.contractor_bids_payload(rows, "pending")
         self.assertEqual(pending_payload["bids"][0]["url"], "/jobs/12")
-        self.assertEqual(pending_payload["bids"][0]["row_cue"], "View")
+        self.assertEqual(pending_payload["bids"][0]["row_cue"], "Details")
+
+        all_payload = module.contractor_bids_payload(rows, "all")
+        self.assertEqual(
+            [bid["status"] for bid in all_payload["bids"]],
+            ["approved", "pending", "rejected"],
+        )
+        self.assertEqual(all_payload["bids"][0]["price_range"], "$300-$450")
+        self.assertEqual(all_payload["bids"][0]["timeline"], "Next week")
 
     def test_cloudflare_client_jobs_helper_matches_dashboard_counts(self):
         module = load_client_jobs_module()
