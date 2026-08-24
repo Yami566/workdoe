@@ -52,6 +52,8 @@ the current requirements, policy gates, or release status.
   immutable cache policy, deterministic byte-derived release token,
   narrow-path guardrails, local Worker response evidence, and the
   post-deployment smoke requirement.
+- `release-evidence/2026-08-24-account-lifecycle-visibility.md`: fail-closed
+  visibility, media, detail, and bid behavior for suspended/deleted consumers.
 
 Screenshots are point-in-time evidence. A capture is not proof that the current
 code still matches it unless the current release-status record cites a repeated

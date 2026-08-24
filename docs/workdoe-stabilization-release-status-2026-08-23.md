@@ -14,6 +14,10 @@ deployment has been performed during this stabilization pass.
 - Added viewport-bounded public project search, cursor pagination, normalized
   public payloads, synchronized list/map selection, URL state, and Search this
   area behavior while preserving approximate coordinates.
+- Closed the Clerk account-lifecycle visibility gap. Open projects owned by a
+  suspended or deleted consumer now disappear from public/contractor discovery,
+  direct contractor detail and unmatched photo access, and both stages of bid
+  creation; administrator moderation access remains available.
 - Replaced iframe overlays with route-backed native dialogs, no-JavaScript page
   fallbacks, History API restoration, and keyboard-focus restoration.
 - Added a versioned 53-service policy registry with risk tier, advisory text,

@@ -711,6 +711,21 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assert_no_store(allowed)
         allowed.close()
 
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                """
+                UPDATE users
+                SET status = 'suspended'
+                WHERE id = (SELECT client_id FROM jobs WHERE id = ?)
+                """,
+                (photo["job_id"],),
+            )
+            db.commit()
+        blocked = self.client.get(f"/media/jobs/{photo['id']}")
+        self.assertEqual(blocked.status_code, 403)
+        self.assert_no_store(blocked)
+
     def test_client_edits_job_details_and_adds_photo(self):
         self.login("client@workdoe.local", "workdoe-client")
         new_form = self.client.get("/jobs/new")
@@ -4384,6 +4399,71 @@ class WorkdoeFlowTests(unittest.TestCase):
             re.search(selected_pattern, baseline.data).group(1),
             re.search(selected_pattern, invalid.data).group(1),
         )
+
+    def test_suspended_client_projects_leave_public_and_contractor_discovery(self):
+        job = self.one(
+            """
+            SELECT jobs.*, users.email AS client_email
+            FROM jobs
+            JOIN users ON users.id = jobs.client_id
+            WHERE jobs.status = 'open'
+            ORDER BY jobs.created_at DESC, jobs.id DESC
+            LIMIT 1
+            """
+        )
+        self.assertIsNotNone(job)
+
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                "UPDATE users SET status = 'suspended' WHERE id = ?",
+                (job["client_id"],),
+            )
+            db.commit()
+
+        public_api = self.client.get("/api/jobs/open?limit=50")
+        self.assertEqual(public_api.status_code, 200)
+        self.assertNotIn(job["title"], [row["title"] for row in public_api.json["jobs"]])
+
+        home = self.client.get("/")
+        self.assertNotIn(job["title"].encode(), home.data)
+        start = self.client.get(f"/create-account?intent=find-work&job_id={job['id']}")
+        self.assertEqual(start.status_code, 200)
+        self.assertNotIn(job["title"].encode(), start.data)
+
+        self.login("contractor@workdoe.local", "workdoe-contractor")
+        leads = self.client.get("/leads")
+        self.assertNotIn(job["title"].encode(), leads.data)
+        self.assertEqual(self.client.get(f"/jobs/{job['id']}").status_code, 404)
+
+        requested = self.client.post(
+            f"/jobs/{job['id']}/request",
+            data={
+                "scope_note": "I can complete this work carefully and on schedule.",
+                "price_range": "$250-$350",
+                "timeline": "One business day",
+                "experience": "Five years completing similar DMV projects.",
+                "questions": "Is weekday access available?",
+                "availability": "Weekday mornings",
+            },
+        )
+        self.assertEqual(requested.status_code, 404)
+        contractor = self.one(
+            "SELECT id FROM users WHERE email = ?",
+            ("contractor@workdoe.local",),
+        )
+        self.assertIsNone(
+            self.one(
+                "SELECT id FROM match_requests WHERE job_id = ? AND contractor_id = ?",
+                (job["id"], contractor["id"]),
+            )
+        )
+
+        self.logout()
+        self.login("admin@workdoe.local", "workdoe-admin")
+        moderated = self.client.get(f"/jobs/{job['id']}")
+        self.assertEqual(moderated.status_code, 200)
+        self.assertIn(job["title"].encode(), moderated.data)
 
     def test_task_filtered_lead_intent_survives_sign_in(self):
         gated = self.client.get(

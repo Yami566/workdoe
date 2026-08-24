@@ -68,6 +68,12 @@ formal certification against OWASP ASVS or WCAG.
   checks, expected session/subject shape, and `azp` authorized-party validation
   when the claim is present.
 - Parameterized D1 statements for user-controlled values.
+- Clerk deletion or suspension immediately removes the consumer's open projects
+  from anonymous entry/public API queries and contractor lead queries. Direct
+  contractor detail, unmatched private-photo access, initial bid lookup, and the
+  atomic bid write also require an active project owner. Administrators retain
+  access for moderation and legal/retention handling; this containment does not
+  itself delete historical records.
 - Service-specific scope intake accepts only allow-listed question keys and
   answer codes from a versioned Python catalog. Local writes replace the owned
   answer set inside the request transaction; the Worker uses prepared

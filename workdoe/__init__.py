@@ -4314,6 +4314,8 @@ def register_routes(app: Flask) -> None:
         job = fetch_job(job_id)
         if not job:
             abort(404)
+        if g.user["role"] == "contractor" and job["client_status"] != "active":
+            abort(404)
         if job["status"] == "hidden" and g.user["role"] != "admin":
             abort(404)
         db = get_db()
@@ -4533,7 +4535,11 @@ def register_routes(app: Flask) -> None:
     @role_required("contractor")
     def request_match(job_id: int):
         job = fetch_job(job_id)
-        if not job or job["status"] != "open":
+        if (
+            not job
+            or job["status"] != "open"
+            or job["client_status"] != "active"
+        ):
             abort(404)
         db = get_db()
         if service_activation_required():
@@ -4613,6 +4619,12 @@ def register_routes(app: Flask) -> None:
             FROM jobs
             WHERE jobs.id = ?
               AND jobs.status = 'open'
+              AND EXISTS (
+                  SELECT 1
+                  FROM users AS clients
+                  WHERE clients.id = jobs.client_id
+                    AND clients.status = 'active'
+              )
               AND datetime(jobs.bidding_closes_at) > datetime(?)
               AND NOT EXISTS (
                   SELECT 1
@@ -5631,9 +5643,11 @@ def register_routes(app: Flask) -> None:
         db = get_db()
         photo = db.execute(
             """
-            SELECT job_photos.*, jobs.client_id, jobs.status
+            SELECT job_photos.*, jobs.client_id, jobs.status,
+                   clients.status AS client_status
             FROM job_photos
             JOIN jobs ON jobs.id = job_photos.job_id
+            JOIN users AS clients ON clients.id = jobs.client_id
             WHERE job_photos.id = ?
             """,
             (photo_id,),
@@ -5645,7 +5659,11 @@ def register_routes(app: Flask) -> None:
         allowed = (
             g.user["role"] == "admin"
             or photo["client_id"] == g.user["id"]
-            or (g.user["role"] == "contractor" and photo["status"] == "open")
+            or (
+                g.user["role"] == "contractor"
+                and photo["client_status"] == "active"
+                and photo["status"] == "open"
+            )
         )
         if not allowed:
             abort(403)
@@ -6331,9 +6349,12 @@ def selected_start_job(value: str | int | None, intent: str):
         return None
     return get_db().execute(
         """
-        SELECT id, title, category, city, state
+        SELECT jobs.id, jobs.title, jobs.category, jobs.city, jobs.state
         FROM jobs
-        WHERE id = ? AND status = 'open'
+        JOIN users AS clients
+          ON clients.id = jobs.client_id
+         AND clients.status = 'active'
+        WHERE jobs.id = ? AND jobs.status = 'open'
         """,
         (job_id,),
     ).fetchone()
@@ -7654,6 +7675,7 @@ def fetch_job(job_id: int):
     return get_db().execute(
         """
         SELECT jobs.*, users.display_name AS client_name, users.company_name AS client_company,
+               users.status AS client_status,
                EXISTS (
                    SELECT 1
                    FROM match_requests AS approved_request
@@ -8387,6 +8409,9 @@ def public_open_jobs_page(
                (SELECT COUNT(*) FROM match_requests WHERE job_id = jobs.id)
                    AS request_count
         FROM jobs
+        JOIN users AS clients
+          ON clients.id = jobs.client_id
+         AND clients.status = 'active'
         LEFT JOIN job_photos ON job_photos.job_id = jobs.id AND job_photos.is_hidden = 0
         WHERE jobs.status = 'open'
           AND NOT EXISTS (

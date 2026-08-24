@@ -177,6 +177,11 @@ operator-identity, contact-ownership, and legal decisions tracked in
   policy.
 - Native sessions are configured for seven days. Clerk session policy remains a
   production configuration decision.
+- Suspending or deleting a Clerk-linked consumer marks the Workdoe account
+  inactive and immediately removes that consumer's open projects from public
+  discovery, contractor discovery, unmatched detail/media access, and new bid
+  creation. The records remain available to administrators until the separate
+  retention, legal-hold, and deletion policy is approved.
 - Jobs, profiles, photos, bids, completion confirmations, completed-work
   feedback/responses/reports, messages, general reports, moderation actions,
   automation events, and account rows have no owner-approved retention period.

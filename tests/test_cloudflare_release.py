@@ -2502,6 +2502,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         suspended = {"id": 4, "role": "contractor", "status": "suspended"}
         job_photo = {
             "client_id": 2,
+            "client_status": "active",
             "status": "open",
             "is_hidden": 0,
             "has_approved_match": 0,
@@ -2515,6 +2516,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             module.can_view_job_photo(
                 contractor,
                 {**job_photo, "status": "closed", "has_approved_match": 0},
+            )
+        )
+        self.assertFalse(
+            module.can_view_job_photo(
+                contractor,
+                {
+                    **job_photo,
+                    "client_status": "suspended",
+                    "has_approved_match": 1,
+                },
             )
         )
         self.assertTrue(
@@ -3659,6 +3670,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn("jobs.approx_lat BETWEEN ? AND ?", query)
         self.assertIn("jobs.approx_lng BETWEEN ? AND ?", query)
+        self.assertIn("JOIN users AS clients", query)
+        self.assertIn("clients.status = 'active'", query)
         self.assertIn("approved_request.status = 'approved'", query)
         self.assertEqual(bindings[-2:], [25, 48])
         with self.assertRaisesRegex(module.PublicJobQueryError, "sort order"):
@@ -3712,6 +3725,45 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             plan["last_migration"],
             "0034_project_license_preference.sql",
         )
+
+    def test_cloudflare_suspended_client_projects_fail_closed(self):
+        source = WORKER_ENTRY_PATH.read_text(encoding="utf-8")
+
+        entry_jobs = source[
+            source.index("async def entry_shell_jobs") : source.index(
+                "\n\nasync def contractor_leads_for_user"
+            )
+        ]
+        contractor_leads = source[
+            source.index("async def contractor_leads_for_user") : source.index(
+                "\n\nasync def contractor_bids_for_user"
+            )
+        ]
+        create_match = source[
+            source.index("    async def create_match_request") : source.index(
+                "\n    async def decide_match_request"
+            )
+        ]
+        private_photo = source[
+            source.index("    async def private_job_photo") : source.index(
+                "\n    async def private_contractor_photo"
+            )
+        ]
+        job_detail = source[
+            source.index("async def job_for_detail") : source.index(
+                "\n\nasync def job_photos_for_detail"
+            )
+        ]
+
+        for query_block in (entry_jobs, contractor_leads):
+            with self.subTest(query=query_block.splitlines()[0]):
+                self.assertIn("JOIN users AS clients", query_block)
+                self.assertIn("clients.status = 'active'", query_block)
+        self.assertIn("JOIN users AS clients", create_match)
+        self.assertIn("AND clients.status = 'active'", create_match)
+        self.assertIn("AND EXISTS (", create_match)
+        self.assertIn("clients.status AS client_status", private_photo)
+        self.assertIn("users.status AS client_status", job_detail)
 
     def test_demo_projects_are_realistic_labeled_and_filterable(self):
         module = load_demo_projects_module()
@@ -6746,6 +6798,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         job = {
             "id": 42,
             "client_id": 8,
+            "client_status": "active",
             "title": "Clean storefront windows",
             "category": "Window cleaning",
             "city": "Arlington",
@@ -6771,6 +6824,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertTrue(module.can_view_job_detail(contractor, job))
         self.assertTrue(module.can_view_job_detail(admin, {**job, "status": "hidden"}))
         self.assertFalse(module.can_view_job_detail(contractor, {**job, "status": "hidden"}))
+        self.assertFalse(
+            module.can_view_job_detail(
+                contractor,
+                {**job, "client_status": "suspended"},
+            )
+        )
         self.assertFalse(module.can_view_job_detail(suspended, job))
 
         contractor_payload = module.job_detail_payload(contractor, job, photos=photos)

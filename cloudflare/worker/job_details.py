@@ -44,7 +44,10 @@ def can_view_job_detail(user, job) -> bool:
     if role == "client":
         return row_value(job, "client_id") == row_value(user, "id")
     if role == "contractor":
-        return row_value(job, "status") != "hidden"
+        return (
+            row_value(job, "client_status") == "active"
+            and row_value(job, "status") != "hidden"
+        )
     return False
 
 

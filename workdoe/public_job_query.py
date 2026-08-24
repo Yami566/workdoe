@@ -39,6 +39,9 @@ SELECT
     jobs.desired_date,
     COUNT(job_photos.id) AS photo_count
 FROM jobs
+JOIN users AS clients
+  ON clients.id = jobs.client_id
+ AND clients.status = 'active'
 LEFT JOIN job_photos
   ON job_photos.job_id = jobs.id
  AND job_photos.is_hidden = 0

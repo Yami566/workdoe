@@ -68,6 +68,8 @@ def can_view_job_photo(user, photo) -> bool:
         return True
     if role != "contractor":
         return False
+    if row_value(photo, "client_status") != "active":
+        return False
     if row_value(photo, "status") == "open":
         return True
     return truthy(row_value(photo, "has_approved_match"))

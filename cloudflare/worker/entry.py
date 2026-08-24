@@ -3104,9 +3104,12 @@ class Default(WorkerEntrypoint):
         lookup = await db_run(
             self.env,
             """
-            SELECT id, status, service_slug, service_zone_slug
+            SELECT jobs.id, jobs.status, jobs.service_slug, jobs.service_zone_slug
             FROM jobs
-            WHERE id = ?
+            JOIN users AS clients
+              ON clients.id = jobs.client_id
+             AND clients.status = 'active'
+            WHERE jobs.id = ?
             LIMIT 1
             """,
             job_id,
@@ -3183,6 +3186,12 @@ class Default(WorkerEntrypoint):
             FROM jobs
             WHERE jobs.id = ?
               AND jobs.status = 'open'
+              AND EXISTS (
+                  SELECT 1
+                  FROM users AS clients
+                  WHERE clients.id = jobs.client_id
+                    AND clients.status = 'active'
+              )
               AND datetime(jobs.bidding_closes_at) > datetime(?)
               AND NOT EXISTS (
                   SELECT 1
@@ -5878,6 +5887,7 @@ class Default(WorkerEntrypoint):
                 job_photos.is_hidden,
                 jobs.client_id,
                 jobs.status,
+                clients.status AS client_status,
                 CASE WHEN EXISTS (
                     SELECT 1
                     FROM match_requests
@@ -5887,6 +5897,7 @@ class Default(WorkerEntrypoint):
                 ) THEN 1 ELSE 0 END AS has_approved_match
             FROM job_photos
             JOIN jobs ON jobs.id = job_photos.job_id
+            JOIN users AS clients ON clients.id = jobs.client_id
             WHERE job_photos.id = ?
             LIMIT 1
             """,
@@ -9243,6 +9254,9 @@ async def entry_shell_jobs(env, params: dict) -> list[dict]:
                jobs.approx_lng,
                COUNT(job_photos.id) AS photo_count
         FROM jobs
+        JOIN users AS clients
+          ON clients.id = jobs.client_id
+         AND clients.status = 'active'
         LEFT JOIN job_photos ON job_photos.job_id = jobs.id AND job_photos.is_hidden = 0
         WHERE jobs.status = 'open'
           AND NOT EXISTS (
@@ -9312,6 +9326,9 @@ async def contractor_leads_for_user(
              WHERE all_requests.job_id = jobs.id) AS request_count,
             MAX(match_requests.status) AS request_status
         FROM jobs
+        JOIN users AS clients
+          ON clients.id = jobs.client_id
+         AND clients.status = 'active'
         LEFT JOIN job_photos
           ON job_photos.job_id = jobs.id
          AND job_photos.is_hidden = 0
@@ -9580,6 +9597,7 @@ async def job_for_detail(env, job_id: int):
         env,
         """
         SELECT jobs.*, users.display_name AS client_name, users.company_name AS client_company,
+               users.status AS client_status,
                (SELECT COUNT(*) FROM match_requests WHERE job_id = jobs.id)
                    AS request_count,
                EXISTS (
