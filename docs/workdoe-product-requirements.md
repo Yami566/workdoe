@@ -105,6 +105,11 @@ the relevant workflow through a same-domain email-code sign-in.
 - Save one owner-only lead view containing the current work family, exact task,
   search text, and deterministic sort order, then restore it explicitly from
   the lead board.
+- Keep projects primary in the contractor Projects panel. Family, task, search,
+  sort, saved-view, and alert controls live in one native disclosure that
+  summarizes the active task, sort, and alert state. The disclosure is closed
+  on an unfiltered board and open when a query filter is active, preserving a
+  no-JavaScript path without making alert setup a prerequisite for seeing work.
 - Explicitly opt that saved view into matching-project email. A new project may
   alert the contractor only when it also matches a selected canonical service
   and DMV zone; opting out clears the consent timestamp.

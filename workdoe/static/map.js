@@ -274,13 +274,13 @@
       var availability = bidding.availability_label || job.budget || "Budget not provided";
       var photoCount = Number(job.photo_count || 0);
       var photoLabel = photoCount + (photoCount === 1 ? " photo" : " photos");
-      var cue = job.row_cue || job.action_label || "View";
+      var rowLabel = job.request_status ? "Open sent bid for " : "View ";
       var readinessFact = readiness.label ? "<span>" + escapeHtml(readiness.label) + "</span>" : "";
       return (
-        '<a class="project-result' + (active ? " is-map-active" : "") + '" role="listitem" data-job-id="' + escapeAttribute(job.id) + '" href="' + escapeAttribute(job.detail_url || job.url || "#") + '"' + (active ? ' aria-current="true"' : "") + ">" +
+        '<a class="project-result' + (active ? " is-map-active" : "") + '" role="listitem" data-job-id="' + escapeAttribute(job.id) + '" href="' + escapeAttribute(job.detail_url || job.url || "#") + '" aria-label="' + escapeAttribute(rowLabel + (job.title || "open project")) + '"' + (active ? ' aria-current="true"' : "") + ">" +
           '<span class="project-result-topline">' + fit + '<span class="job-service-chip">' + escapeHtml(job.service_name || job.category || "Project") + "</span>" + status + sample + "</span>" +
           "<strong>" + escapeHtml(job.title || "Open project") + "</strong>" +
-          '<span class="project-result-facts"><span>' + escapeHtml(placeLabel(job)) + "</span><span>" + escapeHtml(availability) + "</span><span>" + escapeHtml(photoLabel) + "</span>" + readinessFact + "<span>" + escapeHtml(cue) + "</span></span>" +
+          '<span class="project-result-facts"><span>' + escapeHtml(placeLabel(job)) + "</span><span>" + escapeHtml(availability) + "</span><span>" + escapeHtml(photoLabel) + "</span>" + readinessFact + "</span>" +
         "</a>"
       );
     }

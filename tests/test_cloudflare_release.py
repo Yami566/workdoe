@@ -4903,6 +4903,17 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "sort": "newest",
                 },
                 "view": "all",
+                "stats": {
+                    "visible_jobs": 1,
+                    "all_jobs": 1,
+                    "new_jobs": 1,
+                    "sent_bids": 0,
+                },
+                "view_links": [
+                    {"value": "all", "label": "All", "url": "/leads"},
+                    {"value": "new", "label": "New", "url": "/leads?view=new"},
+                    {"value": "sent", "label": "Sent", "url": "/leads?view=sent"},
+                ],
                 "preferences": {
                     "has_saved_lead_view": True,
                     "saved_category": "Window cleaning",
@@ -4923,13 +4934,20 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(module.photo_count_label(None), "0 photos")
         self.assertIn('src="/map.js"', lead_html)
         self.assertIn('class="market-workspace signed-in-market-workspace"', lead_html)
-        self.assertIn('data-project-results aria-label="Open leads" role="list"', lead_html)
+        self.assertIn('id="lead-results" class="project-results" data-project-results aria-label="Open leads" role="list"', lead_html)
         self.assertIn('class="market-map-stage"', lead_html)
         self.assertIn('class="market-detail-rail"', lead_html)
         self.assertIn('leaflet.markercluster.js', lead_html)
+        self.assertIn('class="lead-view-tabs" aria-label="Lead status"', lead_html)
+        self.assertIn('<span>Bids sent</span><strong>0</strong>', lead_html)
+        self.assertIn('<details class="lead-tools" open>', lead_html)
+        self.assertIn("Filters &amp; alerts", lead_html)
+        self.assertIn("Window cleaning / Newest", lead_html)
+        self.assertIn('class="lead-tools-alert-state is-on">Email on</span>', lead_html)
         self.assertIn('role="listitem"', lead_html)
         self.assertIn('data-job-id="21"', lead_html)
         self.assertIn('aria-label="View Clean windows"', lead_html)
+        self.assertIn('<span>1 photo</span>', lead_html)
         self.assertIn('class="job-service-chip"', lead_html)
         self.assertIn('/vendor/tabler-icons/window.svg', lead_html)
         self.assertIn("Ground-floor exterior glass.", lead_html)
@@ -4953,7 +4971,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Window cleaning near Alexandria", lead_html)
         self.assertIn('value="email" checked', lead_html)
         self.assertIn("Email alerts on", lead_html)
-        self.assertIn("selected services and DMV zones", lead_html)
+        self.assertIn("your services and DMV zones", lead_html)
         self.assertNotIn("22314", lead_html)
         marker = '<script id="map-jobs-data" type="application/json">'
         parsed = json.loads(lead_html.split(marker, 1)[1].split("</script>", 1)[0])

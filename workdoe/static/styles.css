@@ -1732,6 +1732,95 @@ button.compact {
   align-items: end;
 }
 
+.lead-tools {
+  margin: 0 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.lead-tools > summary {
+  min-height: 44px;
+  cursor: pointer;
+  padding: 8px 10px;
+}
+
+.lead-tools > summary::marker {
+  color: var(--accent-dark);
+}
+
+.lead-tools > summary:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.lead-tools-summary-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-left: 4px;
+}
+
+.lead-tools-summary-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.lead-tools-summary-copy strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.lead-tools-summary-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lead-tools-alert-state {
+  min-width: 68px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 4px 7px;
+  text-align: center;
+}
+
+.lead-tools-alert-state.is-on {
+  border-color: rgba(27, 94, 32, 0.28);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.lead-tools-body {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line-soft);
+  padding: 10px;
+}
+
+.lead-tools-body .service-family-filter {
+  padding-bottom: 4px;
+}
+
+.lead-tools-body .market-filter-form {
+  margin-bottom: 0;
+}
+
+.lead-tools-body .saved-lead-toolbar {
+  margin: 0;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 10px;
+}
+
 .saved-lead-toolbar {
   display: flex;
   align-items: center;
@@ -5135,6 +5224,21 @@ textarea:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.project-result-facts {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  column-gap: 10px;
+  row-gap: 3px;
+  line-height: 1.25;
+}
+
+.project-result-facts > span {
+  flex: 0 1 auto;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .project-result strong {

@@ -120,6 +120,10 @@ formal certification against OWASP ASVS or WCAG.
   coarse self-reported availability; saved family, query, category, sort, and
   timestamps remain owner-only. No embedding or inferred classifier is stored,
   and these values do not change marketplace rank or eligibility.
+- Collapsing the saved-view and alert controls is presentation-only. It adds no
+  endpoint, script, storage field, recipient data, inferred preference, or
+  automatic consent; the existing explicit radio choice and server-side
+  validation remain authoritative.
 - Contractor matching-project email is disabled by default and requires a
   saved lead view plus an explicit email preference and consent timestamp. A
   fanout rechecks active/available status, saved work-family and category/query

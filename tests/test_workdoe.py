@@ -1122,12 +1122,25 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('href="/leads?view=sent"', board_html)
         self.assertRegex(board_html, r"<span>New</span>\s*<strong>2</strong>")
         self.assertRegex(board_html, r"<span>Bids sent</span>\s*<strong>1</strong>")
+        self.assertIn('<details class="lead-tools">', board_html)
+        self.assertNotIn('<details class="lead-tools" open>', board_html)
+        self.assertIn("Filters &amp; alerts", board_html)
+        self.assertIn("All work / Newest", board_html)
+        self.assertIn("Alerts off", board_html)
+        self.assertLess(
+            board_html.index('class="project-results-heading"'),
+            board_html.index('class="lead-tools"'),
+        )
+        self.assertLess(
+            board_html.index('class="lead-tools"'),
+            board_html.index('id="lead-results" class="project-results"'),
+        )
         self.assertIn('<span class="status pending">Bid pending</span>', board_html)
         self.assertIn('aria-label="Open sent bid for Power wash townhouse front steps"', board_html)
         self.assertRegex(
             board_html,
             r"3 bid slots left</span>\s*<span>0 photos</span>\s*"
-            r"<span>Brief 3 of 6</span>\s*<span>Sent</span>",
+            r"<span>Brief 3 of 6</span>",
         )
 
         sent_board = self.client.get("/leads?view=sent")
@@ -2192,6 +2205,8 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(saved.status_code, 200)
         self.assertIn(b"Lead view saved.", saved.data)
         self.assertIn(b"Use saved view", saved.data)
+        self.assertIn(b'<details class="lead-tools" open>', saved.data)
+        self.assertIn(b"Email on", saved.data)
         preference = self.one(
             "SELECT * FROM contractor_lead_preferences WHERE contractor_id = ?",
             (contractor["id"],),
@@ -4677,6 +4692,8 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn("window.history.replaceState", script)
         self.assertIn('setOptionalParam(url, "job_id", activeJobId)', script)
         self.assertIn("mergeJobPayload", script)
+        self.assertIn('var rowLabel = job.request_status ? "Open sent bid for " : "View ";', script)
+        self.assertIn('aria-label="\' + escapeAttribute(rowLabel', script)
         self.assertIn('"request_status", "bid_window", "brief_readiness"', script)
         self.assertIn("Object.prototype.hasOwnProperty.call(current, field)", script)
         self.assertIn('event.key === "ArrowRight"', script)

@@ -136,6 +136,12 @@ deployment has been performed during this stabilization pass.
   and source-checked credential status. Missing photos remain absent rather
   than becoming generated avatars, and received order, permissions, and
   no-paid-ranking behavior are unchanged.
+- Kept contractor work selection ahead of alert configuration. The Projects
+  panel now keeps status tabs and project rows visible while family, task,
+  search, sort, saved-view, and matching-email controls share one native
+  disclosure with a compact state summary. The existing D1, Queue, and Email
+  alert pipeline is unchanged; the Cloudflare Worker renderer now also matches
+  Flask's lead-status tabs, photo facts, and accessible row labels.
 
 ## Verification evidence
 
@@ -383,6 +389,20 @@ deployment has been performed during this stabilization pass.
   browser console. The aligned mobile before/after comparison and evidence
   limits are recorded in
   `docs/ux-audit/2026-08-23-contractor-choice-cards/`.
+- The contractor saved-alert correction passed all 229 tests in 85.768
+  seconds. The complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed
+  secret across 545 non-ignored files, and no dependency drift. Cloudflare
+  preflight remained warning-free; all 32 forward-only migrations and all
+  three expected D1 indexes passed without a table scan; and Wrangler 4.125.0
+  packaged 48 Python modules and 86 assets at 911.57 KiB / 167.70 KiB gzip
+  without deploying.
+- Current-run saved-alert evidence at 390x844, 820x1180, and 1280x720 shows
+  project results restored to the first mobile viewport, filters and alert
+  consent retained in a native disclosure, and synchronized Flask and Worker
+  lead states. The aligned mobile before/after comparison and evidence limits
+  are recorded in
+  `docs/ux-audit/2026-08-24-contractor-saved-alert-friction/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

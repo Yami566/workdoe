@@ -1513,6 +1513,23 @@ def lead_board_html(user, payload: dict) -> str:
     jobs = payload.get("jobs", [])
     filters = payload.get("filters", {})
     preferences = payload.get("preferences", {})
+    stats = payload.get("stats", {})
+    lead_view = payload.get("view", "all")
+    view_count_keys = {"all": "all_jobs", "new": "new_jobs", "sent": "sent_bids"}
+    view_labels = {"all": "All", "new": "New", "sent": "Bids sent"}
+    lead_view_tab_items = []
+    for item in payload.get("view_links", []):
+        view_value = item.get("value")
+        active = view_value == lead_view
+        aria_current = ' aria-current="page"' if active else ""
+        lead_view_tab_items.append(
+            f'<a class="lead-view-tab{" is-active" if active else ""}" '
+            f'href="{escape(item.get("url", "/leads"))}"'
+            f'{aria_current}>'
+            f'<span>{escape(view_labels.get(view_value, item.get("label", "")))}</span>'
+            f'<strong>{int(stats.get(view_count_keys.get(view_value, "visible_jobs"), 0) or 0)}</strong></a>'
+        )
+    lead_view_tabs = "".join(lead_view_tab_items)
     lead_alert_choices = "".join(
         f'<label><input type="radio" name="lead_alert_preference" value="{escape(value)}"{' checked' if preferences.get("lead_alert_preference", "workdoe") == value else ''} required><span>{escape(label)}</span></label>'
         for value, label in LEAD_ALERT_OPTIONS
@@ -1539,8 +1556,8 @@ def lead_board_html(user, payload: dict) -> str:
         <span class="project-result-facts">
           <span>{escape(job.get('city', ''))}, {escape(job.get('state', ''))}</span>
           <span>{escape(job.get('bid_window', {}).get('availability_label', ''))}</span>
+          <span>{escape(photo_count_label(int(job.get('photo_count', 0) or 0)))}</span>
           {brief_readiness_pill_html(job.get('brief_readiness'))}
-          <span>{escape(row_cue)}</span>
         </span>
       </a>"""
         )
@@ -1565,6 +1582,20 @@ def lead_board_html(user, payload: dict) -> str:
         f'<option value="{value}"{" selected" if filters.get("sort", "newest") == value else ""}>{label}</option>'
         for value, label in (("newest", "Newest"), ("soonest", "Soonest"), ("city", "City"))
     )
+    active_filter_label = service_label(
+        filters.get("service", ""),
+        selected_family["name"] if selected_family else "All work",
+    )
+    alert_state = "Email on" if preferences.get("lead_alert_enabled") else "Alerts off"
+    lead_tools_open = " open" if any(
+        (
+            filters.get("category"),
+            filters.get("family"),
+            filters.get("service"),
+            filters.get("q"),
+            filters.get("sort", "newest") != "newest",
+        )
+    ) else ""
     if preferences.get("has_saved_lead_view"):
         saved_query_label = (
             f' near {escape(preferences.get("saved_query", ""))}'
@@ -1618,41 +1649,53 @@ def lead_board_html(user, payload: dict) -> str:
     </section>
     <section class="market-workspace signed-in-market-workspace" data-market-workspace data-mobile-panel="map">
       <aside class="market-filter-rail" data-market-panel="filters" aria-label="Project search and filters">
-        <div class="market-rail-heading"><h2>Available projects</h2><p>Dispatch view with approximate locations until a client approves your bid.</p></div>
-        {service_family_filter_html(filters, view=payload.get('view', 'all'))}
-        <form class="market-filter-form" method="get" action="/leads" data-market-filters>
-          {f'<input type="hidden" name="family" value="{escape(filters.get("family", ""))}">' if filters.get('family') else ''}
-          <label for="market-search">Search projects</label>
-          <input id="market-search" name="q" type="search" value="{escape(filters.get('q', ''))}" maxlength="80" placeholder="Try painting or Arlington" autocomplete="off" data-market-search>
-          {task_filter_html}
-          <label for="market-sort">Sort</label>
-          <select id="market-sort" name="sort" data-market-sort>{sort_options}</select>
-          <div class="filter-actions"><button class="button compact" type="submit">Filter</button><a class="button secondary compact" href="/leads" data-clear-market-filters>Clear</a></div>
-        </form>
-        <div id="saved-lead-alerts" class="saved-lead-toolbar" aria-label="Saved lead view and alerts">
-          <form data-json-action="/api/contractor/preferences/lead-view" data-success-url-template="/leads" aria-describedby="saved-lead-view-status">
-            <input type="hidden" name="saved_service_group_slug" value="{escape(filters.get('family', ''))}">
-            <input type="hidden" name="saved_service_slug" value="{escape(filters.get('service', ''))}">
-            <input type="hidden" name="saved_query" value="{escape(filters.get('q', ''))}">
-            <input type="hidden" name="saved_category" value="{escape(filters.get('category', ''))}">
-            <input type="hidden" name="saved_sort" value="{escape(filters.get('sort', 'newest'))}">
-            <fieldset class="lead-alert-choice">
-              <legend>New matching projects</legend>
-              <div class="lead-alert-options">{lead_alert_choices}</div>
-              <small>Email uses this saved view plus your selected services and DMV zones. Change it here at any time.</small>
-            </fieldset>
-            <button class="button secondary compact" type="submit">Save this view</button>
-            <span id="saved-lead-view-status" class="sr-only" data-form-status aria-live="polite"></span>
-          </form>
-          {saved_view_html}
-        </div>
-        <div class="project-results-heading"><strong data-project-result-count>{len(jobs)} projects</strong><span>Ready to review</span></div>
-        <div class="project-results" data-project-results aria-label="Open leads"{list_role}>
+        <div class="market-rail-heading"><h2>Available projects</h2><p>Approximate locations until a client approves your bid.</p></div>
+        <nav class="lead-view-tabs" aria-label="Lead status">{lead_view_tabs}</nav>
+        <div class="project-results-heading"><strong data-project-result-count>{len(jobs)} project{"" if len(jobs) == 1 else "s"}</strong><span>Ready to review</span></div>
+        <details class="lead-tools"{lead_tools_open}>
+          <summary aria-label="Filter projects and manage matching project alerts">
+            <span class="lead-tools-summary-layout">
+              <span class="lead-tools-summary-copy"><strong>Filters &amp; alerts</strong><small>{escape(active_filter_label)} / {escape(filters.get('sort', 'newest').capitalize())}</small></span>
+              <span class="lead-tools-alert-state{' is-on' if preferences.get('lead_alert_enabled') else ''}">{alert_state}</span>
+            </span>
+          </summary>
+          <div class="lead-tools-body">
+            {service_family_filter_html(filters, view=lead_view)}
+            <form class="market-filter-form" method="get" action="/leads" role="search" aria-label="Filter contractor leads" aria-controls="lead-results lead-map" data-market-filters>
+              {f'<input type="hidden" name="view" value="{escape(lead_view)}">' if lead_view != 'all' else ''}
+              {f'<input type="hidden" name="family" value="{escape(filters.get("family", ""))}">' if filters.get('family') else ''}
+              <label for="market-search">Search projects</label>
+              <input id="market-search" name="q" type="search" value="{escape(filters.get('q', ''))}" maxlength="80" placeholder="Try painting or Arlington" autocomplete="off" data-market-search>
+              {task_filter_html}
+              <label for="market-sort">Sort</label>
+              <select id="market-sort" name="sort" data-market-sort>{sort_options}</select>
+              <div class="filter-actions"><button class="button compact" type="submit">Filter</button><a class="button secondary compact" href="/leads" data-clear-market-filters>Clear</a></div>
+            </form>
+            <div id="saved-lead-alerts" class="saved-lead-toolbar" aria-label="Saved lead view and alerts">
+              <form data-json-action="/api/contractor/preferences/lead-view" data-success-url-template="/leads" aria-describedby="saved-lead-view-status">
+                <input type="hidden" name="saved_service_group_slug" value="{escape(filters.get('family', ''))}">
+                <input type="hidden" name="saved_service_slug" value="{escape(filters.get('service', ''))}">
+                <input type="hidden" name="saved_query" value="{escape(filters.get('q', ''))}">
+                <input type="hidden" name="saved_category" value="{escape(filters.get('category', ''))}">
+                <input type="hidden" name="saved_sort" value="{escape(filters.get('sort', 'newest'))}">
+                <fieldset class="lead-alert-choice">
+                  <legend>New matching projects</legend>
+                  <div class="lead-alert-options">{lead_alert_choices}</div>
+                  <small>Email uses this view plus your services and DMV zones.</small>
+                </fieldset>
+                <button class="button secondary compact" type="submit">Save view</button>
+                <span id="saved-lead-view-status" class="sr-only" data-form-status aria-live="polite"></span>
+              </form>
+              {saved_view_html}
+            </div>
+          </div>
+        </details>
+        <div id="lead-results" class="project-results" data-project-results aria-label="Open leads"{list_role}>
 {list_html}
         </div>
       </aside>
       <section class="market-map-stage" data-market-panel="map" aria-label="Project map workspace">
-        <div class="map-stage-toolbar"><div><span class="map-live-indicator" aria-hidden="true"></span><strong data-map-result-count>{len(map_jobs)} projects mapped</strong></div><span>Approximate pins</span></div>
+        <div class="map-stage-toolbar"><div><span class="map-live-indicator" aria-hidden="true"></span><strong data-map-result-count>{len(map_jobs)} project{"" if len(map_jobs) == 1 else "s"} mapped</strong></div><span>Approximate pins</span></div>
         <div class="market-map-frame">
           <div id="lead-map" data-map data-map-workspace data-tile-url="https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png" data-tile-attribution='&amp;copy; &lt;a href="https://www.openstreetmap.org/copyright"&gt;OpenStreetMap&lt;/a&gt;' role="region" tabindex="0" aria-label="Approximate DMV job map" aria-describedby="lead-map-status">
             <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Map loading. Project list is ready.</p>
