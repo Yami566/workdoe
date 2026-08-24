@@ -105,7 +105,7 @@
     {{ scope_panel(scope_service_slug, questions, saved_scope_answers, form.service_slug != scope_service_slug, form.service_slug != scope_service_slug) }}
   {% endfor %}
   <label for="job-title">
-    Project title
+    <span>Project name <span class="optional-label">Suggested</span></span>
     <input id="job-title" name="title" value="{{ form.title }}" maxlength="{{ title_max }}" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="{{ selected_service_name ~ ' project' if selected_service_name else 'Name the project' }}" required {% if field_errors.title %}aria-invalid="true" aria-describedby="job-title-error"{% endif %}>
     {% if field_errors.title %}<span id="job-title-error" class="field-error">{{ field_errors.title[0] }}</span>{% endif %}
   </label>
@@ -139,6 +139,11 @@
   <legend>Where is the project?</legend>
   <p class="help-text">Only an approximate city or ZIP pin is shown before a match is approved.</p>
   <div class="project-field-grid three">
+    <label for="job-zip-code">
+      ZIP
+      <input id="job-zip-code" name="zip_code" value="{{ form.zip_code }}" inputmode="numeric" autocomplete="postal-code" pattern="[0-9]{5}" maxlength="5" list="job-zip-options" enterkeyhint="next" placeholder="20003" required {% if field_errors.zip_code %}aria-invalid="true" aria-describedby="job-zip-code-error"{% endif %}>
+      {% if field_errors.zip_code %}<span id="job-zip-code-error" class="field-error">{{ field_errors.zip_code[0] }}</span>{% endif %}
+    </label>
     <label for="job-city">
       City
       <input id="job-city" name="city" value="{{ form.city }}" maxlength="{{ city_max }}" autocomplete="address-level2" autocapitalize="words" spellcheck="false" list="job-city-options" enterkeyhint="next" placeholder="Washington" required {% if field_errors.city %}aria-invalid="true" aria-describedby="job-city-error"{% endif %}>
@@ -153,14 +158,10 @@
       </select>
       {% if field_errors.state %}<span id="job-state-error" class="field-error">{{ field_errors.state[0] }}</span>{% endif %}
     </label>
-    <label for="job-zip-code">
-      ZIP
-      <input id="job-zip-code" name="zip_code" value="{{ form.zip_code }}" inputmode="numeric" autocomplete="postal-code" pattern="[0-9]{5}" maxlength="5" list="job-zip-options" enterkeyhint="next" placeholder="20003" required {% if field_errors.zip_code %}aria-invalid="true" aria-describedby="job-zip-code-error"{% endif %}>
-      {% if field_errors.zip_code %}<span id="job-zip-code-error" class="field-error">{{ field_errors.zip_code[0] }}</span>{% endif %}
-    </label>
   </div>
   <datalist id="job-city-options">{% for option in dmv_city_options %}<option value="{{ option.city }}" label="{{ option.label }}"></option>{% endfor %}</datalist>
-  <datalist id="job-zip-options">{% for option in dmv_zip_options %}<option value="{{ option.zip }}" label="{{ option.label }}"></option>{% endfor %}</datalist>
+  <datalist id="job-zip-options">{% for option in dmv_zip_options %}<option value="{{ option.zip }}" label="{{ option.label }}" data-city="{{ option.city }}" data-state="{{ option.state }}"></option>{% endfor %}</datalist>
+  <p class="help-text" data-project-location-match aria-live="polite">Known pilot ZIPs fill city and state automatically.</p>
   <div class="project-step-actions">
     <button class="button secondary" type="button" data-project-back>Back</button>
     <button class="button" type="button" data-project-next>Continue</button>

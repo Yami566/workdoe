@@ -438,7 +438,8 @@ def dmv_city_options_html() -> str:
 
 def dmv_zip_options_html() -> str:
     return "\n".join(
-        f'<option value="{escape(zip_code)}" label="{escape(city)}, {escape(state)}"></option>'
+        f'<option value="{escape(zip_code)}" label="{escape(city)}, {escape(state)}" '
+        f'data-city="{escape(city)}" data-state="{escape(state)}"></option>'
         for zip_code, (city, state, *_coords) in sorted(DMV_ZIPS.items())
     )
 
@@ -2095,7 +2096,7 @@ def project_composer_fields_html(
       <fieldset class="project-composer-step wide" data-project-step="3" data-step-title="Describe the work">
         <legend>What does a contractor need to know?</legend>
         {scope_panels}
-        <label for="job-title">Project title <input id="job-title" name="title" value="{escape(str(form.get('title') or ''))}" maxlength="90" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="{escape(title_placeholder)}" required{invalid('title', 'job-title-error')}>{field_error('title', 'job-title-error')}</label>
+        <label for="job-title"><span>Project name <span class="optional-label">Suggested</span></span><input id="job-title" name="title" value="{escape(str(form.get('title') or ''))}" maxlength="90" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="{escape(title_placeholder)}" required{invalid('title', 'job-title-error')}>{field_error('title', 'job-title-error')}</label>
         <label for="job-description">Description <textarea id="job-description" name="description" rows="6" minlength="20" maxlength="1200" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="{escape(description_placeholder)}" required aria-describedby="job-description-help{' job-description-error' if fields.get('description') else ''}"{' aria-invalid="true"' if fields.get('description') else ''}>{escape(str(form.get('description') or ''))}</textarea><span id="job-description-help" class="help-text">Do not include an exact street address, email, or phone number.</span>{field_error('description', 'job-description-error')}</label>
         <fieldset class="project-setting-fieldset"{' aria-describedby="job-project-setting-error"' if fields.get('project_setting') else ''}>
           <legend>Where is the work happening? <span class="optional-label">Optional</span></legend>
@@ -2108,11 +2109,12 @@ def project_composer_fields_html(
       <fieldset class="project-composer-step wide" data-project-step="4" data-step-title="Set the area">
         <legend>Where is the project?</legend><p class="help-text">Only an approximate city or ZIP pin is shown before a match is approved.</p>
         <div class="project-field-grid three">
+          <label for="job-zip-code">ZIP <input id="job-zip-code" name="zip_code" value="{escape(str(form.get('zip_code') or ''))}" pattern="[0-9]{{5}}" maxlength="5" inputmode="numeric" autocomplete="postal-code" list="job-zip-options" enterkeyhint="next" placeholder="20003" required{invalid('zip_code', 'job-zip-code-error')}>{field_error('zip_code', 'job-zip-code-error')}</label>
           <label for="job-city">City <input id="job-city" name="city" value="{escape(str(form.get('city') or ''))}" maxlength="80" autocomplete="address-level2" autocapitalize="words" spellcheck="false" list="job-city-options" enterkeyhint="next" placeholder="Washington" required{invalid('city', 'job-city-error')}>{field_error('city', 'job-city-error')}</label>
           <label for="job-state">State <select id="job-state" name="state" autocomplete="address-level1" required{invalid('state', 'job-state-error')}><option value="DC"{' selected' if selected_state == 'DC' else ''}>DC</option><option value="MD"{' selected' if selected_state == 'MD' else ''}>MD</option><option value="VA"{' selected' if selected_state == 'VA' else ''}>VA</option></select>{field_error('state', 'job-state-error')}</label>
-          <label for="job-zip-code">ZIP <input id="job-zip-code" name="zip_code" value="{escape(str(form.get('zip_code') or ''))}" pattern="[0-9]{{5}}" maxlength="5" inputmode="numeric" autocomplete="postal-code" list="job-zip-options" enterkeyhint="next" placeholder="20003" required{invalid('zip_code', 'job-zip-code-error')}>{field_error('zip_code', 'job-zip-code-error')}</label>
         </div>
         <datalist id="job-city-options">{dmv_city_options_html()}</datalist><datalist id="job-zip-options">{dmv_zip_options_html()}</datalist>
+        <p class="help-text" data-project-location-match aria-live="polite">Known pilot ZIPs fill city and state automatically.</p>
         <div class="project-step-actions"><button class="button secondary" type="button" data-project-back>Back</button><button class="button" type="button" data-project-next>Continue</button></div>
       </fieldset>
       <fieldset class="project-composer-step wide" data-project-step="5" data-step-title="Set timing and budget">

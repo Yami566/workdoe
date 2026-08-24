@@ -45,7 +45,7 @@
   {% for option in dmv_city_options %}<option value="{{ option.city }}" label="{{ option.label }}"></option>{% endfor %}
 </datalist>
 <datalist id="job-zip-options">
-  {% for option in dmv_zip_options %}<option value="{{ option.zip }}" label="{{ option.label }}"></option>{% endfor %}
+  {% for option in dmv_zip_options %}<option value="{{ option.zip }}" label="{{ option.label }}" data-city="{{ option.city }}" data-state="{{ option.state }}"></option>{% endfor %}
 </datalist>
 <label for="job-budget-min">
   Budget minimum <span class="optional-label">Optional</span>

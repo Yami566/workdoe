@@ -6701,7 +6701,12 @@ def dmv_city_options() -> list[dict[str, str]]:
 
 def dmv_zip_options() -> list[dict[str, str]]:
     return [
-        {"zip": zip_code, "label": f"{city}, {state}"}
+        {
+            "zip": zip_code,
+            "city": city,
+            "state": state,
+            "label": f"{city}, {state}",
+        }
         for zip_code, (city, state, *_coords) in sorted(DMV_ZIPS.items())
     ]
 

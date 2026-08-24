@@ -40,6 +40,8 @@ the current requirements, policy gates, or release status.
   approved-first bid triage, submitted-term, and responsive evidence.
 - `ux-audit/2026-08-24-contractor-opportunity-flow/`: current contractor
   map-selection and synchronized project-detail evidence.
+- `ux-audit/2026-08-24-next-workflow-pass/`: consumer project-name and
+  ZIP-assisted location-entry before/after evidence plus contractor baseline.
 - `ux-audit/2026-08-23-project-lifecycle/`: current completed-project and
   approved-match message hierarchy, responsive correction, and same-state
   before/after evidence.

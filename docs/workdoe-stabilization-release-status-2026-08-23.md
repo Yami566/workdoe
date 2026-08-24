@@ -108,6 +108,11 @@ deployment has been performed during this stabilization pass.
   position. Optional quote-ready questions now use a compact native disclosure,
   reopen when prior answers exist, and preserve the six-step data contract in
   both Flask and the Cloudflare Worker adapter.
+- Reduced routine project-post typing without changing the six-step or storage
+  contract. Selecting a canonical task supplies an editable project-name
+  suggestion; entering one of the curated DMV ZIPs fills and collapses
+  city/state; and unknown ZIPs restore the original required fields. Flask and
+  Worker HTML remain aligned, with no geolocation or third-party lookup.
 - Reduced the common pointer/touch project-start path from four taps to two by
   advancing valid family and service choices. Keyboard and no-JavaScript paths
   retain explicit Continue controls, while title and description guidance now

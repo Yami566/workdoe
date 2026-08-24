@@ -18,6 +18,12 @@
   var categoryInput = composer.querySelector('input[name="category"]');
   var titleInput = composer.querySelector('input[name="title"]');
   var descriptionInput = composer.querySelector('textarea[name="description"]');
+  var cityInput = composer.querySelector('input[name="city"]');
+  var stateInput = composer.querySelector('select[name="state"]');
+  var zipInput = composer.querySelector('input[name="zip_code"]');
+  var zipOptions = composer.querySelector("#job-zip-options");
+  var locationMatch = composer.querySelector("[data-project-location-match]");
+  var locationDefaultCopy = locationMatch ? locationMatch.textContent : "";
   var choiceAdvanceInputs = Array.prototype.slice.call(composer.querySelectorAll("[data-project-choice-advance]"));
   var scopePanels = Array.prototype.slice.call(composer.querySelectorAll("[data-service-scope-set]"));
   var policyPanel = composer.querySelector("[data-service-policy-advisory]");
@@ -52,13 +58,78 @@
     var option = selectedServiceOption();
     var label = option && option.value ? option.textContent.trim() : "";
     if (titleInput) {
-      titleInput.placeholder = label ? label + " project" : "Name the project";
+      var priorSuggestion = titleInput.dataset.projectAutoTitle || "";
+      var nextSuggestion = label ? label + " project" : "";
+      var currentTitle = titleInput.value.trim();
+      if (!currentTitle || currentTitle === priorSuggestion) {
+        titleInput.value = nextSuggestion;
+      }
+      titleInput.dataset.projectAutoTitle = nextSuggestion;
+      titleInput.placeholder = nextSuggestion || "Name the project";
     }
     if (descriptionInput) {
       descriptionInput.placeholder = label
         ? "Describe the " + label.toLowerCase() + " scope, size, current condition, access, and desired outcome."
         : "Describe the scope, size, current condition, access, and desired outcome.";
     }
+  }
+
+  function matchingZipOption(value) {
+    if (!zipOptions || !value) {
+      return null;
+    }
+    var options = Array.prototype.slice.call(zipOptions.querySelectorAll("option"));
+    return options.filter(function (option) {
+      return option.value === value;
+    })[0] || null;
+  }
+
+  function syncZipLocation() {
+    if (!zipInput || !cityInput || !stateInput) {
+      return;
+    }
+    var zip = zipInput.value.trim();
+    var option = zip.length === 5 ? matchingZipOption(zip) : null;
+    if (!option) {
+      var priorAutoCity = cityInput.dataset.projectAutoCity || "";
+      var priorAutoState = stateInput.dataset.projectAutoState || "";
+      if (composer.classList.contains("has-matched-project-zip")) {
+        if (cityInput.value.trim() === priorAutoCity) {
+          cityInput.value = cityInput.dataset.projectPriorCity || "";
+        }
+        if (stateInput.value === priorAutoState) {
+          stateInput.value = stateInput.dataset.projectPriorState || "";
+        }
+      }
+      delete cityInput.dataset.projectAutoCity;
+      delete cityInput.dataset.projectPriorCity;
+      delete stateInput.dataset.projectAutoState;
+      delete stateInput.dataset.projectPriorState;
+      composer.classList.remove("has-matched-project-zip");
+      if (locationMatch) {
+        locationMatch.textContent = locationDefaultCopy;
+      }
+      return;
+    }
+    var city = option.dataset.city || "";
+    var state = option.dataset.state || "";
+    if (!composer.classList.contains("has-matched-project-zip")) {
+      cityInput.dataset.projectPriorCity = cityInput.value;
+      stateInput.dataset.projectPriorState = stateInput.value;
+    }
+    if (city) {
+      cityInput.value = city;
+      cityInput.dataset.projectAutoCity = city;
+    }
+    if (state) {
+      stateInput.value = state;
+      stateInput.dataset.projectAutoState = state;
+    }
+    composer.classList.add("has-matched-project-zip");
+    if (locationMatch) {
+      locationMatch.textContent = city + ", " + state + " filled from ZIP.";
+    }
+    updateReview();
   }
 
   function syncServicePolicy() {
@@ -310,6 +381,10 @@
       updateReview();
     });
   }
+  if (zipInput) {
+    zipInput.addEventListener("input", syncZipLocation);
+    zipInput.addEventListener("change", syncZipLocation);
+  }
   serviceChoices.forEach(function (choice) {
     choice.addEventListener("change", function () {
       if (!choice.checked || !serviceSelect) {
@@ -371,6 +446,7 @@
 
   composer.classList.add("is-enhanced");
   filterServices();
+  syncZipLocation();
   var invalidField = composer.querySelector('[aria-invalid="true"]');
   var invalidStep = invalidField && invalidField.closest("[data-project-step]");
   showStep(invalidStep ? Number(invalidStep.dataset.projectStep) : requestedInitialStep, false);

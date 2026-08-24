@@ -68,6 +68,11 @@ formal certification against OWASP ASVS or WCAG.
   checks, expected session/subject shape, and `azp` authorized-party validation
   when the claim is present.
 - Parameterized D1 statements for user-controlled values.
+- Project-composer assistance is deterministic and local. The selected
+  canonical service supplies an editable project-name suggestion, and the
+  existing curated DMV ZIP table can fill city/state in the browser. No
+  geolocation, third-party lookup, new stored field, or inferred private value
+  is introduced; unknown ZIPs reveal the original required city/state inputs.
 - Clerk deletion or suspension immediately removes the consumer's open projects
   from anonymous entry/public API queries and contractor lead queries. Direct
   contractor detail, unmatched private-photo access, initial bid lookup, and the

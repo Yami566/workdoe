@@ -5786,6 +5786,14 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertNotIn(b"What needs doing?", embedded_post.data)
         self.assertNotIn(b'aria-label="Project draft steps"', embedded_post.data)
         self.assertIn(b'data-dialog-fragment', embedded_post.data)
+        self.assertIn(b"Project name", embedded_post.data)
+        self.assertIn(b'class="optional-label">Suggested</span>', embedded_post.data)
+        self.assertIn(b"data-project-location-match", embedded_post.data)
+        self.assertIn(b'data-city="Washington" data-state="DC"', embedded_post.data)
+        self.assertLess(
+            embedded_post.data.find(b'<label for="job-zip-code">'),
+            embedded_post.data.find(b'<label for="job-city">'),
+        )
         self.assertEqual(embedded_post.headers["X-Frame-Options"], "DENY")
         self.assertIn("frame-ancestors 'none'", embedded_post.headers["Content-Security-Policy"])
 
@@ -5849,12 +5857,26 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('composer.addEventListener("pointerdown"', composer_script)
         self.assertIn("pointerChoiceInput !== input", composer_script)
         self.assertIn("label.toLowerCase()", composer_script)
+        self.assertIn("titleInput.dataset.projectAutoTitle", composer_script)
+        self.assertIn("titleInput.value = nextSuggestion", composer_script)
+        self.assertIn('zipInput.addEventListener("input", syncZipLocation)', composer_script)
+        self.assertIn("option.dataset.city", composer_script)
+        self.assertIn('composer.classList.add("has-matched-project-zip")', composer_script)
+        self.assertIn('composer.classList.remove("has-matched-project-zip")', composer_script)
+        self.assertIn("cityInput.dataset.projectPriorCity", composer_script)
+        self.assertIn("stateInput.dataset.projectPriorState", composer_script)
+        self.assertIn("delete cityInput.dataset.projectAutoCity", composer_script)
+        self.assertIn('locationMatch.textContent = city + ", " + state', composer_script)
         self.assertIn("jump.dataset.projectJumpStep", composer_script)
         self.assertIn('showStep(Number(jump.dataset.projectJumpStep), true)', composer_script)
 
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
         self.assertIn(
             ".form-grid[data-project-composer].is-enhanced .project-review-edit",
+            styles,
+        )
+        self.assertIn(
+            '.is-enhanced.has-matched-project-zip label[for="job-city"]',
             styles,
         )
 

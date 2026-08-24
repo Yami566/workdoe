@@ -10737,6 +10737,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Common tasks", html)
         self.assertIn("Pick the closest fit. You can change it before posting.", html)
         self.assertIn("Choose one task. Add details next.", html)
+        self.assertIn("Project name", html)
+        self.assertIn('<span class="optional-label">Suggested</span>', html)
+        self.assertIn("data-project-location-match", html)
+        self.assertIn('data-city="Washington" data-state="DC"', html)
+        self.assertLess(
+            html.index('<label for="job-zip-code">'),
+            html.index('<label for="job-city">'),
+        )
         self.assertIn("More yard &amp; landscaping services", html)
         self.assertIn(
             f'src="/project-composer.js?v={app_shell.ASSET_RELEASE_TOKEN}"',

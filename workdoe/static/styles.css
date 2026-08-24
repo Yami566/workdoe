@@ -3044,6 +3044,11 @@ button.compact {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.form-grid[data-project-composer].is-enhanced.has-matched-project-zip label[for="job-city"],
+.form-grid[data-project-composer].is-enhanced.has-matched-project-zip label[for="job-state"] {
+  display: none;
+}
+
 .license-preference-option {
   display: grid;
   grid-template-columns: 24px 24px minmax(0, 1fr);
