@@ -680,7 +680,7 @@ def layout(
   <link rel="canonical" href="{escape(canonical_url)}">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=workdoe-bid-dialog">
+  <link rel="stylesheet" href="/styles.css?v=workdoe-compact-project-choices-v2">
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet/leaflet.css\">" if include_map else ""}
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.css\"><link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.Default.css\">" if include_map else ""}
   {script_html}
@@ -1897,8 +1897,7 @@ def project_composer_fields_html(
             f'{' checked' if selected_service == service[0] else ''}>'
             f'<span class="service-option-visual" aria-hidden="true"><span>{index:02d}</span>'
             f'<img src="/vendor/tabler-icons/{escape(service_icon(service[0], group["icon"]))}" alt=""></span>'
-            f'<span class="service-option-copy"><strong>{escape(service[1])}</strong>'
-            f'<small>{escape(group["name"])}</small></span></label>'
+            f'<span class="service-option-copy"><strong>{escape(service[1])}</strong></span></label>'
         )
 
     def service_choice_group_html(group: dict) -> str:
@@ -1995,14 +1994,14 @@ def project_composer_fields_html(
       </div>
       <fieldset class="project-composer-step wide" data-project-step="1" data-step-title="Choose a work family">
         <legend>What kind of work is this?</legend>
-        <p class="help-text" id="service-family-help">Start broad. The next step narrows the project into a clean service bucket.</p>
+        <p class="help-text" id="service-family-help">Pick the closest fit. You can change it before posting.</p>
         <div class="service-family-grid" aria-describedby="service-family-help">{family_options}</div>
         {field_error('service_group_slug', 'job-service-group-slug-error')}
         <div class="project-step-actions"><a class="button secondary" href="{escape(cancel_url)}">Cancel</a><button class="button" type="button" data-project-next>Continue</button></div>
       </fieldset>
       <fieldset class="project-composer-step wide" data-project-step="2" data-step-title="Pick the service">
         <legend>What should be done?</legend>
-        <p class="help-text">Choose one task. Your description can handle the details.</p>
+        <p class="help-text">Choose one task. Add details next.</p>
         <div class="service-family-context" data-selected-service-family hidden><img data-selected-service-family-icon alt="" aria-hidden="true"><span><small>Selected family</small><strong data-selected-service-family-name></strong><small data-selected-service-family-description></small></span></div>
         <div class="service-option-groups" data-service-option-groups>{service_choice_groups}</div>
         <label class="service-select-control" for="job-service-slug">Service <select id="job-service-slug" name="service_slug" required{' aria-invalid="true" aria-describedby="job-service-slug-error"' if service_error else ''}>{service_options_html}</select></label>

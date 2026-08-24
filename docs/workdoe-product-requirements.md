@@ -30,6 +30,10 @@ the relevant workflow through a same-domain email-code sign-in.
   and keeps the remaining canonical services behind a plainly labeled
   progressive-disclosure control; the native select remains the no-JavaScript
   fallback and stores the same deterministic service value.
+- On phone-sized project dialogs, see all six numbered work families and all six
+  common tasks for the selected family in compact two-column icon controls
+  without scrolling past hidden choices. The full 53-service taxonomy remains
+  available through each family's More services disclosure.
 - From the public marketplace, a selected work family must expose both valid
   next actions: browse the filtered open projects or begin a consumer project
   with that family already selected. The embedded composer opens at the task

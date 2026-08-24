@@ -553,7 +553,7 @@ button.compact {
 
 .market-entry h1 {
   max-width: 760px;
-  font-size: clamp(2rem, 3.6vw, 3.15rem);
+  font-size: 3.15rem;
   line-height: 1;
   margin: 0;
   letter-spacing: 0;
@@ -6102,6 +6102,11 @@ textarea:focus {
 }
 
 @media (max-width: 520px) {
+  .market-entry h1 {
+    font-size: 1.5rem;
+    line-height: 1.1;
+  }
+
   .home-family-picker {
     margin-top: 10px;
     padding-top: 12px;
@@ -6126,6 +6131,65 @@ textarea:focus {
 
   .home-family-picker .service-family-filter-copy small {
     display: none;
+  }
+
+  .service-family-grid,
+  .service-option-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .service-family-option {
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 8px;
+    min-height: 76px;
+    padding: 10px;
+  }
+
+  .service-family-visual {
+    width: 34px;
+  }
+
+  .service-family-visual img {
+    width: 25px;
+    height: 25px;
+  }
+
+  .service-family-copy strong {
+    font-size: 0.86rem;
+    line-height: 1.2;
+  }
+
+  .service-family-copy small,
+  .service-family-context small:last-child {
+    display: none;
+  }
+
+  .service-family-context {
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .service-family-context img {
+    width: 24px;
+    height: 24px;
+  }
+
+  .service-option {
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 7px;
+    min-height: 72px;
+    padding: 9px;
+  }
+
+  .service-option-copy strong {
+    font-size: 0.82rem;
+  }
+
+  .service-option-more {
+    margin-top: 9px;
+    padding-top: 8px;
   }
 
   .home-lane-action {
@@ -6313,7 +6377,6 @@ textarea:focus {
   }
 
   .hero h1,
-  .market-entry h1,
   .page-header h1,
   .dashboard-header h1,
   .login-form-panel h1,

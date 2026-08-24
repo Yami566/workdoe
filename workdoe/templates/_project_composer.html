@@ -9,7 +9,7 @@
 
 <fieldset class="project-composer-step wide" data-project-step="1" data-step-title="Choose a work family">
   <legend>What kind of work is this?</legend>
-  <p class="help-text" id="service-family-help">Start broad. The next step narrows the project into a clean service bucket.</p>
+  <p class="help-text" id="service-family-help">Pick the closest fit. You can change it before posting.</p>
   <div class="service-family-grid" aria-describedby="service-family-help">
     {% for group in service_groups %}
       <label class="service-family-option" for="service-family-{{ group.slug }}">
@@ -34,7 +34,7 @@
 
 <fieldset class="project-composer-step wide" data-project-step="2" data-step-title="Pick the service">
   <legend>What should be done?</legend>
-  <p class="help-text">Choose one task. Your description can handle the details.</p>
+  <p class="help-text">Choose one task. Add details next.</p>
   <div class="service-family-context" data-selected-service-family hidden>
     <img data-selected-service-family-icon alt="" aria-hidden="true">
     <span><small>Selected family</small><strong data-selected-service-family-name></strong><small data-selected-service-family-description></small></span>
@@ -54,7 +54,7 @@
           <label class="service-option" for="service-choice-{{ service[0] }}">
             <input id="service-choice-{{ service[0] }}" type="radio" name="service_choice" value="{{ service[0] }}" data-group="{{ group.slug }}" data-category="{{ service[2] }}" {% if form.service_slug == service[0] %}checked{% endif %}>
             <span class="service-option-visual" aria-hidden="true"><span>{{ "%02d"|format(loop.index) }}</span><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(service[0], group.icon)) }}" alt=""></span>
-            <span class="service-option-copy"><strong>{{ service[1] }}</strong><small>{{ group.name }}</small></span>
+            <span class="service-option-copy"><strong>{{ service[1] }}</strong></span>
           </label>
         {% endfor %}
         </div>
@@ -66,7 +66,7 @@
                 <label class="service-option" for="service-choice-{{ service[0] }}">
                   <input id="service-choice-{{ service[0] }}" type="radio" name="service_choice" value="{{ service[0] }}" data-group="{{ group.slug }}" data-category="{{ service[2] }}" {% if form.service_slug == service[0] %}checked{% endif %}>
                   <span class="service-option-visual" aria-hidden="true"><span>{{ "%02d"|format(quick_count + loop.index) }}</span><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(service[0], group.icon)) }}" alt=""></span>
-                  <span class="service-option-copy"><strong>{{ service[1] }}</strong><small>{{ group.name }}</small></span>
+                  <span class="service-option-copy"><strong>{{ service[1] }}</strong></span>
                 </label>
               {% endfor %}
             </div>

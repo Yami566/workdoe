@@ -3675,7 +3675,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('<meta name="twitter:card" content="summary_large_image">', html)
         self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', html)
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', html)
-        self.assertIn('href="/styles.css?v=workdoe-bid-dialog"', html)
+        self.assertIn('href="/styles.css?v=workdoe-compact-project-choices-v2"', html)
         self.assertIn('href="/vendor/leaflet/leaflet.css"', html)
         self.assertIn('href="/vendor/leaflet-markercluster/MarkerCluster.css"', html)
         self.assertIn('src="/vendor/leaflet/leaflet.js"', html)
@@ -10119,12 +10119,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(html.count('class="service-option-more"'), 6)
         self.assertEqual(html.count('class="service-option-heading"'), 6)
         self.assertIn("Common tasks", html)
+        self.assertIn("Pick the closest fit. You can change it before posting.", html)
+        self.assertIn("Choose one task. Add details next.", html)
         self.assertIn("More yard &amp; landscaping services", html)
         self.assertIn('src="/project-composer.js?v=workdoe-service-tiles"', html)
         self.assertIn('/vendor/tabler-icons/trees.svg', html)
         self.assertIn('/vendor/tabler-icons/lawn-mower.svg', html)
         self.assertIn('/vendor/tabler-icons/seedling.svg', html)
         self.assertIn('/vendor/tabler-icons/plant.svg', html)
+        self.assertIn('href="/styles.css?v=workdoe-compact-project-choices-v2"', html)
         self.assertIn('name="service_choice"', html)
         self.assertIn('data-selected-service-family', html)
         self.assertIn('class="service-select-control"', html)
@@ -10144,6 +10147,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 service_block,
                 service_slug,
             )
+            self.assertNotIn("<small>", service_block, service_slug)
 
         worker_readiness = load_project_readiness_module()
         from workdoe.project_readiness import project_brief_readiness

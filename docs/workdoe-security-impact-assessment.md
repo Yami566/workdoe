@@ -74,6 +74,11 @@ formal certification against OWASP ASVS or WCAG.
   statements in a transactional D1 batch. Unknown keys are ignored, invalid
   codes are rejected, and the normalized tables contain no freeform narrative,
   address, ZIP, contact, media, or bid fields.
+- Compact phone family/task controls are a presentation-only projection of the
+  existing deterministic taxonomy. They add no field, inference, recipient,
+  ranking signal, script, or storage path; Flask and Worker retain the same
+  canonical service values, validation, policy acknowledgement, and fallback
+  select contract.
 - Production service publication and new bidding fail closed through a
   canonical service-zone activation record. A market requires reviewed scope,
   approval and freshness timestamps, an active status, and a live minimum count

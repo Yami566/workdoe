@@ -148,6 +148,12 @@ deployment has been performed during this stabilization pass.
   Worker reuses that listing for the unread navigation count and now restores
   Flask's missing participant-only message-report disclosure through the
   existing rate-limited, Turnstile-protected moderation API.
+- Compressed the first two phone project-posting steps without changing their
+  six-step contract. All six numbered work families and all six common tasks
+  now fit in compact two-column icon controls; repeated family subtitles and
+  internal taxonomy wording are gone; and the public mobile map gains a
+  single-line heading. Flask and both Worker shells share a rotated stylesheet
+  version so the accepted layout is not masked by a stale browser cache.
 
 ## Verification evidence
 
@@ -423,6 +429,20 @@ deployment has been performed during this stabilization pass.
   approved matches without returning to the inbox. The aligned before/after
   comparisons, Worker moderation-parity correction, and evidence limits are
   recorded in `docs/ux-audit/2026-08-24-messaging-flow-friction/`.
+- The compact project-choice correction passed all 229 tests in 79.906 seconds.
+  The complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed secret
+  across 566 non-ignored files, and no dependency drift. Cloudflare preflight
+  completed without warnings or errors; all 32 forward-only migrations and all
+  three expected D1 indexes passed without a table scan; and Wrangler 4.125.0
+  packaged 48 Python modules and 86 assets at 915.22 KiB / 168.32 KiB gzip
+  without deploying.
+- Current-run public map and project-composer evidence at 390x844 and 1280x720
+  shows a one-line phone heading, all six numbered family choices, all six
+  common tasks plus progressive disclosure, retained dialog actions, and the
+  unchanged desktop map-first layout. The aligned before/after comparisons and
+  evidence limits are recorded in
+  `docs/ux-audit/2026-08-24-public-map-post-flow/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

@@ -6206,11 +6206,17 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(form.data.count(b'class="service-option-more"'), 6)
         self.assertEqual(form.data.count(b'class="service-option-heading"'), 6)
         self.assertIn(b"Common tasks", form.data)
+        self.assertIn(b"Pick the closest fit. You can change it before posting.", form.data)
+        self.assertIn(b"Choose one task. Add details next.", form.data)
         self.assertIn(b"More yard &amp; landscaping services", form.data)
         self.assertIn(b'/vendor/tabler-icons/trees.svg', form.data)
         self.assertIn(b'/vendor/tabler-icons/lawn-mower.svg', form.data)
         self.assertIn(b'/vendor/tabler-icons/seedling.svg', form.data)
         self.assertIn(b'/vendor/tabler-icons/plant.svg', form.data)
+        self.assertIn(
+            b'/static/styles.css?v=workdoe-compact-project-choices-v2',
+            form.data,
+        )
         self.assertIn(b'/static/project-composer.js?v=workdoe-service-tiles', form.data)
         self.assertIn(b'name="service_group_slug"', form.data)
         self.assertIn(b'name="service_slug"', form.data)
@@ -6235,6 +6241,25 @@ class WorkdoeFlowTests(unittest.TestCase):
                 service_block,
                 service_slug,
             )
+            self.assertNotIn("<small>", service_block, service_slug)
+
+        styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(
+            encoding="utf-8"
+        )
+        compact_mobile = styles.split("@media (max-width: 520px) {", 1)[1]
+        self.assertRegex(
+            compact_mobile,
+            r"\.service-family-grid,\s*\.service-option-grid\s*\{[^}]*"
+            r"grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);",
+        )
+        self.assertRegex(
+            compact_mobile,
+            r"\.service-family-option\s*\{[^}]*min-height: 76px;",
+        )
+        self.assertRegex(
+            compact_mobile,
+            r"\.service-option\s*\{[^}]*min-height: 72px;",
+        )
 
         posted = self.client.post(
             "/jobs/new",
