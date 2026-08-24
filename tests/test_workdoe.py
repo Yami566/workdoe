@@ -27,6 +27,7 @@ from workdoe import (
     photo_count_label,
     uploaded_file_signature_matches,
 )
+from workdoe.asset_release import ASSET_RELEASE_TOKEN
 from workdoe.bid_comparison import bid_comparison
 from workdoe.contractor_proposal_templates import PROPOSAL_TEMPLATE_LIMIT
 from workdoe.pilot_metrics import pilot_cell_metrics
@@ -4974,7 +4975,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         home = self.client.get("/")
         self.assertIn(b'data-asset-root="/static/"', home.data)
         self.assertIn(
-            b'/static/map.js?v=workdoe-message-provider-v1',
+            f'/static/map.js?v={ASSET_RELEASE_TOKEN}'.encode(),
             home.data,
         )
 
@@ -6535,11 +6536,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'/vendor/tabler-icons/seedling.svg', form.data)
         self.assertIn(b'/vendor/tabler-icons/plant.svg', form.data)
         self.assertIn(
-            b'/static/styles.css?v=workdoe-message-provider-v1',
+            f'/static/styles.css?v={ASSET_RELEASE_TOKEN}'.encode(),
             form.data,
         )
         self.assertIn(
-            b'/static/project-composer.js?v=workdoe-message-provider-v1',
+            f'/static/project-composer.js?v={ASSET_RELEASE_TOKEN}'.encode(),
             form.data,
         )
         self.assertIn(b'name="service_group_slug"', form.data)

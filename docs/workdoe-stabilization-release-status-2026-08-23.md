@@ -48,6 +48,11 @@ deployment has been performed during this stabilization pass.
   Unversioned application scripts retain revalidation; preflight rejects an
   unreviewed immutable path; and production smoke now discovers and verifies
   the live versioned stylesheet policy.
+- Replaced the repeated semantic cache token with one deterministic token
+  derived from the reviewed stylesheet, map, and project-composer bytes.
+  Flask and Worker renderers use centralized constants; release preparation
+  records the expected token; and preflight rejects stale constants, manifests,
+  renderer references, or an uninterpolated Worker URL.
 - Extended production smoke testing to require direct HTTP-to-HTTPS redirects
   for both the public entry page and a static stylesheet, preventing the asset
   optimization from weakening the HTTPS launch contract.
@@ -641,6 +646,14 @@ deployment has been performed during this stabilization pass.
   88 static files at 938.51 KiB / 172.35 KiB gzip in dry-run mode without
   deploying. Exact local header responses and evidence limits are recorded in
   `docs/release-evidence/2026-08-24-static-asset-cache.md`.
+- The deterministic asset-token follow-up passed all 237 tests in 81.783
+  seconds and the complete security/provenance gate across 662 non-ignored
+  files. Cloudflare preflight remained warning-free; all 34 D1 migrations used
+  the expected three public map/photo indexes without a table scan; and
+  Wrangler 4.125.0 packaged 49 Python modules plus 88 static files at 938.67
+  KiB / 172.47 KiB gzip without deploying. Repeated local HEAD checks confirmed
+  immutable, `nosniff` responses for all three current-token assets and
+  revalidation for unversioned `worker-actions.js`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

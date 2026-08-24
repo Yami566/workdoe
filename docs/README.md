@@ -43,8 +43,9 @@ the current requirements, policy gates, or release status.
   dialog, focus, map/list, URL-state, keyboard, overflow, and touch-target
   evidence with explicit live-test limits.
 - `release-evidence/2026-08-24-static-asset-cache.md`: Cloudflare-native
-  immutable cache policy, narrow-path guardrails, local Worker response
-  evidence, and the post-deployment smoke requirement.
+  immutable cache policy, deterministic byte-derived release token,
+  narrow-path guardrails, local Worker response evidence, and the
+  post-deployment smoke requirement.
 
 Screenshots are point-in-time evidence. A capture is not proof that the current
 code still matches it unless the current release-status record cites a repeated

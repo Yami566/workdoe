@@ -288,8 +288,9 @@ service-zone activation, or establish legal eligibility.
   contract. It gives immutable browser caching only to release-tokened
   first-party CSS/map/composer assets and provenance-pinned vendor/logo assets;
   unversioned application scripts retain Cloudflare revalidation. Preflight
-  rejects missing or unreviewed immutable rules, and production smoke verifies
-  the live versioned stylesheet policy.
+  derives the expected first-party token from those asset bytes, rejects stale
+  Flask/Worker constants or missing/unreviewed immutable rules, and production
+  smoke verifies the live versioned stylesheet policy.
 - `POST /api/jobs` rejects job creation unless the same-domain Clerk session resolves to an active Workdoe client/admin row and Turnstile Siteverify succeeds for `workdoe.com`.
 - `GET /api/jobs/:job_id` rejects detail access unless the same-domain Clerk session resolves to the owner, an admin, or an active contractor viewing a non-hidden job.
 - `GET /api/client/jobs` rejects dashboard access unless the same-domain Clerk session resolves to an active client and the query stays scoped to that user's jobs.

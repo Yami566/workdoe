@@ -33,6 +33,7 @@ from flask import (
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
+from .asset_release import ASSET_RELEASE_TOKEN
 from .bid_comparison import bid_comparison, normalize_credential_filter
 from .bid_windows import (
     DEFAULT_BID_LIMIT,
@@ -444,6 +445,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.before_request(enforce_post_safety)
     app.after_request(add_security_headers)
     app.jinja_env.globals["csrf_token"] = csrf_token
+    app.jinja_env.globals["asset_release_token"] = ASSET_RELEASE_TOKEN
     app.jinja_env.globals["new_idempotency_key"] = new_idempotency_key
     app.jinja_env.globals["job_categories"] = JOB_CATEGORIES
     app.jinja_env.globals["service_groups"] = SERVICE_GROUPS

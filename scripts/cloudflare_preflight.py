@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import importlib.util
 import json
@@ -146,6 +147,29 @@ def parse_static_header_rules(value: str) -> dict[str, dict[str, str]]:
         current_path = stripped
         rules.setdefault(current_path, {})
     return rules
+
+
+def python_string_constant(value: str, name: str) -> str | None:
+    try:
+        module = ast.parse(value)
+    except SyntaxError:
+        return None
+    for statement in module.body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1:
+            continue
+        target = statement.targets[0]
+        if (
+            isinstance(target, ast.Name)
+            and target.id == name
+            and isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, str)
+        ):
+            return statement.value.value
+    return None
+
+
+def asset_release_token_matches(value: str, expected: str) -> bool:
+    return python_string_constant(value, "ASSET_RELEASE_TOKEN") == expected
 
 
 def add_ok(checks: list[str], name: str) -> None:
@@ -335,6 +359,8 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     dev_vars_path = repo_root / "cloudflare" / ".dev.vars.example"
     worker_path = repo_root / "cloudflare" / "worker" / "entry.py"
     app_shell_path = repo_root / "cloudflare" / "worker" / "app_shell.py"
+    worker_asset_release_path = repo_root / "cloudflare" / "worker" / "asset_release.py"
+    flask_asset_release_path = repo_root / "workdoe" / "asset_release.py"
     clerk_onboarding_path = repo_root / "cloudflare" / "worker" / "clerk_onboarding.py"
     clerk_sessions_path = repo_root / "cloudflare" / "worker" / "clerk_sessions.py"
     email_code_auth_path = repo_root / "cloudflare" / "worker" / "email_code_auth.py"
@@ -410,6 +436,18 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     clerk_entry_path = static_path / "clerk-entry.js"
     clerk_account_path = static_path / "clerk-account.js"
     email_code_entry_path = static_path / "email-code-entry.js"
+    asset_template_paths = [
+        repo_root / "workdoe" / "templates" / filename
+        for filename in (
+            "base.html",
+            "home.html",
+            "job_draft.html",
+            "job_form.html",
+            "leads.html",
+            "login.html",
+            "start.html",
+        )
+    ]
 
     migration_sql = read_text(migration_path, errors)
     project_draft_migration_sql = read_text(project_draft_migration_path, errors)
@@ -1123,6 +1161,23 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             checks,
             "Manifest uses workdoe.com",
         )
+        worker_manifest = manifest.get("cloudflare_targets", {}).get("worker", {})
+        expected_asset_release_token = release_module.static_asset_release_token(repo_root)
+        require(
+            worker_manifest.get("asset_release_token") == expected_asset_release_token,
+            errors,
+            "Manifest asset release token does not match the versioned static asset bytes.",
+            checks,
+            "Manifest asset release token matches static bytes",
+        )
+        require(
+            worker_manifest.get("versioned_static_assets")
+            == release_module.VERSIONED_STATIC_ASSET_FILES,
+            errors,
+            "Manifest versioned static asset list does not match the release generator.",
+            checks,
+            "Manifest records the versioned static asset set",
+        )
 
     if wrangler:
         require(
@@ -1363,6 +1418,18 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     compile_python(worker_path, errors, checks, "Cloudflare Worker Python compiles")
     compile_python(app_shell_path, errors, checks, "Cloudflare authenticated app shell helper compiles")
     compile_python(
+        worker_asset_release_path,
+        errors,
+        checks,
+        "Cloudflare asset release helper compiles",
+    )
+    compile_python(
+        flask_asset_release_path,
+        errors,
+        checks,
+        "Flask asset release helper compiles",
+    )
+    compile_python(
         service_activation_path,
         errors,
         checks,
@@ -1464,6 +1531,8 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
 
     worker_source = read_text(worker_path, errors)
     app_shell_source = read_text(app_shell_path, errors)
+    worker_asset_release_source = read_text(worker_asset_release_path, errors)
+    flask_asset_release_source = read_text(flask_asset_release_path, errors)
     clerk_onboarding_source = read_text(clerk_onboarding_path, errors)
     clerk_sessions_source = read_text(clerk_sessions_path, errors)
     email_code_auth_source = read_text(email_code_auth_path, errors)
@@ -1522,6 +1591,54 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     clerk_entry_source = read_text(clerk_entry_path, errors)
     clerk_account_source = read_text(clerk_account_path, errors)
     email_code_entry_source = read_text(email_code_entry_path, errors)
+    asset_template_sources = {
+        path: read_text(path, errors) for path in asset_template_paths
+    }
+    expected_asset_release_token = release_module.static_asset_release_token(repo_root)
+    require(
+        asset_release_token_matches(
+            worker_asset_release_source,
+            expected_asset_release_token,
+        )
+        and asset_release_token_matches(
+            flask_asset_release_source,
+            expected_asset_release_token,
+        ),
+        errors,
+        "Flask and Worker asset release tokens must match the versioned static asset bytes.",
+        checks,
+        "Flask and Worker asset release tokens match static bytes",
+    )
+    current_asset_render_sources = {
+        app_shell_path: app_shell_source,
+        entry_shell_path: entry_shell_source,
+        **asset_template_sources,
+    }
+    stale_asset_renderers = [
+        str(path.relative_to(repo_root)).replace("\\", "/")
+        for path, source in current_asset_render_sources.items()
+        if "workdoe-message-provider-v1" in source
+    ]
+    centralized_asset_renderers = (
+        all(
+            "?v={{ asset_release_token }}" in source
+            for source in asset_template_sources.values()
+        )
+        and all(
+            "from asset_release import ASSET_RELEASE_TOKEN" in source
+            and "?v={ASSET_RELEASE_TOKEN}" in source
+            for source in (app_shell_source, entry_shell_source)
+        )
+        and 'map_scripts_html = "" if embedded else f"""' in entry_shell_source
+    )
+    require(
+        centralized_asset_renderers and not stale_asset_renderers,
+        errors,
+        "Static asset renderers must use centralized release tokens; stale paths: "
+        + ", ".join(stale_asset_renderers),
+        checks,
+        "Static asset renderers use centralized release tokens",
+    )
     if contractor_reputation_source and local_contractor_reputation_source:
         require(
             contractor_reputation_source == local_contractor_reputation_source,
@@ -2504,7 +2621,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 'class="service-option"',
                 'class="service-select-control"',
                 "data-service-option-group",
-                "workdoe-message-provider-v1",
+                "ASSET_RELEASE_TOKEN",
                 "serviceChoices",
                 "syncServiceChoices",
                 "serviceSelect.value = choice.value",

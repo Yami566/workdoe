@@ -35,6 +35,7 @@ WORKDOE_LAUNCH_HANDOFF_SCRIPT_PATH = ROOT / "scripts" / "workdoe_launch_handoff.
 WORKDOE_DNS_DIAGNOSTIC_SCRIPT_PATH = ROOT / "scripts" / "workdoe_dns_diagnostic.py"
 WORKDOE_PRODUCTION_SMOKE_SCRIPT_PATH = ROOT / "scripts" / "workdoe_production_smoke.py"
 APP_SHELL_PATH = ROOT / "cloudflare" / "worker" / "app_shell.py"
+ASSET_RELEASE_PATH = ROOT / "cloudflare" / "worker" / "asset_release.py"
 CLERK_ONBOARDING_PATH = ROOT / "cloudflare" / "worker" / "clerk_onboarding.py"
 CLERK_SESSIONS_PATH = ROOT / "cloudflare" / "worker" / "clerk_sessions.py"
 CLERK_PROXY_PATH = ROOT / "cloudflare" / "worker" / "clerk_proxy.py"
@@ -162,6 +163,15 @@ def load_release_script():
     spec = importlib.util.spec_from_file_location("prepare_cloudflare_release", SCRIPT_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_asset_release_module():
+    spec = importlib.util.spec_from_file_location("asset_release", ASSET_RELEASE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -435,6 +445,7 @@ def load_demo_projects_module():
 
 
 def load_entry_shell_module():
+    load_asset_release_module()
     load_public_jobs_module()
     spec = importlib.util.spec_from_file_location("entry_shell", ENTRY_SHELL_PATH)
     module = importlib.util.module_from_spec(spec)
@@ -445,6 +456,7 @@ def load_entry_shell_module():
 
 
 def load_app_shell_module():
+    load_asset_release_module()
     load_job_posts_module()
     load_match_reviews_module()
     load_market_fit_module()
@@ -1080,6 +1092,18 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 result["migration_chain_sha256"],
             )
             self.assertEqual(
+                result["asset_release_token"],
+                module.static_asset_release_token(ROOT),
+            )
+            self.assertEqual(
+                manifest["cloudflare_targets"]["worker"]["asset_release_token"],
+                result["asset_release_token"],
+            )
+            self.assertEqual(
+                manifest["cloudflare_targets"]["worker"]["versioned_static_assets"],
+                ["styles.css", "map.js", "project-composer.js"],
+            )
+            self.assertEqual(
                 manifest["cloudflare_targets"]["database"]["migrations_dir"],
                 "cloudflare/d1/migrations",
             )
@@ -1200,6 +1224,41 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertIn("WORKDOE_ENFORCE_SERVICE_ACTIVATION=true", dev_vars_example)
             for env_name in required_env_names:
                 self.assertIn(f"{env_name}=replace-me", dev_vars_example)
+
+    def test_static_asset_release_token_is_content_derived_and_shared(self):
+        release_module = load_release_script()
+        preflight_module = load_preflight_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            static_root = repo_root / "workdoe" / "static"
+            static_root.mkdir(parents=True)
+            for filename in release_module.VERSIONED_STATIC_ASSET_FILES:
+                (static_root / filename).write_bytes(f"reviewed:{filename}".encode())
+
+            first_token = release_module.static_asset_release_token(repo_root)
+            (static_root / "map.js").write_bytes(b"reviewed:map.js:changed")
+            second_token = release_module.static_asset_release_token(repo_root)
+
+        expected_token = release_module.static_asset_release_token(ROOT)
+        worker_token = load_asset_release_module().ASSET_RELEASE_TOKEN
+        from workdoe.asset_release import ASSET_RELEASE_TOKEN as flask_token
+
+        self.assertRegex(first_token, r"^asset-[0-9a-f]{16}$")
+        self.assertNotEqual(first_token, second_token)
+        self.assertEqual(worker_token, expected_token)
+        self.assertEqual(flask_token, expected_token)
+        self.assertTrue(
+            preflight_module.asset_release_token_matches(
+                f'ASSET_RELEASE_TOKEN = "{expected_token}"',
+                expected_token,
+            )
+        )
+        self.assertFalse(
+            preflight_module.asset_release_token_matches(
+                'ASSET_RELEASE_TOKEN = "asset-stale"',
+                expected_token,
+            )
+        )
 
     def test_fresh_d1_database_accepts_complete_migration_chain(self):
         migrations_dir = ROOT / "cloudflare" / "d1" / "migrations"
@@ -3798,13 +3857,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', html)
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', html)
         self.assertIn(
-            'href="/styles.css?v=workdoe-message-provider-v1"', html
+            f'href="/styles.css?v={module.ASSET_RELEASE_TOKEN}"', html
         )
         self.assertIn('href="/vendor/leaflet/leaflet.css"', html)
         self.assertIn('href="/vendor/leaflet-markercluster/MarkerCluster.css"', html)
         self.assertIn('src="/vendor/leaflet/leaflet.js"', html)
         self.assertIn('src="/vendor/leaflet-markercluster/leaflet.markercluster.js"', html)
-        self.assertIn('src="/map.js?v=workdoe-message-provider-v1"', html)
+        self.assertIn(f'src="/map.js?v={module.ASSET_RELEASE_TOKEN}"', html)
         self.assertIn('getAttribute("data-asset-root")', map_script)
         self.assertIn("assetRoot + '/vendor/tabler-icons/home-check.svg\"", map_script)
         self.assertIn('src="/clerk-entry.js"', html)
@@ -5195,7 +5254,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('id="lead-map"', lead_html)
         self.assertEqual(module.photo_count_label(1), "1 photo")
         self.assertEqual(module.photo_count_label(None), "0 photos")
-        self.assertIn('src="/map.js?v=workdoe-message-provider-v1"', lead_html)
+        self.assertIn(
+            f'src="/map.js?v={module.ASSET_RELEASE_TOKEN}"',
+            lead_html,
+        )
         self.assertIn('class="market-workspace signed-in-market-workspace"', lead_html)
         self.assertIn('id="lead-results" class="project-results" data-project-results aria-label="Open leads" role="list"', lead_html)
         self.assertIn('class="market-map-stage"', lead_html)
@@ -9364,6 +9426,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
     def test_workdoe_production_smoke_accepts_ready_public_contract(self):
         module = load_workdoe_production_smoke_script()
+        asset_release_token = load_release_script().static_asset_release_token(ROOT)
         original_dns_lookup = module.dns_lookup
         original_fetch_url = module.fetch_url
         try:
@@ -9450,7 +9513,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     headers = {"Content-Type": "image/png"}
                 elif url.rstrip("/") == "https://workdoe.com":
                     body = (
-                        '<link rel="stylesheet" href="/styles.css?v=workdoe-message-provider-v1">'
+                        f'<link rel="stylesheet" href="/styles.css?v={asset_release_token}">'
                         '<meta property="og:title" content="Workdoe - a local Work Exchange">'
                         '<meta property="og:image" content="https://workdoe.com/workdoe-share.png">'
                         '<meta property="og:image:width" content="1200">'
@@ -10556,14 +10619,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Choose one task. Add details next.", html)
         self.assertIn("More yard &amp; landscaping services", html)
         self.assertIn(
-            'src="/project-composer.js?v=workdoe-message-provider-v1"', html
+            f'src="/project-composer.js?v={app_shell.ASSET_RELEASE_TOKEN}"',
+            html,
         )
         self.assertIn('/vendor/tabler-icons/trees.svg', html)
         self.assertIn('/vendor/tabler-icons/lawn-mower.svg', html)
         self.assertIn('/vendor/tabler-icons/seedling.svg', html)
         self.assertIn('/vendor/tabler-icons/plant.svg', html)
         self.assertIn(
-            'href="/styles.css?v=workdoe-message-provider-v1"', html
+            f'href="/styles.css?v={app_shell.ASSET_RELEASE_TOKEN}"',
+            html,
         )
         self.assertIn('name="service_choice"', html)
         self.assertEqual(html.count('data-project-choice-advance'), 59)

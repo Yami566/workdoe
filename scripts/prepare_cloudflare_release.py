@@ -35,6 +35,11 @@ IMMUTABLE_STATIC_ASSET_PATHS = [
     "/vendor/*",
     "/deer.svg",
 ]
+VERSIONED_STATIC_ASSET_FILES = [
+    "styles.css",
+    "map.js",
+    "project-composer.js",
+]
 
 
 def valid_d1_id(value: str | None) -> bool:
@@ -67,6 +72,17 @@ def migration_chain_sha256(migrations_dir: Path) -> str:
     return digest.hexdigest()
 
 
+def static_asset_release_token(repo_root: Path) -> str:
+    digest = hashlib.sha256()
+    static_root = repo_root / "workdoe" / "static"
+    for filename in VERSIONED_STATIC_ASSET_FILES:
+        digest.update(filename.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update((static_root / filename).read_bytes())
+        digest.update(b"\0")
+    return f"asset-{digest.hexdigest()[:16]}"
+
+
 def immutable_baseline_sql(repo_root: Path) -> str:
     migration_path = repo_root / D1_MIGRATION_RELATIVE_PATH
     migration_sql = migration_path.read_text(encoding="utf-8")
@@ -79,7 +95,11 @@ def immutable_baseline_sql(repo_root: Path) -> str:
     return migration_sql
 
 
-def build_manifest(migration_sql: str, migration_chain_sha: str) -> dict:
+def build_manifest(
+    migration_sql: str,
+    migration_chain_sha: str,
+    asset_release_token: str,
+) -> dict:
     return {
         "name": "workdoe",
         "domain": "workdoe.com",
@@ -95,6 +115,8 @@ def build_manifest(migration_sql: str, migration_chain_sha: str) -> dict:
                 "main": "cloudflare/worker/entry.py",
                 "dev_vars_example": str(DEV_VARS_EXAMPLE_RELATIVE_PATH).replace("\\", "/"),
                 "static_asset_headers": str(STATIC_HEADERS_RELATIVE_PATH).replace("\\", "/"),
+                "asset_release_token": asset_release_token,
+                "versioned_static_assets": VERSIONED_STATIC_ASSET_FILES,
                 "immutable_static_asset_paths": IMMUTABLE_STATIC_ASSET_PATHS,
                 "custom_domains": ["workdoe.com", "www.workdoe.com"],
                 "custom_domain_management": "preconfigured_outside_routine_deploys",
@@ -370,7 +392,8 @@ def prepare_release(repo_root: Path = REPO_ROOT, output_root: Path | None = None
 
     migration_sql = immutable_baseline_sql(repo_root)
     chain_sha = migration_chain_sha256(repo_root / D1_MIGRATIONS_RELATIVE_PATH)
-    manifest = build_manifest(migration_sql, chain_sha)
+    asset_release_token = static_asset_release_token(repo_root)
+    manifest = build_manifest(migration_sql, chain_sha, asset_release_token)
     manifest_json = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
     d1_ids = existing_d1_ids(wrangler_path)
     wrangler_json = json.dumps(
@@ -398,6 +421,7 @@ def prepare_release(repo_root: Path = REPO_ROOT, output_root: Path | None = None
         "migration_chain_sha256": manifest["cloudflare_targets"]["database"][
             "migration_chain_sha256"
         ],
+        "asset_release_token": asset_release_token,
     }
 
 

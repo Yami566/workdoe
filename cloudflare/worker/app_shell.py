@@ -5,6 +5,7 @@ from datetime import datetime
 from html import escape
 from urllib.parse import urlencode
 
+from asset_release import ASSET_RELEASE_TOKEN
 from client_profiles import (
     CLIENT_ACCOUNT_TYPES,
     CLIENT_NOTIFICATION_OPTIONS,
@@ -627,13 +628,15 @@ def layout(
             [
                 '<script src="/vendor/leaflet/leaflet.js"></script>',
                 '<script src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>',
-                '<script src="/map.js?v=workdoe-message-provider-v1"></script>',
+                f'<script src="/map.js?v={ASSET_RELEASE_TOKEN}"></script>',
             ]
         )
     if include_actions or authenticated:
         scripts.append('<script defer src="/worker-actions.js"></script>')
     if include_project_composer:
-        scripts.append('<script defer src="/project-composer.js?v=workdoe-message-provider-v1"></script>')
+        scripts.append(
+            f'<script defer src="/project-composer.js?v={ASSET_RELEASE_TOKEN}"></script>'
+        )
     if include_clerk:
         clerk_asset_base_url = clerk_runtime_frontend_api_url(
             clerk_publishable_key,
@@ -691,7 +694,7 @@ def layout(
   <link rel="canonical" href="{escape(canonical_url)}">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=workdoe-message-provider-v1">
+  <link rel="stylesheet" href="/styles.css?v={ASSET_RELEASE_TOKEN}">
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet/leaflet.css\">" if include_map else ""}
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.css\"><link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.Default.css\">" if include_map else ""}
   {script_html}
