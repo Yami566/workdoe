@@ -14,8 +14,13 @@ PROJECT_CLOSE_REASON_LABELS = {
 }
 
 
-CLIENT_JOB_VIEWS = {"all", "open", "review", "closed"}
-DEFAULT_CLIENT_JOB_VIEW = "all"
+CLIENT_JOB_VIEWS = {"active", "review", "paused", "history"}
+CLIENT_JOB_VIEW_ALIASES = {
+    "all": "active",
+    "open": "active",
+    "closed": "history",
+}
+DEFAULT_CLIENT_JOB_VIEW = "active"
 CLIENT_JOB_LIMIT = 100
 
 
@@ -26,7 +31,8 @@ def row_value(row, key: str, default=None):
 
 
 def normalize_client_job_view(value: str | None) -> str:
-    return value if value in CLIENT_JOB_VIEWS else DEFAULT_CLIENT_JOB_VIEW
+    normalized = CLIENT_JOB_VIEW_ALIASES.get(value or "", value or "")
+    return normalized if normalized in CLIENT_JOB_VIEWS else DEFAULT_CLIENT_JOB_VIEW
 
 
 def can_view_client_jobs(user) -> bool:
@@ -46,7 +52,7 @@ def client_job_card(row) -> dict:
     status = row_value(row, "status", "")
     detail_url = f"/client/jobs/{job_id}"
     review_url = f"{detail_url}?bids=pending#mini-bids"
-    needs_review = pending_count > 0
+    needs_review = status == "open" and pending_count > 0
     verified_completion_count = count_value(row, "verified_completion_count")
     completion_signal_count = count_value(row, "completion_signal_count")
     bidding = bid_window(row)
@@ -98,27 +104,44 @@ def client_job_card(row) -> dict:
         "can_reopen": status == "closed" and completion_signal_count == 0,
         "can_extend_bids": bidding["can_extend"],
         "needs_review": needs_review,
-        "row_cue": "Review bids" if needs_review else "Review",
+        "row_cue": (
+            "Review bids"
+            if needs_review
+            else ("Manage" if status == "hidden" else "Review")
+        ),
     }
 
 
 def filter_client_job_cards(cards: list[dict], view: str) -> list[dict]:
     if view == "review":
-        return [job for job in cards if job["pending_count"] > 0]
-    if view == "open":
+        return [
+            job
+            for job in cards
+            if job["status"] == "open" and job["pending_count"] > 0
+        ]
+    if view == "active":
         return [job for job in cards if job["status"] == "open"]
-    if view == "closed":
+    if view == "paused":
+        return [job for job in cards if job["status"] == "hidden"]
+    if view == "history":
         return [job for job in cards if job["status"] == "closed"]
-    return list(cards)
+    return []
 
 
 def client_job_stats(all_jobs: list[dict], visible_jobs: list[dict]) -> dict:
     return {
         "visible_jobs": len(visible_jobs),
         "total_jobs": len(all_jobs),
+        "active_jobs": sum(1 for job in all_jobs if job["status"] == "open"),
         "open_jobs": sum(1 for job in all_jobs if job["status"] == "open"),
+        "paused_jobs": sum(1 for job in all_jobs if job["status"] == "hidden"),
+        "history_jobs": sum(1 for job in all_jobs if job["status"] == "closed"),
         "closed_jobs": sum(1 for job in all_jobs if job["status"] == "closed"),
-        "review_jobs": sum(1 for job in all_jobs if job["pending_count"] > 0),
+        "review_jobs": sum(
+            1
+            for job in all_jobs
+            if job["status"] == "open" and job["pending_count"] > 0
+        ),
         "pending_requests": sum(job["pending_count"] for job in all_jobs),
         "approved_requests": sum(job["approved_count"] for job in all_jobs),
         "rejected_requests": sum(job["rejected_count"] for job in all_jobs),
@@ -133,18 +156,19 @@ def client_job_stats(all_jobs: list[dict], visible_jobs: list[dict]) -> dict:
 
 def client_job_view_links() -> list[dict[str, str]]:
     labels = {
-        "all": "All",
-        "open": "Open",
-        "review": "Review",
-        "closed": "Closed",
+        "active": "Active",
+        "review": "Bids",
+        "paused": "Paused",
+        "history": "History",
     }
     return [
         {
             "value": value,
             "label": labels[value],
-            "url": "/client/dashboard" + (f"?view={value}" if value != "all" else ""),
+            "url": "/client/dashboard"
+            + (f"?view={value}" if value != "active" else ""),
         }
-        for value in ("all", "review", "open", "closed")
+        for value in ("active", "review", "paused", "history")
     ]
 
 

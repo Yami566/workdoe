@@ -56,6 +56,12 @@ the relevant workflow through a same-domain email-code sign-in.
 - Close an owned project with a controlled outcome and optional private note;
   reopen it until either participant confirms completion, which clears the
   active close outcome while preserving its audit event.
+- Land on a task-first consumer workspace that separates every owned project
+  into Active, Bids, Paused, or History without rendering completed work twice.
+  Paused projects use owner-facing state labels and retain their management
+  path; History retains completion evidence, templates, repeat posting, and
+  eligible repeat-provider invitations. Legacy `all`, `open`, and `closed`
+  query values normalize to the corresponding current lane.
 - Reuse an owned closed project as a new six-step draft without carrying over
   the old desired date.
 - Maintain a private household, small-business, property-manager, or community

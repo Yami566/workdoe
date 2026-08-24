@@ -663,7 +663,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertEqual(allowed.status_code, 200)
-        self.assertIn(b"Your projects", allowed.data)
+        self.assertIn(b"<h1>Projects</h1>", allowed.data)
 
     def test_client_posts_job_with_private_photo_and_contractor_can_view(self):
         self.login("client@workdoe.local", "workdoe-client")
@@ -2613,7 +2613,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             get_db().commit()
 
         self.login("client@workdoe.local", "workdoe-client")
-        dashboard = self.client.get("/client/dashboard")
+        dashboard = self.client.get("/client/dashboard?view=history")
         self.assertIn(b"Post again", dashboard.data)
         self.assertIn(f"/jobs/new?repeat={job['id']}".encode("ascii"), dashboard.data)
 
@@ -2980,22 +2980,28 @@ class WorkdoeFlowTests(unittest.TestCase):
         ) as workspace:
             client_dashboard = self.client.get("/client/dashboard")
         workspace.assert_called_once()
-        self.assertEqual(workspace.call_args.args[1], "all")
+        self.assertEqual(workspace.call_args.args[1], "active")
         client_html = client_dashboard.data.decode("utf-8")
         self.assertNotIn('aria-label="Client work queue"', client_html)
         self.assertNotIn('aria-label="Consumer profile summary"', client_html)
         self.assertNotIn("Manage profile", client_html)
         self.assertNotIn("metric-card metric-supporting", client_html)
-        self.assertRegex(client_html, r"<span>All</span>\s*<strong>3</strong>")
-        self.assertRegex(client_html, r"<span>Open</span>\s*<strong>3</strong>")
-        self.assertRegex(client_html, r"<span>Closed</span>\s*<strong>0</strong>")
+        self.assertRegex(client_html, r"<span>Active</span>\s*<strong>3</strong>")
+        self.assertRegex(client_html, r"<span>Paused</span>\s*<strong>0</strong>")
+        self.assertRegex(client_html, r"<span>History</span>\s*<strong>0</strong>")
         self.assertIn(
             'class="work-view-tabs client-job-tabs" aria-label="Client job status"',
             client_html,
         )
-        self.assertIn('id="jobs-list" class="job-list" aria-label="Client jobs"', client_html)
+        self.assertIn(
+            'id="jobs-list" class="job-list" aria-label="Active projects"',
+            client_html,
+        )
         self.assertIn('href="/client/dashboard?view=review"', client_html)
-        self.assertRegex(client_html, r"<span>Review</span>\s*<strong>1</strong>")
+        self.assertRegex(client_html, r"<span>Bids</span>\s*<strong>1</strong>")
+        self.assertIn('href="/client/dashboard?view=paused"', client_html)
+        self.assertIn('href="/client/dashboard?view=history"', client_html)
+        self.assertNotIn("Previous work", client_html)
         self.assertIn('href="/jobs/new"', client_html)
         self.assertIn(f'href="/client/jobs/{job["id"]}?bids=pending#mini-bids"', client_html)
         self.assertIn('class="job-row link-row needs-review"', client_html)
@@ -3017,6 +3023,28 @@ class WorkdoeFlowTests(unittest.TestCase):
             invalid_view_html,
         )
         self.assertIn(b"Replace damaged fence panel", invalid_view_dashboard.data)
+
+        legacy_open_dashboard = self.client.get("/client/dashboard?view=open")
+        self.assertIn(
+            b'href="/client/dashboard" aria-current="page"',
+            legacy_open_dashboard.data,
+        )
+
+        with self.app.app_context():
+            get_db().execute(
+                "UPDATE jobs SET status = 'hidden' WHERE title = ?",
+                ("Replace damaged fence panel",),
+            )
+            get_db().commit()
+        paused_dashboard = self.client.get("/client/dashboard?view=paused")
+        self.assertIn(b"Replace damaged fence panel", paused_dashboard.data)
+        self.assertIn(b'<span class="status hidden">paused</span>', paused_dashboard.data)
+        self.assertIn(b"Not accepting bids", paused_dashboard.data)
+        self.assertIn(b'<span class="row-cue">Manage</span>', paused_dashboard.data)
+        self.assertNotIn(b'class="job-row link-row needs-review"', paused_dashboard.data)
+        self.assertNotIn(b"?bids=pending#mini-bids", paused_dashboard.data)
+        refreshed_active = self.client.get("/client/dashboard")
+        self.assertNotIn(b"Replace damaged fence panel", refreshed_active.data)
 
     def test_security_headers_support_map_without_inline_scripts(self):
         response = self.client.get("/")
@@ -4772,7 +4800,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Password updated", reset_response.data)
 
         login_response = self.login("client@workdoe.local", "new-client-pass")
-        self.assertIn(b"Your projects", login_response.data)
+        self.assertIn(b"<h1>Projects</h1>", login_response.data)
         self.assertIn(b'class="job-row link-row"', login_response.data)
         self.assertIn(b"row-cue", login_response.data)
 
@@ -5553,9 +5581,16 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         self.login("client@workdoe.local", "workdoe-client")
         consumer_dashboard = self.client.get("/client/dashboard")
-        self.assertIn(b"Project history", consumer_dashboard.data)
-        self.assertIn(b"Previous work", consumer_dashboard.data)
-        self.assertIn(title, consumer_dashboard.data)
+        self.assertNotIn(title, consumer_dashboard.data)
+        self.assertRegex(
+            consumer_dashboard.data.decode("utf-8"),
+            r"<span>History</span>\s*<strong>1</strong>",
+        )
+        consumer_history = self.client.get("/client/dashboard?view=history")
+        self.assertIn(b"Private record", consumer_history.data)
+        self.assertIn(b"Completed work", consumer_history.data)
+        self.assertIn(title, consumer_history.data)
+        self.assertNotIn(b'id="jobs-list"', consumer_history.data)
 
         self.logout()
         self.login("contractor@workdoe.local", "workdoe-contractor")
@@ -5666,7 +5701,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIsNotNone(completion["contractor_confirmed_at"])
         self.assertIsNotNone(completion["verified_at"])
 
-        dashboard = self.client.get("/client/dashboard")
+        dashboard = self.client.get("/client/dashboard?view=history")
         self.assertIn(b"Verified complete", dashboard.data)
         detail = self.client.get(f"/client/jobs/{job['id']}")
         self.assertIn(b"Both participants confirmed this Workdoe project", detail.data)
@@ -5987,7 +6022,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             db.commit()
 
         self.login("client@workdoe.local", "workdoe-client")
-        dashboard = self.client.get("/client/dashboard")
+        dashboard = self.client.get("/client/dashboard?view=history")
         invite_url = f"/jobs/new?repeat={source_job_id}&amp;invite={source_match_id}"
         self.assertIn(b"Invite again", dashboard.data)
         self.assertIn(invite_url.encode("ascii"), dashboard.data)

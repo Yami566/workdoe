@@ -300,11 +300,16 @@ LEAD_VIEW_OPTIONS = (
     ("sent", "Bids sent"),
 )
 CLIENT_JOB_VIEW_OPTIONS = (
-    ("all", "All"),
-    ("review", "Review"),
-    ("open", "Open"),
-    ("closed", "Closed"),
+    ("active", "Active"),
+    ("review", "Bids"),
+    ("paused", "Paused"),
+    ("history", "History"),
 )
+CLIENT_JOB_VIEW_ALIASES = {
+    "all": "active",
+    "open": "active",
+    "closed": "history",
+}
 BID_VIEW_OPTIONS = (
     ("all", "All"),
     ("pending", "Pending"),
@@ -7784,13 +7789,14 @@ def lead_view_links(filters: dict[str, str]) -> list[dict[str, str]]:
 
 def normalize_client_job_view(value: str | None) -> str:
     allowed = {option[0] for option in CLIENT_JOB_VIEW_OPTIONS}
-    return value if value in allowed else "all"
+    normalized = CLIENT_JOB_VIEW_ALIASES.get(value or "", value or "")
+    return normalized if normalized in allowed else "active"
 
 
 def client_job_view_links() -> list[dict[str, str]]:
     links = []
     for value, label in CLIENT_JOB_VIEW_OPTIONS:
-        args = {"view": value} if value != "all" else {}
+        args = {"view": value} if value != "active" else {}
         links.append({"value": value, "label": label, "url": url_for("client_dashboard", **args)})
     return links
 
@@ -7928,12 +7934,18 @@ def filter_map_jobs_by_jobs(map_jobs, jobs) -> list[dict]:
 
 def filter_client_jobs_by_view(jobs, job_view: str) -> list[dict]:
     if job_view == "review":
-        return [job for job in jobs if (job["pending_count"] or 0) > 0]
-    if job_view == "open":
+        return [
+            job
+            for job in jobs
+            if job["status"] == "open" and (job["pending_count"] or 0) > 0
+        ]
+    if job_view == "active":
         return [job for job in jobs if job["status"] == "open"]
-    if job_view == "closed":
+    if job_view == "paused":
+        return [job for job in jobs if job["status"] == "hidden"]
+    if job_view == "history":
         return [job for job in jobs if job["status"] == "closed"]
-    return list(jobs)
+    return []
 
 
 def client_jobs_workspace(
@@ -8004,9 +8016,16 @@ def client_jobs_workspace(
     stats = {
         "visible_jobs": len(jobs),
         "total_jobs": len(all_jobs),
+        "active_jobs": sum(1 for job in all_jobs if job["status"] == "open"),
         "open_jobs": sum(1 for job in all_jobs if job["status"] == "open"),
+        "paused_jobs": sum(1 for job in all_jobs if job["status"] == "hidden"),
+        "history_jobs": sum(1 for job in all_jobs if job["status"] == "closed"),
         "closed_jobs": sum(1 for job in all_jobs if job["status"] == "closed"),
-        "review_jobs": sum(1 for job in all_jobs if (job["pending_count"] or 0) > 0),
+        "review_jobs": sum(
+            1
+            for job in all_jobs
+            if job["status"] == "open" and (job["pending_count"] or 0) > 0
+        ),
         "pending_requests": sum(job["pending_count"] or 0 for job in all_jobs),
         "approved_requests": sum(job["approved_count"] or 0 for job in all_jobs),
         "rejected_requests": sum(job["rejected_count"] or 0 for job in all_jobs),

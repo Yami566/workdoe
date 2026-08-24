@@ -89,6 +89,11 @@ formal certification against OWASP ASVS or WCAG.
   and public project fields; they add no endpoint, payload field, private value,
   storage, inference, ranking signal, or authorization decision. The anchor,
   not its list wrapper, remains the sole interactive element.
+- Consumer project lanes filter the existing owner-scoped dashboard records in
+  memory after the same role and ownership checks. They add no endpoint, query,
+  stored field, public response, recipient, notification, inference, or access
+  path. Legacy view aliases normalize before filtering; active, paused, and
+  history rows keep their existing same-domain owner URLs and private fields.
 - Production service publication and new bidding fail closed through a
   canonical service-zone activation record. A market requires reviewed scope,
   approval and freshness timestamps, an active status, and a live minimum count

@@ -4140,28 +4140,35 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "client_email": "private@example.com",
                     }
                 ],
-                "view": "all",
+                "view": "active",
                 "view_links": [
-                    {"value": "all", "label": "All", "url": "/client/dashboard"},
+                    {
+                        "value": "active",
+                        "label": "Active",
+                        "url": "/client/dashboard",
+                    },
                     {
                         "value": "review",
-                        "label": "Review",
+                        "label": "Bids",
                         "url": "/client/dashboard?view=review",
                     },
                     {
-                        "value": "open",
-                        "label": "Open",
-                        "url": "/client/dashboard?view=open",
+                        "value": "paused",
+                        "label": "Paused",
+                        "url": "/client/dashboard?view=paused",
                     },
                     {
-                        "value": "closed",
-                        "label": "Closed",
-                        "url": "/client/dashboard?view=closed",
+                        "value": "history",
+                        "label": "History",
+                        "url": "/client/dashboard?view=history",
                     },
                 ],
                 "stats": {
+                    "active_jobs": 1,
                     "open_jobs": 1,
                     "review_jobs": 1,
+                    "paused_jobs": 0,
+                    "history_jobs": 0,
                     "closed_jobs": 0,
                     "pending_requests": 2,
                     "total_jobs": 1,
@@ -4175,11 +4182,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             client_html,
         )
         self.assertIn(
-            '<a class="work-view-tab is-active" href="/client/dashboard" aria-current="page"><span>All</span><strong>1</strong></a>',
+            '<a class="work-view-tab is-active" href="/client/dashboard" aria-current="page"><span>Active</span><strong>1</strong></a>',
             client_html,
         )
         self.assertIn(
-            '<a class="work-view-tab" href="/client/dashboard?view=review"><span>Review</span><strong>1</strong></a>',
+            '<a class="work-view-tab" href="/client/dashboard?view=review"><span>Bids</span><strong>1</strong></a>',
             client_html,
         )
         self.assertNotIn('aria-label="Client work queue"', client_html)
@@ -4194,26 +4201,33 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "jobs": [],
                 "view": "review",
                 "view_links": [
-                    {"value": "all", "label": "All", "url": "/client/dashboard"},
+                    {
+                        "value": "active",
+                        "label": "Active",
+                        "url": "/client/dashboard",
+                    },
                     {
                         "value": "review",
-                        "label": "Review",
+                        "label": "Bids",
                         "url": "/client/dashboard?view=review",
                     },
                     {
-                        "value": "open",
-                        "label": "Open",
-                        "url": "/client/dashboard?view=open",
+                        "value": "paused",
+                        "label": "Paused",
+                        "url": "/client/dashboard?view=paused",
                     },
                     {
-                        "value": "closed",
-                        "label": "Closed",
-                        "url": "/client/dashboard?view=closed",
+                        "value": "history",
+                        "label": "History",
+                        "url": "/client/dashboard?view=history",
                     },
                 ],
                 "stats": {
+                    "active_jobs": 1,
                     "open_jobs": 1,
                     "review_jobs": 0,
+                    "paused_jobs": 0,
+                    "history_jobs": 0,
                     "closed_jobs": 0,
                     "pending_requests": 0,
                     "total_jobs": 1,
@@ -4222,11 +4236,41 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn(
             '<a class="work-view-tab is-active" href="/client/dashboard?view=review" '
-            'aria-current="page"><span>Review</span><strong>0</strong></a>',
+            'aria-current="page"><span>Bids</span><strong>0</strong></a>',
             review_empty_html,
         )
         self.assertIn("No bids to review", review_empty_html)
-        self.assertIn('href="/client/dashboard">All projects</a>', review_empty_html)
+        self.assertIn('href="/client/dashboard">Active projects</a>', review_empty_html)
+
+        paused_html = module.client_dashboard_html(
+            client,
+            {
+                "jobs": [
+                    {
+                        "id": 13,
+                        "title": "Repair garden gate",
+                        "category": "Fence work",
+                        "city": "Washington",
+                        "state": "DC",
+                        "description": "Paused until next month.",
+                        "status": "hidden",
+                        "row_cue": "Manage",
+                        "bid_window": {
+                            "state": "closed",
+                            "usage_label": "0 of 4 bids",
+                            "availability_label": "Project closed",
+                        },
+                    }
+                ],
+                "view": "paused",
+                "stats": {"active_jobs": 1, "paused_jobs": 1},
+            },
+        )
+        self.assertIn('<span class="status hidden">paused</span>', paused_html)
+        self.assertIn("Not accepting bids", paused_html)
+        self.assertIn('aria-label="Manage Repair garden gate"', paused_html)
+        self.assertIn('<span class="row-cue">Manage</span>', paused_html)
+        self.assertNotIn("Project closed", paused_html)
 
         request_inbox_html = module.client_request_inbox_html(
             client,
@@ -5996,7 +6040,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
     def test_cloudflare_client_jobs_helper_matches_dashboard_counts(self):
         module = load_client_jobs_module()
         self.assertEqual(module.normalize_client_job_view("review"), "review")
-        self.assertEqual(module.normalize_client_job_view("bad"), "all")
+        self.assertEqual(module.normalize_client_job_view("bad"), "active")
+        self.assertEqual(module.normalize_client_job_view("all"), "active")
+        self.assertEqual(module.normalize_client_job_view("open"), "active")
+        self.assertEqual(module.normalize_client_job_view("closed"), "history")
         client = {"id": 8, "role": "client", "status": "active"}
         admin = {"id": 1, "role": "admin", "status": "active"}
         suspended = {"id": 8, "role": "client", "status": "suspended"}
@@ -6037,9 +6084,26 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "created_at": "2026-08-02T12:00:00+00:00",
                 "updated_at": "2026-08-02T12:00:00+00:00",
                 "request_count": 1,
-                "pending_count": 0,
+                "pending_count": 2,
                 "approved_count": 0,
                 "rejected_count": 1,
+            },
+            {
+                "id": 14,
+                "title": "Repair a garden gate",
+                "category": "Fence work",
+                "city": "Washington",
+                "state": "DC",
+                "zip_code": "20003",
+                "description": "Keep this project paused until next month.",
+                "desired_date": "",
+                "status": "hidden",
+                "created_at": "2026-08-01T12:00:00+00:00",
+                "updated_at": "2026-08-01T12:00:00+00:00",
+                "request_count": 0,
+                "pending_count": 0,
+                "approved_count": 0,
+                "rejected_count": 0,
             },
         ]
         payload = module.client_jobs_payload(rows, "review")
@@ -6050,20 +6114,35 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(payload["jobs"][0]["review_url"], "/client/jobs/12?bids=pending#mini-bids")
         self.assertEqual(payload["jobs"][0]["row_cue"], "Review bids")
         self.assertTrue(payload["jobs"][0]["needs_review"])
-        self.assertEqual(payload["stats"]["total_jobs"], 2)
+        self.assertEqual(payload["stats"]["total_jobs"], 3)
         self.assertEqual(payload["stats"]["visible_jobs"], 1)
+        self.assertEqual(payload["stats"]["active_jobs"], 1)
         self.assertEqual(payload["stats"]["open_jobs"], 1)
+        self.assertEqual(payload["stats"]["paused_jobs"], 1)
+        self.assertEqual(payload["stats"]["history_jobs"], 1)
         self.assertEqual(payload["stats"]["closed_jobs"], 1)
-        self.assertEqual(payload["stats"]["pending_requests"], 2)
+        self.assertEqual(payload["stats"]["pending_requests"], 4)
         self.assertEqual(payload["stats"]["approved_requests"], 1)
         self.assertEqual(payload["stats"]["rejected_requests"], 1)
         self.assertNotIn("client_id", payload["jobs"][0])
         self.assertNotIn("client_email", payload["jobs"][0])
 
-        all_payload = module.client_jobs_payload(rows, "all")
-        self.assertEqual(all_payload["jobs"][1]["url"], "/client/jobs/13")
-        self.assertEqual(all_payload["jobs"][1]["row_cue"], "Review")
-        self.assertFalse(all_payload["jobs"][1]["needs_review"])
+        legacy_all_payload = module.client_jobs_payload(rows, "all")
+        self.assertEqual(legacy_all_payload["view"], "active")
+        self.assertEqual([job["id"] for job in legacy_all_payload["jobs"]], [12])
+
+        paused_payload = module.client_jobs_payload(rows, "paused")
+        self.assertEqual(paused_payload["jobs"][0]["url"], "/client/jobs/14")
+        self.assertEqual(paused_payload["jobs"][0]["row_cue"], "Manage")
+        self.assertFalse(paused_payload["jobs"][0]["needs_review"])
+
+        history_payload = module.client_jobs_payload(rows, "history")
+        self.assertEqual(history_payload["jobs"][0]["url"], "/client/jobs/13")
+        self.assertEqual(history_payload["jobs"][0]["row_cue"], "Review")
+        self.assertEqual(
+            [item["value"] for item in history_payload["view_links"]],
+            ["active", "review", "paused", "history"],
+        )
 
     def test_cloudflare_client_requests_helper_matches_review_contract(self):
         module = load_client_requests_module()
@@ -9950,17 +10029,18 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "status": "closed",
                 }
             ],
-            "all",
+            "history",
         )
         self.assertEqual(len(client_payload["history"]), 1)
-        self.assertEqual(client_payload["view"], "all")
+        self.assertEqual(client_payload["view"], "history")
         self.assertEqual(
             [item["value"] for item in client_payload["view_links"]],
-            ["all", "review", "open", "closed"],
+            ["active", "review", "paused", "history"],
         )
         self.assertEqual(client_payload["history"][0]["repeat_url"], "/jobs/new?repeat=12")
         client_html = app_shell.client_dashboard_html(client, client_payload)
-        self.assertIn("Project history", client_html)
+        self.assertIn("Private record", client_html)
+        self.assertIn("Completed work", client_html)
         self.assertIn("Cleaned the walk and steps.", client_html)
         self.assertIn("Post again", client_html)
         self.assertIn("/jobs/new?repeat=12", client_html)

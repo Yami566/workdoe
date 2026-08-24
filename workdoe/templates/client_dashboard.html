@@ -4,14 +4,14 @@
 <section class="dashboard-header">
   <div>
     <p class="eyebrow">Consumer workspace</p>
-    <h1>Your projects</h1>
+    <h1>Projects</h1>
   </div>
   <a class="button" href="{{ url_for('new_job') }}">Post a project</a>
 </section>
 
 <nav class="work-view-tabs client-job-tabs" aria-label="Client job status">
   {% for item in job_view_links %}
-    {% set count = stats.total_jobs if item.value == "all" else (stats.review_jobs if item.value == "review" else (stats.open_jobs if item.value == "open" else stats.closed_jobs)) %}
+    {% set count = stats.active_jobs if item.value == "active" else (stats.review_jobs if item.value == "review" else (stats.paused_jobs if item.value == "paused" else stats.history_jobs)) %}
     <a class="work-view-tab{% if job_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if job_view == item.value %}aria-current="page"{% endif %}>
       <span>{{ item.label }}</span>
       <strong>{{ count }}</strong>
@@ -19,20 +19,26 @@
   {% endfor %}
 </nav>
 
-<section id="jobs-list" class="job-list" aria-label="Client jobs">
+{% if job_view != "history" %}
+<section id="jobs-list" class="job-list" aria-label="{{ 'Projects with bids to review' if job_view == 'review' else ('Paused projects' if job_view == 'paused' else 'Active projects') }}">
   {% for job in jobs %}
-    {% set needs_review = (job.pending_count or 0) > 0 %}
+    {% set needs_review = job.status == "open" and (job.pending_count or 0) > 0 %}
     {% set row_href = url_for('client_job_detail', job_id=job.id, bids='pending') ~ '#mini-bids' if needs_review else url_for('client_job_detail', job_id=job.id) %}
-    <a class="job-row link-row{% if needs_review %} needs-review{% endif %}" href="{{ row_href }}" aria-label="{{ 'Review pending bids for ' if needs_review else 'Review ' }}{{ job.title }}">
+    {% set row_cue = "Review bids" if needs_review else ("Manage" if job.status == "hidden" else "Review") %}
+    <a class="job-row link-row{% if needs_review %} needs-review{% endif %}" href="{{ row_href }}" aria-label="{{ 'Review pending bids for ' if needs_review else row_cue ~ ' ' }}{{ job.title }}">
       <div>
         <div class="row-meta">
-          <span class="status {{ job.status }}">{{ job.status }}</span>
+          <span class="status {{ job.status }}">{{ "paused" if job.status == "hidden" else job.status }}</span>
           <span>{{ job.service_slug|service_name(job.category) }}</span>
           <span>{{ job.city }}, {{ job.state }}</span>
           {% if job.desired_date %}<span>Target <time datetime="{{ job.desired_date }}">{{ job.desired_date|date_label }}</time></span>{% endif %}
           <span>{{ job|budget_label }}</span>
           <span class="brief-pill {{ job.brief_readiness.state }}">{{ job.brief_readiness.label }}</span>
-          <span class="bid-availability {{ job.bid_window.state }}">{{ job.bid_window.usage_label }} - {{ job.bid_window.availability_label }}</span>
+          {% if job.status == "hidden" %}
+            <span class="bid-availability closed">Not accepting bids</span>
+          {% else %}
+            <span class="bid-availability {{ job.bid_window.state }}">{{ job.bid_window.usage_label }} - {{ job.bid_window.availability_label }}</span>
+          {% endif %}
         </div>
         <h2>{{ job.title }}</h2>
         <p class="job-summary">{{ job.description }}</p>
@@ -41,29 +47,31 @@
         {% if needs_review %}
           <span class="count-pill attention">{{ job.pending_count }} pending</span>
         {% endif %}
-        <span class="row-cue">{{ "Review bids" if needs_review else "Review" }}</span>
+        <span class="row-cue">{{ row_cue }}</span>
       </div>
     </a>
   {% else %}
     <div class="empty-state field-empty-state">
       <img class="empty-state-visual" src="{{ url_for('static', filename='field-doe.webp') }}" alt="" width="180" height="180">
-      <h2>{% if job_view == "review" %}No bids to review{% elif job_view == "open" %}No open projects{% elif job_view == "closed" %}No closed projects{% else %}No projects yet{% endif %}</h2>
-      {% if job_view == "all" %}
+      <h2>{% if job_view == "review" %}No bids to review{% elif job_view == "paused" %}No paused projects{% else %}No active projects{% endif %}</h2>
+      {% if job_view == "active" %}
         <a class="button" href="{{ url_for('new_job') }}">Post a project</a>
       {% else %}
-        <a class="button secondary" href="{{ url_for('client_dashboard') }}">All projects</a>
+        <a class="button secondary" href="{{ url_for('client_dashboard') }}">Active projects</a>
       {% endif %}
     </div>
   {% endfor %}
 </section>
+{% endif %}
 
+{% if job_view == "history" %}
 <section class="work-history" aria-labelledby="consumer-history-title">
   <div class="section-heading history-heading">
     <div>
-      <p class="eyebrow">Project history</p>
-      <h2 id="consumer-history-title">Previous work</h2>
+      <p class="eyebrow">Private record</p>
+      <h2 id="consumer-history-title">Completed work</h2>
     </div>
-    <span class="count-pill">{{ project_history|length }} closed</span>
+    <span class="count-pill">{{ project_history|length }} project{{ '' if project_history|length == 1 else 's' }}</span>
   </div>
   <div class="history-list">
     {% for job in project_history %}
@@ -90,8 +98,9 @@
         </div>
       </div>
     {% else %}
-      <p class="empty history-empty">Closed projects will collect here as your private work history.</p>
+      <p class="empty history-empty">Completed projects will collect here as your private work history.</p>
     {% endfor %}
   </div>
 </section>
+{% endif %}
 {% endblock %}

@@ -166,6 +166,11 @@ deployment has been performed during this stabilization pass.
   compact Sign in, View, or Sent cue survives API replacement. The selected
   project, permission-aware URL, keyboard row navigation, dialog behavior, and
   no-JavaScript fallback are unchanged.
+- Replaced the consumer dashboard's mixed default list and duplicated history
+  with complete Active, Bids, Paused, and History lanes in Flask and the
+  Cloudflare Worker. Active work is now the default; paused projects use clear
+  owner language; completed-work actions appear only in History; and legacy
+  `all`, `open`, and `closed` URLs remain compatible aliases.
 
 ## Verification evidence
 
@@ -483,6 +488,19 @@ deployment has been performed during this stabilization pass.
   `/login?next=%2Fjobs%2F5`, and focus restored to the originating result after
   close. Mobile and desktop captures plus the focused comparison are recorded
   in `docs/ux-audit/2026-08-24-public-list-continuation-flow/`.
+- The consumer-workspace correction passed all 232 tests in 80.777 seconds.
+  The complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed secret
+  across 587 non-ignored files, and no dependency drift. Cloudflare preflight
+  remained warning-free; all 32 forward-only migrations and all three expected
+  D1 indexes passed without a table scan; and Wrangler 4.125.0 packaged 48
+  Python modules and 86 assets at 917.21 KiB / 168.78 KiB gzip without
+  deploying.
+- Current-run consumer-workspace evidence at 390x844, 820x1180, and 1280x720
+  shows complete non-overlapping lanes, owner-facing paused language, preserved
+  history and repeat-work actions, and a default phone page reduced from 2,241
+  to 1,014 pixels. The aligned comparison and evidence limits are recorded in
+  `docs/ux-audit/2026-08-24-consumer-workspace-priorities/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

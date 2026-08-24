@@ -817,26 +817,30 @@ def client_dashboard_html(user, payload: dict) -> str:
     jobs = payload.get("jobs", [])
     history = payload.get("history", [])
     stats = payload.get("stats", {})
-    job_view = payload.get("view", "all")
+    job_view = payload.get("view", "active")
     view_links = payload.get("view_links") or [
-        {"value": "all", "label": "All", "url": "/client/dashboard"},
+        {"value": "active", "label": "Active", "url": "/client/dashboard"},
         {
             "value": "review",
-            "label": "Review",
+            "label": "Bids",
             "url": "/client/dashboard?view=review",
         },
-        {"value": "open", "label": "Open", "url": "/client/dashboard?view=open"},
         {
-            "value": "closed",
-            "label": "Closed",
-            "url": "/client/dashboard?view=closed",
+            "value": "paused",
+            "label": "Paused",
+            "url": "/client/dashboard?view=paused",
+        },
+        {
+            "value": "history",
+            "label": "History",
+            "url": "/client/dashboard?view=history",
         },
     ]
     view_counts = {
-        "all": int(stats.get("total_jobs", 0) or 0),
+        "active": int(stats.get("active_jobs", stats.get("open_jobs", 0)) or 0),
         "review": int(stats.get("review_jobs", 0) or 0),
-        "open": int(stats.get("open_jobs", 0) or 0),
-        "closed": int(stats.get("closed_jobs", 0) or 0),
+        "paused": int(stats.get("paused_jobs", 0) or 0),
+        "history": int(stats.get("history_jobs", stats.get("closed_jobs", 0)) or 0),
     }
     view_tabs_html = "".join(
         (
@@ -850,40 +854,48 @@ def client_dashboard_html(user, payload: dict) -> str:
     )
     rows = []
     for job in jobs:
+        row_cue = str(job.get("row_cue", "Review") or "Review")
+        status = str(job.get("status", "") or "")
+        status_label = "paused" if status == "hidden" else status
+        bid_status_html = (
+            '<span class="bid-availability closed">Not accepting bids</span>'
+            if status == "hidden"
+            else f'<span class="bid-availability {escape(job.get("bid_window", {}).get("state", "open"))}">{escape(job.get("bid_window", {}).get("usage_label", ""))} - {escape(job.get("bid_window", {}).get("availability_label", ""))}</span>'
+        )
         row_label = (
             f"Review pending bids for {job.get('title', 'job')}"
             if job.get("needs_review")
-            else f"Review {job.get('title', 'job')}"
+            else f"{row_cue} {job.get('title', 'job')}"
         )
         rows.append(
             f"""
     <a class="job-row link-row{' needs-review' if job.get('needs_review') else ''}" href="{escape(job.get('url', '#'))}" aria-label="{escape(row_label)}">
       <div>
         <div class="row-meta">
-          <span class="status {escape(job.get('status', ''))}">{escape(job.get('status', ''))}</span>
+          <span class="status {escape(status)}">{escape(status_label)}</span>
           <span>{escape(job_service_name(job))}</span>
           <span>{escape(job.get('city', ''))}, {escape(job.get('state', ''))}</span>
           {brief_readiness_pill_html(job.get('brief_readiness'))}
-          <span class="bid-availability {escape(job.get('bid_window', {}).get('state', 'open'))}">{escape(job.get('bid_window', {}).get('usage_label', ''))} - {escape(job.get('bid_window', {}).get('availability_label', ''))}</span>
+          {bid_status_html}
         </div>
         <h2>{escape(job.get('title', ''))}</h2>
         <p class="job-summary">{escape(job.get('description', ''))}</p>
       </div>
       <div class="row-actions">
         {'<span class="count-pill attention">' + str(job.get('pending_count', 0)) + ' pending</span>' if job.get('needs_review') else ''}
-        <span class="row-cue">{escape(job.get('row_cue', 'Review'))}</span>
+        <span class="row-cue">{escape(row_cue)}</span>
       </div>
     </a>"""
         )
     empty_titles = {
         "review": "No bids to review",
-        "open": "No open projects",
-        "closed": "No closed projects",
+        "paused": "No paused projects",
+        "active": "No active projects",
     }
     job_html = "\n".join(rows) if rows else empty_state(
         empty_titles.get(job_view, "No projects yet"),
-        "/client/dashboard" if job_view != "all" else "/jobs/new",
-        "All projects" if job_view != "all" else "Post a project",
+        "/client/dashboard" if job_view != "active" else "/jobs/new",
+        "Active projects" if job_view != "active" else "Post a project",
     )
     history_rows = []
     for job in history:
@@ -916,25 +928,29 @@ def client_dashboard_html(user, payload: dict) -> str:
         </div>
       </div>"""
         )
-    history_html = "\n".join(history_rows) if history_rows else '<p class="empty history-empty">Closed projects will collect here as your private work history.</p>'
-    body = f"""
-    <section class="dashboard-header">
-      <div>
-        <p class="eyebrow">Consumer workspace</p>
-        <h1>Your projects</h1>
-      </div>
-      <a class="button" href="/jobs/new">Post a project</a>
-    </section>
-    <nav class="work-view-tabs client-job-tabs" aria-label="Client job status">{view_tabs_html}</nav>
-    <section class="job-list" aria-label="Client jobs">
+    history_html = "\n".join(history_rows) if history_rows else '<p class="empty history-empty">Completed projects will collect here as your private work history.</p>'
+    project_section = f"""
+    <section class="job-list" aria-label="{'Projects with bids to review' if job_view == 'review' else ('Paused projects' if job_view == 'paused' else 'Active projects')}">
 {job_html}
-    </section>
+    </section>"""
+    history_section = f"""
     <section class="work-history" aria-labelledby="consumer-history-title">
-      <div class="section-heading history-heading"><div><p class="eyebrow">Project history</p><h2 id="consumer-history-title">Previous work</h2></div><span class="count-pill">{len(history)} closed</span></div>
+      <div class="section-heading history-heading"><div><p class="eyebrow">Private record</p><h2 id="consumer-history-title">Completed work</h2></div><span class="count-pill">{len(history)} {'project' if len(history) == 1 else 'projects'}</span></div>
       <div class="history-list">
 {history_html}
       </div>
     </section>"""
+    workspace_section = history_section if job_view == "history" else project_section
+    body = f"""
+    <section class="dashboard-header">
+      <div>
+        <p class="eyebrow">Consumer workspace</p>
+        <h1>Projects</h1>
+      </div>
+      <a class="button" href="/jobs/new">Post a project</a>
+    </section>
+    <nav class="work-view-tabs client-job-tabs" aria-label="Client job status">{view_tabs_html}</nav>
+{workspace_section}"""
     return layout(user, "/client/dashboard", "Projects", body)
 
 
