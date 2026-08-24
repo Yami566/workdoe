@@ -4441,7 +4441,18 @@ class WorkdoeFlowTests(unittest.TestCase):
             ".home-family-picker .service-family-filter {\n  grid-template-columns: repeat(6, minmax(0, 1fr));",
             styles,
         )
-        self.assertIn("grid-auto-columns: 142px;", styles)
+        compact_public_picker = styles.split("@media (max-width: 520px) {", 1)[1]
+        self.assertRegex(
+            compact_public_picker,
+            r"\.home-family-picker \.service-family-filter\s*\{[^}]*"
+            r"grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);[^}]*"
+            r"grid-auto-flow: row;[^}]*overflow-x: visible;",
+        )
+        self.assertRegex(
+            compact_public_picker,
+            r"\.home-family-picker \.service-family-filter-link\s*\{[^}]*"
+            r"min-height: 68px;",
+        )
         self.assertIn(".thread-message-shell {", styles)
         self.assertIn("grid-template-rows: auto minmax(180px, 1fr) auto;", styles)
         self.assertIn("overscroll-behavior: contain;", styles)
@@ -4927,7 +4938,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         home = self.client.get("/")
         self.assertIn(b'data-asset-root="/static/"', home.data)
         self.assertIn(
-            b'/static/map.js?v=workdoe-license-preference-v1',
+            b'/static/map.js?v=workdoe-public-family-grid-v1',
             home.data,
         )
 
@@ -6488,11 +6499,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'/vendor/tabler-icons/seedling.svg', form.data)
         self.assertIn(b'/vendor/tabler-icons/plant.svg', form.data)
         self.assertIn(
-            b'/static/styles.css?v=workdoe-license-preference-v1',
+            b'/static/styles.css?v=workdoe-public-family-grid-v1',
             form.data,
         )
         self.assertIn(
-            b'/static/project-composer.js?v=workdoe-license-preference-v1',
+            b'/static/project-composer.js?v=workdoe-public-family-grid-v1',
             form.data,
         )
         self.assertIn(b'name="service_group_slug"', form.data)

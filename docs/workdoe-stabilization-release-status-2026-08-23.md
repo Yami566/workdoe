@@ -190,6 +190,10 @@ deployment has been performed during this stabilization pass.
   conversation that still needs a response from a merely unread message;
   compact rows remove faux nested Open buttons; and latest visible message
   body, time, ID, and sender now share one indexed lookup instead of four.
+- Replaced the public phone work-family strip with a complete three-by-two
+  selector. All six numbered lanes are now visible without horizontal
+  scrolling, every lane remains a URL-backed icon link, and the stable
+  300-pixel live map remains inside the first 390x844 viewport.
 
 ## Verification evidence
 
@@ -604,6 +608,13 @@ deployment has been performed during this stabilization pass.
 - Mobile, tablet, and desktop interaction evidence, including the corrected
   Flask/Worker dynamic asset-root contract, is recorded in
   `docs/ux-audit/2026-08-24-project-license-preference/`.
+- The public family-selector batch passed all 235 tests in 82.133 seconds and
+  the complete security/provenance gate across 651 non-ignored files.
+  Cloudflare preflight remained warning-free; all 34 D1 migrations loaded with
+  the expected three public map/photo indexes and no table scan. Wrangler
+  4.125.0 packaged 48 Python modules and 87 assets at 933.56 KiB / 171.53 KiB
+  gzip without deploying. Responsive and interaction evidence is recorded in
+  `docs/ux-audit/2026-08-24-public-family-selector/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

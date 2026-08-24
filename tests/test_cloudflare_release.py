@@ -3769,13 +3769,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', html)
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', html)
         self.assertIn(
-            'href="/styles.css?v=workdoe-license-preference-v1"', html
+            'href="/styles.css?v=workdoe-public-family-grid-v1"', html
         )
         self.assertIn('href="/vendor/leaflet/leaflet.css"', html)
         self.assertIn('href="/vendor/leaflet-markercluster/MarkerCluster.css"', html)
         self.assertIn('src="/vendor/leaflet/leaflet.js"', html)
         self.assertIn('src="/vendor/leaflet-markercluster/leaflet.markercluster.js"', html)
-        self.assertIn('src="/map.js?v=workdoe-license-preference-v1"', html)
+        self.assertIn('src="/map.js?v=workdoe-public-family-grid-v1"', html)
         self.assertIn('getAttribute("data-asset-root")', map_script)
         self.assertIn("assetRoot + '/vendor/tabler-icons/home-check.svg\"", map_script)
         self.assertIn('src="/clerk-entry.js"', html)
@@ -5143,7 +5143,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('id="lead-map"', lead_html)
         self.assertEqual(module.photo_count_label(1), "1 photo")
         self.assertEqual(module.photo_count_label(None), "0 photos")
-        self.assertIn('src="/map.js?v=workdoe-license-preference-v1"', lead_html)
+        self.assertIn('src="/map.js?v=workdoe-public-family-grid-v1"', lead_html)
         self.assertIn('class="market-workspace signed-in-market-workspace"', lead_html)
         self.assertIn('id="lead-results" class="project-results" data-project-results aria-label="Open leads" role="list"', lead_html)
         self.assertIn('class="market-map-stage"', lead_html)
@@ -10410,14 +10410,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Choose one task. Add details next.", html)
         self.assertIn("More yard &amp; landscaping services", html)
         self.assertIn(
-            'src="/project-composer.js?v=workdoe-license-preference-v1"', html
+            'src="/project-composer.js?v=workdoe-public-family-grid-v1"', html
         )
         self.assertIn('/vendor/tabler-icons/trees.svg', html)
         self.assertIn('/vendor/tabler-icons/lawn-mower.svg', html)
         self.assertIn('/vendor/tabler-icons/seedling.svg', html)
         self.assertIn('/vendor/tabler-icons/plant.svg', html)
         self.assertIn(
-            'href="/styles.css?v=workdoe-license-preference-v1"', html
+            'href="/styles.css?v=workdoe-public-family-grid-v1"', html
         )
         self.assertIn('name="service_choice"', html)
         self.assertEqual(html.count('data-project-choice-advance'), 59)
