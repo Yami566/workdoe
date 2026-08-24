@@ -12,12 +12,34 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LEDGER = REPO_ROOT / "DEPENDENCY_PROVENANCE.json"
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+TEXT_ARTIFACT_SUFFIXES = {
+    ".css",
+    ".html",
+    ".js",
+    ".json",
+    ".jsonc",
+    ".md",
+    ".py",
+    ".sql",
+    ".svg",
+}
+TEXT_ARTIFACT_NAMES = {"copying", "license", "notice"}
+REPOSITORY_HASH_POLICY = {
+    "binary": "sha256-bytes",
+    "text": "sha256-lf",
+}
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
 def sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    content = path.read_bytes()
+    if (
+        path.suffix.casefold() in TEXT_ARTIFACT_SUFFIXES
+        or path.name.casefold() in TEXT_ARTIFACT_NAMES
+    ):
+        content = content.replace(b"\r\n", b"\n")
+    return hashlib.sha256(content).hexdigest()
 
 
 def parse_requirements(path: Path) -> dict[str, str]:
@@ -189,6 +211,8 @@ def verify(ledger_path: Path, *, verify_upstream: bool = False) -> list[str]:
     errors: list[str] = []
     if payload.get("schema_version") != 1:
         errors.append("Unsupported provenance schema version")
+    if payload.get("repository_hash_policy") != REPOSITORY_HASH_POLICY:
+        errors.append("Unsupported repository artifact hash policy")
     first_party = payload.get("first_party", {})
     if first_party.get("license_status") != "proprietary":
         errors.append("Workdoe first-party code must be recorded as proprietary")

@@ -1,6 +1,10 @@
 {
   "schema_version": 1,
   "reviewed_on": "2026-08-23",
+  "repository_hash_policy": {
+    "binary": "sha256-bytes",
+    "text": "sha256-lf"
+  },
   "first_party": {
     "name": "Workdoe",
     "license_status": "proprietary",
@@ -125,10 +129,10 @@
       "license": "BSD-2-Clause",
       "official_source": "https://github.com/Leaflet/Leaflet/tree/v1.9.4/dist",
       "retained_license": "workdoe/static/vendor/leaflet/LICENSE",
-      "retained_license_sha256": "53e8dc25862014e4324741ca18fbe3611e11d42ef69f59f86ea8c5389647d4cb",
+      "retained_license_sha256": "bbc959aaef7488b38942e7f05cfd1244351f8bce54261951ea17dd7cf60f894b",
       "artifacts": [
         {"path": "workdoe/static/vendor/leaflet/leaflet.js", "sha256": "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a"},
-        {"path": "workdoe/static/vendor/leaflet/leaflet.css", "sha256": "a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6"},
+        {"path": "workdoe/static/vendor/leaflet/leaflet.css", "sha256": "337bfca5cabd03b39815b2700febe2b3b7edf55921c59cd49f88ecb328212303"},
         {"path": "workdoe/static/vendor/leaflet/images/layers.png", "sha256": "1dbbe9d028e292f36fcba8f8b3a28d5e8932754fc2215b9ac69e4cdecf5107c6"},
         {"path": "workdoe/static/vendor/leaflet/images/layers-2x.png", "sha256": "066daca850d8ffbef007af00b06eac0015728dee279c51f3cb6c716df7c42edf"},
         {"path": "workdoe/static/vendor/leaflet/images/marker-icon.png", "sha256": "574c3a5cca85f4114085b6841596d62f00d7c892c7b03f28cbfa301deb1dc437"},
@@ -142,7 +146,7 @@
       "license": "MIT",
       "official_source": "https://github.com/Leaflet/Leaflet.markercluster/tree/v1.5.3",
       "retained_license": "workdoe/static/vendor/leaflet-markercluster/LICENSE",
-      "retained_license_sha256": "c14f7ab1a0cfd6bb5c686802a553b182d7fe4ff2f02592be9fadd1c50526b76e",
+      "retained_license_sha256": "3133dacd38250bd1f524d8166cc60a016a382522e062fce143691c65bf5e4b3d",
       "artifacts": [
         {"path": "workdoe/static/vendor/leaflet-markercluster/leaflet.markercluster.js", "sha256": "1e4e1d22972a3926f48598e0caf14e3fe7049835d428a344fed4f9e3665b3508"},
         {"path": "workdoe/static/vendor/leaflet-markercluster/MarkerCluster.css", "sha256": "614dea0a98ff3f4ead74f04918f6b1d1b9ba435c25b5fc23b21a394d1e3e4d87"},
