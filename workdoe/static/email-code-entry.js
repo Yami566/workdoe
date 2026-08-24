@@ -25,7 +25,8 @@
       credentials: "include",
       headers: {
         "Accept": "application/json",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "X-Workdoe-Request": "same-origin"
       }
     }, options || {}));
     var responseText = await response.text();

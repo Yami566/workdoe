@@ -1,0 +1,48 @@
+<article class="match-review{% if review.is_hidden %} is-hidden{% endif %}" aria-label="Completed-work feedback">
+  <div class="section-heading review-heading">
+    <div>
+      <span class="completion-chip verified">Workdoe-completed</span>
+      <strong>{{ 'Consumer feedback' if review.reviewer_role == 'client' else 'Contractor feedback' }}</strong>
+    </div>
+    <time datetime="{{ review.created_at }}">{{ review.created_at|datetime_label }}</time>
+  </div>
+  {% if review.is_hidden %}
+    <p class="empty">This feedback is hidden while moderation reviews it.</p>
+  {% else %}
+    <dl class="review-dimensions">
+      {% for key, label in review_dimensions %}
+        <div><dt>{{ label }}</dt><dd class="review-result {{ review[key] }}">{{ review[key ~ '_label'] }}</dd></div>
+      {% endfor %}
+      <div><dt>Work together again</dt><dd>{{ review.would_work_again_label }}</dd></div>
+    </dl>
+    {% if review.comment %}<p class="preline review-comment">{{ review.comment }}</p>{% endif %}
+    {% if review.response %}
+      <blockquote class="review-response"><strong>Response</strong><p>{{ review.response }}</p></blockquote>
+    {% elif g.user and g.user.id == review.subject_id %}
+      <details class="review-response-form">
+        <summary>Respond</summary>
+        <form method="post" action="{{ url_for('respond_match_review', review_id=review.id) }}">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          <label for="review-response-{{ review.id }}">
+            Response
+            <textarea id="review-response-{{ review.id }}" name="response" maxlength="{{ review_response_max }}" rows="3" required autocapitalize="sentences" spellcheck="true"></textarea>
+          </label>
+          <button class="button secondary compact" type="submit">Post response</button>
+        </form>
+      </details>
+    {% endif %}
+    {% if g.user and g.user.id in [review.reviewer_id, review.subject_id] %}
+      <details class="review-report-form">
+        <summary>Report feedback</summary>
+        <form method="post" action="{{ url_for('report_match_review', review_id=review.id) }}">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          <label for="review-report-{{ review.id }}">
+            Reason
+            <input id="review-report-{{ review.id }}" name="reason" maxlength="{{ review_report_max }}" required autocapitalize="sentences" spellcheck="true">
+          </label>
+          <button class="button secondary compact" type="submit">Send report</button>
+        </form>
+      </details>
+    {% endif %}
+  {% endif %}
+</article>

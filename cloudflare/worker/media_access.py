@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 PRIVATE_MEDIA_NOTICE = (
     "Private Workdoe media is served only after role, ownership, match, "
     "and moderation checks."
@@ -68,6 +67,8 @@ def can_view_job_photo(user, photo) -> bool:
     if role == "client" and row_value(photo, "client_id") == user_id:
         return True
     if role != "contractor":
+        return False
+    if row_value(photo, "client_status") != "active":
         return False
     if row_value(photo, "status") == "open":
         return True

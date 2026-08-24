@@ -1,0 +1,34 @@
+<details class="review-composer">
+  <summary>Leave completed-work feedback</summary>
+  <form class="review-form" method="post" action="{{ url_for('create_match_review', request_id=request_id) }}">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <div class="review-field-grid">
+      {% for key, label in review_dimensions %}
+        <label for="review-{{ request_id }}-{{ reviewer_role }}-{{ key }}">
+          {{ label }}
+          <select id="review-{{ request_id }}-{{ reviewer_role }}-{{ key }}" name="{{ key }}" required>
+            <option value="">Choose one</option>
+            {% for value, option_label in review_rating_options %}
+              <option value="{{ value }}">{{ option_label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      {% endfor %}
+      <label for="review-{{ request_id }}-{{ reviewer_role }}-again">
+        Work together again?
+        <select id="review-{{ request_id }}-{{ reviewer_role }}-again" name="would_work_again" required>
+          <option value="">Choose one</option>
+          {% for value, option_label in would_work_again_options %}
+            <option value="{{ value }}">{{ option_label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <label for="review-{{ request_id }}-{{ reviewer_role }}-comment">
+      What should the other participant know? <span class="optional-label">Optional</span>
+      <textarea id="review-{{ request_id }}-{{ reviewer_role }}-comment" name="comment" maxlength="{{ review_comment_max }}" rows="3" autocapitalize="sentences" spellcheck="true"></textarea>
+    </label>
+    <p class="help-text">Based on a Workdoe-verified completion. Feedback does not create a star score or change marketplace rank.</p>
+    <button class="button compact" type="submit">Submit feedback</button>
+  </form>
+</details>

@@ -6,22 +6,23 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from cloudflare_readiness import (  # noqa: E402
-    DEFAULT_CLERK_PROXY_PROOF_PATH,
-    REQUIRED_SECRETS,
+from cloudflare_readiness import (
     REPO_ROOT,
+    REQUIRED_SECRETS,
     ZERO_UUID,
     clerk_proxy_proof_error,
     read_json,
     run_readiness,
 )
-from cloudflare_release_evidence import secret_evidence_error  # noqa: E402
-from cloudflare_wrangler import CLOUDFLARE_API_TOKEN_ENV_VAR, cloudflare_api_token_present  # noqa: E402
+from cloudflare_release_evidence import secret_evidence_error
+from cloudflare_wrangler import (
+    CLOUDFLARE_API_TOKEN_ENV_VAR,
+    cloudflare_api_token_present,
+)
 
 
 @dataclass
@@ -122,7 +123,7 @@ def build_launch_plan(
             title="Refresh and validate checked-in Cloudflare artifacts",
             status="ready" if local.ready else "blocked",
             why=(
-                "The generated D1 migration, Wrangler config, Worker scaffold, "
+                "The immutable D1 migration chain, Wrangler config, Worker scaffold, "
                 "and same-domain Clerk settings are internally consistent."
                 if local.ready
                 else "Local Cloudflare artifacts have blockers that must be fixed first."
@@ -212,7 +213,7 @@ def build_launch_plan(
             commands=command_block(
                 [
                     "confirm Clerk Domains uses proxy URL https://workdoe.com/__clerk",
-                    "python scripts\\cloudflare_clerk_proxy_proof.py --confirm",
+                    "python scripts\\cloudflare_clerk_proxy_proof.py --confirm --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent",
                 ]
             ),
         ),

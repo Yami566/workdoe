@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 REPORT_REASON_MAX_LENGTH = 500
 MAX_REPORT_BODY_BYTES = 4096
 REPORT_TARGET_TYPES = {"job", "message", "profile"}

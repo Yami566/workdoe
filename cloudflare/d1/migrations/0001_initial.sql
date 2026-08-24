@@ -1,5 +1,5 @@
--- Workdoe D1 migration snapshot.
--- Generated from workdoe/schema.sql by scripts/prepare_cloudflare_release.py.
+-- Immutable Workdoe D1 baseline migration.
+-- Add schema changes in a new numbered migration; do not regenerate this file.
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS users (
@@ -180,7 +180,6 @@ CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_login_codes_email ON login_codes(email, expires_at);
 CREATE INDEX IF NOT EXISTS idx_automation_events_type_target ON automation_events(event_type, target_type, target_id, created_at);
-
 CREATE INDEX IF NOT EXISTS idx_login_codes_selected_job ON login_codes(selected_job_id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth_subject ON users(auth_provider, external_subject) WHERE external_subject IS NOT NULL;

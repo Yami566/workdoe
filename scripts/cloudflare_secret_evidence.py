@@ -6,7 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 CLOUDFLARE_DIR = REPO_ROOT / "cloudflare"
@@ -15,8 +14,8 @@ DEFAULT_SECRET_LIST_PATH = REPO_ROOT / "cloudflare-secret-list.local.json"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from cloudflare_readiness import REQUIRED_SECRETS, secret_names_from_json  # noqa: E402
-from cloudflare_wrangler import (  # noqa: E402
+from cloudflare_readiness import REQUIRED_SECRETS, secret_names_from_json
+from cloudflare_wrangler import (
     cloudflare_api_token_error,
     cloudflare_api_token_present,
     wrangler_command,

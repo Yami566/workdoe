@@ -1,0 +1,15 @@
+<dialog class="site-dialog" data-site-dialog aria-labelledby="site-dialog-title">
+  <section class="site-dialog-surface">
+    <header class="site-dialog-header">
+      <div>
+        <p class="eyebrow">Workdoe</p>
+        <h2 id="site-dialog-title" data-site-dialog-title>Continue</h2>
+      </div>
+      <button class="icon-button" type="button" data-site-dialog-close aria-label="Close dialog" title="Close">
+        <img src="{{ url_for('static', filename='vendor/tabler-icons/x.svg') }}" alt="" width="20" height="20">
+      </button>
+    </header>
+    <div class="site-dialog-status" data-site-dialog-status role="status" aria-live="polite">Loading...</div>
+    <div class="site-dialog-content" data-site-dialog-content></div>
+  </section>
+</dialog>

@@ -12,91 +12,123 @@
     var resultContainer = document.querySelector("[data-project-results]");
     var searchInput = document.querySelector("[data-market-search]");
     var categorySelect = document.querySelector("[data-market-category]");
+    var serviceSelect = document.querySelector("[data-market-service]");
+    var sortSelect = document.querySelector("[data-market-sort]");
+    var filterForm = document.querySelector("[data-market-filters]");
     var clearButton = document.querySelector("[data-clear-market-filters]");
+    var searchAreaButton = document.querySelector("[data-search-map-area]");
     var resultCount = document.querySelector("[data-project-result-count]");
     var mapResultCount = document.querySelector("[data-map-result-count]");
     var detailContent = document.querySelector("[data-project-detail-content]");
+    var jobsApi = mapElement.getAttribute("data-jobs-api") || "";
+    var assetRoot = (mapElement.getAttribute("data-asset-root") || "").replace(/\/+$/, "");
+    var tileUrl = mapElement.getAttribute("data-tile-url") || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+    var tileAttribution = mapElement.getAttribute("data-tile-attribution") || '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
     var map = window.L.map(mapElement, {
       scrollWheelZoom: false,
       zoomControl: true,
       maxZoom: 18
     }).setView([38.9072, -77.0369], 9);
-    var markerLayer = window.L.layerGroup();
-    if (window.L.markerClusterGroup) {
-      try {
-        markerLayer = window.L.markerClusterGroup({
-          showCoverageOnHover: false,
-          spiderfyOnMaxZoom: true,
-          maxClusterRadius: 46
-        });
-        markerLayer.addTo(map);
-      } catch (clusterError) {
-        markerLayer = window.L.layerGroup().addTo(map);
-      }
-    } else {
-      markerLayer.addTo(map);
-    }
+    var markerLayer = createMarkerLayer(map);
     var markerByJobId = {};
     var allJobs = readSeedJobs();
     var visibleJobs = [];
     var activeJobId = initialJobId(allJobs);
+    var activeViewport = readViewportFromUrl();
+    var ignoreNextMoveEnd = false;
+    var requestSequence = 0;
 
     mapElement.classList.add("map-ready");
-    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    window.L.tileLayer(tileUrl, {
       maxZoom: 18,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+      attribution: tileAttribution
     }).addTo(map);
 
     bindFilters();
     bindMobileTabs();
-    applyFilters(true);
+    bindMapSearch();
+    bindPopupOverlayState();
+    if (activeViewport) {
+      moveMap(function () {
+        map.fitBounds(viewportBounds(activeViewport), { padding: [28, 28], maxZoom: 13 });
+      });
+      applyFilters(false);
+      loadJobs(activeViewport, false);
+    } else {
+      applyFilters(true);
+      if (jobsApi && window.fetch) {
+        loadJobs(null, true);
+      }
+    }
 
-    var jobsApi = mapElement.getAttribute("data-jobs-api");
-    if (jobsApi && window.fetch) {
-      window.fetch(jobsApi, {
-        headers: { Accept: "application/json" },
-        credentials: "same-origin"
-      })
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error("Project map request failed");
-          }
-          return response.json();
-        })
-        .then(function (payload) {
-          if (payload && Array.isArray(payload.jobs)) {
-            allJobs = payload.jobs;
-            if (!findJob(activeJobId)) {
-              activeJobId = initialJobId(allJobs);
-            }
-            applyFilters(true);
-          }
-        })
-        .catch(function () {
-          setMapStatus("The live map could not refresh. The available project list is still ready.");
-        });
+    function createMarkerLayer(leafletMap) {
+      var layer = window.L.layerGroup();
+      if (window.L.markerClusterGroup) {
+        try {
+          layer = window.L.markerClusterGroup({
+            showCoverageOnHover: false,
+            spiderfyOnMaxZoom: true,
+            maxClusterRadius: 46
+          });
+          layer.addTo(leafletMap);
+          return layer;
+        } catch (clusterError) {
+          layer = window.L.layerGroup();
+        }
+      }
+      layer.addTo(leafletMap);
+      return layer;
     }
 
     function bindFilters() {
       if (searchInput) {
         searchInput.addEventListener("input", function () {
           applyFilters(false);
+          updateUrlState();
         });
       }
-      if (categorySelect) {
-        categorySelect.addEventListener("change", function () {
-          applyFilters(true);
+      [categorySelect, serviceSelect, sortSelect].forEach(function (control) {
+        if (!control) {
+          return;
+        }
+        control.addEventListener("change", function () {
+          applyFilters(false);
+          updateUrlState();
+        });
+      });
+      if (filterForm) {
+        filterForm.addEventListener("submit", function (event) {
+          if (!jobsApi || !window.fetch) {
+            return;
+          }
+          event.preventDefault();
+          loadJobs(activeViewport, false);
         });
       }
       if (clearButton) {
-        clearButton.addEventListener("click", function () {
+        clearButton.addEventListener("click", function (event) {
+          var clearUrl = clearButton.getAttribute("data-clear-market-url");
+          if (clearUrl) {
+            return;
+          }
+          event.preventDefault();
           if (searchInput) {
             searchInput.value = "";
           }
-          if (categorySelect) {
-            categorySelect.value = "";
+          [categorySelect, serviceSelect].forEach(function (control) {
+            if (control) {
+              control.value = "";
+            }
+          });
+          if (sortSelect) {
+            sortSelect.value = "newest";
           }
+          activeViewport = null;
           applyFilters(true);
+          updateUrlState();
+          if (jobsApi && window.fetch) {
+            loadJobs(null, true);
+          }
           if (searchInput) {
             searchInput.focus();
           }
@@ -104,17 +136,108 @@
       }
     }
 
+    function bindPopupOverlayState() {
+      map.on("popupopen", function () {
+        mapElement.classList.add("has-open-popup");
+      });
+      map.on("popupclose", function () {
+        mapElement.classList.remove("has-open-popup");
+      });
+    }
+
+    function bindMapSearch() {
+      map.on("moveend", function () {
+        if (ignoreNextMoveEnd) {
+          ignoreNextMoveEnd = false;
+          return;
+        }
+        if (searchAreaButton && jobsApi) {
+          searchAreaButton.hidden = false;
+          searchAreaButton.disabled = false;
+        }
+      });
+      if (searchAreaButton) {
+        searchAreaButton.addEventListener("click", function () {
+          loadJobs(viewportFromBounds(map.getBounds()), false);
+        });
+      }
+    }
+
+    function loadJobs(viewport, fitMap) {
+      if (!jobsApi || !window.fetch) {
+        return;
+      }
+      var requestId = ++requestSequence;
+      var requestUrl = jobsRequestUrl(viewport);
+      setLoading(true);
+      window.fetch(requestUrl, {
+        headers: { Accept: "application/json" },
+        credentials: "same-origin"
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            return response.json().catch(function () { return {}; }).then(function (payload) {
+              throw new Error(payload.error || "Project map request failed");
+            });
+          }
+          return response.json();
+        })
+        .then(function (payload) {
+          if (requestId !== requestSequence || !payload || !Array.isArray(payload.jobs)) {
+            return;
+          }
+          allJobs = mergeJobPayload(payload);
+          activeViewport = payload.viewport || viewport || null;
+          if (!findJob(activeJobId)) {
+            activeJobId = initialJobId(allJobs);
+          }
+          applyFilters(Boolean(fitMap && !activeViewport));
+          updateUrlState();
+          if (searchAreaButton) {
+            searchAreaButton.hidden = true;
+          }
+          var suffix = payload.truncated ? " More projects are available beyond this page." : "";
+          setMapStatus((payload.result_count || payload.count || allJobs.length) + " projects loaded." + suffix);
+        })
+        .catch(function (error) {
+          if (requestId !== requestSequence) {
+            return;
+          }
+          setMapStatus(error.message || "The live map could not refresh. The project list is still ready.");
+        })
+        .then(function () {
+          if (requestId === requestSequence) {
+            setLoading(false);
+          }
+        });
+    }
+
+    function jobsRequestUrl(viewport) {
+      var url = new URL(jobsApi, window.location.href);
+      setOptionalParam(url, "q", searchInput && searchInput.value.trim());
+      setOptionalParam(url, "category", categorySelect && categorySelect.value);
+      setOptionalParam(url, "service", serviceSelect && serviceSelect.value);
+      setOptionalParam(url, "sort", sortSelect && sortSelect.value !== "newest" ? sortSelect.value : "");
+      url.searchParams.delete("cursor");
+      setViewportParams(url, viewport);
+      return url.pathname + url.search;
+    }
+
     function applyFilters(fitMap) {
       var query = searchInput ? searchInput.value.trim().toLowerCase() : "";
       var category = categorySelect ? categorySelect.value : "";
+      var service = serviceSelect ? serviceSelect.value : "";
       visibleJobs = allJobs.filter(function (job) {
         if (category && job.category !== category) {
+          return false;
+        }
+        if (service && job.service_slug !== service) {
           return false;
         }
         if (!query) {
           return true;
         }
-        return [job.title, job.category, job.city, job.state, job.description]
+        return [job.title, job.service_name, job.category, job.city, job.state, job.description]
           .filter(Boolean)
           .join(" ")
           .toLowerCase()
@@ -135,7 +258,7 @@
         return;
       }
       if (!visibleJobs.length) {
-        resultContainer.innerHTML = '<div class="market-list-empty"><strong>No matching projects</strong><span>Try another category or a broader search.</span></div>';
+        resultContainer.innerHTML = '<div class="market-list-empty"><strong>No matching projects</strong><span>Move the map or broaden the filters.</span></div>';
         return;
       }
       resultContainer.innerHTML = visibleJobs.map(projectRowHtml).join("");
@@ -145,17 +268,58 @@
     function projectRowHtml(job) {
       var active = String(job.id) === String(activeJobId);
       var sample = job.is_demo ? '<span class="sample-badge">Sample</span>' : "";
+      var fit = job.fit_label ? '<span class="lead-fit fit-' + escapeAttribute(job.fit_score || 0) + '">' + escapeHtml(job.fit_label) + "</span>" : "";
+      var status = job.request_status ? '<span class="status ' + escapeAttribute(job.request_status) + '">Bid ' + escapeHtml(job.request_status) + "</span>" : "";
+      var licensePreference = job.license_preference ? '<span class="job-license-chip">License preferred</span>' : "";
+      var bidding = job.bid_window || {};
+      var readiness = job.brief_readiness || {};
+      var availability = bidding.availability_label || job.budget || "Budget not provided";
+      var photoCount = Number(job.photo_count || 0);
+      var photoLabel = photoCount + (photoCount === 1 ? " photo" : " photos");
+      var actionCue = detailContent
+        ? (job.request_status ? "Sent" : "View")
+        : (job.row_cue || job.action_label || "View");
+      var rowLabel = detailContent
+        ? (job.request_status ? "Open sent bid for " : "View details for ")
+        : actionCue + " for ";
+      var readinessFact = readiness.label ? "<span>" + escapeHtml(readiness.label) + "</span>" : "";
       return (
-        '<a class="project-result' + (active ? " is-map-active" : "") + '" role="listitem" data-job-id="' + escapeAttribute(job.id) + '" href="' + escapeAttribute(job.detail_url || "#") + '"' + (active ? ' aria-current="true"' : "") + ">" +
-          '<span class="project-result-topline"><span>' + escapeHtml(job.category || "Project") + "</span>" + sample + "</span>" +
-          "<strong>" + escapeHtml(job.title || "Open project") + "</strong>" +
-          '<span class="project-result-facts"><span>' + escapeHtml(placeLabel(job)) + "</span><span>" + escapeHtml(job.budget || "Budget not provided") + "</span></span>" +
-        "</a>"
+        '<div class="project-result-item" role="listitem">' +
+          '<a class="project-result' + (active ? " is-map-active" : "") + '" data-job-id="' + escapeAttribute(job.id) + '" href="' + escapeAttribute(job.detail_url || job.url || "#") + '" aria-label="' + escapeAttribute(rowLabel + (job.title || "open project")) + '"' + (active ? ' aria-current="true"' : "") + ">" +
+            '<span class="project-result-topline">' + fit + '<span class="job-service-chip">' + escapeHtml(job.service_name || job.category || "Project") + "</span>" + licensePreference + status + sample + "</span>" +
+            '<span class="project-result-heading"><strong>' + escapeHtml(job.title || "Open project") + '</strong><span class="project-result-action">' + escapeHtml(actionCue) + "</span></span>" +
+            '<span class="project-result-facts"><span>' + escapeHtml(placeLabel(job)) + "</span><span>" + escapeHtml(availability) + "</span><span>" + escapeHtml(photoLabel) + "</span>" + readinessFact + "</span>" +
+          "</a>" +
+        "</div>"
       );
     }
 
+    function mergeJobPayload(payload) {
+      var incoming = Array.isArray(payload.map_jobs) && payload.map_jobs.length
+        ? payload.map_jobs
+        : payload.jobs;
+      var currentById = {};
+      var contractorFields = [
+        "description", "request_status", "bid_window", "brief_readiness",
+        "fit_score", "fit_label", "row_cue", "action_label", "url", "detail_url"
+      ];
+      allJobs.forEach(function (job) {
+        currentById[String(job.id)] = job;
+      });
+      return incoming.map(function (job) {
+        var current = currentById[String(job.id)] || {};
+        var merged = Object.assign({}, current, job);
+        contractorFields.forEach(function (field) {
+          if (Object.prototype.hasOwnProperty.call(current, field)) {
+            merged[field] = current[field];
+          }
+        });
+        return merged;
+      });
+    }
+
     function bindExistingRows() {
-      document.querySelectorAll(".project-result[data-job-id]").forEach(function (row) {
+      document.querySelectorAll(".project-result[data-job-id], .job-row[data-job-id]").forEach(function (row) {
         if (row.dataset.mapBound === "true") {
           return;
         }
@@ -163,6 +327,10 @@
         row.setAttribute("aria-keyshortcuts", "ArrowUp ArrowDown Home End");
         row.addEventListener("click", function (event) {
           if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+            return;
+          }
+          if (!detailContent) {
+            activateJob(row.getAttribute("data-job-id"), true, false);
             return;
           }
           event.preventDefault();
@@ -191,17 +359,23 @@
           return;
         }
         var label = markerLabel(job);
-        var marker = window.L.marker([lat, lng], {
-          alt: label,
-          title: label
-        });
+        var actionLabel = job.action_label || "Open project";
+        var actionUrl = job.url || job.detail_url || "#";
+        var marker = window.L.marker([lat, lng], { alt: label, title: label });
         marker.bindPopup(
           '<div class="map-popup">' +
             (job.is_demo ? '<span class="sample-badge">Sample</span>' : "") +
             "<strong>" + escapeHtml(job.title || "Open project") + "</strong>" +
             "<span>" + escapeHtml(placeLabel(job)) + "</span>" +
             "<span>" + escapeHtml(job.budget || "Budget not provided") + "</span>" +
-          "</div>"
+            (job.license_preference ? '<span class="job-license-chip">License preferred</span>' : "") +
+            '<a class="map-popup-action" href="' + escapeAttribute(actionUrl) + '" data-dialog-title="' + escapeAttribute(actionLabel) + '" aria-label="' + escapeAttribute(actionLabel + " for " + (job.title || "open project")) + '">' + escapeHtml(actionLabel) + "</a>" +
+          "</div>",
+          {
+            maxWidth: 220,
+            autoPanPaddingTopLeft: [64, 56],
+            autoPanPaddingBottomRight: [16, 16]
+          }
         );
         marker.on("click", function () {
           activateJob(job.id, false, true);
@@ -218,10 +392,22 @@
       });
       updateResultStatus(visibleJobs.length, bounds.length);
       if (fitMap && bounds.length > 1) {
-        map.fitBounds(bounds, { padding: [42, 42], maxZoom: 11 });
+        moveMap(function () {
+          map.fitBounds(bounds, { padding: [42, 42], maxZoom: 11 });
+        });
       } else if (fitMap && bounds.length === 1) {
-        map.setView(bounds[0], 12);
+        moveMap(function () {
+          map.setView(bounds[0], 12);
+        });
       }
+    }
+
+    function moveMap(action) {
+      ignoreNextMoveEnd = true;
+      action();
+      window.setTimeout(function () {
+        ignoreNextMoveEnd = false;
+      }, 700);
     }
 
     function activateJob(jobId, panMap, revealDetails) {
@@ -233,21 +419,17 @@
       var marker = markerByJobId[activeJobId];
       if (marker) {
         if (panMap) {
-          map.panTo(marker.getLatLng(), { animate: true, duration: 0.25 });
+          moveMap(function () {
+            map.panTo(marker.getLatLng(), { animate: true, duration: 0.25 });
+          });
         }
         if (window.L.markerClusterGroup && markerLayer.zoomToShowLayer) {
-          markerLayer.zoomToShowLayer(marker, function () {
-            marker.openPopup();
-          });
+          markerLayer.zoomToShowLayer(marker, function () { marker.openPopup(); });
         } else {
           marker.openPopup();
         }
       }
-      if (job && window.history && document.body.classList.contains("market-entry-body")) {
-        var nextUrl = new URL(window.location.href);
-        nextUrl.searchParams.set("job_id", String(job.id));
-        window.history.replaceState({}, "", nextUrl.pathname + nextUrl.search);
-      }
+      updateUrlState();
       if (revealDetails && window.matchMedia("(max-width: 900px)").matches) {
         setMobilePanel("details");
       }
@@ -258,24 +440,28 @@
         return;
       }
       if (!job) {
-        detailContent.outerHTML = '<div class="market-detail-empty" data-project-detail-content><img src="/field-doe.webp" alt="" width="160" height="160"><h2>No projects match</h2><p>Adjust the filters to widen the map.</p></div>';
+        detailContent.outerHTML = '<div class="market-detail-empty" data-project-detail-content><img src="' + assetRoot + '/field-doe.webp" alt="" width="160" height="160"><h2>No projects match</h2><p>Move the map or adjust the filters.</p></div>';
         detailContent = document.querySelector("[data-project-detail-content]");
         return;
       }
-      var sample = job.is_demo
-        ? '<span class="sample-badge">Demonstration project</span>'
-        : '<span class="live-badge">Open project</span>';
+      var sample = job.is_demo ? '<span class="sample-badge">Demonstration project</span>' : '<span class="live-badge">Open project</span>';
+      var bidding = job.bid_window || {};
+      var biddingFact = bidding.usage_label ? "<div><dt>Mini bids</dt><dd>" + escapeHtml(bidding.usage_label) + "</dd></div>" : "";
+      var actionLabel = job.action_label || "Review and bid";
+      var licensePreference = job.license_preference
+        ? '<p class="license-preference-note"><img src="' + assetRoot + '/vendor/tabler-icons/home-check.svg" alt=""><span><strong>Current license record preferred</strong><small>Preference only. Confirm scope and legal eligibility directly.</small></span></p>'
+        : "";
       detailContent.outerHTML = (
         '<article class="market-project-detail" data-project-detail-content data-job-id="' + escapeAttribute(job.id) + '">' +
-          '<div class="project-detail-heading">' + sample + "<span>" + escapeHtml(job.category || "Project") + "</span></div>" +
+          '<div class="project-detail-heading">' + sample + "<span>" + escapeHtml(job.service_name || job.category || "Project") + "</span></div>" +
           "<h2>" + escapeHtml(job.title || "Open project") + "</h2>" +
           '<p class="project-detail-location">' + escapeHtml(placeLabel(job)) + "</p>" +
           '<dl class="project-facts"><div><dt>Estimated budget</dt><dd>' + escapeHtml(job.budget || "Budget not provided") + "</dd></div>" +
-          "<div><dt>Desired date</dt><dd>" + escapeHtml(job.desired_date || "Flexible") + "</dd></div></dl>" +
+          "<div><dt>Desired date</dt><dd>" + escapeHtml(job.desired_date || "Flexible") + "</dd></div>" + biddingFact + "</dl>" +
+          licensePreference +
           '<div class="project-description"><h3>Project overview</h3><p>' + escapeHtml(job.description || "Project details are available after sign-in.") + "</p></div>" +
           '<p class="project-privacy-note">Location is intentionally approximate until a match is approved.</p>' +
-          '<div class="project-detail-actions"><a class="button primary" href="' + escapeAttribute(job.url || "/start") + '">' + escapeHtml(job.action_label || "Join to respond") + "</a>" +
-          '<a class="button secondary" href="' + escapeAttribute(job.detail_url || "#") + '">Open project link</a></div>' +
+          '<div class="project-detail-actions"><a class="button primary" href="' + escapeAttribute(job.url || "/start") + '" data-dialog-title="' + escapeAttribute(actionLabel) + '">' + escapeHtml(actionLabel) + "</a></div>" +
         "</article>"
       );
       detailContent = document.querySelector("[data-project-detail-content]");
@@ -292,7 +478,10 @@
     }
 
     function highlightJobRows(jobId) {
-      document.querySelectorAll(".project-result[data-job-id]").forEach(function (row) {
+      document.querySelectorAll("[data-job-id]").forEach(function (row) {
+        if (!row.matches(".project-result, .job-row")) {
+          return;
+        }
         var active = row.getAttribute("data-job-id") === String(jobId);
         row.classList.toggle("is-map-active", active);
         if (active) {
@@ -307,7 +496,7 @@
       if (event.altKey || event.ctrlKey || event.metaKey) {
         return;
       }
-      var rows = Array.prototype.slice.call(document.querySelectorAll(".project-result[data-job-id]"));
+      var rows = Array.prototype.slice.call(document.querySelectorAll(".project-result[data-job-id], .job-row[data-job-id]"));
       var index = rows.indexOf(row);
       var nextIndex = index;
       if (event.key === "ArrowDown") {
@@ -329,9 +518,33 @@
     }
 
     function bindMobileTabs() {
-      document.querySelectorAll("[data-mobile-panel-target]").forEach(function (button) {
+      var buttons = Array.prototype.slice.call(
+        document.querySelectorAll("[data-mobile-panel-target]")
+      );
+      buttons.forEach(function (button) {
         button.addEventListener("click", function () {
           setMobilePanel(button.getAttribute("data-mobile-panel-target"));
+        });
+        button.addEventListener("keydown", function (event) {
+          if (event.altKey || event.ctrlKey || event.metaKey) {
+            return;
+          }
+          var currentIndex = buttons.indexOf(button);
+          var nextIndex = currentIndex;
+          if (event.key === "ArrowRight") {
+            nextIndex = (currentIndex + 1) % buttons.length;
+          } else if (event.key === "ArrowLeft") {
+            nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
+          } else if (event.key === "Home") {
+            nextIndex = 0;
+          } else if (event.key === "End") {
+            nextIndex = buttons.length - 1;
+          } else {
+            return;
+          }
+          event.preventDefault();
+          setMobilePanel(buttons[nextIndex].getAttribute("data-mobile-panel-target"));
+          buttons[nextIndex].focus();
         });
       });
       if (workspace) {
@@ -350,9 +563,71 @@
         button.tabIndex = selected ? 0 : -1;
       });
       if (panel === "map") {
-        window.setTimeout(function () {
-          map.invalidateSize({ pan: false });
-        }, 50);
+        window.setTimeout(function () { map.invalidateSize({ pan: false }); }, 50);
+      }
+    }
+
+    function updateUrlState() {
+      if (!window.history || !window.URL) {
+        return;
+      }
+      var url = new URL(window.location.href);
+      setOptionalParam(url, "q", searchInput && searchInput.value.trim());
+      setOptionalParam(url, "category", categorySelect && categorySelect.value);
+      setOptionalParam(url, "service", serviceSelect && serviceSelect.value);
+      setOptionalParam(url, "sort", sortSelect && sortSelect.value !== "newest" ? sortSelect.value : "");
+      setOptionalParam(url, "job_id", activeJobId);
+      setViewportParams(url, activeViewport);
+      url.searchParams.delete("cursor");
+      window.history.replaceState({ workdoeMap: true }, "", url.pathname + url.search + url.hash);
+    }
+
+    function setOptionalParam(url, key, value) {
+      if (value) {
+        url.searchParams.set(key, String(value));
+      } else {
+        url.searchParams.delete(key);
+      }
+    }
+
+    function setViewportParams(url, viewport) {
+      ["north", "south", "east", "west"].forEach(function (key) {
+        if (viewport && Number.isFinite(Number(viewport[key]))) {
+          url.searchParams.set(key, Number(viewport[key]).toFixed(6));
+        } else {
+          url.searchParams.delete(key);
+        }
+      });
+    }
+
+    function readViewportFromUrl() {
+      var url = new URL(window.location.href);
+      var viewport = {};
+      var valid = ["north", "south", "east", "west"].every(function (key) {
+        viewport[key] = Number(url.searchParams.get(key));
+        return Number.isFinite(viewport[key]);
+      });
+      return valid && viewport.north > viewport.south && viewport.east > viewport.west ? viewport : null;
+    }
+
+    function viewportFromBounds(bounds) {
+      return {
+        north: Number(bounds.getNorth().toFixed(6)),
+        south: Number(bounds.getSouth().toFixed(6)),
+        east: Number(bounds.getEast().toFixed(6)),
+        west: Number(bounds.getWest().toFixed(6))
+      };
+    }
+
+    function viewportBounds(viewport) {
+      return [[viewport.south, viewport.west], [viewport.north, viewport.east]];
+    }
+
+    function setLoading(loading) {
+      mapElement.setAttribute("aria-busy", loading ? "true" : "false");
+      if (searchAreaButton) {
+        searchAreaButton.disabled = loading;
+        searchAreaButton.textContent = loading ? "Loading projects" : "Search this area";
       }
     }
 
@@ -365,7 +640,11 @@
     }
 
     function initialJobId(jobs) {
-      var activeRow = document.querySelector("[data-job-id].is-map-active");
+      var requested = new URL(window.location.href).searchParams.get("job_id");
+      if (requested && jobs.some(function (job) { return String(job.id) === requested; })) {
+        return requested;
+      }
+      var activeRow = document.querySelector("[data-job-id].is-map-active, [data-job-id].is-selected");
       if (activeRow) {
         return activeRow.getAttribute("data-job-id") || "";
       }
@@ -382,7 +661,10 @@
 
     function announceActiveJob(job) {
       if (job) {
-        setMapStatus((job.title || "Project") + " is selected. Details are available beside the map.");
+        var nextStep = detailContent
+          ? "Project details are open."
+          : "Use the popup action to continue.";
+        setMapStatus((job.title || "Project") + " is selected. " + nextStep);
       }
     }
 

@@ -1,0 +1,11 @@
+<nav class="service-family-filter" aria-label="{{ family_filter_label|default('Filter by work family') }}">
+  {% for item in family_filter_links %}
+    <a class="service-family-filter-link{% if item.active %} is-active{% endif %}" href="{{ item.url }}" {% if item.active %}aria-current="page"{% endif %}>
+      <span class="service-family-filter-visual" aria-hidden="true">
+        <span>{{ item.number }}</span>
+        {% if item.icon %}<img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ item.icon) }}" alt="" width="24" height="24">{% endif %}
+      </span>
+      <span class="service-family-filter-copy"><strong>{{ item.name }}</strong><small>{{ item.description }}</small></span>
+    </a>
+  {% endfor %}
+</nav>

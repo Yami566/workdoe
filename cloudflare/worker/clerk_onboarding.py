@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 MAX_ONBOARDING_BODY_BYTES = 8192
 ONBOARDING_ROLES = {"client", "contractor"}
 ONBOARDING_TEXT_MAX_LENGTH = 120
@@ -28,7 +27,7 @@ def claim_email(claims: dict) -> str:
 
 def email_claim_verified(claims: dict) -> bool:
     value = claims.get("email_verified")
-    return value in {None, True, 1, "1", "true", "verified"}
+    return value in {None, True, "1", "true", "verified"}
 
 
 def object_value(value, key: str, default=None):

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Account &amp; security - Workdoe{% endblock %}
+
+{% block content %}
+  <section class="dashboard-header account-heading">
+    <div>
+      <p class="eyebrow">Account</p>
+      <h1>Account &amp; security</h1>
+      <p>Manage how you sign in without leaving Workdoe.</p>
+    </div>
+    <a class="button secondary" href="{{ profile_url }}">Workdoe profile</a>
+  </section>
+
+  <section class="account-layout">
+    <aside class="panel account-summary" aria-labelledby="account-summary-title">
+      <h2 id="account-summary-title">Workdoe identity</h2>
+      <dl class="profile-facts compact-facts">
+        <div><dt>Email</dt><dd>{{ g.user.email }}</dd></div>
+        <div><dt>Role</dt><dd>{{ g.user.role|capitalize }}</dd></div>
+      </dl>
+      <p class="help-text">One account keeps one role during the DMV beta.</p>
+    </aside>
+
+    <section class="account-security-surface" aria-labelledby="account-security-title">
+      <header class="panel-heading">
+        <div>
+          <p class="eyebrow">Sign-in</p>
+          <h2 id="account-security-title">Security settings</h2>
+        </div>
+      </header>
+      {% if clerk_entry_enabled() %}
+        <div
+          id="clerk-account"
+          class="clerk-account-mount"
+          data-clerk-account
+          {% if clerk_proxy_url() %}data-clerk-proxy-url="{{ clerk_proxy_url() }}"{% endif %}
+        >
+          <p class="help-text" data-clerk-account-status role="status" aria-live="polite">Loading account settings...</p>
+        </div>
+      {% else %}
+        <div class="panel account-signin-summary">
+          <strong>Your sign-in is active</strong>
+          <p>Keep access to {{ g.user.email }}. Workdoe uses this address for identity checks and account recovery.</p>
+        </div>
+      {% endif %}
+    </section>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  {% if clerk_entry_enabled() %}
+    <script defer crossorigin="anonymous" src="{{ clerk_frontend_api_url() }}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
+    <script defer crossorigin="anonymous" data-clerk-publishable-key="{{ clerk_publishable_key() }}" {% if clerk_proxy_url() %}data-clerk-proxy-url="{{ clerk_proxy_url() }}"{% endif %} src="{{ clerk_frontend_api_url() }}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
+    <script defer src="{{ url_for('static', filename='clerk-account.js') }}"></script>
+  {% endif %}
+{% endblock %}

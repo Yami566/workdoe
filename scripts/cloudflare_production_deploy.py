@@ -7,7 +7,6 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 CLOUDFLARE_DIR = REPO_ROOT / "cloudflare"
@@ -17,14 +16,13 @@ DEFAULT_CLERK_PROXY_PROOF_PATH = REPO_ROOT / "clerk-proxy-proof.local.json"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from cloudflare_readiness import run_readiness  # noqa: E402
-from cloudflare_wrangler import (  # noqa: E402
+from cloudflare_readiness import run_readiness
+from cloudflare_wrangler import (
     cloudflare_api_token_error,
     cloudflare_api_token_present,
     wrangler_command,
     wrangler_env,
 )
-
 
 SMOKE_OUTPUT_MAX = 1200
 
@@ -147,7 +145,6 @@ def smoke_output_excerpt(completed: subprocess.CompletedProcess) -> str:
 
 def execute_steps(
     steps: list[DeployStep],
-    continue_on_smoke_failure: bool = True,
 ) -> tuple[list[DeployStep], list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -157,26 +154,26 @@ def execute_steps(
         except OSError as exc:  # pragma: no cover - depends on operator machine PATH
             step.status = "failed"
             message = f"{step.name}: {exc}"
-            if step.required or not continue_on_smoke_failure:
+            if step.required:
                 errors.append(message)
             else:
                 warnings.append(message)
             if step.required:
                 break
             continue
-        if not step.required:
+        if step.name == "smoke-production":
             step.output_excerpt = smoke_output_excerpt(completed)
         if completed.returncode == 0:
             step.status = "done"
             continue
-        detail = command_output(completed)
+        detail = step.output_excerpt or command_output(completed)
         step.status = "failed"
         message = f"{step.name}: {detail or 'command failed'}"
-        if step.required or not continue_on_smoke_failure:
+        if step.required:
             errors.append(message)
         else:
             warnings.append(message)
-        if step.required or not continue_on_smoke_failure:
+        if step.required:
             break
     return steps, errors, warnings
 
@@ -216,15 +213,23 @@ def main() -> int:
     parser.add_argument(
         "--no-smoke",
         action="store_true",
-        help="Skip post-deploy smoke checks.",
-    )
-    parser.add_argument(
-        "--fail-on-smoke",
-        action="store_true",
-        help="Treat smoke-check failures as deployment failures.",
+        help="Omit smoke from a dry-run plan; production execution always includes it.",
     )
     args = parser.parse_args()
     include_smoke = not args.no_smoke
+
+    if args.execute and not include_smoke:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "Production execution requires the post-deploy smoke check.",
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 2
 
     if not args.execute:
         payload = plan_payload(
@@ -299,7 +304,6 @@ def main() -> int:
 
     steps, errors, warnings = execute_steps(
         build_deploy_steps(include_smoke=include_smoke),
-        continue_on_smoke_failure=not args.fail_on_smoke,
     )
     payload = {
         "ok": not errors,

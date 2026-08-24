@@ -7,66 +7,197 @@
     <h1>Your bids</h1>
   </div>
   <div class="action-row">
-    <a class="button secondary" href="{{ url_for('contractor_profile') }}">Edit profile</a>
-    <a class="button" href="{{ url_for('leads') }}">Browse {{ open_jobs }} projects</a>
+    <a class="button" href="{{ url_for('leads') }}">Browse projects</a>
   </div>
 </section>
 
-<section class="dashboard-metrics" aria-label="Contractor work queue">
-  <a class="metric-card" href="{{ url_for('leads') }}">
-    <span>Open projects</span>
-    <strong>{{ stats.open_jobs }}</strong>
-  </a>
-  <div class="metric-card">
-    <span>Pending bids</span>
-    <strong>{{ stats.pending_requests }}</strong>
-  </div>
-  <a class="metric-card" href="{{ url_for('message_threads') }}">
-    <span>Approved</span>
-    <strong>{{ stats.approved_requests }}</strong>
-  </a>
-</section>
-
-<section class="content-grid two">
-  <article class="panel">
-    <h2>{{ profile.business_name or g.user.company_name or g.user.display_name }}</h2>
-    <p>{{ profile.intro or "Complete your profile so clients can understand your services before approving a match." }}</p>
-    <dl class="profile-facts">
-      <div><dt>Trades</dt><dd>{{ profile.trades or "Not set" }}</dd></div>
-      <div><dt>Service area</dt><dd>{{ profile.service_area or "DMV area" }}</dd></div>
-      <div><dt>Insurance</dt><dd>{{ profile.insurance_status or "Not set" }}</dd></div>
-    </dl>
-  </article>
-  <article class="panel">
-    <h2>Mini bid status</h2>
-    <nav class="work-view-tabs bid-view-tabs" aria-label="Contractor mini bid status">
-      {% for item in bid_view_links %}
-        {% set count = stats.total_requests if item.value == "all" else (stats.pending_requests if item.value == "pending" else (stats.approved_requests if item.value == "approved" else stats.rejected_requests)) %}
-        <a class="work-view-tab{% if bid_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if bid_view == item.value %}aria-current="page"{% endif %}>
-          <span>{{ item.label }}</span>
-          <strong>{{ count }}</strong>
-        </a>
-      {% endfor %}
-    </nav>
-    <div class="job-list compact-list">
-      {% for item in requests %}
-        {% set row_href = url_for('thread_detail', thread_id=item.thread_id) if item.status == 'approved' and item.thread_id else url_for('contractor_job_detail', job_id=item.job_id) %}
-        {% set row_cue = "Message" if item.status == "approved" and item.thread_id else "View" %}
-        {% set row_label = "Message about " ~ item.title if row_cue == "Message" else "View mini bid for " ~ item.title %}
-        <a class="job-row link-row" href="{{ row_href }}" aria-label="{{ row_label }}">
-          <span>
-            <strong>{{ item.title }}</strong>
-            <small>{{ item.category }} in {{ item.city }}, {{ item.state }}</small>
-          </span>
-          <span class="row-actions">
+<section class="work-history contractor-bid-workspace" aria-label="Contractor mini bids">
+  <nav class="work-view-tabs bid-view-tabs contractor-bid-tabs" aria-label="Contractor mini bid status">
+    {% for item in bid_view_links %}
+      {% set count = stats.total_requests if item.value == "all" else (stats.pending_requests if item.value == "pending" else (stats.approved_requests if item.value == "approved" else stats.rejected_requests)) %}
+      <a class="work-view-tab{% if bid_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if bid_view == item.value %}aria-current="page"{% endif %}>
+        <span>{{ item.label }}</span>
+        <strong>{{ count }}</strong>
+      </a>
+    {% endfor %}
+  </nav>
+  <div class="job-list compact-list" aria-label="Contractor mini bids">
+    {% for item in requests %}
+      {% set row_href = url_for('thread_detail', thread_id=item.thread_id) if item.status == 'approved' and item.thread_id else url_for('contractor_job_detail', job_id=item.job_id) %}
+      {% set row_cue = "Message" if item.status == "approved" and item.thread_id else "Details" %}
+      {% set row_label = "Message about " ~ item.title if row_cue == "Message" else "View mini bid for " ~ item.title %}
+      <a class="job-row link-row contractor-bid-row is-{{ item.status }}" href="{{ row_href }}" aria-label="{{ row_label }}" aria-describedby="contractor-bid-terms-{{ item.id }}">
+        <span class="contractor-bid-copy">
+          <strong>{{ item.title }}</strong>
+          <small class="contractor-bid-context">{{ item.category }} in {{ item.city }}, {{ item.state }}</small>
+          <span id="contractor-bid-terms-{{ item.id }}" class="contractor-bid-terms" aria-label="Your submitted bid terms">
             <span class="status {{ item.status }}">{{ item.status }}</span>
-            <span class="row-cue">{{ row_cue }}</span>
+            <span class="contractor-bid-term"><small>Estimate</small><strong>{{ item.price_range }}</strong></span>
+            <span class="contractor-bid-term"><small>Timing</small><strong>{{ item.timeline }}</strong></span>
           </span>
-        </a>
-      {% else %}
-        <p class="empty">{% if bid_view == "pending" %}No pending bids.{% elif bid_view == "approved" %}No approved bids.{% elif bid_view == "rejected" %}No rejected bids.{% else %}No mini bids yet. Browse leads to start.{% endif %}</p>
+        </span>
+        <span class="row-cue">{{ row_cue }}</span>
+      </a>
+    {% else %}
+      <p class="empty">
+        {% if bid_view == "pending" %}No pending bids. <a href="{{ url_for('contractor_dashboard') }}">All bids</a>
+        {% elif bid_view == "approved" %}No approved bids. <a href="{{ url_for('contractor_dashboard') }}">All bids</a>
+        {% elif bid_view == "rejected" %}No rejected bids. <a href="{{ url_for('contractor_dashboard') }}">All bids</a>
+        {% else %}No mini bids yet. <a href="{{ url_for('leads') }}">Browse projects</a>{% endif %}
+      </p>
+    {% endfor %}
+  </div>
+</section>
+
+{% set reputation_id_prefix = "dashboard-reputation" %}
+{% include "_contractor_reputation.html" %}
+
+{% if repeat_invitations %}
+  <section id="repeat-invitations" class="work-history repeat-invitation-section" aria-labelledby="repeat-invitations-title">
+    <div class="section-heading history-heading">
+      <div>
+        <p class="eyebrow">Repeat work</p>
+        <h2 id="repeat-invitations-title">Invited back</h2>
+      </div>
+      <span class="count-pill">{{ repeat_invitations|length }} waiting</span>
+    </div>
+    <div class="history-list">
+      {% for invitation in repeat_invitations %}
+        <div class="history-row repeat-invitation-row">
+          <div>
+            <div class="row-meta">
+              <span>Prior work verified</span>
+              <span>{{ invitation.city }}, {{ invitation.state }}</span>
+              {% if invitation.desired_date %}<span>Target <time datetime="{{ invitation.desired_date }}">{{ invitation.desired_date|date_label }}</time></span>{% endif %}
+              <span>{{ invitation.bid_window.usage_label }}</span>
+            </div>
+            <h3>{{ invitation.project_title }}</h3>
+            <p>The consumer invited you based on a completed Workdoe match. Review the new scope before deciding.</p>
+          </div>
+          <div class="history-row-actions">
+            <a class="button compact" href="{{ url_for('contractor_job_detail', job_id=invitation.job_id) }}">Review and bid</a>
+            <form method="post" action="{{ url_for('respond_repeat_invitation', invitation_id=invitation.id, action='decline') }}">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <button class="button secondary compact" type="submit">Pass</button>
+            </form>
+          </div>
+        </div>
       {% endfor %}
     </div>
-  </article>
+  </section>
+{% endif %}
+
+<section class="contractor-workspace-context" aria-label="Contractor profile summary">
+  <div class="contractor-workspace-identity">
+    <p class="eyebrow">Profile signal</p>
+    <h2>{{ profile.business_name or g.user.company_name or g.user.display_name }}</h2>
+    <p>{{ profile.intro or "Complete your profile so clients can understand your services before approving a match." }}</p>
+  </div>
+  <dl class="contractor-snapshot-facts">
+      <div><dt>Trades</dt><dd>{{ profile.trades or "Not set" }}</dd></div>
+      <div><dt>Service area</dt><dd>{{ profile.service_area or "DMV area" }}</dd></div>
+      <div><dt>Trust record</dt><dd>{{ reputation.trust_record.label or "No source-checked record" }}</dd></div>
+  </dl>
+  <div class="contractor-workspace-actions">
+    <a class="button secondary compact" href="{{ url_for('contractor_profile') }}#profile-details">Edit profile</a>
+    <a class="button secondary compact" href="{{ url_for('contractor_profile') }}#credential-claims">Trust records</a>
+  </div>
+</section>
+
+<section id="proposal-templates" class="work-history" aria-labelledby="proposal-templates-title">
+  <div class="section-heading history-heading">
+    <div>
+      <p class="eyebrow">Faster responses</p>
+      <h2 id="proposal-templates-title">Proposal templates</h2>
+    </div>
+    <span class="count-pill">{{ proposal_templates|length }}/{{ proposal_template_limit }}</span>
+  </div>
+  <p class="section-intro">Save reusable wording from a mini bid, then apply it to another lead. Every project still requires a fresh price.</p>
+  <div class="project-template-list">
+    {% for template in proposal_templates %}
+      <article class="project-template-row">
+        <div>
+          <strong>{{ template.name }}</strong>
+          <span>{{ template.timeline }} - {{ template.availability }}</span>
+        </div>
+        <div class="saved-location-actions">
+          <form method="post" action="{{ url_for('delete_contractor_proposal_template', template_id=template.id) }}">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <button class="button secondary compact" type="submit">Remove</button>
+          </form>
+        </div>
+      </article>
+    {% else %}
+      <p class="empty history-empty">After sending a mini bid, save its reusable wording here.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section id="completed-work" class="work-history" aria-labelledby="completed-work-title">
+  <div class="section-heading history-heading">
+    <div>
+      <p class="eyebrow">Work outcomes</p>
+      <h2 id="completed-work-title">Matched work</h2>
+    </div>
+    <span class="count-pill">{{ stats.verified_completions }} verified</span>
+  </div>
+  <div class="history-list">
+    {% for item in completed_work %}
+      {% set completed_href = url_for('thread_detail', thread_id=item.thread_id) if item.thread_id else url_for('contractor_job_detail', job_id=item.job_id) %}
+      {% set item_reviews = reviews_by_request.get(item.id, {}) %}
+      <article class="history-row completed-work-row">
+        <div class="completed-work-summary">
+          <div class="row-meta">
+            <span>{{ item.category }}</span>
+            <span>{{ item.city }}, {{ item.state }}</span>
+            {% if item.desired_date %}<span>Target <time datetime="{{ item.desired_date }}">{{ item.desired_date|date_label }}</time></span>{% endif %}
+          </div>
+          <h3>{{ item.title }}</h3>
+          <span class="completion-chip {{ item|completion_state }}">{{ item|completion_label('contractor') }}</span>
+        </div>
+        <div class="history-row-actions">
+          <a class="button secondary compact" href="{{ completed_href }}">Details</a>
+          {% if not item.contractor_confirmed_at %}
+            <form method="post" action="{{ url_for('confirm_match_completion', request_id=item.id) }}">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <button class="button compact" type="submit">Confirm complete</button>
+            </form>
+          {% endif %}
+        </div>
+        <details class="completed-work-disclosure">
+          <summary aria-label="View project record for {{ item.title }}">
+            <span>Project record</span>
+            <small>Scope, accepted terms{% if item_reviews %} and {{ item_reviews|length }} feedback {{ "note" if item_reviews|length == 1 else "notes" }}{% endif %}</small>
+          </summary>
+          <div class="completed-work-detail-body">
+            <p>{{ item.scope_note }}</p>
+            <dl class="history-facts">
+              <div><dt>Timeline</dt><dd>{{ item.timeline }}</dd></div>
+              <div><dt>Estimate</dt><dd>{{ item.price_range }}</dd></div>
+              <div><dt>Availability</dt><dd>{{ item.availability }}</dd></div>
+            </dl>
+            <p class="help-text completion-explainer">
+              {% if item.verified_at %}Both participants confirmed this Workdoe project.{% else %}Both participants confirm independently. No rating or payment is created.{% endif %}
+            </p>
+            {% if item.verified_at %}
+              <section class="completed-feedback" aria-label="Completed-work feedback for {{ item.title }}">
+                {% if not item_reviews.get('contractor') %}
+                  {% set request_id = item.id %}
+                  {% set reviewer_role = 'contractor' %}
+                  {% include "_match_review_form.html" %}
+                {% endif %}
+                {% for review in item_reviews.values() %}
+                  {% include "_match_review_card.html" %}
+                {% endfor %}
+              </section>
+            {% endif %}
+          </div>
+        </details>
+      </article>
+    {% else %}
+      <p class="empty history-empty">Work matched on Workdoe appears here after the consumer closes the project.</p>
+    {% endfor %}
+  </div>
+  <p class="help-text history-privacy">Closed work shows the project and general service area only. Specific addresses stay private.</p>
 </section>
 {% endblock %}

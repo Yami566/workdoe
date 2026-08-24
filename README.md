@@ -1,6 +1,12 @@
 # Workdoe
 
-Workdoe is a local-first contractor lead board prototype for the DMV area. Clients post simple jobs with photos, contractors search leads and send mini bids, and approved matches open private message threads.
+Workdoe is a local project exchange for the DMV area. Consumers post projects
+with photos, contractors search leads and send mini bids, and approved matches
+open private message threads.
+
+Workdoe's first-party source, product copy, visual design, and original assets
+are proprietary under [LICENSE](LICENSE). Open-source dependencies retain their
+own licenses and notices; the repository itself is not an open-source project.
 
 ## Local Stack
 
@@ -11,6 +17,9 @@ Workdoe is a local-first contractor lead board prototype for the DMV area. Clien
 - Vendored Leaflet 1.9.4 + OpenStreetMap tiles only for the embedded map view
 - Leaflet's BSD 2-Clause license is retained at `workdoe/static/vendor/leaflet/LICENSE`
 - Deer logo mark from Tabler Icons, an MIT-licensed open-source icon set
+- Third-party provenance and retained notices are documented in
+  `THIRD_PARTY_NOTICES.md` and the machine-checked
+  `DEPENDENCY_PROVENANCE.json` ledger
 
 ## Run Locally
 
@@ -31,23 +40,26 @@ These are seeded for local testing only:
 - Contractor: `contractor@workdoe.local` / `workdoe-contractor`
 - Admin: `admin@workdoe.local` / `workdoe-admin`
 
-New client and contractor accounts can also use `/start`, a local 1-2-3 email-code flow:
+New client and contractor accounts use `/create-account`, a local 1-2-3 email-code flow. Consumers can draft a project at `/post-project` before creating an account; the 24-hour server-side draft survives verification and prefills `/jobs/new`. Photos are added only after verification. `/start` remains a compatibility alias:
 
 1. Choose whether to post a job or find work.
 2. Enter email, name, and company/household.
 3. Enter the local one-time code shown on screen.
 
-The homepage, `/login`, and `/start` screens show the live open-job map/list so users can see current leads before creating or opening an account. These entry screens support category, search, and sort controls. Public map pins refresh from `/api/jobs/open`, which returns only approximate city/ZIP-level coordinates and lead metadata.
+One account keeps one permanent consumer or contractor role during the beta.
+Project posts support optional whole-dollar minimum and maximum budgets.
+
+The homepage, `/login`, `/create-account`, and `/post-project` screens show the live open-job map/list so users can see current leads before creating or opening an account. These entry screens and the contractor lead board share a deterministic `00` all-work plus numbered `01`-`06` work-family filter, then category, search, and sort controls. Public map pins refresh from `/api/jobs/open`, which preserves the validated family filter and returns only approximate city/ZIP-level coordinates and lead metadata. Contractors can save the canonical family with their private lead view; opted-in alert matching rechecks it without embeddings or inferred classification.
 
 ## Optional Turnstile
 
-Set `WORKDOE_TURNSTILE_SITE_KEY` and `WORKDOE_TURNSTILE_SECRET_KEY` to enable Cloudflare Turnstile on account start, login, job posting, mini-bid, and report forms. Without both keys, the local prototype stays widget-free.
+Set `WORKDOE_TURNSTILE_SITE_KEY` and `WORKDOE_TURNSTILE_SECRET_KEY` to enable Cloudflare Turnstile on account start, login, public project draft, job posting, mini-bid, and report forms. Without both keys, the local prototype stays widget-free.
 
 ## Production Mode
 
 Set `WORKDOE_ENV=production` for Cloudflare deployment. Production mode requires a real `WORKDOE_SECRET_KEY`, secure cookies, disabled demo seeding, and Turnstile keys before the app starts.
 Set `WORKDOE_AUTH_PROVIDER=clerk` only when Clerk is configured; Clerk mode also requires `CLERK_FRONTEND_API_URL=https://workdoe.com/__clerk`, `CLERK_PROXY_URL=https://workdoe.com/__clerk`, `CLERK_FAPI=https://frontend-api.clerk.dev`, `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`, and `CLERK_JWT_KEY`.
-When Clerk mode is active, `/login` and `/start` mount Clerk's in-page email-code component on Workdoe pages and keep the local one-time-code form as the local fallback. The Cloudflare Worker proxies `/__clerk/*` so login API traffic also stays on `workdoe.com`. Production deploy checks require a non-secret `clerk-proxy-proof.local.json` confirming Clerk Domains uses `https://workdoe.com/__clerk`.
+When Clerk mode is active, `/login`, `/create-account`, and `/post-project` mount Clerk's in-page email-code component on Workdoe pages and keep the local one-time-code form as the local fallback. The Cloudflare Worker proxies `/__clerk/*` so login API traffic also stays on `workdoe.com`. The controlled beta uses Clerk Restricted sign-up mode; invitation tickets return to `https://workdoe.com/create-account`, where users choose one permanent Workdoe role without leaving the site. Clerk Legal Compliance must require express consent to `https://workdoe.com/terms` and `https://workdoe.com/privacy` before sign-up. Production deploy checks require a non-secret `clerk-proxy-proof.local.json` confirming those settings, the same-domain proxy, Restricted mode, the custom sign-up URL, email-code sign-in, and disabled password sign-in.
 
 ## Test
 
@@ -59,15 +71,26 @@ python -m unittest discover -s tests
 
 - Auth data lives in `users` and `password_reset_tokens`.
 - Profile data lives in `client_profiles` and `contractor_profiles`.
-- Marketplace data lives in `jobs`, `match_requests`, `threads`, and `messages`; approved-match message permissions are mirrored in the Cloudflare Worker.
+- Marketplace data lives in `jobs`, `job_drafts`, `match_requests`, `match_completions`, `threads`, and `messages`; approved-match message and two-sided completion permissions are mirrored in the Cloudflare Worker.
 - Media metadata lives in `job_photos` and `contractor_photos`.
 - Uploaded files are stored under the Flask `instance/` folder and served only through permission-checked routes.
 - Moderation data lives in `reports` and `moderation_actions`.
 
 ## Cloudflare Migration
 
+Start with [docs/README.md](docs/README.md) for the canonical documentation and
+the current release-status record.
 See [docs/cloudflare-migration.md](docs/cloudflare-migration.md).
 See [docs/cloudflare-automation-auth.md](docs/cloudflare-automation-auth.md) for the same-domain Clerk email-code login plan and Cloudflare automation targets.
+See [docs/workdoe-operations-runbook.md](docs/workdoe-operations-runbook.md)
+for incident response, credential rotation, D1/R2 recovery, data requests, and
+moderation drills. The runbook is documented; its drill table is still pending.
+See [docs/workdoe-data-inventory.md](docs/workdoe-data-inventory.md) for the
+current personal-data map, visibility boundaries, cookies, providers, and
+unresolved retention/deletion decisions.
+See [docs/workdoe-dmv-competition-commercial-launch-study-2026-08-16.md](docs/workdoe-dmv-competition-commercial-launch-study-2026-08-16.md)
+for the public-source competitor analysis, DMV service-entry decisions, launch
+economics, 90-day evidence plan, and commercial beta gates.
 
 Refresh Cloudflare handoff artifacts with:
 
@@ -75,15 +98,30 @@ Refresh Cloudflare handoff artifacts with:
 python scripts\prepare_cloudflare_release.py
 ```
 
-This also writes `cloudflare/wrangler.jsonc` and `cloudflare/.dev.vars.example`.
+This verifies the immutable `0001_initial.sql` baseline, hashes the complete D1
+migration chain, and writes `cloudflare/wrangler.jsonc`, the release manifest,
+and `cloudflare/.dev.vars.example`.
 If `cloudflare/wrangler.jsonc` already has real D1 IDs, release prep preserves them.
 The first Cloudflare Worker scaffold is in `cloudflare/worker/entry.py` for health
 checks, cron automation, queue consumers, Clerk session/webhook intake, the `/__clerk`
-same-origin Clerk Frontend API proxy, the public
-jobs map API, the same-domain `/`, `/login`, and `/start` Clerk entry shell, authenticated post-login app shells for dashboard/lead/post-job-with-photos/client-bid-review/job-photo-upload/contractor-profile/message/admin routes, signed-in job detail API with contractor ZIP redaction, contractor profile updates, privacy-safe public contractor profile pages and APIs, contractor lead board data, contractor mini-bid dashboard data, client job dashboard data, client mini-bid review data, client job creation with Turnstile and private photo upload, client close/reopen controls, contractor mini-bid requests
+same-origin Clerk Frontend API proxy, the public project-draft handoff, the public
+jobs map API, the same-domain `/`, `/login`, and `/create-account` Clerk entry shell, authenticated post-login app shells for dashboard/lead/post-job-with-photos/client-bid-review/job-photo-upload/contractor-profile/message/admin routes, signed-in job detail API with contractor ZIP redaction, contractor profile updates, privacy-safe public contractor profile pages and APIs, contractor lead board data, contractor mini-bid dashboard data, client job dashboard data, client mini-bid review data, client job creation with Turnstile and private photo upload, client close/reopen controls, contractor mini-bid requests
 with duplicate checks, client bid approval/rejection with private thread
 creation, approved-match message APIs, signed-in moderation report intake, admin
-moderation actions, and private R2 media upload/serving routes.
+moderation actions, and private Cloudflare Images-sanitized R2 media
+upload/serving routes. Production uploads are decoded through the `IMAGES`
+binding, resized to at most 2400 pixels per side, flattened to one frame,
+transcoded to WebP with metadata discarded, and only then written to R2. The
+upload path fails closed when Images is unavailable; enabling a Cloudflare
+Images Paid subscription is therefore a production prerequisite.
+Authenticated Worker writes also pass through Cloudflare's `WRITE_RATE_LIMITER`
+binding at 40 changes per user per 60 seconds. Authentication keeps its stricter
+email/IP limits, and the local reference app retains its own development limiter.
+Project, ordinary-message, moderation-report, and private-media creates also use
+24-hour persisted idempotency records. Worker browser forms generate request
+keys with Web Crypto; D1 and SQLite retain only SHA-256 hashes plus generic
+resource references, so a retry returns the original record instead of creating
+a duplicate.
 
 Check the local Cloudflare handoff without deploying:
 
@@ -142,10 +180,11 @@ npm run cf:resources:plan
 npm run cf:resources:apply
 npm run cf:secrets:evidence
 npm run cf:clerk:proof
+npm run cf:clerk:proof:confirm
 npm run cf:deploy:plan
 npm run cf:deploy
 npm run github:deploy:plan
-npm run github:deploy
+npm run github:deploy -- --confirm-clerk-proxy --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent
 npm run launch:handoff
 npm run launch:handoff:shareable
 npm run launch:handoff:write
@@ -157,8 +196,10 @@ npm run launch:smoke:strict
 ```
 
 GitHub Actions is wired through `.github/workflows/cloudflare-deploy.yml`.
-Pushes to `main` or `master` run tests and preflight only. Production deployment
-is manual-only through the `Workdoe Cloudflare Release` workflow and requires:
+Pushes to `main` or `master` and pull requests run full Ruff, dependency
+provenance verification, tests, Cloudflare preflight, Worker bundle validation,
+and a local Worker smoke test. Production deployment is manual-only through the
+`Workdoe Cloudflare Release` workflow and requires:
 
 - production environment secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`;
 - workflow dispatch from the `main` branch;
@@ -187,7 +228,7 @@ only after the live launch doctor is ready:
 
 ```powershell
 npm run github:deploy:plan
-npm run github:deploy
+npm run github:deploy -- --confirm-clerk-proxy --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent
 ```
 
 Generate a redacted launch handoff checklist from the same live gates:
@@ -222,6 +263,24 @@ npm run launch:smoke
 npm run launch:smoke:strict
 ```
 
+The smoke gate verifies HTTPS, health, public job data, security headers,
+Safety/Privacy/Terms pages, the social share card, Clerk production auth, and
+the same-domain Clerk proxy. Missing discovery files are reported as warnings
+until the controlled-beta indexing and security-contact policy is approved.
+
+Install the pinned local audit tools once, then repeat dependency, static
+Python, npm, and secret-baseline checks without spending a GitHub Actions run:
+
+```powershell
+npm run security:install
+npm run security:all
+```
+
+The secret gate scans Git-tracked and non-ignored files only. The checked-in
+baseline contains reviewed test credentials, dependency-integrity hashes, and
+secret-variable names, never local `.dev.vars`, Wrangler state, or secret
+values. A new finding fails the gate and must be investigated before release.
+
 Set each required Worker secret in Cloudflare with Wrangler's secure prompt:
 
 ```powershell
@@ -245,10 +304,10 @@ python scripts\cloudflare_resource_bootstrap.py --execute --yes --no-secret-prob
 cd cloudflare
 python ..\scripts\cloudflare_secret_evidence.py --execute --yes --output ..\cloudflare-secret-list.local.json
 cd ..
-python scripts\cloudflare_clerk_proxy_proof.py --confirm
+python scripts\cloudflare_clerk_proxy_proof.py --confirm --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent
 python scripts\cloudflare_release_evidence.py --json
 python scripts\cloudflare_readiness.py --strict-production --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
 python scripts\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
 python scripts\github_deploy_dispatch.py
-python scripts\github_deploy_dispatch.py --execute --yes
+python scripts\github_deploy_dispatch.py --execute --yes --confirm-clerk-proxy --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent
 ```

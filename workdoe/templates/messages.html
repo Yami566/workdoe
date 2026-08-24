@@ -6,37 +6,47 @@
   <h1>Messages</h1>
 </section>
 
-<section class="dashboard-metrics compact-metrics" aria-label="Message summary">
-  <div class="metric-card">
-    <span>Threads</span>
-    <strong>{{ stats.threads }}</strong>
-  </div>
-  <div class="metric-card">
-    <span>Messages</span>
-    <strong>{{ stats.messages }}</strong>
-  </div>
-</section>
+<nav class="work-view-tabs message-view-tabs" aria-label="Message thread view">
+  {% for item in thread_view_links %}
+    {% set count = stats.threads if item.value == "all" else (stats.reply_threads if item.value == "reply" else stats.unread_threads) %}
+    <a class="work-view-tab{% if thread_view == item.value %} is-active{% endif %}" href="{{ item.url }}" {% if thread_view == item.value %}aria-current="page"{% endif %}>
+      <span>{{ item.label }}</span>
+      <strong>{{ count }}</strong>
+    </a>
+  {% endfor %}
+</nav>
 
-<section class="job-list">
+<section class="message-thread-list" aria-label="Message threads">
   {% for thread in threads %}
-    <a class="job-row link-row" href="{{ url_for('thread_detail', thread_id=thread.id) }}" aria-label="Open message thread for {{ thread.title }}">
-      <span>
-        <span class="row-meta">
-          <span>{{ thread.category }}</span>
-          <span>{{ thread.city }}, {{ thread.state }}</span>
-          <span>{{ thread.message_count|message_count_label }}</span>
-          {% if thread.last_message_at %}<time datetime="{{ thread.last_message_at }}">{{ thread.last_message_at|datetime_label }}</time>{% endif %}
+    {% set other_name = thread.contractor_name if g.user.role == "client" else thread.client_name %}
+    <a class="message-thread-row link-row{% if thread.unread_count %} has-unread{% elif thread.needs_reply %} needs-reply{% endif %}" href="{{ url_for('thread_detail', thread_id=thread.id) }}" aria-label="Open message thread for {{ thread.title }}, {{ thread.message_count|message_count_label }}{% if thread.unread_count %}, {{ thread.unread_count }} unread{% elif thread.needs_reply %}, needs reply{% endif %}">
+      <span class="message-thread-copy">
+        <span class="message-thread-topline">
+          <strong>{{ other_name }}</strong>
+          <span class="message-thread-state">
+            {% if thread.unread_count %}<span class="unread-chip">{{ thread.unread_count }} new</span>{% elif thread.needs_reply %}<span class="message-reply-cue">Needs reply</span>{% endif %}
+            {% if thread.last_message_at %}<time datetime="{{ thread.last_message_at }}">{{ thread.last_message_at|datetime_label }}</time>{% endif %}
+          </span>
         </span>
-        <strong>{{ thread.title }}</strong>
-        <small>{{ thread.client_name }} and {{ thread.contractor_name }}</small>
+        <span class="message-thread-project">{{ thread.title }}</span>
         <small class="thread-preview">{{ thread.last_message or "No messages yet" }}</small>
+        <small class="message-thread-facts">{{ thread.category }} / {{ thread.city }}, {{ thread.state }}</small>
       </span>
-      <span class="button secondary compact">Open</span>
     </a>
   {% else %}
     <div class="empty-state">
-      <h2>No message threads yet</h2>
-      <p>Approve a mini bid or wait for a client approval to start messaging.</p>
+      {% if thread_view == "reply" %}
+        <h2>No replies waiting</h2>
+        <p>Every conversation is waiting on the other person.</p>
+        <a class="button secondary" href="{{ url_for('message_threads') }}">View all messages</a>
+      {% elif thread_view == "unread" %}
+        <h2>No unread messages</h2>
+        <p>You are all caught up.</p>
+        <a class="button secondary" href="{{ url_for('message_threads') }}">View all messages</a>
+      {% else %}
+        <h2>No message threads yet</h2>
+        <p>Approve a mini bid or wait for a client approval to start messaging.</p>
+      {% endif %}
     </div>
   {% endfor %}
 </section>

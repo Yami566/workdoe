@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from urllib.parse import urlencode
 
+from job_posts import budget_label
+from service_taxonomy import GROUP_BY_SLUG, SERVICE_BY_SLUG, service_label
 
 FILTER_QUERY_MAX_LENGTH = 80
 DEFAULT_JOB_SORT = "newest"
@@ -60,8 +62,19 @@ def public_job_filters_from_query(params: dict) -> dict[str, str]:
     category = first_query_value(params, "category")
     if category not in JOB_CATEGORIES:
         category = ""
+    family = compact_spaces(first_query_value(params, "family"))
+    if family not in GROUP_BY_SLUG:
+        family = ""
+    service = compact_spaces(first_query_value(params, "service"))
+    selected_service = SERVICE_BY_SLUG.get(service)
+    if not selected_service or family and selected_service["group_slug"] != family:
+        service = ""
+    elif not family:
+        family = selected_service["group_slug"]
     return {
         "category": category,
+        "family": family,
+        "service": service,
         "q": compact_spaces(first_query_value(params, "q"))[:FILTER_QUERY_MAX_LENGTH],
         "sort": normalize_public_sort(first_query_value(params, "sort")),
     }
@@ -93,24 +106,31 @@ def public_job_url(job_id, target: str) -> str:
     job_id_text = str(job_id or "")
     if job_id_text.startswith("demo-"):
         args = {"intent": "find-work", "demo": job_id_text}
-        return "/login?" + urlencode({"next": "/?" + urlencode({"job_id": job_id_text})}, safe="/?=") if normalize_public_target(target) == "login" else "/start?" + urlencode(args)
+        return "/login?" + urlencode({"next": "/?" + urlencode({"job_id": job_id_text})}, safe="/?=") if normalize_public_target(target) == "login" else "/create-account?" + urlencode(args)
     if normalize_public_target(target) == "login":
         return "/login?" + urlencode({"next": f"/jobs/{job_id}"}, safe="/")
-    return "/start?" + urlencode({"intent": "find-work", "job_id": str(job_id)})
+    return "/create-account?" + urlencode({"intent": "find-work", "job_id": str(job_id)})
 
 
 def public_job_payload(row, target: str = "start") -> dict:
     job_id = row_value(row, "id")
     is_demo = bool(row_value(row, "is_demo", False))
-    action_label = "Sign in" if normalize_public_target(target) == "login" else "Join to respond"
-    return {
+    action_label = "Sign in" if normalize_public_target(target) == "login" else "Create account to respond"
+    payload = {
         "id": job_id,
         "title": row_value(row, "title", ""),
         "category": row_value(row, "category", ""),
+        "service_group_slug": row_value(row, "service_group_slug", ""),
+        "service_slug": row_value(row, "service_slug", ""),
+        "license_preference": bool(
+            int(row_value(row, "license_preference", 0) or 0)
+        ),
+        "service_name": service_label(
+            row_value(row, "service_slug", ""), row_value(row, "category", "")
+        ),
         "city": row_value(row, "city", ""),
         "state": row_value(row, "state", ""),
-        "description": row_value(row, "description", "") or "Project details are available after sign-in.",
-        "budget": row_value(row, "budget", "") or "Budget not provided",
+        "budget": budget_label(row),
         "desired_date": row_value(row, "desired_date", "") or "",
         "photo_count": int(row_value(row, "photo_count", 0) or 0),
         "lat": row_value(row, "approx_lat"),
@@ -121,6 +141,9 @@ def public_job_payload(row, target: str = "start") -> dict:
         "is_demo": is_demo,
         "sample_label": "Sample project" if is_demo else "Open project",
     }
+    if is_demo:
+        payload["description"] = row_value(row, "description", "")
+    return payload
 
 
 def public_jobs_payload(
@@ -128,6 +151,10 @@ def public_jobs_payload(
     filters: dict[str, str],
     target: str = "start",
     view: str = "all",
+    *,
+    viewport: dict[str, float] | None = None,
+    next_cursor: str = "",
+    truncated: bool = False,
 ) -> dict:
     map_jobs = [
         public_job_payload(row, target=target)
@@ -137,7 +164,11 @@ def public_jobs_payload(
     demo_count = sum(1 for job in map_jobs if job["is_demo"])
     return {
         "count": len(map_jobs),
+        "result_count": len(map_jobs),
         "jobs": map_jobs,
+        "next_cursor": next_cursor,
+        "truncated": bool(truncated),
+        "viewport": viewport,
         "demo_count": demo_count,
         "live_count": len(map_jobs) - demo_count,
         "filters": filters,

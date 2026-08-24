@@ -1,0 +1,22 @@
+<nav class="mobile-task-nav" aria-label="Primary tasks">
+  {% if g.user and g.user.role == 'client' %}
+    <a href="{{ url_for('home') }}" {% if request.endpoint == 'home' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/layout-board-split.svg') }}" alt=""><span>Explore</span></a>
+    <a href="{{ url_for('new_job') }}" {% if request.endpoint == 'new_job' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/home-up.svg') }}" alt=""><span>Post</span></a>
+    <a class="nav-message-link" href="{{ url_for('message_threads') }}" {% if request.endpoint in ['message_threads', 'thread_detail'] %}aria-current="page"{% endif %}{% if g.unread_message_count %} aria-label="Messages, {{ g.unread_message_count }} unread"{% endif %}><span class="mobile-nav-icon"><img src="{{ url_for('static', filename='vendor/tabler-icons/dots.svg') }}" alt="">{% if g.unread_message_count %}<span class="nav-unread-count" aria-hidden="true">{{ '99+' if g.unread_message_count > 99 else g.unread_message_count }}</span>{% endif %}</span><span>Messages</span></a>
+    <a href="{{ url_for('client_dashboard') }}" {% if request.endpoint in ['client_dashboard', 'client_job_detail', 'edit_job', 'client_requests'] %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt=""><span>Profile</span></a>
+  {% elif g.user and g.user.role == 'contractor' %}
+    <a href="{{ url_for('leads') }}" {% if request.endpoint in ['leads', 'contractor_job_detail'] %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/layout-board-split.svg') }}" alt=""><span>Explore</span></a>
+    <a href="{{ url_for('contractor_dashboard') }}" {% if request.endpoint == 'contractor_dashboard' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/tool.svg') }}" alt=""><span>Bids</span></a>
+    <a class="nav-message-link" href="{{ url_for('message_threads') }}" {% if request.endpoint in ['message_threads', 'thread_detail'] %}aria-current="page"{% endif %}{% if g.unread_message_count %} aria-label="Messages, {{ g.unread_message_count }} unread"{% endif %}><span class="mobile-nav-icon"><img src="{{ url_for('static', filename='vendor/tabler-icons/dots.svg') }}" alt="">{% if g.unread_message_count %}<span class="nav-unread-count" aria-hidden="true">{{ '99+' if g.unread_message_count > 99 else g.unread_message_count }}</span>{% endif %}</span><span>Messages</span></a>
+    <a href="{{ url_for('contractor_profile') }}" {% if request.endpoint in ['contractor_profile', 'contractor_public_profile'] %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt=""><span>Profile</span></a>
+  {% elif g.user and g.user.role == 'admin' %}
+    <a href="{{ url_for('home') }}" {% if request.endpoint == 'home' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/layout-board-split.svg') }}" alt=""><span>Explore</span></a>
+    <a href="{{ url_for('admin_dashboard') }}" {% if request.endpoint == 'admin_dashboard' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/lock.svg') }}" alt=""><span>Admin</span></a>
+    <a href="{{ url_for('account') }}" {% if request.endpoint == 'account' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt=""><span>Account</span></a>
+  {% else %}
+    <a href="{{ url_for('home') }}" {% if request.endpoint == 'home' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/layout-board-split.svg') }}" alt=""><span>Explore</span></a>
+    <a href="{{ url_for('post_project') }}" {% if request.endpoint == 'post_project' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/home-up.svg') }}" alt=""><span>Post</span></a>
+    <a href="{{ url_for('login') }}" {% if request.endpoint == 'login' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/lock.svg') }}" alt=""><span>Sign in</span></a>
+    <a href="{{ url_for('create_account') }}" {% if request.endpoint in ['start', 'create_account', 'verify_start'] %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/sparkles.svg') }}" alt=""><span>Join</span></a>
+  {% endif %}
+</nav>

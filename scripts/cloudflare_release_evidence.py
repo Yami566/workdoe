@@ -5,7 +5,6 @@ import json
 import sys
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 DEFAULT_SECRET_LIST_PATH = REPO_ROOT / "cloudflare-secret-list.local.json"
@@ -13,7 +12,7 @@ DEFAULT_SECRET_LIST_PATH = REPO_ROOT / "cloudflare-secret-list.local.json"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from cloudflare_readiness import (  # noqa: E402
+from cloudflare_readiness import (
     DEFAULT_CLERK_PROXY_PROOF_PATH,
     REQUIRED_SECRETS,
     clerk_proxy_proof_error,
@@ -66,7 +65,7 @@ def run_release_evidence(
         "clerk_proxy_proof_json": str(clerk_proxy_proof_json) if clerk_proxy_proof_json else "",
         "next_steps": [
             "python scripts\\cloudflare_secret_evidence.py --execute --yes",
-            "python scripts\\cloudflare_clerk_proxy_proof.py --confirm",
+            "python scripts\\cloudflare_clerk_proxy_proof.py --confirm --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent",
             "python scripts\\cloudflare_release_evidence.py --json",
         ],
     }

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Verify Email - Workdoe{% endblock %}
 {% block content %}
-<section class="auth-layout start-layout verify-layout">
+<section class="auth-layout start-layout verify-layout" data-dialog-fragment>
   <div>
     <p class="eyebrow">Verify email</p>
     <h1>Enter the one-time code.</h1>
@@ -34,7 +34,7 @@
       </div>
     {% endif %}
     <button class="button" type="submit">Continue to Workdoe</button>
-    <a class="button secondary" href="{{ url_for('login', next=login_next_url) if login_next_url else (url_for('start', intent=login_code.intent, job_id=selected_job.id) if selected_job else url_for('start', intent=login_code.intent)) }}">{{ "Back to sign in" if login_next_url else "Start over" }}</a>
+    <a class="button secondary" href="{{ url_for('login', next=login_next_url) if login_next_url else (url_for('create_account', intent=login_code.intent, job_id=selected_job.id) if selected_job else url_for('create_account', intent=login_code.intent)) }}">{{ "Back to sign in" if login_next_url else "Start over" }}</a>
   </form>
 </section>
 {% endblock %}

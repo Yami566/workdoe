@@ -14,6 +14,26 @@ on:
         description: Type DEPLOY to run the production Cloudflare deployment.
         required: true
         type: string
+      clerk_proxy_confirmed:
+        description: Confirm Clerk Domains shows the Workdoe same-domain proxy.
+        required: true
+        type: boolean
+        default: false
+      restricted_signup_confirmed:
+        description: Confirm Clerk Restricted sign-up mode is enabled.
+        required: true
+        type: boolean
+        default: false
+      email_code_only_confirmed:
+        description: Confirm email-code sign-in is enabled and passwords are disabled.
+        required: true
+        type: boolean
+        default: false
+      legal_consent_confirmed:
+        description: Confirm Clerk requires express consent to Workdoe Terms and Privacy.
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -37,6 +57,10 @@ jobs:
         run: |
           test "${{ github.ref }}" = "refs/heads/main"
           test "${{ inputs.deploy }}" = "DEPLOY"
+          test "${{ inputs.clerk_proxy_confirmed }}" = "true"
+          test "${{ inputs.restricted_signup_confirmed }}" = "true"
+          test "${{ inputs.email_code_only_confirmed }}" = "true"
+          test "${{ inputs.legal_consent_confirmed }}" = "true"
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -52,11 +76,31 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt
 
+      - name: Install Python quality gate
+        run: python -m pip install ruff==0.16.4
+
+      - name: Install release security tools
+        if: github.event_name == 'workflow_dispatch'
+        run: python -m pip install -r requirements-audit.txt
+
       - name: Install Wrangler
         run: npm ci
 
+      - name: Verify dependency provenance
+        run: npm run provenance:verify
+
+      - name: Run full Python quality gate
+        run: npm run lint
+
+      - name: Run release security gates
+        if: github.event_name == 'workflow_dispatch'
+        run: npm run security:all
+
       - name: Run local tests
         run: npm test
+
+      - name: Verify D1 public query indexes
+        run: npm run cf:d1:query-plan
 
       - name: Run Cloudflare preflight
         run: npm run cf:preflight
@@ -144,11 +188,36 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
 
+      - name: Capture pre-deployment recovery point
+        run: |
+          set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/workdoe-release-evidence"
+          mkdir -p "$evidence_dir"
+          printf 'github_sha=%s\ncaptured_at=%s\n' \
+            "$GITHUB_SHA" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            > "$evidence_dir/release-before.txt"
+          npx wrangler d1 time-travel info workdoe \
+            --config cloudflare/wrangler.jsonc \
+            > "$evidence_dir/d1-time-travel-before.txt" 2>&1
+          npx wrangler deployments status --json \
+            --config cloudflare/wrangler.jsonc \
+            > "$evidence_dir/worker-deployment-before.json"
+          previous_version="$(jq -er '.versions | max_by(.percentage) | .version_id' \
+            "$evidence_dir/worker-deployment-before.json")"
+          printf '%s\n' "$previous_version" \
+            > "$evidence_dir/worker-rollback-version.txt"
+          printf 'npx wrangler rollback %s --message "Rollback Workdoe release %s" --config cloudflare/wrangler.jsonc\n' \
+            "$previous_version" "$GITHUB_SHA" \
+            > "$evidence_dir/worker-rollback-command.txt"
+          test -s "$evidence_dir/d1-time-travel-before.txt"
+          test -s "$evidence_dir/worker-deployment-before.json"
+          sha256sum "$evidence_dir"/* > "$evidence_dir/checksums-before.sha256"
+
       - name: Capture sanitized Worker secret names
         run: npm run cf:secrets:evidence
 
-      - name: Record same-domain Clerk proxy release proof
-        run: npm run cf:clerk:proof
+      - name: Record operator-confirmed Clerk release proof
+        run: npm run cf:clerk:proof:confirm -- --checked-by "github:${{ github.actor }}"
 
       - name: Validate release evidence
         run: npm run cf:release:evidence
@@ -157,4 +226,32 @@ jobs:
         run: npm run cf:deploy:plan
 
       - name: Deploy guarded production release
-        run: npm run cf:deploy
+        run: |
+          set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/workdoe-release-evidence"
+          npm run cf:deploy 2>&1 | tee "$evidence_dir/production-deploy.log"
+          test -s "$evidence_dir/production-deploy.log"
+
+      - name: Capture deployed Worker state
+        run: |
+          set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/workdoe-release-evidence"
+          npx wrangler deployments status --json \
+            --config cloudflare/wrangler.jsonc \
+            > "$evidence_dir/worker-deployment-after.json"
+          printf 'github_sha=%s\ncaptured_at=%s\n' \
+            "$GITHUB_SHA" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            > "$evidence_dir/release-after.txt"
+          test -s "$evidence_dir/worker-deployment-after.json"
+          sha256sum "$evidence_dir/worker-deployment-after.json" \
+            "$evidence_dir/release-after.txt" \
+            > "$evidence_dir/checksums-after.sha256"
+
+      - name: Retain release recovery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: workdoe-release-recovery-${{ github.sha }}
+          path: ${{ runner.temp }}/workdoe-release-evidence
+          if-no-files-found: error
+          retention-days: 30

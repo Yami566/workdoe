@@ -1,78 +1,128 @@
 {% extends "base.html" %}
 {% block title %}Message Thread - Workdoe{% endblock %}
 {% block content %}
-<section class="dashboard-header">
+<section class="dashboard-header thread-dashboard-header">
   <div>
     <p class="eyebrow">Private thread</p>
     <h1>{{ thread.title }}</h1>
     <div class="row-meta thread-meta">
-      <span>{{ thread.client_name }} and {{ thread.contractor_name }}</span>
+      <span>With {{ thread.contractor_name if g.user.role == 'client' else thread.client_name }}</span>
       <span>{{ thread.category }}</span>
       <span>{{ thread.city }}, {{ thread.state }}</span>
-      <span>{{ messages|length|message_count_label }}</span>
     </div>
   </div>
   {% if can_reply %}
-    <a class="button secondary" href="{{ url_for('message_threads') }}">All messages</a>
+    <a class="button secondary" href="{{ url_for('message_threads') }}">Inbox</a>
   {% else %}
     <a class="button secondary" href="{{ url_for('admin_dashboard') }}">Admin</a>
   {% endif %}
 </section>
 
-<section class="message-shell">
-  <div class="message-list">
-    {% for message in messages %}
-      <article class="message {% if message.sender_id == g.user.id %}mine{% endif %}{% if message.is_hidden %} is-hidden{% endif %}">
-        <div class="message-meta">
-          <strong>{{ message.display_name }}</strong>
-          <span>
-            {% if message.is_hidden %}<span class="status hidden">hidden</span>{% endif %}
-            <time datetime="{{ message.created_at }}">{{ message.created_at|datetime_label }}</time>
-          </span>
-        </div>
-        <p class="preline">{{ message.body }}</p>
-        {% if can_reply %}
-          <details class="message-report">
-            <summary>Report message</summary>
-            <form class="inline-report" method="post" action="{{ url_for('report_content') }}">
-              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-              <input type="hidden" name="target_type" value="message">
-              <input type="hidden" name="target_id" value="{{ message.id }}">
-              <label for="message-report-reason-{{ message.id }}">
-                <span class="sr-only">Report message reason</span>
-                <input id="message-report-reason-{{ message.id }}" name="reason" maxlength="{{ report_reason_max }}" placeholder="Report reason" autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required>
-              </label>
-              {% with action='report' %}{% include "_turnstile.html" %}{% endwith %}
-              <button class="button secondary compact" type="submit" aria-label="Report message from {{ message.display_name }}">Report</button>
-            </form>
-          </details>
-        {% endif %}
-      </article>
-    {% else %}
-      <p class="empty">No messages yet.</p>
-    {% endfor %}
-  </div>
+<section class="message-workspace{% if not can_reply %} admin-message-workspace{% endif %}">
   {% if can_reply %}
-    {% set message_field_errors = message_error_feedback.fields %}
-    <form class="message-form" method="post" aria-label="New message" {% if message_error_feedback.summary %}aria-describedby="message-form-errors"{% endif %}>
-      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-      {% if message_error_feedback.summary %}
-        <section id="message-form-errors" class="form-error-summary" role="alert" aria-labelledby="message-form-errors-title">
-          <h2 id="message-form-errors-title">Fix {{ message_error_feedback.summary|length }} item{{ "" if message_error_feedback.summary|length == 1 else "s" }}</h2>
-          <ul>
-            {% for item in message_error_feedback.summary %}
-              <li>{% if item.field_id %}<a href="#{{ item.field_id }}">{{ item.message }}</a>{% else %}{{ item.message }}{% endif %}</li>
-            {% endfor %}
-          </ul>
-        </section>
-      {% endif %}
-      <label for="message-body">
-        New message
-        <textarea id="message-body" name="body" rows="4" maxlength="{{ message_max }}" placeholder="Share timing, access, or next steps." autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required {% if message_field_errors.body %}aria-invalid="true" aria-describedby="message-body-error"{% endif %}>{{ draft_body }}</textarea>
-        {% if message_field_errors.body %}<span id="message-body-error" class="field-error">{{ message_field_errors.body[0] }}</span>{% endif %}
-      </label>
-      <button class="button full" type="submit" aria-label="Send message">Send</button>
-    </form>
+    <aside class="message-inbox-rail" aria-label="Conversations">
+      <div class="message-inbox-heading">
+        <strong>Conversations</strong>
+        <a href="{{ url_for('message_threads') }}">View all</a>
+      </div>
+      <nav class="message-inbox-list" aria-label="Approved match conversations">
+        {% for inbox_thread in inbox_threads %}
+          {% set inbox_other_name = inbox_thread.contractor_name if g.user.role == "client" else inbox_thread.client_name %}
+          <a class="message-inbox-link{% if inbox_thread.id == thread.id %} is-active{% endif %}{% if inbox_thread.unread_count %} has-unread{% elif inbox_thread.needs_reply %} needs-reply{% endif %}" href="{{ url_for('thread_detail', thread_id=inbox_thread.id) }}" {% if inbox_thread.id == thread.id %}aria-current="page"{% endif %} aria-label="Open conversation for {{ inbox_thread.title }}{% if inbox_thread.unread_count %}, {{ inbox_thread.unread_count }} unread{% elif inbox_thread.needs_reply %}, needs reply{% endif %}">
+            <span class="message-inbox-topline">
+              <strong>{{ inbox_thread.title }}</strong>
+              {% if inbox_thread.unread_count %}<span class="unread-chip">{{ inbox_thread.unread_count }} new</span>{% elif inbox_thread.needs_reply %}<span class="message-reply-cue">Reply</span>{% endif %}
+            </span>
+            <small>With {{ inbox_other_name }}</small>
+            <small class="thread-preview">{{ inbox_thread.last_message or "No messages yet" }}</small>
+          </a>
+        {% endfor %}
+      </nav>
+    </aside>
   {% endif %}
+  <section class="message-shell thread-message-shell">
+    <aside class="thread-match-context" aria-label="Approved match summary">
+      {% set provider = thread.provider %}
+      {% set provider_reputation = provider.reputation %}
+      {% set provider_trust = provider_reputation.trust_record %}
+      <div class="thread-match-heading">
+        <p class="eyebrow">Approved match</p>
+        {% if provider %}
+          <div class="thread-provider-summary">
+            <a href="{{ provider.profile_url }}">{{ provider.name }}</a>
+            <span class="thread-provider-signals" aria-label="Chosen provider work and reviewed-record signals">
+              <small class="thread-provider-signal"><img src="{{ url_for('static', filename='vendor/tabler-icons/sparkles.svg') }}" alt=""><span>{{ provider_reputation.level_label }} · {{ provider_reputation.verified_completions }} completed {{ "project" if provider_reputation.verified_completions == 1 else "projects" }}</span></small>
+              <small class="thread-provider-signal{% if provider_trust.state != 'none' %} is-reviewed{% else %} is-muted{% endif %}">{% if provider_trust.state != 'none' %}<img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt="">{% endif %}<span>{{ provider_trust.label }}</span></small>
+            </span>
+          </div>
+        {% endif %}
+      </div>
+      {% if can_reply %}
+        <a class="button secondary compact" href="{{ url_for('client_job_detail', job_id=thread.job_id) if g.user.role == 'client' else url_for('contractor_job_detail', job_id=thread.job_id) }}">View project</a>
+      {% endif %}
+      <dl class="thread-match-facts">
+        <div><dt>Price</dt><dd>{{ thread.price_range or "Not provided" }}</dd></div>
+        <div><dt>Timeline</dt><dd>{{ thread.timeline or "Not provided" }}</dd></div>
+        <div><dt>Availability</dt><dd>{{ thread.availability or "Not provided" }}</dd></div>
+      </dl>
+      {% if provider %}<p class="thread-trust-limit">Public-source status only. Confirm project eligibility directly.</p>{% endif %}
+    </aside>
+    <div class="message-list thread-message-list" aria-label="{{ messages|length|message_count_label }}">
+      {% for message in messages %}
+        <article class="message {% if message.sender_id == g.user.id %}mine{% endif %}{% if message.is_hidden %} is-hidden{% endif %}">
+          <div class="message-meta">
+            <strong>{{ message.display_name }}</strong>
+            <span>
+              {% if message.is_hidden %}<span class="status hidden">hidden</span>{% endif %}
+              <time datetime="{{ message.created_at }}">{{ message.created_at|datetime_label }}</time>
+            </span>
+          </div>
+          <p class="preline">{{ message.body }}</p>
+          {% if can_reply %}
+            <details class="message-report">
+              <summary>Report message</summary>
+              <form class="inline-report" method="post" action="{{ url_for('report_content') }}">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="idempotency_key" value="{{ new_idempotency_key() }}">
+                <input type="hidden" name="target_type" value="message">
+                <input type="hidden" name="target_id" value="{{ message.id }}">
+                <label for="message-report-reason-{{ message.id }}">
+                  <span class="sr-only">Report message reason</span>
+                  <input id="message-report-reason-{{ message.id }}" name="reason" maxlength="{{ report_reason_max }}" placeholder="Report reason" autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required>
+                </label>
+                {% with action='report' %}{% include "_turnstile.html" %}{% endwith %}
+                <button class="button secondary compact" type="submit" aria-label="Report message from {{ message.display_name }}">Report</button>
+              </form>
+            </details>
+          {% endif %}
+        </article>
+      {% else %}
+        <p class="empty">No messages yet.</p>
+      {% endfor %}
+    </div>
+    {% if can_reply %}
+      {% set message_field_errors = message_error_feedback.fields %}
+      <form class="message-form thread-message-form" method="post" aria-label="New message" {% if message_error_feedback.summary %}aria-describedby="message-form-errors"{% endif %}>
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="idempotency_key" value="{{ request.form.get('idempotency_key') or new_idempotency_key() }}">
+        {% if message_error_feedback.summary %}
+          <section id="message-form-errors" class="form-error-summary" role="alert" aria-labelledby="message-form-errors-title">
+            <h2 id="message-form-errors-title">Fix {{ message_error_feedback.summary|length }} item{{ "" if message_error_feedback.summary|length == 1 else "s" }}</h2>
+            <ul>
+              {% for item in message_error_feedback.summary %}
+                <li>{% if item.field_id %}<a href="#{{ item.field_id }}">{{ item.message }}</a>{% else %}{{ item.message }}{% endif %}</li>
+              {% endfor %}
+            </ul>
+          </section>
+        {% endif %}
+        <label for="message-body">
+          New message
+          <textarea id="message-body" name="body" rows="3" maxlength="{{ message_max }}" placeholder="Share timing, access, or next steps." autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required {% if message_field_errors.body %}aria-invalid="true" aria-describedby="message-body-error"{% endif %}>{{ draft_body }}</textarea>
+          {% if message_field_errors.body %}<span id="message-body-error" class="field-error">{{ message_field_errors.body[0] }}</span>{% endif %}
+        </label>
+        <button class="button full" type="submit" aria-label="Send message">Send</button>
+      </form>
+    {% endif %}
+  </section>
 </section>
 {% endblock %}

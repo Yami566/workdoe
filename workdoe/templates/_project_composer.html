@@ -1,0 +1,253 @@
+{% from "_scope_questions.html" import scope_panel %}
+<div class="project-composer-head wide">
+  <div>
+    <p class="eyebrow" data-project-step-label>Step 1 of 6</p>
+    <h2 data-project-step-title>Choose a work family</h2>
+  </div>
+  <progress value="1" max="6" data-project-progress aria-label="Project posting progress">1 of 6</progress>
+</div>
+
+<fieldset class="project-composer-step wide" data-project-step="1" data-step-title="Choose a work family">
+  <legend>What kind of work is this?</legend>
+  <p class="help-text" id="service-family-help">Pick the closest fit. You can change it before posting.</p>
+  <div class="service-family-grid" aria-describedby="service-family-help">
+    {% for group in service_groups %}
+      <label class="service-family-option" for="service-family-{{ group.slug }}">
+        <input id="service-family-{{ group.slug }}" type="radio" name="service_group_slug" value="{{ group.slug }}" data-group-name="{{ group.name }}" data-group-description="{{ group.description }}" data-group-icon="{{ url_for('static', filename='vendor/tabler-icons/' ~ group.icon) }}" data-project-choice-advance {% if form.service_group_slug == group.slug %}checked{% endif %} required>
+        <span class="service-family-visual" aria-hidden="true">
+          <span class="service-family-number">{{ "%02d"|format(loop.index) }}</span>
+          <img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ group.icon) }}" alt="">
+        </span>
+        <span class="service-family-copy">
+          <strong>{{ group.name }}</strong>
+          <small>{{ group.description }}</small>
+        </span>
+      </label>
+    {% endfor %}
+  </div>
+  {% if field_errors.service_group_slug %}<span id="job-service-group-slug-error" class="field-error">{{ field_errors.service_group_slug[0] }}</span>{% endif %}
+  <div class="project-step-actions">
+    <a class="button secondary" href="{{ composer_cancel_url }}">Cancel</a>
+    <button class="button" type="button" data-project-next>Continue</button>
+  </div>
+</fieldset>
+
+<fieldset class="project-composer-step wide" data-project-step="2" data-step-title="Pick the service">
+  <legend>What should be done?</legend>
+  <p class="help-text">Choose one task. Add details next.</p>
+  <div class="service-family-context" data-selected-service-family hidden>
+    <img data-selected-service-family-icon alt="" aria-hidden="true">
+    <span><small>Selected family</small><strong data-selected-service-family-name></strong><small data-selected-service-family-description></small></span>
+  </div>
+  <div class="service-option-groups" data-service-option-groups>
+    {% for group in service_groups %}
+      {% set quick_count = group.quick_count|default(6) %}
+      {% set additional_services = group.services[quick_count:] %}
+      {% set additional_state = namespace(selected=false) %}
+      {% for service in additional_services %}
+        {% if form.service_slug == service[0] %}{% set additional_state.selected = true %}{% endif %}
+      {% endfor %}
+      <div class="service-option-group" data-service-option-group="{{ group.slug }}" {% if form.service_group_slug != group.slug %}hidden{% endif %}>
+        <p class="service-option-heading">Common tasks</p>
+        <div class="service-option-grid">
+        {% for service in group.services[:quick_count] %}
+          <label class="service-option" for="service-choice-{{ service[0] }}">
+            <input id="service-choice-{{ service[0] }}" type="radio" name="service_choice" value="{{ service[0] }}" data-group="{{ group.slug }}" data-category="{{ service[2] }}" data-project-choice-advance {% if form.service_slug == service[0] %}checked{% endif %}>
+            <span class="service-option-visual" aria-hidden="true"><span>{{ "%02d"|format(loop.index) }}</span><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(service[0], group.icon)) }}" alt=""></span>
+            <span class="service-option-copy"><strong>{{ service[1] }}</strong></span>
+          </label>
+        {% endfor %}
+        </div>
+        {% if additional_services %}
+          <details class="service-option-more" {% if additional_state.selected %}open{% endif %}>
+            <summary>More {{ group.name|lower }} services</summary>
+            <div class="service-option-grid service-option-grid-more">
+              {% for service in additional_services %}
+                <label class="service-option" for="service-choice-{{ service[0] }}">
+                  <input id="service-choice-{{ service[0] }}" type="radio" name="service_choice" value="{{ service[0] }}" data-group="{{ group.slug }}" data-category="{{ service[2] }}" data-project-choice-advance {% if form.service_slug == service[0] %}checked{% endif %}>
+                  <span class="service-option-visual" aria-hidden="true"><span>{{ "%02d"|format(quick_count + loop.index) }}</span><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(service[0], group.icon)) }}" alt=""></span>
+                  <span class="service-option-copy"><strong>{{ service[1] }}</strong></span>
+                </label>
+              {% endfor %}
+            </div>
+          </details>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+  <label class="service-select-control" for="job-service-slug">
+    Service
+    <select id="job-service-slug" name="service_slug" required {% if field_errors.service_slug or field_errors.category %}aria-invalid="true" aria-describedby="job-service-slug-error"{% endif %}>
+      <option value="">Choose a service</option>
+      {% for group in service_groups %}
+        <optgroup label="{{ group.name }}" data-service-group="{{ group.slug }}">
+          {% for service in group.services %}
+            {% set policy = service_policy_for(service[0]) %}
+            <option value="{{ service[0] }}" data-group="{{ group.slug }}" data-category="{{ service[2] }}" data-policy-tier="{{ policy.risk_tier }}" data-policy-version="{{ policy.version }}" data-policy-advisory="{{ policy.advisory }}" data-policy-required="{{ 'true' if policy.acknowledgement_required else 'false' }}" data-policy-disabled="{{ 'true' if policy.emergency_disabled else 'false' }}" {% if form.service_slug == service[0] %}selected{% endif %}>{{ service[1] }}</option>
+          {% endfor %}
+        </optgroup>
+      {% endfor %}
+    </select>
+  </label>
+  <input id="job-category" type="hidden" name="category" value="{{ form.category }}">
+  {% if field_errors.service_slug or field_errors.category %}<span id="job-service-slug-error" class="field-error">{{ (field_errors.service_slug or field_errors.category)[0] }}</span>{% endif %}
+  <div class="project-step-actions">
+    <button class="button secondary" type="button" data-project-back>Back</button>
+    <button class="button" type="button" data-project-next>Continue</button>
+  </div>
+</fieldset>
+
+<fieldset class="project-composer-step wide" data-project-step="3" data-step-title="Describe the work">
+  <legend>What does a contractor need to know?</legend>
+  {% set selected_service_name = form.service_slug|service_name %}
+  {% set saved_scope_answers = form.get('scope_answers', {}) %}
+  {% for scope_service_slug, questions in service_scope_sets.items() %}
+    {{ scope_panel(scope_service_slug, questions, saved_scope_answers, form.service_slug != scope_service_slug, form.service_slug != scope_service_slug) }}
+  {% endfor %}
+  <label for="job-title">
+    <span>Project name <span class="optional-label">Suggested</span></span>
+    <input id="job-title" name="title" value="{{ form.title }}" maxlength="{{ title_max }}" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="{{ selected_service_name ~ ' project' if selected_service_name else 'Name the project' }}" required {% if field_errors.title %}aria-invalid="true" aria-describedby="job-title-error"{% endif %}>
+    {% if field_errors.title %}<span id="job-title-error" class="field-error">{{ field_errors.title[0] }}</span>{% endif %}
+  </label>
+  <label for="job-description">
+    Description
+    <textarea id="job-description" name="description" rows="6" minlength="{{ description_min }}" maxlength="{{ description_max }}" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe the {{ selected_service_name|lower ~ ' ' if selected_service_name else '' }}scope, size, current condition, access, and desired outcome." required aria-describedby="job-description-help{% if field_errors.description %} job-description-error{% endif %}" {% if field_errors.description %}aria-invalid="true"{% endif %}>{{ form.description }}</textarea>
+    <span id="job-description-help" class="help-text">Do not include an exact street address, email, or phone number.</span>
+    {% if field_errors.description %}<span id="job-description-error" class="field-error">{{ field_errors.description[0] }}</span>{% endif %}
+  </label>
+  <fieldset class="project-setting-fieldset" {% if field_errors.project_setting %}aria-describedby="job-project-setting-error"{% endif %}>
+    <legend>Where is the work happening? <span class="optional-label">Optional</span></legend>
+    <p class="help-text">Choose the setting only. Do not add a building name, unit, or street address.</p>
+    <div class="project-setting-grid">
+      {% for setting in project_settings %}
+        <label class="project-setting-option" for="project-setting-{{ setting.value }}">
+          <input id="project-setting-{{ setting.value }}" type="radio" name="project_setting" value="{{ setting.value }}" data-setting-label="{{ setting.label }}" {% if form.project_setting == setting.value %}checked{% endif %}>
+          <span class="project-setting-number" aria-hidden="true">{{ "%02d"|format(loop.index) }}</span>
+          <span><strong>{{ setting.label }}</strong><small>{{ setting.description }}</small></span>
+        </label>
+      {% endfor %}
+    </div>
+    {% if field_errors.project_setting %}<span id="job-project-setting-error" class="field-error">{{ field_errors.project_setting[0] }}</span>{% endif %}
+  </fieldset>
+  <div class="project-step-actions">
+    <button class="button secondary" type="button" data-project-back>Back</button>
+    <button class="button" type="button" data-project-next>Continue</button>
+  </div>
+</fieldset>
+
+<fieldset class="project-composer-step wide" data-project-step="4" data-step-title="Set the area">
+  <legend>Where is the project?</legend>
+  <p class="help-text">Only an approximate city or ZIP pin is shown before a match is approved.</p>
+  <div class="project-field-grid three">
+    <label for="job-zip-code">
+      ZIP
+      <input id="job-zip-code" name="zip_code" value="{{ form.zip_code }}" inputmode="numeric" autocomplete="postal-code" pattern="[0-9]{5}" maxlength="5" list="job-zip-options" enterkeyhint="next" placeholder="20003" required {% if field_errors.zip_code %}aria-invalid="true" aria-describedby="job-zip-code-error"{% endif %}>
+      {% if field_errors.zip_code %}<span id="job-zip-code-error" class="field-error">{{ field_errors.zip_code[0] }}</span>{% endif %}
+    </label>
+    <label for="job-city">
+      City
+      <input id="job-city" name="city" value="{{ form.city }}" maxlength="{{ city_max }}" autocomplete="address-level2" autocapitalize="words" spellcheck="false" list="job-city-options" enterkeyhint="next" placeholder="Washington" required {% if field_errors.city %}aria-invalid="true" aria-describedby="job-city-error"{% endif %}>
+      {% if field_errors.city %}<span id="job-city-error" class="field-error">{{ field_errors.city[0] }}</span>{% endif %}
+    </label>
+    <label for="job-state">
+      State
+      <select id="job-state" name="state" autocomplete="address-level1" required {% if field_errors.state %}aria-invalid="true" aria-describedby="job-state-error"{% endif %}>
+        <option value="DC" {% if form.state == 'DC' %}selected{% endif %}>DC</option>
+        <option value="MD" {% if form.state == 'MD' %}selected{% endif %}>MD</option>
+        <option value="VA" {% if form.state == 'VA' %}selected{% endif %}>VA</option>
+      </select>
+      {% if field_errors.state %}<span id="job-state-error" class="field-error">{{ field_errors.state[0] }}</span>{% endif %}
+    </label>
+  </div>
+  <datalist id="job-city-options">{% for option in dmv_city_options %}<option value="{{ option.city }}" label="{{ option.label }}"></option>{% endfor %}</datalist>
+  <datalist id="job-zip-options">{% for option in dmv_zip_options %}<option value="{{ option.zip }}" label="{{ option.label }}" data-city="{{ option.city }}" data-state="{{ option.state }}"></option>{% endfor %}</datalist>
+  <p class="help-text" data-project-location-match aria-live="polite">Known pilot ZIPs fill city and state automatically.</p>
+  <div class="project-step-actions">
+    <button class="button secondary" type="button" data-project-back>Back</button>
+    <button class="button" type="button" data-project-next>Continue</button>
+  </div>
+</fieldset>
+
+<fieldset class="project-composer-step wide" data-project-step="5" data-step-title="Set timing and budget">
+  <legend>When and around how much?</legend>
+  <p class="help-text">A budget is optional, but a realistic range helps contractors respond with a better fit.</p>
+  <div class="project-field-grid three">
+    <label for="job-desired-date">
+      Desired date <span class="optional-label">Optional</span>
+      <input id="job-desired-date" name="desired_date" type="date" value="{{ form.desired_date }}" min="{{ today }}" {% if field_errors.desired_date %}aria-invalid="true" aria-describedby="job-desired-date-error"{% endif %}>
+      {% if field_errors.desired_date %}<span id="job-desired-date-error" class="field-error">{{ field_errors.desired_date[0] }}</span>{% endif %}
+    </label>
+    <label for="job-budget-min">
+      Budget minimum <span class="optional-label">Optional</span>
+      <input id="job-budget-min" name="budget_min" type="number" value="{{ form.budget_min }}" min="0" max="{{ budget_max }}" step="1" inputmode="numeric" placeholder="500" {% if field_errors.budget_min %}aria-invalid="true" aria-describedby="job-budget-min-error"{% endif %}>
+      {% if field_errors.budget_min %}<span id="job-budget-min-error" class="field-error">{{ field_errors.budget_min[0] }}</span>{% endif %}
+    </label>
+    <label for="job-budget-max">
+      Budget maximum <span class="optional-label">Optional</span>
+      <input id="job-budget-max" name="budget_max" type="number" value="{{ form.budget_max }}" min="0" max="{{ budget_max }}" step="1" inputmode="numeric" placeholder="1000" {% if field_errors.budget_max %}aria-invalid="true" aria-describedby="job-budget-max-error"{% endif %}>
+      {% if field_errors.budget_max %}<span id="job-budget-max-error" class="field-error">{{ field_errors.budget_max[0] }}</span>{% endif %}
+    </label>
+  </div>
+  <label class="license-preference-option" for="job-license-preference">
+    <input id="job-license-preference" name="license_preference" type="checkbox" value="1" {% if form.license_preference == '1' %}checked{% endif %}>
+    <img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt="" width="22" height="22">
+    <span><strong>Prefer a current license record</strong><small>Workdoe source check only. Confirm that the license covers this project and location.</small></span>
+  </label>
+  <div class="project-step-actions">
+    <button class="button secondary" type="button" data-project-back>Back</button>
+    <button class="button" type="button" data-project-next>Review project</button>
+  </div>
+</fieldset>
+
+<fieldset class="project-composer-step wide" data-project-step="6" data-step-title="Review the project">
+  <legend>Ready to post?</legend>
+  {% set selected_policy = service_policy_for(form.service_slug) %}
+  <dl class="project-review" aria-label="Project summary">
+    <div>
+      <dt>Work</dt>
+      <dd data-review-service>Choose a service</dd>
+      <button class="project-review-edit" type="button" data-project-jump-step="1" aria-label="Edit work selection" title="Edit work selection"><img src="{{ url_for('static', filename='vendor/tabler-icons/pencil.svg') }}" alt=""></button>
+    </div>
+    <div>
+      <dt>Project</dt>
+      <dd class="project-review-copy"><strong data-review-title>Add a title</strong><small><span data-review-setting>Not specified</span><span aria-hidden="true"> · </span><span data-review-scope>Description only</span><span aria-hidden="true"> · </span><span data-review-brief>Brief 0 of 6</span></small></dd>
+      <button class="project-review-edit" type="button" data-project-jump-step="3" aria-label="Edit project details" title="Edit project details"><img src="{{ url_for('static', filename='vendor/tabler-icons/pencil.svg') }}" alt=""></button>
+    </div>
+    <div>
+      <dt>Area</dt>
+      <dd data-review-location>Add a city and ZIP</dd>
+      <button class="project-review-edit" type="button" data-project-jump-step="4" aria-label="Edit project area" title="Edit project area"><img src="{{ url_for('static', filename='vendor/tabler-icons/pencil.svg') }}" alt=""></button>
+    </div>
+    <div>
+      <dt>Timing &amp; budget</dt>
+      <dd class="project-review-copy"><strong data-review-timing>Flexible</strong><small><span data-review-budget>Open</span><span aria-hidden="true"> / </span><span data-review-license>Any provider</span></small></dd>
+      <button class="project-review-edit" type="button" data-project-jump-step="5" aria-label="Edit timing and budget" title="Edit timing and budget"><img src="{{ url_for('static', filename='vendor/tabler-icons/pencil.svg') }}" alt=""></button>
+    </div>
+  </dl>
+  <section class="service-policy-advisory" data-service-policy-advisory data-policy-service="{{ form.service_slug }}" {% if not selected_policy.acknowledgement_required and not selected_policy.emergency_disabled %}hidden{% endif %}>
+    <div>
+      <span class="eyebrow" data-service-policy-tier>{{ "Local rules check" if selected_policy.risk_tier == "regulated" else "Safety check" }}</span>
+      <strong>Confirm before posting</strong>
+      <p data-service-policy-copy>{{ selected_policy.advisory }}</p>
+    </div>
+    <label class="service-policy-confirmation" for="job-service-policy-acknowledgement">
+      <input id="job-service-policy-acknowledgement" type="checkbox" name="service_policy_acknowledgement" value="{{ selected_policy.version }}" data-service-policy-checkbox {% if selected_policy.acknowledgement_required %}required{% else %}disabled{% endif %} {% if form.service_policy_acknowledgement == selected_policy.version %}checked{% endif %} {% if field_errors.service_policy_acknowledgement %}aria-invalid="true" aria-describedby="job-service-policy-acknowledgement-error"{% endif %}>
+      <span>I understand that I must confirm qualifications, insurance, permits, and a safe work plan directly.</span>
+    </label>
+    {% if field_errors.service_policy_acknowledgement %}<span id="job-service-policy-acknowledgement-error" class="field-error">{{ field_errors.service_policy_acknowledgement[0] }}</span>{% endif %}
+  </section>
+  {% if composer_include_photos %}
+    <label for="job-photos">
+      Photos <span class="optional-label">Optional</span>
+      <input id="job-photos" name="photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-describedby="job-photos-help">
+      <span id="job-photos-help" class="help-text">Private uploads. PNG, JPG, GIF, or WebP.</span>
+    </label>
+  {% else %}
+    <p class="help-text">Photos stay private and can be added after email verification.</p>
+  {% endif %}
+  {% if composer_turnstile_action %}<div>{% with action=composer_turnstile_action %}{% include "_turnstile.html" %}{% endwith %}</div>{% endif %}
+  <div class="project-step-actions">
+    <button class="button secondary" type="button" data-project-back>Back</button>
+    <button class="button" type="submit" aria-label="{{ composer_submit_label }}">{{ composer_submit_label }}</button>
+  </div>
+</fieldset>

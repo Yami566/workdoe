@@ -7,18 +7,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 REQUIRED_SECRETS = {
     "CLERK_JWT_KEY",
     "CLERK_PUBLISHABLE_KEY",
     "CLERK_SECRET_KEY",
+    "CLERK_WEBHOOK_SECRET",
     "WORKDOE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SITE_KEY",
 }
-REQUIRED_PUBLIC_VARS = {"WORKDOE_AUTH_PROVIDER", "WORKDOE_LOGIN_MODE"}
+REQUIRED_PUBLIC_VARS = {
+    "WORKDOE_AUTH_PROVIDER",
+    "WORKDOE_LOGIN_MODE",
+    "WORKDOE_ENFORCE_SERVICE_ACTIVATION",
+}
 REQUIRED_QUEUES = {
     "EMAIL_QUEUE": "workdoe-email",
     "MEDIA_QUEUE": "workdoe-media-review",
@@ -184,6 +188,22 @@ def clerk_proxy_proof_error(path: Path | None) -> str:
     )
     if not valid_workdoe_clerk_proxy_url(str(proxy_url)):
         return "Clerk proxy proof must use https://workdoe.com/__clerk."
+    if data.get("restricted_sign_up_mode") is not True:
+        return "Clerk proof must confirm Restricted sign-up mode."
+    if data.get("email_code_sign_in") is not True:
+        return "Clerk proof must confirm email-code sign-in."
+    if data.get("password_sign_in_disabled") is not True:
+        return "Clerk proof must confirm password sign-in is disabled."
+    if str(data.get("custom_sign_up_url", "")).strip().rstrip("/") != (
+        "https://workdoe.com/create-account"
+    ):
+        return "Clerk proof must use https://workdoe.com/create-account as the custom sign-up URL."
+    if data.get("express_legal_consent") is not True:
+        return "Clerk proof must confirm express consent to Workdoe legal documents."
+    if str(data.get("terms_url", "")).strip().rstrip("/") != "https://workdoe.com/terms":
+        return "Clerk proof must use https://workdoe.com/terms as the Terms URL."
+    if str(data.get("privacy_url", "")).strip().rstrip("/") != "https://workdoe.com/privacy":
+        return "Clerk proof must use https://workdoe.com/privacy as the Privacy URL."
     return ""
 
 
@@ -202,15 +222,17 @@ def command_steps() -> list[str]:
         "wrangler secret put CLERK_JWT_KEY",
         "wrangler secret put CLERK_PUBLISHABLE_KEY",
         "wrangler secret put CLERK_SECRET_KEY",
+        "wrangler secret put CLERK_WEBHOOK_SECRET",
         "wrangler secret put WORKDOE_SECRET_KEY",
         "wrangler secret put WORKDOE_TURNSTILE_SITE_KEY",
         "wrangler secret put WORKDOE_TURNSTILE_SECRET_KEY",
         "python ..\\scripts\\cloudflare_secret_evidence.py --execute --yes --output ..\\cloudflare-secret-list.local.json",
-        "python ..\\scripts\\cloudflare_release_evidence.py --json --secret-list-json ..\\cloudflare-secret-list.local.json",
-        "python ..\\scripts\\cloudflare_readiness.py --strict-production --secret-list-json ..\\cloudflare-secret-list.local.json",
+        "python ..\\scripts\\cloudflare_clerk_proxy_proof.py --confirm --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent --output ..\\clerk-proxy-proof.local.json",
+        "python ..\\scripts\\cloudflare_release_evidence.py --json --secret-list-json ..\\cloudflare-secret-list.local.json --clerk-proxy-proof-json ..\\clerk-proxy-proof.local.json",
+        "python ..\\scripts\\cloudflare_readiness.py --strict-production --secret-list-json ..\\cloudflare-secret-list.local.json --clerk-proxy-proof-json ..\\clerk-proxy-proof.local.json",
         "cd ..",
-        "python scripts\\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json",
-        "python scripts\\cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json",
+        "python scripts\\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
+        "python scripts\\cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
     ]
 
 
@@ -281,6 +303,13 @@ def run_readiness(
             "WORKDOE_AUTH_PROVIDER must be clerk and WORKDOE_LOGIN_MODE must be same_domain_email_code.",
         )
         add_requirement(
+            vars_map.get("WORKDOE_ENFORCE_SERVICE_ACTIVATION") == "true",
+            checks,
+            blockers,
+            "Service-zone launch gates are enforced",
+            "WORKDOE_ENFORCE_SERVICE_ACTIVATION must be true in production.",
+        )
+        add_requirement(
             vars_map.get("WORKDOE_PUBLIC_URL") == "https://workdoe.com"
             and vars_map.get("WORKDOE_DOMAIN") == "workdoe.com",
             checks,
@@ -295,6 +324,16 @@ def run_readiness(
             blockers,
             "Private R2 media bucket binding is configured",
             "R2 binding must be MEDIA for the workdoe-media bucket.",
+        )
+        add_requirement(
+            wrangler.get("images") == {"binding": "IMAGES"},
+            checks,
+            blockers,
+            "Cloudflare Images upload sanitizer binding is configured",
+            "Images binding must be configured as IMAGES before production uploads.",
+        )
+        warnings.append(
+            "Confirm Cloudflare Images Paid is active and complete one live valid-image plus invalid-image upload test before enabling public uploads."
         )
         producers = {
             producer.get("binding"): producer.get("queue")

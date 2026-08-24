@@ -4,17 +4,22 @@ import json
 from base64 import urlsafe_b64decode
 from binascii import Error as Base64Error
 from html import escape
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
+from asset_release import ASSET_RELEASE_TOKEN
 from public_jobs import (
-    JOB_CATEGORIES,
     public_job_filters_from_query,
     public_job_payload,
     public_jobs_payload,
 )
+from service_taxonomy import (
+    GROUP_BY_SLUG,
+    SERVICE_BY_SLUG,
+    SERVICE_GROUPS,
+    service_icon,
+)
 
-
-ENTRY_ROUTES = {"/", "/login", "/start"}
+ENTRY_ROUTES = {"/", "/login", "/start", "/create-account", "/post-project"}
 ENTRY_JOB_LIMIT = 50
 DEFAULT_CLERK_FRONTEND_API_URL = "https://workdoe.com/__clerk"
 CLERK_SIGNIN_MODE = "signin"
@@ -42,6 +47,79 @@ def first_query_value(params: dict, key: str, default: str = "") -> str:
     if isinstance(value, list):
         value = value[0] if value else default
     return str(value or default)
+
+
+def safe_entry_next(value: str | None, fallback: str = "") -> str:
+    candidate = str(value or "").strip()
+    if not candidate or len(candidate) > 500 or not candidate.startswith("/"):
+        return fallback
+    if candidate.startswith("//") or "\\" in candidate:
+        return fallback
+    parsed = urlparse(candidate)
+    if parsed.scheme or parsed.netloc or any(ord(character) < 32 for character in candidate):
+        return fallback
+    return candidate
+
+
+def entry_job_filters(params: dict) -> dict[str, str]:
+    source = params
+    next_url = safe_entry_next(first_query_value(params, "next"))
+    explicit = any(
+        first_query_value(params, key)
+        for key in ("category", "family", "service", "q", "sort")
+    )
+    if urlparse(next_url).path == "/leads" and not explicit:
+        source = parse_qs(urlparse(next_url).query)
+    return public_job_filters_from_query(source)
+
+
+def lead_next_with_filters(value: str, filters: dict[str, str]) -> str:
+    next_url = safe_entry_next(value)
+    parsed = urlparse(next_url)
+    if parsed.path != "/leads":
+        return next_url
+    existing = parse_qs(parsed.query)
+    view = first_query_value(existing, "view")
+    if view not in {"sent", "approved", "declined", "closed"}:
+        view = ""
+    args = {
+        key: filter_value
+        for key, filter_value in {
+            "category": filters.get("category", ""),
+            "family": filters.get("family", ""),
+            "service": filters.get("service", ""),
+            "q": filters.get("q", ""),
+            "sort": filters.get("sort", "newest"),
+            "view": view,
+        }.items()
+        if filter_value and not (key == "sort" and filter_value == "newest")
+    }
+    return "/leads" + (f"?{urlencode(args)}" if args else "")
+
+
+def cleared_lead_next(value: str) -> str:
+    return lead_next_with_filters(
+        value,
+        {
+            "category": "",
+            "family": "",
+            "service": "",
+            "q": "",
+            "sort": "newest",
+        },
+    )
+
+
+def entry_clear_url(path: str, params: dict) -> str:
+    args: dict[str, str] = {}
+    for key in ("intent", "job_id", "embed"):
+        value = first_query_value(params, key)
+        if value:
+            args[key] = value
+    next_url = cleared_lead_next(safe_entry_next(first_query_value(params, "next")))
+    if next_url:
+        args["next"] = next_url
+    return path + (f"?{urlencode(args)}" if args else "")
 
 
 def normalize_intent(value: str | None, path: str = "/start") -> str:
@@ -179,23 +257,133 @@ def public_jobs_api_url(params: dict, target: str) -> str:
         "limit": str(ENTRY_JOB_LIMIT),
         "target": target,
     }
+    filters = entry_job_filters(params)
+    for key in ("family", "service", "category", "q"):
+        if filters.get(key):
+            args[key] = filters[key]
+    if filters.get("sort", "newest") != "newest":
+        args["sort"] = filters["sort"]
     return "/api/jobs/open?" + urlencode(args)
 
 
+def service_family_filter_html(path: str, params: dict, filters: dict[str, str]) -> str:
+    shared: dict[str, str] = {}
+    for key in ("intent", "job_id", "next"):
+        value = first_query_value(params, key)
+        if value:
+            shared[key] = value
+    if filters.get("q"):
+        shared["q"] = filters["q"]
+    if filters.get("sort", "newest") != "newest":
+        shared["sort"] = filters["sort"]
+    current = filters.get("family", "")
+    options = [
+        {
+            "slug": "",
+            "number": "00",
+            "name": "All work",
+            "description": "Every open service",
+            "icon": "",
+        },
+        *[
+            {
+                "slug": group["slug"],
+                "number": f"{index:02d}",
+                "name": group["name"],
+                "description": group["description"],
+                "icon": group["icon"],
+            }
+            for index, group in enumerate(SERVICE_GROUPS, start=1)
+        ],
+    ]
+    links = []
+    for option in options:
+        args = dict(shared)
+        if option["slug"]:
+            args["family"] = option["slug"]
+        href = path + (f"?{urlencode(args)}" if args else "")
+        active = current == option["slug"]
+        icon = (
+            f'<img src="/vendor/tabler-icons/{escape(option["icon"])}" alt="" width="24" height="24">'
+            if option["icon"]
+            else ""
+        )
+        links.append(
+            f'<a class="service-family-filter-link{" is-active" if active else ""}" href="{escape(href)}"{' aria-current="page"' if active else ""}>'
+            f'<span class="service-family-filter-visual" aria-hidden="true"><span>{option["number"]}</span>{icon}</span>'
+            f'<span class="service-family-filter-copy"><strong>{escape(option["name"])}</strong><small>{escape(option["description"])}</small></span></a>'
+        )
+    return '<nav class="service-family-filter" aria-label="Filter projects by work family">' + "".join(links) + "</nav>"
+
+
+def selected_lane_action_html(filters: dict[str, str], project_count: int) -> str:
+    selected = GROUP_BY_SLUG.get(filters.get("family", ""))
+    if not selected:
+        return ""
+    number = next(
+        index
+        for index, group in enumerate(SERVICE_GROUPS, start=1)
+        if group["slug"] == selected["slug"]
+    )
+    noun = "project" if project_count == 1 else "projects"
+    post_args = {"family": selected["slug"]}
+    selected_service = SERVICE_BY_SLUG.get(filters.get("service", ""))
+    if selected_service:
+        post_args["service"] = selected_service["slug"]
+    post_url = "/post-project?" + urlencode(post_args)
+    return f"""
+      <section class="market-lane-action" aria-label="Selected work lane">
+        <div class="market-lane-heading">
+          <span aria-hidden="true">{number:02d}</span>
+          <img src="/vendor/tabler-icons/{escape(selected['icon'])}" alt="" width="28" height="28">
+          <div><small>Lane selected</small><strong>{escape(selected['name'])}</strong><span>{project_count} open {noun}</span></div>
+        </div>
+        <a class="button primary compact" href="{escape(post_url)}">{'Post this task' if selected_service else 'Post in this lane'}</a>
+      </section>"""
+
+
 def entry_redirect_url(path: str, params: dict, intent: str, selected_id: str) -> str:
+    next_url = lead_next_with_filters(
+        safe_entry_next(first_query_value(params, "next")),
+        entry_job_filters(params),
+    )
     if path == "/login":
-        next_url = first_query_value(params, "next")
-        return next_url if next_url.startswith("/") and not next_url.startswith("//") else "/dashboard"
-    args = {"intent": intent}
+        return next_url or "/dashboard"
+    if path == "/post-project":
+        filters = public_job_filters_from_query(params)
+        post_args = {
+            key: filters[key]
+            for key in ("family", "service")
+            if filters.get(key)
+        }
+        return "/jobs/new" + (f"?{urlencode(post_args)}" if post_args else "")
+    if intent == "post-job":
+        return "/jobs/new"
+    if selected_id:
+        return f"/jobs/{selected_id}"
+    if urlparse(next_url).path == "/leads":
+        return next_url
+    return "/leads"
+
+
+def entry_sign_up_url(path: str, selected_id: str, params: dict | None = None) -> str:
+    if path != "/login":
+        return "/create-account"
+    query = params or {}
+    next_url = lead_next_with_filters(
+        safe_entry_next(first_query_value(query, "next")),
+        entry_job_filters(query),
+    )
+    args: dict[str, str] = {}
+    if selected_id or urlparse(next_url).path == "/leads":
+        args["intent"] = "find-work"
     if selected_id:
         args["job_id"] = selected_id
-    return "/start?" + urlencode(args)
-
-
-def entry_sign_up_url(path: str, selected_id: str) -> str:
-    if path == "/login" and selected_id:
-        return "/start?" + urlencode({"intent": "find-work", "job_id": selected_id})
-    return "/start"
+    if next_url:
+        args["next"] = next_url
+    if args:
+        return "/create-account?" + urlencode(args)
+    return "/create-account"
 
 
 def job_row(row, selected_id: str, target: str) -> str:
@@ -205,18 +393,21 @@ def job_row(row, selected_id: str, target: str) -> str:
     row_class = "project-result" + (" is-map-active" if is_selected else "")
     current = ' aria-current="true"' if is_selected else ""
     sample = '<span class="sample-badge">Sample</span>' if project["is_demo"] else ""
+    icon_name = service_icon(project.get("service_slug") or project["service_name"])
     return f"""
-          <a class="{row_class}" role="listitem" data-job-id="{escape(job_id)}" href="{escape(project['detail_url'])}"{current}>
-            <span class="project-result-topline">
-              <span>{escape(project['category'])}</span>
-              {sample}
-            </span>
-            <strong>{escape(project['title'])}</strong>
-            <span class="project-result-facts">
-              <span>{escape(project['city'])}, {escape(project['state'])}</span>
-              <span>{escape(project['budget'])}</span>
-            </span>
-          </a>"""
+          <div class="project-result-item" role="listitem">
+            <a class="{row_class}" data-job-id="{escape(job_id)}" href="{escape(project['detail_url'])}" aria-label="View details for {escape(project['title'])}"{current}>
+              <span class="project-result-topline">
+                <span class="job-service-chip"><img src="/vendor/tabler-icons/{escape(icon_name)}" alt="" width="16" height="16">{escape(project['service_name'])}</span>
+                {sample}
+              </span>
+              <span class="project-result-heading"><strong>{escape(project['title'])}</strong><span class="project-result-action">View</span></span>
+              <span class="project-result-facts">
+                <span>{escape(project['city'])}, {escape(project['state'])}</span>
+                <span>{escape(project['budget'])}</span>
+              </span>
+            </a>
+          </div>"""
 
 
 def job_list_html(rows: list, selected_id: str, target: str) -> str:
@@ -241,11 +432,30 @@ def selected_job_pill(row) -> str:
         </div>"""
 
 
-def category_options(selected: str = "") -> str:
-    options = ['<option value="">All categories</option>']
+def site_dialog_html() -> str:
+    return """
+  <dialog class="site-dialog" data-site-dialog aria-labelledby="site-dialog-title">
+    <section class="site-dialog-surface">
+      <header class="site-dialog-header">
+        <div><p class="eyebrow">Workdoe</p><h2 id="site-dialog-title" data-site-dialog-title>Continue</h2></div>
+        <button class="icon-button" type="button" data-site-dialog-close aria-label="Close dialog" title="Close"><img src="/vendor/tabler-icons/x.svg" alt="" width="20" height="20"></button>
+      </header>
+      <div class="site-dialog-status" data-site-dialog-status role="status" aria-live="polite">Loading...</div>
+      <div class="site-dialog-content" data-site-dialog-content></div>
+    </section>
+  </dialog>"""
+
+
+def task_options(family_slug: str, selected: str = "") -> str:
+    family = GROUP_BY_SLUG.get(family_slug)
+    if not family:
+        return ""
+    options = [
+        f'<option value="">All {escape(family["name"].lower())} tasks</option>'
+    ]
     options.extend(
-        f'<option value="{escape(category)}" {"selected" if category == selected else ""}>{escape(category)}</option>'
-        for category in sorted(JOB_CATEGORIES)
+        f'<option value="{escape(service_slug)}"{" selected" if service_slug == selected else ""}>{escape(service_name)}</option>'
+        for service_slug, service_name, _category in family["services"]
     )
     return "\n".join(options)
 
@@ -269,7 +479,7 @@ def project_detail_html(row, target: str) -> str:
         <article class="market-project-detail" data-project-detail-content data-job-id="{escape(str(project['id']))}">
           <div class="project-detail-heading">
             {sample}
-            <span>{escape(project['category'])}</span>
+            <span>{escape(project['service_name'])}</span>
           </div>
           <h2>{escape(project['title'])}</h2>
           <p class="project-detail-location">{escape(project['city'])}, {escape(project['state'])}</p>
@@ -279,7 +489,7 @@ def project_detail_html(row, target: str) -> str:
           </dl>
           <div class="project-description">
             <h3>Field brief</h3>
-            <p>{escape(project['description'])}</p>
+            <p>{escape(project.get('description') or 'Project details are available after sign-in.')}</p>
           </div>
           <p class="project-privacy-note">Location is intentionally approximate until a match is approved.</p>
           <div class="project-detail-actions">
@@ -350,7 +560,7 @@ def shell_csp(
             csp_sources("style-src-elem 'self' 'unsafe-inline'", clerk_origin),
             "style-src-attr 'unsafe-inline'",
             csp_sources(
-                "img-src 'self' data: https://*.tile.openstreetmap.org",
+                "img-src 'self' data: https://tile.openstreetmap.org",
                 CLERK_IMAGE_ORIGIN if clerk_enabled else "",
             ),
             csp_sources(
@@ -393,6 +603,10 @@ def shell_headers(
     }
 
 
+def is_production_clerk_publishable_key(value: str) -> bool:
+    return str(value or "").strip().startswith("pk_live_")
+
+
 def build_entry_shell_html(
     path: str,
     params: dict,
@@ -402,6 +616,7 @@ def build_entry_shell_html(
     auth_provider: str = "clerk",
     turnstile_site_key: str = "",
 ) -> str:
+    embedded = first_query_value(params, "embed") == "1"
     native_email_code = auth_provider == "workdoe_email_code"
     development_frontend_api_url = clerk_development_frontend_api_url(
         clerk_publishable_key
@@ -411,14 +626,32 @@ def build_entry_shell_html(
     )
     target = "login" if path == "/login" else "start"
     intent = normalize_intent(first_query_value(params, "intent"), path)
-    selected_id = selected_job_id(params)
+    auth_selected_id = selected_job_id(params)
+    selected_id = auth_selected_id
     selected = selected_job(rows, selected_id) or (rows[0] if rows else None)
     if selected and not selected_id:
         selected_id = str(row_value(selected, "id", ""))
-    redirect_url = entry_redirect_url(path, params, intent, selected_id)
-    filters = public_job_filters_from_query(params)
+    redirect_url = entry_redirect_url(path, params, intent, auth_selected_id)
+    post_job_url = entry_redirect_url("/post-project", params, "post-job", "")
+    filters = entry_job_filters(params)
     map_payload = public_jobs_payload(rows, filters, target=target)
     jobs_api_url = public_jobs_api_url(params, target)
+    selected_family = GROUP_BY_SLUG.get(filters.get("family", ""))
+    task_filter_html = ""
+    if selected_family:
+        task_filter_html = f"""
+        <label for="market-service">Task</label>
+        <select id="market-service" data-market-service>
+{task_options(selected_family["slug"], filters.get("service", ""))}
+        </select>"""
+    sort_options = "".join(
+        f'<option value="{value}"{" selected" if filters.get("sort", "newest") == value else ""}>{label}</option>'
+        for value, label in (
+            ("newest", "Newest"),
+            ("soonest", "Soonest"),
+            ("city", "City"),
+        )
+    )
     proxy_url = (
         ""
         if native_email_code or development_frontend_api_url
@@ -438,28 +671,57 @@ def build_entry_shell_html(
     title = (
         "Sign in - Workdoe"
         if path == "/login"
+        else "Post Project - Workdoe" if path == "/post-project"
+        else "Create Account - Workdoe" if path == "/create-account"
         else "Join Workdoe" if path == "/start" else "Local projects - Workdoe"
     )
-    heading = "Sign in" if path == "/login" else "Join Workdoe"
-    eyebrow = "Welcome back" if path == "/login" else "Choose your role"
+    heading = (
+        "Sign in"
+        if path == "/login"
+        else "Post a project" if path == "/post-project"
+        else "Create your Workdoe account" if path == "/create-account" else "Join Workdoe"
+    )
+    eyebrow = (
+        "Welcome back"
+        if path == "/login"
+        else "Consumer workspace" if path == "/post-project" else "Choose your role"
+    )
     panel_id = "signin" if path == "/login" else "start-account"
     clerk_mode = CLERK_SIGNIN_MODE if path == "/login" else CLERK_START_MODE
-    sign_up_url = entry_sign_up_url(path, selected_id)
-    data_selected = selected_id if selected and selected_id.isdigit() else ""
+    sign_up_url = entry_sign_up_url(path, auth_selected_id, params)
+    account_switch_html = (
+        f'<p class="account-entry-switch">New to Workdoe? <a href="{escape(sign_up_url)}">Create account</a></p>'
+        if path == "/login"
+        else f'<p class="account-entry-switch">Already have an account? <a href="/login?{escape(urlencode({"next": redirect_url}))}">Sign in</a></p>'
+    )
+    contractor_leads_url = lead_next_with_filters(
+        safe_entry_next(first_query_value(params, "next")),
+        filters,
+    )
+    if urlparse(contractor_leads_url).path != "/leads":
+        contractor_leads_url = "/leads"
+    data_selected = auth_selected_id if selected and auth_selected_id.isdigit() else ""
+    draft_saved_html = (
+        '<div class="selected-lead-pill"><span>Draft saved</span><strong>Verify your email to finish posting</strong></div>'
+        if first_query_value(params, "draft") == "saved"
+        else ""
+    )
     browse_current = ' aria-current="page"' if path == "/" else ""
-    start_current = ' aria-current="page"' if path == "/start" else ""
+    start_current = ' aria-current="page"' if path in {"/start", "/create-account"} else ""
+    post_current = ' aria-current="page"' if path == "/post-project" else ""
     login_current = ' aria-current="page"' if path == "/login" else ""
+    detail_tab_label = "Account" if path in {"/login", "/start", "/create-account", "/post-project"} else "Details"
     onboarding_fields = (
         f"""
 {role_segment(intent)}
         <label>
           Name
-          <input name="display_name" autocomplete="name" aria-describedby="entry-name-help" data-clerk-display-name data-email-code-display-name>
+          <input name="display_name" autocomplete="name" maxlength="120" aria-describedby="entry-name-help" data-clerk-display-name data-email-code-display-name>
           <span id="entry-name-help" class="help-text">Shown on your Workdoe profile.</span>
         </label>
         <label>
           Business or household name <span class="optional-label">Optional</span>
-          <input name="company_name" autocomplete="organization" data-clerk-company-name data-email-code-company-name>
+          <input name="company_name" autocomplete="organization" maxlength="120" data-clerk-company-name data-email-code-company-name>
         </label>"""
         if path != "/login"
         else ""
@@ -468,8 +730,8 @@ def build_entry_shell_html(
         f"""
           data-onboard-url="/api/auth/onboard"
           data-selected-job-id="{escape(data_selected)}"
-          data-post-job-url="/jobs/new"
-          data-leads-url="/leads"
+          data-post-job-url="{escape(post_job_url)}"
+          data-leads-url="{escape(contractor_leads_url)}"
 """
         if path != "/login"
         else ""
@@ -536,28 +798,11 @@ def build_entry_shell_html(
 {proxy_data_attr}
 {start_data_attrs}
         >
-          <form class="email-code-form" data-clerk-email-code-form>
-            <div data-clerk-request-step>
-              <label>
-                Email address
-                <input type="email" name="email" autocomplete="email" maxlength="254" required>
-              </label>
-              <div id="clerk-captcha" data-cl-theme="light" data-cl-size="flexible" data-cl-language="en-US"></div>
-              <button class="button primary" type="submit" data-clerk-request-code disabled>Email me a code</button>
-            </div>
-            <div class="email-code-verify" data-clerk-code-step hidden>
-              <label>
-                6-digit code
-                <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{{6}}" maxlength="6" aria-describedby="clerk-code-help">
-                <span id="clerk-code-help" class="help-text">The code expires in 10 minutes.</span>
-              </label>
-              <button class="button primary" type="submit" data-clerk-verify-code disabled>Verify and continue</button>
-              <button class="button secondary" type="button" data-clerk-restart-code>Use a different email</button>
-            </div>
-          </form>
+          <p class="help-text clerk-entry-loading">Loading secure email sign-in...</p>
         </div>
         <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>"""
-        auth_scripts_html = f"""  <script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_script_attr} src="{escape(clerk_asset_base_url)}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
+        auth_scripts_html = f"""  <script defer crossorigin="anonymous" src="{escape(clerk_asset_base_url)}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
+  <script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_script_attr} src="{escape(clerk_asset_base_url)}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
   <script defer src="/clerk-entry.js"></script>"""
     if path == "/":
         auth_scripts_html = ""
@@ -567,20 +812,31 @@ def build_entry_shell_html(
       </aside>"""
     else:
         right_panel_html = f"""
-      <aside id="{escape(panel_id)}" class="market-detail-rail market-auth-rail" data-market-panel="details" aria-labelledby="entry-title">
+      <aside id="{escape(panel_id)}" class="market-detail-rail market-auth-rail" data-market-panel="details" data-dialog-fragment aria-labelledby="entry-title">
         <div class="market-auth-heading">
           <p class="eyebrow">{escape(eyebrow)}</p>
           <h2 id="entry-title">{escape(heading)}</h2>
           <p>{'Use your email code to reopen your workspace.' if path == '/login' else 'Choose a role and verify your email to begin.'}</p>
+{draft_saved_html}
 {selected_job_pill(selected if selected_job_id(params) else None)}
         </div>
 {auth_mount_html}
         <div class="auth-switch clerk-entry-note">
-          <span>No password needed. Your one-time code arrives by email.</span>
+          <span>No password needed. Your one-time code arrives by email. One account keeps one role during beta.</span>
         </div>
+        {account_switch_html}
       </aside>"""
-    mobile_default = "details" if path in {"/login", "/start"} else "map"
+    mobile_default = "details" if path in {"/login", "/start", "/create-account", "/post-project"} else "map"
     filter_count = len(map_payload["jobs"])
+    body_class = "market-entry-body dialog-fragment-body" if embedded else "market-entry-body"
+    map_styles_html = "" if embedded else """  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/vendor/leaflet-markercluster/MarkerCluster.css">
+  <link rel="stylesheet" href="/vendor/leaflet-markercluster/MarkerCluster.Default.css">"""
+    map_scripts_html = "" if embedded else f"""  <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>
+  <script src="/map.js?v={ASSET_RELEASE_TOKEN}"></script>"""
+    dialog_html = "" if embedded else site_dialog_html()
+    dialog_script_html = "" if embedded else '  <script defer src="/site-dialogs.js?v=workdoe-bid-dialog"></script>'
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -611,12 +867,10 @@ def build_entry_shell_html(
   <link rel="canonical" href="https://workdoe.com/">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
-  <link rel="stylesheet" href="/vendor/leaflet-markercluster/MarkerCluster.css">
-  <link rel="stylesheet" href="/vendor/leaflet-markercluster/MarkerCluster.Default.css">
+  <link rel="stylesheet" href="/styles.css?v={ASSET_RELEASE_TOKEN}">
+{map_styles_html}
 </head>
-<body class="market-entry-body" data-default-mobile-panel="{escape(mobile_default)}">
+<body class="{escape(body_class)}" data-default-mobile-panel="{escape(mobile_default)}">
   <a class="skip-link" href="#main-content">Skip to content</a>
   <header class="market-header">
     <a class="brand brand-home-button" href="/" aria-label="Workdoe home">
@@ -626,14 +880,15 @@ def build_entry_shell_html(
     <div class="market-area-label"><span aria-hidden="true"></span>DC, Maryland &amp; Virginia</div>
     <nav class="market-nav" aria-label="Primary">
       <a href="/"{browse_current}>Browse projects</a>
-      <a href="/start?intent=post-job"{start_current}>Post a project</a>
+      <a href="/post-project"{post_current}>Post project</a>
+      <a href="/create-account?intent=post-job"{start_current}>Create account</a>
       <a href="/login"{login_current}>Sign in</a>
     </nav>
   </header>
   <div class="market-mobile-tabs" role="tablist" aria-label="Marketplace view">
     <button type="button" role="tab" data-mobile-panel-target="filters">Projects</button>
     <button type="button" role="tab" data-mobile-panel-target="map">Map</button>
-    <button type="button" role="tab" data-mobile-panel-target="details">Details</button>
+    <button type="button" role="tab" data-mobile-panel-target="details">{detail_tab_label}</button>
   </div>
   <main id="main-content" class="market-workspace" tabindex="-1" data-market-workspace data-mobile-panel="{escape(mobile_default)}">
     <aside class="market-filter-rail" data-market-panel="filters" aria-label="Project search and filters">
@@ -642,15 +897,16 @@ def build_entry_shell_html(
         <h1>Find work nearby</h1>
         <p>Explore approximate locations before creating an account.</p>
       </div>
+      {service_family_filter_html(path, params, filters)}
+      {selected_lane_action_html(filters, filter_count)}
       <form class="market-filter-form" data-market-filters>
         <label for="market-search">Search projects</label>
         <input id="market-search" type="search" value="{escape(filters.get('q', ''))}" placeholder="Try painting or Arlington" autocomplete="off" data-market-search>
-        <label for="market-category">Category</label>
-        <select id="market-category" data-market-category>
-{category_options(filters.get('category', ''))}
-        </select>
+{task_filter_html}
+        <label for="market-sort">Sort</label>
+        <select id="market-sort" data-market-sort>{sort_options}</select>
         <div class="filter-actions">
-          <button class="button secondary compact" type="button" data-clear-market-filters>Clear filters</button>
+          <button class="button secondary compact" type="button" data-clear-market-filters data-clear-market-url="{escape(entry_clear_url(path, params))}">Clear filters</button>
         </div>
       </form>
       <div class="sample-data-note">
@@ -674,7 +930,8 @@ def build_entry_shell_html(
         <span>{map_payload['live_count']} live / {map_payload['demo_count']} sample</span>
       </div>
       <div class="market-map-frame">
-        <div id="lead-map" data-map data-map-workspace data-jobs-api="{escape(jobs_api_url)}" role="region" tabindex="0" aria-label="Interactive map of approximate DMV project locations" aria-describedby="lead-map-status">
+        <div id="lead-map" data-map data-map-workspace data-jobs-api="{escape(jobs_api_url)}" data-tile-url="https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png" data-tile-attribution='&amp;copy; &lt;a href="https://www.openstreetmap.org/copyright"&gt;OpenStreetMap&lt;/a&gt;' role="region" tabindex="0" aria-label="Interactive map of approximate DMV project locations" aria-describedby="lead-map-status">
+          <button class="button compact map-search-area" type="button" data-search-map-area hidden>Search this area</button>
           <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Loading the project map. The project list is ready.</p>
           <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Loading the project map. The project list is ready.</p>
         </div>
@@ -683,10 +940,10 @@ def build_entry_shell_html(
 {right_panel_html}
   </main>
   <script id="map-jobs-data" type="application/json">{safe_json_script(map_payload["jobs"])}</script>
-  <script src="/vendor/leaflet/leaflet.js"></script>
-  <script src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>
-  <script src="/map.js"></script>
+{map_scripts_html}
 {auth_scripts_html}
+{dialog_html}
+{dialog_script_html}
 </body>
 </html>
 """

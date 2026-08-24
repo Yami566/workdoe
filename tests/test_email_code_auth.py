@@ -5,7 +5,6 @@ import sys
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 WORKER_ROOT = ROOT / "cloudflare" / "worker"
 AUTH_PATH = WORKER_ROOT / "email_code_auth.py"

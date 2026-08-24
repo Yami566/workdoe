@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 MATCH_DECISION_ACTIONS = {"approve": "approved", "reject": "rejected"}
 APPROVAL_THREAD_MESSAGE = (
     "Thanks for reviewing my mini bid. I am ready to coordinate details here."
@@ -34,6 +33,17 @@ def can_decide_match_request(user, match) -> bool:
     if row_value(user, "role") == "admin":
         return True
     return row_value(user, "role") == "client" and row_value(user, "id") == row_value(match, "client_id")
+
+
+def d1_change_count(result) -> int:
+    if isinstance(result, dict):
+        meta = result.get("meta") or result.get("result", {}).get("meta") or {}
+    else:
+        meta = getattr(result, "meta", {}) or {}
+    try:
+        return max(0, int(row_value(meta, "changes", 0) or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def match_decision_response(

@@ -1,0 +1,86 @@
+{% if bid_comparison.pending_count %}
+  <section class="bid-comparison" aria-label="Contractor offer comparison">
+    <div class="bid-comparison-intro">
+      <span class="privacy-label">{{ bid_comparison.order_label }} / no paid ranking</span>
+      <p class="bid-comparison-note">{% if job.license_preference %}This project prefers a current license record. Compare that signal with price, timing, and completed work.{% else %}Compare price, timing, completed work, and reviewed records.{% endif %}</p>
+    </div>
+    <nav class="comparison-filter-tabs" aria-label="Filter comparison by source-checked records">
+      {% for item in bid_comparison.credential_filter_options %}
+        <a href="{{ item.url }}"{% if item.value == bid_comparison.credential_filter %} aria-current="page"{% endif %}>
+          <span>{{ item.label }}</span><strong>{{ item.count }}</strong>
+        </a>
+      {% endfor %}
+    </nav>
+    {% if bid_comparison.offers %}
+      <div class="bid-comparison-grid bid-comparison-grid--{{ bid_comparison.count }}">
+        {% for offer in bid_comparison.offers %}
+          <article class="bid-compare-card" aria-labelledby="compare-offer-{{ offer.id }}">
+            <header class="bid-compare-header{% if offer.profile_photo_url %} has-photo{% endif %}">
+              {% if offer.profile_photo_url %}
+                <img class="bid-contractor-photo" src="{{ offer.profile_photo_url }}" alt="{{ offer.contractor_name }} portfolio" width="88" height="88" loading="lazy" decoding="async">
+              {% endif %}
+              <div class="bid-compare-identity">
+                <p class="bid-offer-label">{{ offer.offer_label }}</p>
+                <h4 id="compare-offer-{{ offer.id }}">{{ offer.contractor_name }}</h4>
+                <p>{{ offer.trades }}</p>
+                <div class="bid-card-signals" aria-label="Work and reviewed-record signals">
+                  <span class="bid-card-signal">
+                    <img src="{{ url_for('static', filename='vendor/tabler-icons/sparkles.svg') }}" alt="">
+                    <span><strong>{{ offer.reputation.level_label }}</strong><small>{{ offer.reputation.completion_points }} points</small></span>
+                  </span>
+                  {% for signal in offer.reputation.credential_signals %}
+                    <span class="bid-card-signal is-reviewed">
+                      <img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt="">
+                      <span><strong>{{ signal.label }}</strong><small>{{ signal.qualifier }}</small></span>
+                    </span>
+                  {% else %}
+                    <span class="bid-card-signal is-muted"><span><strong>No source-checked record</strong></span></span>
+                  {% endfor %}
+                </div>
+              </div>
+            </header>
+            <dl class="bid-compare-terms">
+              <div><dt>Price</dt><dd>{{ offer.price_range }}</dd></div>
+              <div><dt>Timeline</dt><dd>{{ offer.timeline }}</dd></div>
+              <div><dt>Availability</dt><dd>{{ offer.availability }}</dd></div>
+            </dl>
+            <div class="bid-choose-form">
+              <button class="button compact" type="button" data-inline-dialog-open="choose-contractor-{{ offer.id }}" aria-haspopup="dialog" aria-label="Choose {{ offer.contractor_name }} for {{ job.title }}">Choose contractor</button>
+            </div>
+            <dl class="bid-provider-facts">
+              {% for fact in offer.provider_facts %}
+                {% if fact.key in ['years-active', 'workdoe-completed', 'insurance'] %}
+                  <div>
+                    <dt>{{ fact.label }}</dt>
+                    <dd>{{ fact.value }}<small>{{ fact.qualifier }}</small></dd>
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </dl>
+            <details class="bid-card-offer">
+              <summary>Offer details</summary>
+              <div class="bid-card-offer-copy">
+                <p><strong>Plan</strong>{{ offer.scope_note }}</p>
+                <p><strong>Experience</strong>{{ offer.experience }}</p>
+                {% if offer.questions %}<p><strong>Questions</strong>{{ offer.questions }}</p>{% endif %}
+              </div>
+            </details>
+            <div class="bid-compare-actions">
+              <a class="button secondary compact" href="{{ offer.profile_url }}">Profile</a>
+              <form method="post" action="{{ url_for('decide_request', request_id=offer.id, action='reject') }}">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <button class="button secondary compact" type="submit">Reject</button>
+              </form>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty comparison-empty">No pending offers match this record filter. Switch to All offers to see every pending bid.</p>
+    {% endif %}
+    <details class="comparison-trust-note">
+      <summary>About source-checked records</summary>
+      <p class="help-text">A source-checked record means Workdoe reviewed a current public source. It does not guarantee skill, safety, insurance coverage, or legal eligibility.</p>
+    </details>
+  </section>
+{% endif %}

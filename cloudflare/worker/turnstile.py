@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import uuid
 
-
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 TURNSTILE_TOKEN_MAX_LENGTH = 2048
 

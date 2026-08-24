@@ -1,15 +1,67 @@
 {% extends "base.html" %}
 {% block title %}Contractor Profile - Workdoe{% endblock %}
 {% block content %}
-<section class="page-header">
-  <p class="eyebrow">Contractor profile</p>
-  <h1>Help clients approve the right match.</h1>
-  <p>Your profile is visible to clients when they review your mini bid.</p>
+<section class="dashboard-header profile-page-header">
+  <div>
+    <p class="eyebrow">Contractor profile</p>
+    <h1>Profile setup</h1>
+    <p>Clients see this when they review your mini bid.</p>
+  </div>
+  <a class="button secondary" href="{{ url_for('contractor_public_profile', contractor_id=g.user.id) }}">Preview</a>
 </section>
 
+<nav class="profile-task-links" aria-label="Profile tasks">
+  <a href="#work-availability"><img src="{{ url_for('static', filename='vendor/tabler-icons/home-up.svg') }}" alt="">Availability</a>
+  <a href="#profile-details"><img src="{{ url_for('static', filename='vendor/tabler-icons/tool.svg') }}" alt="">Profile details</a>
+  <a href="#credential-claims"><img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt="">Credentials</a>
+</nav>
+
 {% set field_errors = error_feedback.fields %}
-<form class="form-grid" method="post" enctype="multipart/form-data" aria-label="Contractor profile" {% if error_feedback.summary %}aria-describedby="profile-form-errors"{% endif %}>
+<section class="profile-readiness" aria-labelledby="profile-readiness-title">
+  <details {% if profile_readiness.percent < 100 %}open{% endif %}>
+    <summary class="profile-readiness-head">
+      <div>
+        <p class="eyebrow">Storefront readiness</p>
+        <h2 id="profile-readiness-title">{{ profile_readiness.complete_count }} of {{ profile_readiness.total_count }} ready</h2>
+      </div>
+      <strong>{{ profile_readiness.percent }}%</strong>
+    </summary>
+    <div class="profile-readiness-body">
+      <progress value="{{ profile_readiness.complete_count }}" max="{{ profile_readiness.total_count }}">{{ profile_readiness.percent }}%</progress>
+      <ol class="profile-readiness-steps">
+        {% for item in profile_readiness["items"] %}
+          <li class="{% if item.complete %}complete{% endif %}">
+            <a href="#{{ item.target }}"><span>{{ "%02d"|format(loop.index) }}</span>{{ item.label }}</a>
+          </li>
+        {% endfor %}
+      </ol>
+    </div>
+  </details>
+</section>
+
+<section id="work-availability" class="preference-band" aria-labelledby="work-availability-title">
+  <div>
+    <p class="eyebrow">Work status</p>
+    <h2 id="work-availability-title">Availability</h2>
+    <p class="help-text">This self-reported status is shown on your contractor profile. Update it whenever your schedule changes.</p>
+  </div>
+  <form class="preference-form" method="post" action="{{ url_for('contractor_availability_update') }}">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <label for="availability-status">Status
+      <select id="availability-status" name="availability_status">
+        {% for value, label in availability_options %}<option value="{{ value }}" {% if preferences.availability_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label for="available-from">Next available date (optional)
+      <input id="available-from" name="available_from" type="date" value="{{ preferences.available_from }}">
+    </label>
+    <button class="button secondary" type="submit">Update availability</button>
+  </form>
+</section>
+
+<form id="profile-details" class="form-grid" method="post" enctype="multipart/form-data" aria-label="Contractor profile" {% if error_feedback.summary %}aria-describedby="profile-form-errors"{% endif %}>
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="market_fit_version" value="1">
   {% if error_feedback.summary %}
     <section id="profile-form-errors" class="form-error-summary wide" role="alert" aria-labelledby="profile-form-errors-title">
       <h2 id="profile-form-errors-title">Fix {{ error_feedback.summary|length }} item{{ "" if error_feedback.summary|length == 1 else "s" }}</h2>
@@ -25,45 +77,72 @@
     <input id="profile-business-name" name="business_name" value="{{ form.business_name }}" maxlength="{{ limits.business_max }}" autocomplete="organization" autocapitalize="words" spellcheck="false" enterkeyhint="next" required {% if field_errors.business_name %}aria-invalid="true" aria-describedby="profile-business-name-error"{% endif %}>
     {% if field_errors.business_name %}<span id="profile-business-name-error" class="field-error">{{ field_errors.business_name[0] }}</span>{% endif %}
   </label>
-  <fieldset class="wide checkbox-grid" id="profile-trades" {% if field_errors.trades %}aria-invalid="true" aria-describedby="profile-trades-error"{% endif %}>
-    <legend>Trades</legend>
-    {% for category in job_categories %}
-      <label for="profile-trade-{{ loop.index }}">
-        <input id="profile-trade-{{ loop.index }}" type="checkbox" name="trades" value="{{ category }}" {% if category in selected_trades %}checked{% endif %}>
-        {{ category }}
-      </label>
-    {% endfor %}
+  <fieldset class="wide profile-service-selector" id="profile-trades" {% if field_errors.trades %}aria-invalid="true" aria-describedby="profile-trades-error"{% endif %}>
+    <legend>Services you take on</legend>
+    <p class="help-text">Choose the specific work you want Workdoe to match.</p>
+    <div class="profile-service-groups">
+      {% set service_counter = namespace(value=0) %}
+      {% for group in service_groups %}
+        <details class="profile-service-family" {% if group.slug in selected_service_groups or (not selected_services and loop.first) %}open{% endif %}>
+          <summary class="profile-service-family-heading">
+            <span class="profile-service-family-summary">
+              <span class="profile-service-family-icon" aria-hidden="true">
+                <span>{{ "%02d"|format(loop.index) }}</span>
+                <img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ group.icon) }}" alt="" width="28" height="28">
+              </span>
+              <span>
+                <strong id="profile-service-family-{{ group.slug }}">{{ group.name }}</strong>
+                <small>{{ group.description }}</small>
+              </span>
+            </span>
+          </summary>
+          <div class="profile-service-options">
+            {% for service_slug, service_name, legacy_category in group.services %}
+              {% set service_counter.value = service_counter.value + 1 %}
+              <label for="profile-trade-{{ service_counter.value }}">
+                <input id="profile-trade-{{ service_counter.value }}" type="checkbox" name="service_slugs" value="{{ service_slug }}" {% if service_slug in selected_services %}checked{% endif %}>
+                <span>{{ service_name }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </details>
+      {% endfor %}
+    </div>
     {% if field_errors.trades %}<span id="profile-trades-error" class="field-error">{{ field_errors.trades[0] }}</span>{% endif %}
   </fieldset>
-  <label for="profile-service-area">
-    Service area
-    <input id="profile-service-area" name="service_area" value="{{ form.service_area }}" maxlength="{{ limits.service_area_max }}" autocomplete="address-level2" autocapitalize="words" spellcheck="false" enterkeyhint="next" placeholder="DC, Montgomery County, Northern Virginia" required {% if field_errors.service_area %}aria-invalid="true" aria-describedby="profile-service-area-error"{% endif %}>
+  <fieldset class="wide profile-zone-selector" id="profile-service-area" {% if field_errors.service_area %}aria-invalid="true" aria-describedby="profile-service-area-error"{% endif %}>
+    <legend>Where you work</legend>
+    <p class="help-text">Pick practical DMV coverage areas. Exact project addresses stay private until a match is approved.</p>
+    <div class="profile-zone-options">
+      {% for zone in service_zones %}
+        <label for="profile-zone-{{ loop.index }}">
+          <input id="profile-zone-{{ loop.index }}" type="checkbox" name="service_zone_slugs" value="{{ zone.slug }}" {% if zone.slug in selected_service_zones %}checked{% endif %}>
+          <span><strong>{{ zone.short_name }}</strong><small>{{ zone.state }}</small></span>
+        </label>
+      {% endfor %}
+    </div>
     {% if field_errors.service_area %}<span id="profile-service-area-error" class="field-error">{{ field_errors.service_area[0] }}</span>{% endif %}
-  </label>
+  </fieldset>
   <label for="profile-years-in-business">
     Years in business
     <input id="profile-years-in-business" name="years_in_business" type="number" min="0" max="{{ limits.years_max }}" value="{{ form.years_in_business }}" inputmode="numeric" enterkeyhint="next" {% if field_errors.years_in_business %}aria-invalid="true" aria-describedby="profile-years-in-business-error"{% endif %}>
     {% if field_errors.years_in_business %}<span id="profile-years-in-business-error" class="field-error">{{ field_errors.years_in_business[0] }}</span>{% endif %}
   </label>
   <label for="profile-insurance-status">
-    Insurance status
+    Insurance note (self-reported)
     <input id="profile-insurance-status" name="insurance_status" value="{{ form.insurance_status }}" maxlength="{{ limits.insurance_max }}" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Available on request" {% if field_errors.insurance_status %}aria-invalid="true" aria-describedby="profile-insurance-status-error"{% endif %}>
     {% if field_errors.insurance_status %}<span id="profile-insurance-status-error" class="field-error">{{ field_errors.insurance_status[0] }}</span>{% endif %}
   </label>
   <label for="profile-license-number">
-    License number
+    License note (self-reported)
     <input id="profile-license-number" name="license_number" value="{{ form.license_number }}" maxlength="{{ limits.license_max }}" autocapitalize="characters" spellcheck="false" enterkeyhint="next" placeholder="Optional for the local beta" {% if field_errors.license_number %}aria-invalid="true" aria-describedby="profile-license-number-error"{% endif %}>
     {% if field_errors.license_number %}<span id="profile-license-number-error" class="field-error">{{ field_errors.license_number[0] }}</span>{% endif %}
   </label>
   <label for="profile-website">
     Website
-    <input id="profile-website" name="website" type="url" value="{{ form.website }}" maxlength="{{ limits.website_max }}" autocomplete="url" autocapitalize="off" spellcheck="false" enterkeyhint="next" placeholder="https://example.com" {% if field_errors.website %}aria-invalid="true" aria-describedby="profile-website-error"{% endif %}>
+    <input id="profile-website" name="website" type="url" value="{{ form.website }}" maxlength="{{ limits.website_max }}" autocomplete="url" autocapitalize="off" spellcheck="false" enterkeyhint="next" placeholder="https://example.com" aria-describedby="profile-website-help{% if field_errors.website %} profile-website-error{% endif %}" {% if field_errors.website %}aria-invalid="true"{% endif %}>
+    <span id="profile-website-help" class="help-text">Visible to clients reviewing your bid. Public HTTPS websites only.</span>
     {% if field_errors.website %}<span id="profile-website-error" class="field-error">{{ field_errors.website[0] }}</span>{% endif %}
-  </label>
-  <label for="profile-phone">
-    Phone
-    <input id="profile-phone" name="phone" type="tel" value="{{ form.phone }}" maxlength="{{ limits.phone_max }}" autocomplete="tel" inputmode="tel" enterkeyhint="next" placeholder="Optional" {% if field_errors.phone %}aria-invalid="true" aria-describedby="profile-phone-error"{% endif %}>
-    {% if field_errors.phone %}<span id="profile-phone-error" class="field-error">{{ field_errors.phone[0] }}</span>{% endif %}
   </label>
   <label class="wide" for="profile-intro">
     Intro
@@ -77,7 +156,6 @@
   </label>
   <div class="form-actions wide">
     <button class="button" type="submit">Save profile</button>
-    <a class="button secondary" href="{{ url_for('contractor_public_profile', contractor_id=g.user.id) }}">Preview public profile</a>
   </div>
 </form>
 
@@ -88,5 +166,45 @@
       <figcaption>{{ photo.original_filename }}{% if photo.is_hidden %} - hidden{% endif %}</figcaption>
     </figure>
   {% endfor %}
+</section>
+
+<section id="credential-claims" class="detail-grid credential-management" aria-labelledby="credential-claims-title">
+  <form class="panel stack-form" method="post" action="{{ url_for('contractor_credential_create') }}">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <div>
+      <p class="eyebrow">Trust record</p>
+      <h2 id="credential-claims-title">Submit a credential claim</h2>
+      <p class="help-text">Workdoe shows a public label only after an administrator checks the linked source. This is not an endorsement of skill, safety, or legal eligibility.</p>
+    </div>
+    <label for="credential-type">Credential <select id="credential-type" name="credential_type" required><option value="">Choose one</option>{% for value, label in credential_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+    <label for="credential-jurisdiction">Jurisdiction <select id="credential-jurisdiction" name="jurisdiction" required><option value="">Choose one</option>{% for value, label in credential_jurisdictions %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+    <label for="credential-identifier">Record identifier <input id="credential-identifier" name="claimed_identifier" maxlength="{{ credential_identifier_max }}" autocomplete="off" spellcheck="false" required></label>
+    <label for="credential-name">Name on record (optional) <input id="credential-name" name="claimed_name" maxlength="{{ credential_name_max }}" autocomplete="organization" autocapitalize="words"></label>
+    <label for="credential-source">Public source (optional) <input id="credential-source" name="source_url" type="url" maxlength="300" placeholder="https://..." autocomplete="url" autocapitalize="off" spellcheck="false"><span class="help-text">A regulator, insurer, or public registry page helps the review.</span></label>
+    <label for="credential-expiry">Expiration (optional) <input id="credential-expiry" name="expires_at" type="date"></label>
+    <button class="button" type="submit">Send for review</button>
+  </form>
+  <section class="panel" aria-labelledby="credential-status-title">
+    <h2 id="credential-status-title">Your claims</h2>
+    {% for credential in credentials %}
+      <div class="admin-row credential-row">
+        <span>
+          <strong>{{ credential.credential_type_label }} - {{ credential.jurisdiction_label }}</strong>
+          <small>{{ credential.claimed_identifier }} - {{ credential.status_label }}{% if credential.expires_at %} - expires {{ credential.expires_at|date_label }}{% endif %}</small>
+          {% if credential.review_note %}<small>{{ credential.review_note }}</small>{% endif %}
+        </span>
+        {% if credential.status in ['self_reported', 'pending', 'rejected'] %}
+          <form method="post" action="{{ url_for('contractor_credential_remove', credential_id=credential.id) }}">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <button class="button secondary compact" type="submit">Remove</button>
+          </form>
+        {% else %}
+          <span class="status {{ credential.status }}">{{ credential.status_label }}</span>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="empty">No credential claims submitted.</p>
+    {% endfor %}
+  </section>
 </section>
 {% endblock %}

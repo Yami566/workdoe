@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from job_posts import bid_window, budget_label, project_setting_label
+from project_readiness import project_brief_readiness
 
 JOB_DETAIL_PRIVACY_NOTICE = (
     "Contractors see city/state and ZIP prefix only until a client approves a match."
@@ -42,7 +44,10 @@ def can_view_job_detail(user, job) -> bool:
     if role == "client":
         return row_value(job, "client_id") == row_value(user, "id")
     if role == "contractor":
-        return row_value(job, "status") != "hidden"
+        return (
+            row_value(job, "client_status") == "active"
+            and row_value(job, "status") != "hidden"
+        )
     return False
 
 
@@ -61,9 +66,11 @@ def job_detail_payload(
     job,
     photos: list[dict] | None = None,
     existing_request: dict | None = None,
+    scope_answer_count: int | None = None,
 ) -> dict:
     viewer = viewer_kind(user, job)
     owner_view = viewer in {"owner", "admin"}
+    bidding = bid_window(job)
     payload = {
         "ok": True,
         "viewer": viewer,
@@ -71,20 +78,38 @@ def job_detail_payload(
             "id": row_value(job, "id"),
             "title": row_value(job, "title", ""),
             "category": row_value(job, "category", ""),
+            "service_slug": row_value(job, "service_slug", ""),
+            "project_setting": row_value(job, "project_setting", ""),
+            "license_preference": bool(
+                int(row_value(job, "license_preference", 0) or 0)
+            ),
+            "project_setting_label": project_setting_label(
+                row_value(job, "project_setting", "")
+            ),
             "city": row_value(job, "city", ""),
             "state": row_value(job, "state", ""),
             "area_label": area_label(job, owner_view=owner_view),
             "description": row_value(job, "description", ""),
             "desired_date": row_value(job, "desired_date", "") or "",
+            "budget": budget_label(job),
             "status": row_value(job, "status", ""),
+            "close_reason": row_value(job, "close_reason", "") or "",
+            "closed_at": row_value(job, "closed_at", "") or "",
             "photo_count": len(photos or []),
+            "brief_readiness": project_brief_readiness(
+                job,
+                scope_answer_count=scope_answer_count,
+                photo_count=len(photos or []),
+            ),
             "location_privacy": JOB_DETAIL_PRIVACY_NOTICE,
-            "can_request_match": viewer == "contractor" and row_value(job, "status") == "open" and not existing_request,
+            "bid_window": bidding,
+            "can_request_match": viewer == "contractor" and bidding["accepting"] and not existing_request,
         },
         "photos": [job_photo_payload(photo, owner_view=owner_view) for photo in photos or []],
     }
     if owner_view:
         payload["job"]["zip_code"] = row_value(job, "zip_code", "")
+        payload["job"]["close_note"] = row_value(job, "close_note", "") or ""
     else:
         payload["job"]["zip_prefix"] = zip_prefix(row_value(job, "zip_code", ""))
     if existing_request:

@@ -8,6 +8,31 @@
     }
   }
 
+  function secureRequestKey() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return window.crypto.randomUUID();
+    }
+    var bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    return Array.prototype.map.call(bytes, function (value) {
+      return value.toString(16).padStart(2, "0");
+    }).join("");
+  }
+
+  function ensureIdempotencyKey(form) {
+    var input = form.querySelector("input[name='idempotency_key']");
+    if (!input) {
+      input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "idempotency_key";
+      form.appendChild(input);
+    }
+    if (!input.value) {
+      input.value = secureRequestKey();
+    }
+    return input.value;
+  }
+
   function fieldIdForName(name) {
     return String(name || "").replace(/_/g, "-");
   }
@@ -171,6 +196,17 @@
     return payload.url || template;
   }
 
+  function navigateAfterSuccess(form, payload) {
+    var url = successUrl(form, payload);
+    if (form.closest("[data-site-dialog-content]")) {
+      document.dispatchEvent(new CustomEvent("workdoe:dialog-navigate", {
+        detail: { url: url }
+      }));
+      return;
+    }
+    window.location.assign(url);
+  }
+
   function selectedFiles(form) {
     var files = [];
     form.querySelectorAll("input[type='file']").forEach(function (input) {
@@ -203,15 +239,19 @@
     if (!files.length) {
       return;
     }
+    var parentRequestKey = ensureIdempotencyKey(form);
     for (var index = 0; index < files.length; index += 1) {
       setStatus(form, "Uploading photo " + (index + 1) + " of " + files.length + "...");
       var uploadData = new FormData();
       uploadData.append("photo", files[index], files[index].name);
+      uploadData.append("idempotency_key", parentRequestKey + ":photo:" + index);
       var response = await fetch(url, {
         method: "POST",
         credentials: "include",
         headers: {
-          "Accept": "application/json"
+          "Accept": "application/json",
+          "Idempotency-Key": parentRequestKey + ":photo:" + index,
+          "X-Workdoe-Request": "same-origin"
         },
         body: uploadData
       });
@@ -233,17 +273,21 @@
       return;
     }
     event.preventDefault();
-    var button = form.querySelector("button[type='submit']");
+    var button = event.submitter || form.querySelector("button[type='submit']");
+    var actionUrl = (button && button.dataset.jsonAction) || form.dataset.jsonAction;
+    var requestKey = ensureIdempotencyKey(form);
     setSubmitting(form, button, true);
     clearFieldErrors(form);
     setStatus(form, "Saving...");
     try {
-      var response = await fetch(form.dataset.jsonAction, {
+      var response = await fetch(actionUrl, {
         method: form.dataset.method || "POST",
         credentials: "include",
         headers: {
           "Accept": "application/json",
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "Idempotency-Key": requestKey,
+          "X-Workdoe-Request": "same-origin"
         },
         body: JSON.stringify(payloadFromForm(form))
       });
@@ -262,11 +306,11 @@
         await uploadFilesAfterJson(form, payload);
       } catch (uploadError) {
         setStatus(form, (uploadError.message || "Job saved, but photo upload failed.") + " Opening the job now.");
-        window.location.assign(successUrl(form, payload));
+        navigateAfterSuccess(form, payload);
         return;
       }
       setStatus(form, "Saved.");
-      window.location.assign(successUrl(form, payload));
+      navigateAfterSuccess(form, payload);
     } catch (error) {
       setSubmitting(form, button, false);
       setStatus(form, error.message || "Workdoe could not save this yet.");
@@ -280,6 +324,7 @@
     }
     event.preventDefault();
     var button = form.querySelector("button[type='submit']");
+    var requestKey = ensureIdempotencyKey(form);
     setSubmitting(form, button, true);
     clearFieldErrors(form);
     setStatus(form, "Uploading...");
@@ -288,7 +333,9 @@
         method: form.dataset.method || "POST",
         credentials: "include",
         headers: {
-          "Accept": "application/json"
+          "Accept": "application/json",
+          "Idempotency-Key": requestKey,
+          "X-Workdoe-Request": "same-origin"
         },
         body: new FormData(form)
       });
@@ -304,7 +351,7 @@
         );
       }
       setStatus(form, "Uploaded.");
-      window.location.assign(successUrl(form, payload));
+      navigateAfterSuccess(form, payload);
     } catch (error) {
       setSubmitting(form, button, false);
       setStatus(form, error.message || "Workdoe could not upload this yet.");

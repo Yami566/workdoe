@@ -1,0 +1,20 @@
+# Cloudflare Workers Static Assets consumes this file during deployment.
+/*
+  X-Content-Type-Options: nosniff
+
+# First-party assets below are always requested with the release token.
+/styles.css
+  Cache-Control: public, max-age=31556952, immutable
+
+/map.js
+  Cache-Control: public, max-age=31556952, immutable
+
+/project-composer.js
+  Cache-Control: public, max-age=31556952, immutable
+
+# Vendored assets and the Tabler-derived home mark are integrity-pinned.
+/vendor/*
+  Cache-Control: public, max-age=31556952, immutable
+
+/deer.svg
+  Cache-Control: public, max-age=31556952, immutable

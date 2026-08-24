@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
-
+from urllib.parse import urlparse
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
@@ -29,12 +29,15 @@ GITHUB_CLOUDFLARE_TOKEN_ACTION = "gh secret set CLOUDFLARE_API_TOKEN --repo Yami
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from cloudflare_launch_status import build_launch_status  # noqa: E402
-from github_release_status import (  # noqa: E402
+from cloudflare_launch_status import build_launch_status
+from cloudflare_wrangler import (
+    wrangler_command,
+    wrangler_env,
+)
+from github_release_status import (
     build_live_status as build_github_live_status,
 )
-from cloudflare_wrangler import wrangler_command, wrangler_env  # noqa: E402
-from workdoe_dns_diagnostic import build_dns_diagnostic  # noqa: E402
+from workdoe_dns_diagnostic import build_dns_diagnostic
 
 
 @dataclass
@@ -46,9 +49,12 @@ class DoctorPhase:
 
 
 def http_head_ok(url: str, timeout: float = 3.0) -> tuple[bool, str]:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False, "Only HTTP(S) health-check URLs are allowed."
     request = urllib.request.Request(url, method="HEAD")
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
             status = getattr(response, "status", 0)
             return 200 <= int(status) < 400, f"HTTP {status}"
     except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
@@ -80,33 +86,104 @@ def render_dns_summary(diagnostic: dict) -> str:
 
 
 def wrangler_auth_status(repo_root: Path = REPO_ROOT, timeout: float = 20.0) -> tuple[bool, str]:
-    try:
-        completed = subprocess.run(
-            wrangler_command(["whoami"], repo_root),
-            cwd=str(repo_root / "cloudflare"),
-            env=wrangler_env(repo_root),
-            check=False,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            text=True,
-            timeout=timeout,
-        )
-    except FileNotFoundError:
-        return False, "Wrangler CLI is not available."
-    except subprocess.TimeoutExpired:
-        return False, "Wrangler auth check timed out."
+    attempts = [
+        ("repository-scoped", wrangler_env(repo_root)),
+        ("ambient", None),
+    ]
+    last_output = ""
+    for profile, environment in attempts:
+        try:
+            completed = subprocess.run(
+                wrangler_command(["whoami"], repo_root),
+                cwd=str(repo_root / "cloudflare"),
+                env=environment,
+                check=False,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                text=True,
+                timeout=timeout,
+            )
+        except FileNotFoundError:
+            return False, "Wrangler CLI is not available."
+        except subprocess.TimeoutExpired:
+            return False, "Wrangler auth check timed out."
 
-    output = "\n".join(value for value in (completed.stdout, completed.stderr) if value).strip()
-    output_lower = output.lower()
-    if completed.returncode == 0 and "not authenticated" not in output_lower:
-        return True, "Wrangler is authenticated for live Cloudflare operations."
-    if "not authenticated" in output_lower:
+        output = "\n".join(value for value in (completed.stdout, completed.stderr) if value).strip()
+        last_output = output
+        output_lower = output.lower()
+        if completed.returncode == 0 and "not authenticated" not in output_lower:
+            if profile == "ambient":
+                return (
+                    True,
+                    ("Wrangler is authenticated through the ambient encrypted OAuth profile; "
+                    "non-interactive release automation still requires CLOUDFLARE_API_TOKEN."),
+                )
+            return True, "Wrangler is authenticated for live Cloudflare operations."
+        if "not authenticated" not in output_lower:
+            break
+
+    if "not authenticated" in last_output.lower():
         return False, "Wrangler is not authenticated. Run `.\\node_modules\\.bin\\wrangler.cmd login`."
-    first_line = next((line.strip() for line in output.splitlines() if line.strip()), "")
+    first_line = next((line.strip() for line in last_output.splitlines() if line.strip()), "")
     if first_line:
         return False, f"Wrangler auth check failed: {first_line}"
     return False, "Wrangler auth check failed."
+
+
+def parse_wrangler_secret_names(output: str) -> set[str]:
+    start = output.find("[")
+    end = output.rfind("]")
+    if start < 0 or end < start:
+        raise TypeError("Wrangler secret list did not return a JSON array.")
+    payload = json.loads(output[start : end + 1])
+    if not isinstance(payload, list):
+        raise TypeError("Wrangler secret list did not return a JSON array.")
+    return {
+        str(item.get("name") or "").strip()
+        for item in payload
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
+    }
+
+
+def wrangler_secret_names_status(
+    repo_root: Path = REPO_ROOT,
+    timeout: float = 20.0,
+) -> tuple[bool, set[str], str]:
+    attempts = [wrangler_env(repo_root), None]
+    last_output = ""
+    for environment in attempts:
+        try:
+            completed = subprocess.run(
+                wrangler_command(["secret", "list", "--config", "wrangler.jsonc"], repo_root),
+                cwd=str(repo_root / "cloudflare"),
+                env=environment,
+                check=False,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                text=True,
+                timeout=timeout,
+            )
+        except FileNotFoundError:
+            return False, set(), "Wrangler CLI is not available."
+        except subprocess.TimeoutExpired:
+            return False, set(), "Wrangler secret-name check timed out."
+
+        output = "\n".join(value for value in (completed.stdout, completed.stderr) if value).strip()
+        last_output = output
+        if completed.returncode == 0:
+            try:
+                names = parse_wrangler_secret_names(completed.stdout or output)
+            except (ValueError, json.JSONDecodeError) as exc:
+                return False, set(), f"Wrangler secret-name output was invalid: {exc}"
+            return True, names, f"Wrangler returned {len(names)} production secret binding name(s)."
+        if "not authenticated" not in output.lower():
+            break
+
+    first_line = next((line.strip() for line in last_output.splitlines() if line.strip()), "")
+    detail = first_line or "Wrangler secret-name check failed."
+    return False, set(), detail
 
 
 def dedupe(values: list[str]) -> list[str]:
@@ -127,6 +204,33 @@ def cloudflare_token_missing(cloudflare: dict) -> bool:
     )
 
 
+def local_cloudflare_token_blocker(blocker: str) -> bool:
+    return "CLOUDFLARE_API_TOKEN is not set" in blocker
+
+
+def missing_worker_secret_names(blockers: list[str]) -> list[str]:
+    prefix = "Cloudflare is missing required secret bindings:"
+    for blocker in blockers:
+        if blocker.startswith(prefix):
+            names = {
+                name.strip()
+                for name in blocker[len(prefix) :].split(",")
+                if name.strip() in WORKER_SECRET_NAMES
+            }
+            return sorted(names)
+    return []
+
+
+def github_release_path_ready(github) -> bool:
+    return bool(
+        github
+        and github.live
+        and github.ready
+        and github.environment_ready
+        and github.secrets_ready
+    )
+
+
 def next_actions(
     *,
     local_ok: bool,
@@ -135,10 +239,14 @@ def next_actions(
     dns_ready: bool,
     live: bool,
     wrangler_authenticated: bool | None,
+    cloudflare_release_ready: bool,
+    missing_secret_names: list[str] | None = None,
     dns_next_actions: list[str] | None = None,
 ) -> list[str]:
     actions: list[str] = []
     token_missing = cloudflare_token_missing(cloudflare)
+    github_path_ready = github_release_path_ready(github)
+    release_credentials_ready = not token_missing or github_path_ready
     blockers = "\n".join(cloudflare["blockers"])
     if not local_ok:
         actions.append("python run.py")
@@ -156,11 +264,11 @@ def next_actions(
     if live and wrangler_authenticated is False:
         actions.append(".\\node_modules\\.bin\\wrangler.cmd login")
 
-    if token_missing:
+    if token_missing and not github_path_ready:
         actions.append(cloudflare.get("next_command") or CLOUDFLARE_TOKEN_ACTION)
-        if live:
+        if live and (not github or not github.secrets_ready):
             actions.append(GITHUB_CLOUDFLARE_TOKEN_ACTION)
-    if not token_missing and (
+    if release_credentials_ready and (
         "Wrangler D1" in blockers or cloudflare["current_phase"] == "cloudflare-resources"
     ):
         actions.extend(
@@ -172,22 +280,23 @@ def next_actions(
                 "npm run cf:resources:apply",
             ]
         )
-    if not token_missing and "Cloudflare is missing required secret bindings" in blockers:
+    if release_credentials_ready and "Cloudflare is missing required secret bindings" in blockers:
+        secret_names = missing_secret_names if missing_secret_names is not None else WORKER_SECRET_NAMES
         actions.extend(
             [
                 f".\\node_modules\\.bin\\wrangler.cmd secret put {name} --config cloudflare\\wrangler.jsonc"
-                for name in WORKER_SECRET_NAMES
+                for name in secret_names
             ]
         )
         actions.append("npm run cf:secrets:evidence")
-    if "Clerk proxy proof JSON is missing or invalid" in blockers:
-        actions.append("npm run cf:clerk:proof")
+    if any("Clerk" in blocker and "proof" in blocker for blocker in cloudflare["blockers"]):
+        actions.append("npm run cf:clerk:proof:confirm")
     if live and not dns_ready:
         actions.append("npm run launch:dns")
         actions.extend(dns_next_actions or [])
         actions.append("confirm workdoe.com DNS in Cloudflare")
 
-    if cloudflare["ready_to_deploy"] and (not live or (github and github.ready and dns_ready)):
+    if cloudflare_release_ready and (not live or (github and github.ready and dns_ready)):
         actions.extend(
             [
                 "npm run cf:deploy:plan",
@@ -213,6 +322,63 @@ def build_doctor(
     wrangler_summary = "Wrangler auth was not checked. Run with --live."
     if live:
         wrangler_authenticated, wrangler_summary = wrangler_auth_status(repo_root)
+    secret_bindings_checked = False
+    present_secret_names: set[str] = set()
+    missing_secret_names: list[str] | None = None
+    secret_bindings_summary = "Production secret binding names were not checked."
+    if live and wrangler_authenticated:
+        secret_bindings_checked, present_secret_names, secret_bindings_summary = (
+            wrangler_secret_names_status(repo_root)
+        )
+        if secret_bindings_checked:
+            missing_secret_names = sorted(set(WORKER_SECRET_NAMES) - present_secret_names)
+            cloudflare = dict(cloudflare)
+            cloudflare["blockers"] = [
+                blocker
+                for blocker in cloudflare["blockers"]
+                if not blocker.startswith("Cloudflare is missing required secret bindings:")
+            ]
+            if missing_secret_names:
+                cloudflare["blockers"].append(
+                    "Cloudflare is missing required secret bindings: "
+                    + ", ".join(missing_secret_names)
+                )
+    evidence_missing_secret_names = missing_worker_secret_names(cloudflare["blockers"])
+    effective_missing_secret_names = (
+        missing_secret_names
+        if secret_bindings_checked and missing_secret_names is not None
+        else evidence_missing_secret_names
+    )
+    binding_evidence_source = "live-wrangler" if secret_bindings_checked else "unavailable"
+    if not secret_bindings_checked and evidence_missing_secret_names:
+        binding_evidence_source = "sanitized-evidence"
+        secret_bindings_summary = (
+            "Live Wrangler secret-name probing requires a local API token; sanitized "
+            f"evidence reports {len(WORKER_SECRET_NAMES) - len(evidence_missing_secret_names)}/"
+            f"{len(WORKER_SECRET_NAMES)} required names present."
+        )
+    github_path_ready = github_release_path_ready(github)
+    token_missing = cloudflare_token_missing(cloudflare)
+    cloudflare_release_blockers = [
+        blocker
+        for blocker in cloudflare["blockers"]
+        if not (github_path_ready and local_cloudflare_token_blocker(blocker))
+    ]
+    cloudflare_release_ready = (
+        not cloudflare_release_blockers
+        and (not token_missing or github_path_ready)
+    )
+    cloudflare_next_command = cloudflare["next_command"]
+    if github_path_ready and token_missing:
+        if effective_missing_secret_names:
+            cloudflare_next_command = (
+                ".\\node_modules\\.bin\\wrangler.cmd secret put "
+                f"{effective_missing_secret_names[0]} --config cloudflare\\wrangler.jsonc"
+            )
+        elif any("Clerk" in blocker and "proof" in blocker for blocker in cloudflare_release_blockers):
+            cloudflare_next_command = "npm run cf:clerk:proof:confirm"
+        else:
+            cloudflare_next_command = "npm run cf:deploy:plan"
     dns_ready = False
     dns_phase_summary = "DNS was not checked. Run with --live to resolve workdoe.com."
     dns_addresses: list[str] = []
@@ -269,13 +435,25 @@ def build_doctor(
         ),
         DoctorPhase(
             name="cloudflare-release",
-            status="ready" if cloudflare["ready_to_deploy"] else "pending",
+            status="ready" if cloudflare_release_ready else "pending",
             summary=(
                 "Cloudflare launch gate is ready to deploy."
-                if cloudflare["ready_to_deploy"]
-                else f"Cloudflare launch gate is waiting at {cloudflare['current_phase']}."
+                if cloudflare_release_ready
+                else (
+                    (
+                        "GitHub production automation credentials are ready; "
+                        "Cloudflare release evidence still has blockers. "
+                        if github_path_ready and token_missing
+                        else f"Cloudflare launch gate is waiting at {cloudflare['current_phase']}. "
+                    )
+                    + (
+                        f"Worker secret evidence: {len(WORKER_SECRET_NAMES) - len(effective_missing_secret_names)}/{len(WORKER_SECRET_NAMES)} required present."
+                        if effective_missing_secret_names
+                        else "Direct non-interactive secret-name probing requires CLOUDFLARE_API_TOKEN; the release gate uses sanitized local evidence when present."
+                    )
+                )
             ),
-            next_command=cloudflare["next_command"],
+            next_command=cloudflare_next_command,
         ),
         DoctorPhase(
             name="dns",
@@ -285,7 +463,7 @@ def build_doctor(
         ),
     ]
 
-    blockers = list(cloudflare["blockers"])
+    blockers = list(cloudflare_release_blockers)
     if github:
         blockers.extend(github.blockers)
     if live and wrangler_authenticated is False:
@@ -299,7 +477,7 @@ def build_doctor(
         local_ok
         and (github.ready if github else True)
         and (wrangler_authenticated if live else True)
-        and cloudflare["ready_to_deploy"]
+        and cloudflare_release_ready
         and (dns_ready if live else True)
     )
     return {
@@ -310,10 +488,34 @@ def build_doctor(
         "phases": [asdict(phase) for phase in phases],
         "blockers": sorted(set(blockers)),
         "warnings": sorted(
-            set(cloudflare["warnings"] + (list(github.warnings) if github else []))
+            set(
+                cloudflare["warnings"]
+                + (list(github.warnings) if github else [])
+                + (
+                    [
+                        "Local CLOUDFLARE_API_TOKEN is not set; the verified GitHub production environment remains the credentialed non-interactive deployment path."
+                    ]
+                    if github_path_ready and token_missing
+                    else []
+                )
+            )
         ),
         "dns_addresses": dns_addresses,
         "dns": dns_diagnostic,
+        "secret_bindings": {
+            "checked": secret_bindings_checked,
+            "source": binding_evidence_source,
+            "required_count": len(WORKER_SECRET_NAMES),
+            "present_count": (
+                len(present_secret_names)
+                if secret_bindings_checked
+                else len(WORKER_SECRET_NAMES) - len(effective_missing_secret_names)
+                if evidence_missing_secret_names
+                else 0
+            ),
+            "missing": effective_missing_secret_names,
+            "summary": secret_bindings_summary,
+        },
         "next_actions": next_actions(
             local_ok=local_ok,
             cloudflare=cloudflare,
@@ -321,6 +523,8 @@ def build_doctor(
             dns_ready=dns_ready,
             live=live,
             wrangler_authenticated=wrangler_authenticated,
+            cloudflare_release_ready=cloudflare_release_ready,
+            missing_secret_names=effective_missing_secret_names,
             dns_next_actions=dns_next_actions,
         ),
     }

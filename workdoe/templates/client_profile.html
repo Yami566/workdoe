@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Consumer Profile - Workdoe{% endblock %}
+{% block content %}
+<section class="dashboard-header compact-dashboard-header">
+  <div>
+    <p class="eyebrow">Consumer workspace</p>
+    <h1>Your profile</h1>
+    <p>Keep recurring project details private and ready for the next post.</p>
+  </div>
+  <a class="button secondary" href="{{ url_for('client_dashboard') }}">Projects</a>
+</section>
+
+<section class="consumer-profile-layout" aria-label="Consumer profile workspace">
+  <section class="profile-tool" aria-labelledby="workspace-details-title">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Account</p>
+        <h2 id="workspace-details-title">Workspace details</h2>
+      </div>
+      <span class="privacy-label">Private</span>
+    </div>
+    {% if profile_errors %}
+      <div class="form-error-summary" role="alert">
+        <h3>Fix {{ profile_errors|length }} item{{ "" if profile_errors|length == 1 else "s" }}</h3>
+        <ul>{% for error in profile_errors %}<li>{{ error }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+    <form class="form-grid consumer-profile-form" method="post" aria-label="Consumer profile">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <label class="wide" for="client-organization-name">
+        Household or organization name
+        <input id="client-organization-name" name="organization_name" value="{{ profile.organization_name }}" maxlength="{{ organization_max }}" autocomplete="organization" autocapitalize="words" spellcheck="true" required{% if profile_field_errors.organization_name %} aria-invalid="true" aria-describedby="client-organization-name-error"{% endif %}>
+        {% if profile_field_errors.organization_name %}<span id="client-organization-name-error" class="field-error">{{ profile_field_errors.organization_name[0] }}</span>{% endif %}
+      </label>
+      <fieldset class="wide option-fieldset"{% if profile_field_errors.account_type %} aria-invalid="true" aria-describedby="client-account-type-error"{% endif %}>
+        <legend>Workspace type</legend>
+        <div class="choice-grid compact-choice-grid">
+          {% for value, label in account_types %}
+            <label><input type="radio" name="account_type" value="{{ value }}"{% if profile.account_type == value %} checked{% endif %} required><span>{{ label }}</span></label>
+          {% endfor %}
+        </div>
+        {% if profile_field_errors.account_type %}<span id="client-account-type-error" class="field-error">{{ profile_field_errors.account_type[0] }}</span>{% endif %}
+      </fieldset>
+      <fieldset id="bid-reminders" class="wide option-fieldset"{% if profile_field_errors.notification_preference %} aria-invalid="true" aria-describedby="client-notification-preference-help client-notification-preference-error"{% else %} aria-describedby="client-notification-preference-help"{% endif %}>
+        <legend>Bid reminders</legend>
+        <div class="choice-grid compact-choice-grid two-column">
+          {% for value, label in notification_options %}
+            <label><input type="radio" name="notification_preference" value="{{ value }}"{% if profile.notification_preference == value %} checked{% endif %} required><span>{{ label }}</span></label>
+          {% endfor %}
+        </div>
+        <span id="client-notification-preference-help" class="help-text">Email reminders are optional. Choosing email and saving this profile records your consent; switch back here at any time. Account and security emails still arrive.</span>
+        {% if profile_field_errors.notification_preference %}<span id="client-notification-preference-error" class="field-error">{{ profile_field_errors.notification_preference[0] }}</span>{% endif %}
+      </fieldset>
+      <label class="wide" for="client-profile-note">
+        Private workspace note <span class="optional-label">Optional</span>
+        <textarea id="client-profile-note" name="profile_note" rows="4" maxlength="{{ profile_note_max }}" autocapitalize="sentences" spellcheck="true" aria-describedby="client-profile-note-help{% if profile_field_errors.profile_note %} client-profile-note-error{% endif %}"{% if profile_field_errors.profile_note %} aria-invalid="true"{% endif %}>{{ profile.profile_note }}</textarea>
+        <span id="client-profile-note-help" class="help-text">For recurring access, timing, or property-management context. Contractors cannot see this note.</span>
+        {% if profile_field_errors.profile_note %}<span id="client-profile-note-error" class="field-error">{{ profile_field_errors.profile_note[0] }}</span>{% endif %}
+      </label>
+      <div class="form-actions wide"><button class="button" type="submit">Save profile</button></div>
+    </form>
+  </section>
+
+  <section id="saved-project-areas" class="profile-tool" aria-labelledby="saved-project-areas-title">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Repeat work</p>
+        <h2 id="saved-project-areas-title">Saved project areas</h2>
+      </div>
+      <span class="count-pill">{{ saved_locations|length }}/{{ saved_location_limit }}</span>
+    </div>
+    <p class="section-intro">Save city and ZIP-level areas only. Exact street addresses stay out of Workdoe project posts.</p>
+    {% if location_errors %}
+      <div class="form-error-summary" role="alert">
+        <h3>Check this project area</h3>
+        <ul>{% for error in location_errors %}<li>{{ error }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+    <form class="saved-location-form" method="post" action="{{ url_for('add_client_saved_location') }}" aria-label="Save a project area">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <label for="saved-location-label">Area name <input id="saved-location-label" name="label" value="{{ location_form.get('label', '') }}" maxlength="{{ location_label_max }}" autocomplete="off" placeholder="Main shop" required{% if location_field_errors.label %} aria-invalid="true" aria-describedby="saved-location-label-error"{% endif %}>{% if location_field_errors.label %}<span id="saved-location-label-error" class="field-error">{{ location_field_errors.label[0] }}</span>{% endif %}</label>
+      <label for="saved-location-city">City <input id="saved-location-city" name="city" value="{{ location_form.get('city', '') }}" maxlength="{{ location_city_max }}" autocomplete="address-level2" autocapitalize="words" spellcheck="false" placeholder="Washington" required{% if location_field_errors.city %} aria-invalid="true" aria-describedby="saved-location-city-error"{% endif %}>{% if location_field_errors.city %}<span id="saved-location-city-error" class="field-error">{{ location_field_errors.city[0] }}</span>{% endif %}</label>
+      <label for="saved-location-state">State <select id="saved-location-state" name="state" autocomplete="address-level1" required{% if location_field_errors.state %} aria-invalid="true" aria-describedby="saved-location-state-error"{% endif %}><option value="DC"{% if location_form.get('state', 'DC') == 'DC' %} selected{% endif %}>DC</option><option value="MD"{% if location_form.get('state') == 'MD' %} selected{% endif %}>MD</option><option value="VA"{% if location_form.get('state') == 'VA' %} selected{% endif %}>VA</option></select>{% if location_field_errors.state %}<span id="saved-location-state-error" class="field-error">{{ location_field_errors.state[0] }}</span>{% endif %}</label>
+      <label for="saved-location-zip-code">ZIP <input id="saved-location-zip-code" name="zip_code" value="{{ location_form.get('zip_code', '') }}" pattern="[0-9]{5}" maxlength="5" inputmode="numeric" autocomplete="postal-code" placeholder="20003" required{% if location_field_errors.zip_code %} aria-invalid="true" aria-describedby="saved-location-zip-code-error"{% endif %}>{% if location_field_errors.zip_code %}<span id="saved-location-zip-code-error" class="field-error">{{ location_field_errors.zip_code[0] }}</span>{% endif %}</label>
+      <button class="button" type="submit">Save area</button>
+    </form>
+    <div class="saved-location-list">
+      {% for location in saved_locations %}
+        <article class="saved-location-row">
+          <div><strong>{{ location.label }}</strong><span>{{ location.city }}, {{ location.state }} {{ location.zip_code[:3] }}xx</span></div>
+          <div class="saved-location-actions">
+            <a class="button compact" href="{{ url_for('new_job', location=location.id) }}" data-dialog-title="Post a project at {{ location.label }}">Post here</a>
+            <form method="post" action="{{ url_for('delete_client_saved_location', location_id=location.id) }}">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <button class="button secondary compact" type="submit">Remove</button>
+            </form>
+          </div>
+        </article>
+      {% else %}
+        <p class="empty history-empty">Saved project areas will appear here for one-click location setup.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section id="project-templates" class="profile-tool wide-profile-tool" aria-labelledby="project-templates-title">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Reusable scope</p>
+        <h2 id="project-templates-title">Project templates</h2>
+      </div>
+      <span class="count-pill">{{ project_templates|length }}/{{ project_template_limit }}</span>
+    </div>
+    <p class="section-intro">Save the service, scope, setting, and budget from one of your projects. Location, date, photos, bids, and messages are never copied.</p>
+    {% if template_errors %}
+      <div class="form-error-summary" role="alert">
+        <h3>Check this project template</h3>
+        <ul>{% for error in template_errors %}<li>{{ error }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+    <form class="project-template-form" method="post" action="{{ url_for('add_client_project_template') }}" aria-label="Save a project template">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <label for="project-template-name">Template name
+        <input id="project-template-name" name="name" value="{{ template_form.get('name', '') }}" maxlength="{{ project_template_name_max }}" autocomplete="off" placeholder="Monthly storefront cleanup" required{% if template_field_errors.name %} aria-invalid="true" aria-describedby="project-template-name-error"{% endif %}>
+        {% if template_field_errors.name %}<span id="project-template-name-error" class="field-error">{{ template_field_errors.name[0] }}</span>{% endif %}
+      </label>
+      <label for="project-template-source">Copy scope from
+        <select id="project-template-source" name="source_job_id" required{% if template_field_errors.source_job_id %} aria-invalid="true" aria-describedby="project-template-source-error"{% endif %}>
+          <option value="">Choose one of your projects</option>
+          {% for job in template_source_jobs %}<option value="{{ job.id }}"{% if template_form.get('source_job_id')|string == job.id|string %} selected{% endif %}>{{ job.title }} - {{ job.status }}</option>{% endfor %}
+        </select>
+        {% if template_field_errors.source_job_id %}<span id="project-template-source-error" class="field-error">{{ template_field_errors.source_job_id[0] }}</span>{% endif %}
+      </label>
+      <button class="button" type="submit"{% if not template_source_jobs %} disabled{% endif %}>Save template</button>
+    </form>
+    <div class="project-template-list">
+      {% for template in project_templates %}
+        <article class="project-template-row">
+          <div>
+            <strong>{{ template.name }}</strong>
+            <span>{{ template.category }} - {{ template.title }}</span>
+          </div>
+          <div class="saved-location-actions">
+            <a class="button compact" href="{{ template.use_url }}" data-dialog-title="Post from {{ template.name }}">Use template</a>
+            <form method="post" action="{{ url_for('delete_client_project_template', template_id=template.id) }}">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <button class="button secondary compact" type="submit">Remove</button>
+            </form>
+          </div>
+        </article>
+      {% else %}
+        <p class="empty history-empty">Reusable project scopes will appear here.</p>
+      {% endfor %}
+    </div>
+  </section>
+</section>
+{% endblock %}

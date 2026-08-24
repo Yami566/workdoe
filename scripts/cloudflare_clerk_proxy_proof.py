@@ -6,12 +6,11 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from cloudflare_readiness import (  # noqa: E402
+from cloudflare_readiness import (
     CLERK_PROXY_PATH,
     DEFAULT_CLERK_PROXY_PROOF_PATH,
     WORKDOE_PUBLIC_DOMAIN,
@@ -19,8 +18,10 @@ from cloudflare_readiness import (  # noqa: E402
     valid_workdoe_clerk_proxy_url,
 )
 
-
 DEFAULT_PROXY_URL = f"https://{WORKDOE_PUBLIC_DOMAIN}{CLERK_PROXY_PATH}"
+DEFAULT_SIGN_UP_URL = f"https://{WORKDOE_PUBLIC_DOMAIN}/create-account"
+DEFAULT_TERMS_URL = f"https://{WORKDOE_PUBLIC_DOMAIN}/terms"
+DEFAULT_PRIVACY_URL = f"https://{WORKDOE_PUBLIC_DOMAIN}/privacy"
 
 
 class ClerkProxyProofError(ValueError):
@@ -35,6 +36,13 @@ def build_proof(
     domain: str = WORKDOE_PUBLIC_DOMAIN,
     proxy_url: str = DEFAULT_PROXY_URL,
     confirmed: bool = False,
+    restricted_sign_up_mode: bool = False,
+    email_code_sign_in: bool = False,
+    password_sign_in_disabled: bool = False,
+    custom_sign_up_url: str = DEFAULT_SIGN_UP_URL,
+    express_legal_consent: bool = False,
+    terms_url: str = DEFAULT_TERMS_URL,
+    privacy_url: str = DEFAULT_PRIVACY_URL,
     checked_by: str = "workdoe-operator",
     confirmed_at_utc: str | None = None,
 ) -> dict:
@@ -48,10 +56,38 @@ def build_proof(
         raise ClerkProxyProofError(
             "Use --confirm only after Clerk Domains shows https://workdoe.com/__clerk."
         )
+    if restricted_sign_up_mode is not True:
+        raise ClerkProxyProofError("Confirm Clerk Restricted sign-up mode before release.")
+    if email_code_sign_in is not True or password_sign_in_disabled is not True:
+        raise ClerkProxyProofError(
+            "Confirm email-code sign-in is enabled and password sign-in is disabled."
+        )
+    normalized_sign_up_url = str(custom_sign_up_url or "").strip().rstrip("/")
+    if normalized_sign_up_url != DEFAULT_SIGN_UP_URL:
+        raise ClerkProxyProofError(
+            "Clerk custom sign-up URL must be https://workdoe.com/create-account."
+        )
+    if express_legal_consent is not True:
+        raise ClerkProxyProofError(
+            "Confirm Clerk Legal requires express consent before release."
+        )
+    normalized_terms_url = str(terms_url or "").strip().rstrip("/")
+    normalized_privacy_url = str(privacy_url or "").strip().rstrip("/")
+    if normalized_terms_url != DEFAULT_TERMS_URL:
+        raise ClerkProxyProofError("Clerk Terms URL must be https://workdoe.com/terms.")
+    if normalized_privacy_url != DEFAULT_PRIVACY_URL:
+        raise ClerkProxyProofError("Clerk Privacy URL must be https://workdoe.com/privacy.")
     return {
         "domain": normalized_domain,
         "frontend_api_proxy_url": normalized_proxy_url,
         "confirmed": True,
+        "restricted_sign_up_mode": True,
+        "email_code_sign_in": True,
+        "password_sign_in_disabled": True,
+        "custom_sign_up_url": normalized_sign_up_url,
+        "express_legal_consent": True,
+        "terms_url": normalized_terms_url,
+        "privacy_url": normalized_privacy_url,
         "confirmed_at_utc": confirmed_at_utc or utc_now_iso(),
         "checked_by": str(checked_by or "workdoe-operator").strip() or "workdoe-operator",
     }
@@ -72,7 +108,9 @@ def dry_run_payload(output: Path, domain: str, proxy_url: str) -> dict:
         "domain": str(domain or "").strip(),
         "frontend_api_proxy_url": str(proxy_url or "").strip(),
         "next_step": (
-            "Confirm Clerk Domains uses https://workdoe.com/__clerk, then rerun with --confirm."
+            "Confirm Clerk uses the Workdoe proxy, Restricted sign-up mode, the Workdoe "
+            "custom sign-up URL, email-code-only access, and express legal consent for "
+            "the Workdoe policy URLs; then rerun with all confirm flags."
         ),
     }
 
@@ -97,6 +135,36 @@ def main() -> int:
         "--confirm",
         action="store_true",
         help="Write the proof file after visually confirming Clerk Domains uses the Workdoe proxy URL.",
+    )
+    parser.add_argument(
+        "--confirm-restricted-sign-up",
+        action="store_true",
+        help="Confirm Clerk Restrictions has Restricted sign-up mode enabled.",
+    )
+    parser.add_argument(
+        "--confirm-email-code-only",
+        action="store_true",
+        help="Confirm email-code sign-in is enabled and password sign-in is disabled.",
+    )
+    parser.add_argument(
+        "--confirm-legal-consent",
+        action="store_true",
+        help="Confirm Clerk Legal requires express consent to Workdoe Terms and Privacy before sign-up.",
+    )
+    parser.add_argument(
+        "--custom-sign-up-url",
+        default=DEFAULT_SIGN_UP_URL,
+        help="Clerk custom sign-up URL. Must be https://workdoe.com/create-account.",
+    )
+    parser.add_argument(
+        "--terms-url",
+        default=DEFAULT_TERMS_URL,
+        help="Clerk Terms URL. Must be https://workdoe.com/terms.",
+    )
+    parser.add_argument(
+        "--privacy-url",
+        default=DEFAULT_PRIVACY_URL,
+        help="Clerk Privacy URL. Must be https://workdoe.com/privacy.",
     )
     parser.add_argument(
         "--output",
@@ -137,6 +205,13 @@ def main() -> int:
             domain=args.domain,
             proxy_url=args.proxy_url,
             confirmed=True,
+            restricted_sign_up_mode=args.confirm_restricted_sign_up,
+            email_code_sign_in=args.confirm_email_code_only,
+            password_sign_in_disabled=args.confirm_email_code_only,
+            custom_sign_up_url=args.custom_sign_up_url,
+            express_legal_consent=args.confirm_legal_consent,
+            terms_url=args.terms_url,
+            privacy_url=args.privacy_url,
             checked_by=args.checked_by,
         )
         write_proof(args.output, proof)

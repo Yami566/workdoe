@@ -5,7 +5,6 @@ import shutil
 from collections.abc import Mapping
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 WRANGLER_ENV_VAR = "WORKDOE_WRANGLER_BIN"

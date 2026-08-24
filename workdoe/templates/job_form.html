@@ -1,21 +1,50 @@
 {% extends "base.html" %}
 {% block title %}{{ page_title }} - Workdoe{% endblock %}
 {% block content %}
-<section class="page-header">
-  <p class="eyebrow">{{ page_eyebrow }}</p>
-  <h1>{{ page_title }}</h1>
-  <p>{{ page_intro }}</p>
-</section>
+{% if not embedded_dialog_mode() %}
+  <section class="page-header">
+    <p class="eyebrow">{{ page_eyebrow }}</p>
+    <h1>{{ page_title }}</h1>
+    <p>{{ page_intro }}</p>
+  </section>
 
-<ul class="form-checklist" aria-label="Posting safeguards">
-  <li>City/ZIP pin</li>
-  <li>Private photos</li>
-  <li>Approve before chat</li>
-</ul>
+  <ul class="form-checklist" aria-label="Posting safeguards">
+    <li>City/ZIP pin</li>
+    <li>Private photos</li>
+    <li>Approve before chat</li>
+  </ul>
+{% endif %}
+
+{% if mode == "new" and saved_locations %}
+  <section class="saved-location-launcher" aria-labelledby="saved-location-launcher-title">
+    <div><strong id="saved-location-launcher-title">Start with a saved area</strong><p class="help-text">Prefill the city and ZIP in step 4.</p></div>
+    <div class="saved-location-shortcuts">
+      {% for location in saved_locations %}
+        <a class="button secondary compact" href="{{ url_for('new_job', location=location.id) }}">{{ location.label }}</a>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
+{% if mode == "new" and repeat_invitation %}
+  <section class="repeat-invitation-banner" aria-labelledby="repeat-invitation-title">
+    <div>
+      <span class="eyebrow">Invite a proven match</span>
+      <strong id="repeat-invitation-title">{{ repeat_invitation.contractor_name }} can bid again</strong>
+      <p>They will see this project in their Workdoe dashboard and may send a fresh mini bid. The usual four-bid limit, deadline, and approval rules still apply.</p>
+    </div>
+    <a class="button secondary compact" href="{{ url_for('new_job', repeat=repeat_invitation.source_job_id) }}">Remove invitation</a>
+  </section>
+{% endif %}
 
 {% set field_errors = error_feedback.fields %}
-<form class="form-grid" method="post" enctype="multipart/form-data" aria-label="{{ page_title }}" {% if error_feedback.summary %}aria-describedby="job-form-errors"{% endif %}>
+<form class="form-grid" method="post" enctype="multipart/form-data" aria-label="{{ page_title }}" data-dialog-fragment {% if mode == 'new' %}data-project-composer data-project-initial-step="{{ 3 if form.service_slug else (2 if form.service_group_slug else 1) }}"{% endif %} {% if error_feedback.summary %}aria-describedby="job-form-errors"{% endif %}>
   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  {% if mode == "new" %}<input type="hidden" name="idempotency_key" value="{{ request.form.get('idempotency_key') or new_idempotency_key() }}">{% endif %}
+  {% if mode == "new" and repeat_invitation %}
+    <input type="hidden" name="repeat_source_job_id" value="{{ repeat_invitation.source_job_id }}">
+    <input type="hidden" name="repeat_match_request_id" value="{{ repeat_invitation.source_match_request_id }}">
+  {% endif %}
   {% if error_feedback.summary %}
     <section id="job-form-errors" class="form-error-summary wide" role="alert" aria-labelledby="job-form-errors-title">
       <h2 id="job-form-errors-title">Fix {{ error_feedback.summary|length }} item{{ "" if error_feedback.summary|length == 1 else "s" }}</h2>
@@ -26,70 +55,24 @@
       </ul>
     </section>
   {% endif %}
-  <label class="wide" for="job-title">
-    Project title
-    <input id="job-title" name="title" value="{{ form.title }}" maxlength="{{ title_max }}" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Power wash front steps and patio" required {% if field_errors.title %}aria-invalid="true" aria-describedby="job-title-error"{% endif %}>
-    {% if field_errors.title %}<span id="job-title-error" class="field-error">{{ field_errors.title[0] }}</span>{% endif %}
-  </label>
-  <label for="job-category">
-    Category
-    <select id="job-category" name="category" required {% if field_errors.category %}aria-invalid="true" aria-describedby="job-category-error"{% endif %}>
-      {% for category in job_categories %}
-        <option value="{{ category }}" {% if form.category == category %}selected{% endif %}>{{ category }}</option>
-      {% endfor %}
-    </select>
-    {% if field_errors.category %}<span id="job-category-error" class="field-error">{{ field_errors.category[0] }}</span>{% endif %}
-  </label>
-  <label for="job-desired-date">
-    Desired date
-    <input id="job-desired-date" name="desired_date" type="date" value="{{ form.desired_date }}" min="{{ today }}" {% if field_errors.desired_date %}aria-invalid="true" aria-describedby="job-desired-date-error"{% endif %}>
-    {% if field_errors.desired_date %}<span id="job-desired-date-error" class="field-error">{{ field_errors.desired_date[0] }}</span>{% endif %}
-  </label>
-  <label for="job-city">
-    City
-    <input id="job-city" name="city" value="{{ form.city }}" maxlength="{{ city_max }}" autocomplete="address-level2" autocapitalize="words" spellcheck="false" list="job-city-options" enterkeyhint="next" placeholder="Washington" required {% if field_errors.city %}aria-invalid="true" aria-describedby="job-city-error"{% endif %}>
-    {% if field_errors.city %}<span id="job-city-error" class="field-error">{{ field_errors.city[0] }}</span>{% endif %}
-  </label>
-  <label for="job-state">
-    State
-    <select id="job-state" name="state" autocomplete="address-level1" required {% if field_errors.state %}aria-invalid="true" aria-describedby="job-state-error"{% endif %}>
-      <option value="DC" {% if form.state == 'DC' %}selected{% endif %}>DC</option>
-      <option value="MD" {% if form.state == 'MD' %}selected{% endif %}>MD</option>
-      <option value="VA" {% if form.state == 'VA' %}selected{% endif %}>VA</option>
-    </select>
-    {% if field_errors.state %}<span id="job-state-error" class="field-error">{{ field_errors.state[0] }}</span>{% endif %}
-  </label>
-  <label for="job-zip-code">
-    ZIP
-    <input id="job-zip-code" name="zip_code" value="{{ form.zip_code }}" inputmode="numeric" autocomplete="postal-code" pattern="[0-9]{5}" maxlength="5" list="job-zip-options" enterkeyhint="next" placeholder="20003" required {% if field_errors.zip_code %}aria-invalid="true" aria-describedby="job-zip-code-error"{% endif %}>
-    {% if field_errors.zip_code %}<span id="job-zip-code-error" class="field-error">{{ field_errors.zip_code[0] }}</span>{% endif %}
-  </label>
-  <datalist id="job-city-options">
-    {% for option in dmv_city_options %}
-      <option value="{{ option.city }}" label="{{ option.label }}"></option>
-    {% endfor %}
-  </datalist>
-  <datalist id="job-zip-options">
-    {% for option in dmv_zip_options %}
-      <option value="{{ option.zip }}" label="{{ option.label }}"></option>
-    {% endfor %}
-  </datalist>
-  <label class="wide" for="job-description">
-    Description
-    <textarea id="job-description" name="description" rows="5" minlength="{{ description_min }}" maxlength="{{ description_max }}" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Scope, access, timing, and desired outcome." required {% if field_errors.description %}aria-invalid="true" aria-describedby="job-description-error"{% endif %}>{{ form.description }}</textarea>
-    {% if field_errors.description %}<span id="job-description-error" class="field-error">{{ field_errors.description[0] }}</span>{% endif %}
-  </label>
-  <label class="wide" for="job-photos">
-    Photos
-    <input id="job-photos" name="photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-describedby="job-photos-help">
-    <span id="job-photos-help" class="help-text">{{ "Add more private photos. PNG, JPG, GIF, or WebP." if mode == "edit" else "Private uploads. PNG, JPG, GIF, or WebP." }}</span>
-  </label>
   {% if mode == "new" %}
-    <div class="wide">{% with action='job-post' %}{% include "_turnstile.html" %}{% endwith %}</div>
+    {% set composer_include_photos = true %}
+    {% set composer_submit_label = submit_label %}
+    {% set composer_cancel_url = cancel_url %}
+    {% set composer_turnstile_action = 'job-post' %}
+    {% include "_project_composer.html" %}
+  {% else %}
+    {% include "_project_fields.html" %}
+    <label class="wide" for="job-photos">
+      Photos
+      <input id="job-photos" name="photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-describedby="job-photos-help">
+      <span id="job-photos-help" class="help-text">Add more private photos. PNG, JPG, GIF, or WebP.</span>
+    </label>
+    <div class="form-actions wide">
+      <button class="button" type="submit" aria-label="{{ submit_label }}">{{ submit_label }}</button>
+      <a class="button secondary" href="{{ cancel_url }}">Cancel</a>
+    </div>
   {% endif %}
-  <div class="form-actions wide">
-    <button class="button" type="submit" aria-label="{{ submit_label }}">{{ submit_label }}</button>
-    <a class="button secondary" href="{{ cancel_url }}">Cancel</a>
-  </div>
 </form>
 {% endblock %}
+{% block scripts %}{% if mode == 'new' %}<script defer src="{{ url_for('static', filename='project-composer.js') }}?v={{ asset_release_token }}"></script>{% endif %}{% endblock %}

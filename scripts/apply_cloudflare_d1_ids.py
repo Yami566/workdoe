@@ -5,7 +5,6 @@ import json
 import re
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_WRANGLER_PATH = REPO_ROOT / "cloudflare" / "wrangler.jsonc"
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"

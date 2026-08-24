@@ -7,7 +7,6 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 CLOUDFLARE_DIR = REPO_ROOT / "cloudflare"
@@ -18,15 +17,14 @@ SECRET_LIST_PATH = REPO_ROOT / "cloudflare-secret-list.local.json"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from apply_cloudflare_d1_ids import apply_d1_ids  # noqa: E402
-from cloudflare_wrangler import (  # noqa: E402
+from apply_cloudflare_d1_ids import apply_d1_ids
+from cloudflare_wrangler import (
     cloudflare_api_token_error,
     cloudflare_api_token_present,
     wrangler_command,
     wrangler_env,
 )
-from prepare_cloudflare_release import ZERO_UUID, existing_d1_ids  # noqa: E402
-
+from prepare_cloudflare_release import ZERO_UUID, existing_d1_ids
 
 IDEMPOTENT_RESOURCE_STEPS = {
     "create-r2-media-bucket",
@@ -190,7 +188,7 @@ def execute_steps(
                     from_file=D1_CAPTURE_PATH,
                     preview_from_file=D1_PREVIEW_CAPTURE_PATH,
                 )
-            except Exception as exc:  # pragma: no cover - exercised by integration use
+            except Exception as exc:  # noqa: BLE001 - CLI integrations raise heterogeneous errors.
                 step.status = "failed"
                 errors.append(f"{step.name}: {exc}")
                 if not continue_on_failure:
