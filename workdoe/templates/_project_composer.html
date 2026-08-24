@@ -13,7 +13,7 @@
   <div class="service-family-grid" aria-describedby="service-family-help">
     {% for group in service_groups %}
       <label class="service-family-option" for="service-family-{{ group.slug }}">
-        <input id="service-family-{{ group.slug }}" type="radio" name="service_group_slug" value="{{ group.slug }}" data-group-name="{{ group.name }}" data-group-description="{{ group.description }}" data-group-icon="{{ url_for('static', filename='vendor/tabler-icons/' ~ group.icon) }}" {% if form.service_group_slug == group.slug %}checked{% endif %} required>
+        <input id="service-family-{{ group.slug }}" type="radio" name="service_group_slug" value="{{ group.slug }}" data-group-name="{{ group.name }}" data-group-description="{{ group.description }}" data-group-icon="{{ url_for('static', filename='vendor/tabler-icons/' ~ group.icon) }}" data-project-choice-advance {% if form.service_group_slug == group.slug %}checked{% endif %} required>
         <span class="service-family-visual" aria-hidden="true">
           <span class="service-family-number">{{ "%02d"|format(loop.index) }}</span>
           <img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ group.icon) }}" alt="">
@@ -52,7 +52,7 @@
         <div class="service-option-grid">
         {% for service in group.services[:quick_count] %}
           <label class="service-option" for="service-choice-{{ service[0] }}">
-            <input id="service-choice-{{ service[0] }}" type="radio" name="service_choice" value="{{ service[0] }}" data-group="{{ group.slug }}" data-category="{{ service[2] }}" {% if form.service_slug == service[0] %}checked{% endif %}>
+            <input id="service-choice-{{ service[0] }}" type="radio" name="service_choice" value="{{ service[0] }}" data-group="{{ group.slug }}" data-category="{{ service[2] }}" data-project-choice-advance {% if form.service_slug == service[0] %}checked{% endif %}>
             <span class="service-option-visual" aria-hidden="true"><span>{{ "%02d"|format(loop.index) }}</span><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(service[0], group.icon)) }}" alt=""></span>
             <span class="service-option-copy"><strong>{{ service[1] }}</strong></span>
           </label>
@@ -64,7 +64,7 @@
             <div class="service-option-grid service-option-grid-more">
               {% for service in additional_services %}
                 <label class="service-option" for="service-choice-{{ service[0] }}">
-                  <input id="service-choice-{{ service[0] }}" type="radio" name="service_choice" value="{{ service[0] }}" data-group="{{ group.slug }}" data-category="{{ service[2] }}" {% if form.service_slug == service[0] %}checked{% endif %}>
+                  <input id="service-choice-{{ service[0] }}" type="radio" name="service_choice" value="{{ service[0] }}" data-group="{{ group.slug }}" data-category="{{ service[2] }}" data-project-choice-advance {% if form.service_slug == service[0] %}checked{% endif %}>
                   <span class="service-option-visual" aria-hidden="true"><span>{{ "%02d"|format(quick_count + loop.index) }}</span><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(service[0], group.icon)) }}" alt=""></span>
                   <span class="service-option-copy"><strong>{{ service[1] }}</strong></span>
                 </label>
@@ -99,18 +99,19 @@
 
 <fieldset class="project-composer-step wide" data-project-step="3" data-step-title="Describe the work">
   <legend>What does a contractor need to know?</legend>
+  {% set selected_service_name = form.service_slug|service_name %}
   {% set saved_scope_answers = form.get('scope_answers', {}) %}
   {% for scope_service_slug, questions in service_scope_sets.items() %}
     {{ scope_panel(scope_service_slug, questions, saved_scope_answers, form.service_slug != scope_service_slug, form.service_slug != scope_service_slug) }}
   {% endfor %}
   <label for="job-title">
     Project title
-    <input id="job-title" name="title" value="{{ form.title }}" maxlength="{{ title_max }}" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Power wash front steps and patio" required {% if field_errors.title %}aria-invalid="true" aria-describedby="job-title-error"{% endif %}>
+    <input id="job-title" name="title" value="{{ form.title }}" maxlength="{{ title_max }}" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="{{ selected_service_name ~ ' project' if selected_service_name else 'Name the project' }}" required {% if field_errors.title %}aria-invalid="true" aria-describedby="job-title-error"{% endif %}>
     {% if field_errors.title %}<span id="job-title-error" class="field-error">{{ field_errors.title[0] }}</span>{% endif %}
   </label>
   <label for="job-description">
     Description
-    <textarea id="job-description" name="description" rows="6" minlength="{{ description_min }}" maxlength="{{ description_max }}" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe the size, current condition, access, and desired outcome." required aria-describedby="job-description-help{% if field_errors.description %} job-description-error{% endif %}" {% if field_errors.description %}aria-invalid="true"{% endif %}>{{ form.description }}</textarea>
+    <textarea id="job-description" name="description" rows="6" minlength="{{ description_min }}" maxlength="{{ description_max }}" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe the {{ selected_service_name|lower ~ ' ' if selected_service_name else '' }}scope, size, current condition, access, and desired outcome." required aria-describedby="job-description-help{% if field_errors.description %} job-description-error{% endif %}" {% if field_errors.description %}aria-invalid="true"{% endif %}>{{ form.description }}</textarea>
     <span id="job-description-help" class="help-text">Do not include an exact street address, email, or phone number.</span>
     {% if field_errors.description %}<span id="job-description-error" class="field-error">{{ field_errors.description[0] }}</span>{% endif %}
   </label>

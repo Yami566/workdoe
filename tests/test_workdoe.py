@@ -747,6 +747,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(edit.status_code, 200)
         self.assertIn(b"Edit project", edit.data)
         self.assertIn(b'value="Original patio wash"', edit.data)
+        self.assertIn(b'placeholder="Pressure washing project"', edit.data)
+        self.assertIn(
+            b"Describe the pressure washing scope, size, current condition, access, and desired outcome.",
+            edit.data,
+        )
         self.assertIn(b"Save changes", edit.data)
         self.assertIn(b"Approve before chat", edit.data)
 
@@ -5652,6 +5657,9 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('composer.closest("[data-site-dialog-content]")', composer_script)
         self.assertIn("dialogContent.scrollTop = 0", composer_script)
         self.assertIn('composer.querySelector(".project-composer-head")', composer_script)
+        self.assertIn('composer.addEventListener("pointerdown"', composer_script)
+        self.assertIn("pointerChoiceInput !== input", composer_script)
+        self.assertIn("label.toLowerCase()", composer_script)
 
         self.login("contractor@workdoe.local", "workdoe-contractor")
         available = self.one(
@@ -6405,6 +6413,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'data-project-initial-step="3"', task_form.data)
         self.assertIn(b'value="pressure-washing"', task_form.data)
         self.assertIn(b"checked", task_form.data)
+        self.assertIn(b'placeholder="Pressure washing project"', task_form.data)
+        self.assertIn(
+            b"Describe the pressure washing scope, size, current condition, access, and desired outcome.",
+            task_form.data,
+        )
         form = self.client.get("/jobs/new")
         self.assertEqual(form.status_code, 200)
         self.assertEqual(form.data.count(b'data-project-step="'), 6)
@@ -6424,10 +6437,14 @@ class WorkdoeFlowTests(unittest.TestCase):
             b'/static/styles.css?v=workdoe-contractor-trust-paths',
             form.data,
         )
-        self.assertIn(b'/static/project-composer.js?v=workdoe-service-tiles', form.data)
+        self.assertIn(
+            b'/static/project-composer.js?v=workdoe-service-tiles-guided-brief-v2',
+            form.data,
+        )
         self.assertIn(b'name="service_group_slug"', form.data)
         self.assertIn(b'name="service_slug"', form.data)
         self.assertIn(b'name="service_choice"', form.data)
+        self.assertEqual(form.data.count(b'data-project-choice-advance'), 59)
         self.assertIn(b'data-selected-service-family', form.data)
         self.assertIn(b'class="service-select-control"', form.data)
         self.assertEqual(form.data.count(b'class="project-setting-option"'), 6)

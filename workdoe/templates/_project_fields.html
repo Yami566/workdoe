@@ -1,6 +1,7 @@
 <label class="wide" for="job-title">
   Project title
-  <input id="job-title" name="title" value="{{ form.title }}" maxlength="{{ title_max }}" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Power wash front steps and patio" required {% if field_errors.title %}aria-invalid="true" aria-describedby="job-title-error"{% endif %}>
+  {% set selected_service_name = form.service_slug|service_name(form.category) %}
+  <input id="job-title" name="title" value="{{ form.title }}" maxlength="{{ title_max }}" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="{{ selected_service_name ~ ' project' if selected_service_name else 'Name the project' }}" required {% if field_errors.title %}aria-invalid="true" aria-describedby="job-title-error"{% endif %}>
   {% if field_errors.title %}<span id="job-title-error" class="field-error">{{ field_errors.title[0] }}</span>{% endif %}
 </label>
 <div class="service-family-context">
@@ -58,7 +59,7 @@
 </label>
 <label class="wide" for="job-description">
   Description
-  <textarea id="job-description" name="description" rows="5" minlength="{{ description_min }}" maxlength="{{ description_max }}" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Scope, access, timing, and desired outcome." required aria-describedby="job-description-help{% if field_errors.description %} job-description-error{% endif %}" {% if field_errors.description %}aria-invalid="true"{% endif %}>{{ form.description }}</textarea>
+  <textarea id="job-description" name="description" rows="5" minlength="{{ description_min }}" maxlength="{{ description_max }}" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe the {{ selected_service_name|lower ~ ' ' if selected_service_name else '' }}scope, size, current condition, access, and desired outcome." required aria-describedby="job-description-help{% if field_errors.description %} job-description-error{% endif %}" {% if field_errors.description %}aria-invalid="true"{% endif %}>{{ form.description }}</textarea>
   <span id="job-description-help" class="help-text">Do not include an exact street address, email, or phone number.</span>
   {% if field_errors.description %}<span id="job-description-error" class="field-error">{{ field_errors.description[0] }}</span>{% endif %}
 </label>

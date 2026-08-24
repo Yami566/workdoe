@@ -94,6 +94,10 @@ deployment has been performed during this stabilization pass.
   position. Optional quote-ready questions now use a compact native disclosure,
   reopen when prior answers exist, and preserve the six-step data contract in
   both Flask and the Cloudflare Worker adapter.
+- Reduced the common pointer/touch project-start path from four taps to two by
+  advancing valid family and service choices. Keyboard and no-JavaScript paths
+  retain explicit Continue controls, while title and description guidance now
+  follows the selected canonical service in both runtimes and on edit forms.
 - Reframed the private message inbox around conversation triage. Compact All
   and Unread views replace non-actionable summary cards, rows identify the
   other participant, and the validated server-side filter preserves private
@@ -548,6 +552,16 @@ deployment has been performed during this stabilization pass.
   remained warning-free, the D1 verifier loaded 33 migrations without a table
   scan, and Wrangler 4.125.0 packaged 48 Python modules and 86 assets at 926.94
   KiB / 170.34 KiB gzip without deploying.
+- The service-guided composer batch passed all 235 tests in 80.454 seconds and
+  the complete security/provenance gate across 619 non-ignored files. No known
+  Python or Node vulnerability, medium/high Bandit or Ruff finding, unreviewed
+  secret, or dependency drift was found. Cloudflare preflight remained
+  warning-free; the D1 verifier loaded all 33 migrations, used the expected
+  geographic and public-media indexes, and found no table scan. Wrangler
+  4.125.0 packaged 48 Python modules and 86 assets at 927.54 KiB / 170.45 KiB
+  gzip without deploying. Responsive evidence and the corrected Lawn mowing
+  guidance are recorded in
+  `docs/ux-audit/2026-08-24-consumer-dashboard-posting/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

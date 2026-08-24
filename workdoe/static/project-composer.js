@@ -16,11 +16,15 @@
   var serviceOptionGroups = Array.prototype.slice.call(composer.querySelectorAll("[data-service-option-group]"));
   var selectedFamily = composer.querySelector("[data-selected-service-family]");
   var categoryInput = composer.querySelector('input[name="category"]');
+  var titleInput = composer.querySelector('input[name="title"]');
+  var descriptionInput = composer.querySelector('textarea[name="description"]');
+  var choiceAdvanceInputs = Array.prototype.slice.call(composer.querySelectorAll("[data-project-choice-advance]"));
   var scopePanels = Array.prototype.slice.call(composer.querySelectorAll("[data-service-scope-set]"));
   var policyPanel = composer.querySelector("[data-service-policy-advisory]");
   var policyCheckbox = composer.querySelector("[data-service-policy-checkbox]");
   var requestedInitialStep = Number(composer.dataset.projectInitialStep || 1);
   var currentStep = 1;
+  var pointerChoiceInput = null;
 
   function selectedGroup() {
     var selected = composer.querySelector('input[name="service_group_slug"]:checked');
@@ -41,6 +45,19 @@
     var option = selectedServiceOption();
     if (categoryInput && option && option.dataset.category) {
       categoryInput.value = option.dataset.category;
+    }
+  }
+
+  function syncServiceGuidance() {
+    var option = selectedServiceOption();
+    var label = option && option.value ? option.textContent.trim() : "";
+    if (titleInput) {
+      titleInput.placeholder = label ? label + " project" : "Name the project";
+    }
+    if (descriptionInput) {
+      descriptionInput.placeholder = label
+        ? "Describe the " + label.toLowerCase() + " scope, size, current condition, access, and desired outcome."
+        : "Describe the scope, size, current condition, access, and desired outcome.";
     }
   }
 
@@ -146,6 +163,7 @@
     syncScopePanels();
     updateCategory();
     syncServicePolicy();
+    syncServiceGuidance();
   }
 
   function moneyValue(value) {
@@ -280,6 +298,7 @@
       syncScopePanels();
       updateCategory();
       syncServicePolicy();
+      syncServiceGuidance();
       updateReview();
     });
   }
@@ -292,7 +311,40 @@
       syncScopePanels();
       updateCategory();
       syncServicePolicy();
+      syncServiceGuidance();
       updateReview();
+    });
+  });
+  composer.addEventListener("pointerdown", function (event) {
+    var option = event.target.closest("label");
+    pointerChoiceInput = option
+      ? option.querySelector("[data-project-choice-advance]")
+      : null;
+  });
+  composer.addEventListener("pointerup", function () {
+    var capturedInput = pointerChoiceInput;
+    window.setTimeout(function () {
+      if (pointerChoiceInput === capturedInput) {
+        pointerChoiceInput = null;
+      }
+    }, 0);
+  });
+  composer.addEventListener("pointercancel", function () {
+    pointerChoiceInput = null;
+  });
+  choiceAdvanceInputs.forEach(function (input) {
+    input.addEventListener("click", function () {
+      if (pointerChoiceInput !== input || !input.checked) {
+        return;
+      }
+      pointerChoiceInput = null;
+      var step = input.closest("[data-project-step]");
+      var stepNumber = step ? Number(step.dataset.projectStep) : 0;
+      window.setTimeout(function () {
+        if (stepNumber === currentStep && stepNumber < 3 && validateStep(step)) {
+          showStep(stepNumber + 1, true);
+        }
+      }, 0);
     });
   });
   composer.addEventListener("input", updateReview);

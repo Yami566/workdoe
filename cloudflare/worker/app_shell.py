@@ -633,7 +633,7 @@ def layout(
     if include_actions or authenticated:
         scripts.append('<script defer src="/worker-actions.js"></script>')
     if include_project_composer:
-        scripts.append('<script defer src="/project-composer.js?v=workdoe-service-tiles"></script>')
+        scripts.append('<script defer src="/project-composer.js?v=workdoe-service-tiles-guided-brief-v2"></script>')
     if include_clerk:
         clerk_asset_base_url = clerk_runtime_frontend_api_url(
             clerk_publishable_key,
@@ -1888,6 +1888,14 @@ def project_composer_fields_html(
     form = {**form, **selection}
     selected_group = str(form.get("service_group_slug") or "")
     selected_service = str(form.get("service_slug") or "")
+    selected_service_name = service_label(selected_service)
+    title_placeholder = (
+        f"{selected_service_name} project" if selected_service_name else "Name the project"
+    )
+    description_subject = f"{selected_service_name.lower()} " if selected_service_name else ""
+    description_placeholder = (
+        f"Describe the {description_subject}scope, size, current condition, access, and desired outcome."
+    )
     selected_policy = service_policy(selected_service)
     selected_state = str(form.get("state") or "DC")
     selected_setting = str(form.get("project_setting") or "")
@@ -1900,7 +1908,7 @@ def project_composer_fields_html(
     family_options = "".join(
         f"""
       <label class="service-family-option" for="service-family-{escape(group['slug'])}">
-        <input id="service-family-{escape(group['slug'])}" type="radio" name="service_group_slug" value="{escape(group['slug'])}" data-group-name="{escape(group['name'])}" data-group-description="{escape(group['description'])}" data-group-icon="/vendor/tabler-icons/{escape(group['icon'])}"{' checked' if selected_group == group['slug'] else ''} required>
+        <input id="service-family-{escape(group['slug'])}" type="radio" name="service_group_slug" value="{escape(group['slug'])}" data-group-name="{escape(group['name'])}" data-group-description="{escape(group['description'])}" data-group-icon="/vendor/tabler-icons/{escape(group['icon'])}" data-project-choice-advance{' checked' if selected_group == group['slug'] else ''} required>
         <span class="service-family-visual" aria-hidden="true"><span class="service-family-number">{index:02d}</span><img src="/vendor/tabler-icons/{escape(group['icon'])}" alt=""></span>
         <span class="service-family-copy"><strong>{escape(group['name'])}</strong><small>{escape(group['description'])}</small></span>
       </label>"""
@@ -1930,7 +1938,7 @@ def project_composer_fields_html(
         return (
             f'<label class="service-option" for="service-choice-{escape(service[0])}">'
             f'<input id="service-choice-{escape(service[0])}" type="radio" name="service_choice" value="{escape(service[0])}" '
-            f'data-group="{escape(group["slug"])}" data-category="{escape(service[2])}"'
+            f'data-group="{escape(group["slug"])}" data-category="{escape(service[2])}" data-project-choice-advance'
             f'{' checked' if selected_service == service[0] else ''}>'
             f'<span class="service-option-visual" aria-hidden="true"><span>{index:02d}</span>'
             f'<img src="/vendor/tabler-icons/{escape(service_icon(service[0], group["icon"]))}" alt=""></span>'
@@ -2049,8 +2057,8 @@ def project_composer_fields_html(
       <fieldset class="project-composer-step wide" data-project-step="3" data-step-title="Describe the work">
         <legend>What does a contractor need to know?</legend>
         {scope_panels}
-        <label for="job-title">Project title <input id="job-title" name="title" value="{escape(str(form.get('title') or ''))}" maxlength="90" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Power wash front steps and patio" required{invalid('title', 'job-title-error')}>{field_error('title', 'job-title-error')}</label>
-        <label for="job-description">Description <textarea id="job-description" name="description" rows="6" minlength="20" maxlength="1200" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe the size, current condition, access, and desired outcome." required aria-describedby="job-description-help{' job-description-error' if fields.get('description') else ''}"{' aria-invalid="true"' if fields.get('description') else ''}>{escape(str(form.get('description') or ''))}</textarea><span id="job-description-help" class="help-text">Do not include an exact street address, email, or phone number.</span>{field_error('description', 'job-description-error')}</label>
+        <label for="job-title">Project title <input id="job-title" name="title" value="{escape(str(form.get('title') or ''))}" maxlength="90" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="{escape(title_placeholder)}" required{invalid('title', 'job-title-error')}>{field_error('title', 'job-title-error')}</label>
+        <label for="job-description">Description <textarea id="job-description" name="description" rows="6" minlength="20" maxlength="1200" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="{escape(description_placeholder)}" required aria-describedby="job-description-help{' job-description-error' if fields.get('description') else ''}"{' aria-invalid="true"' if fields.get('description') else ''}>{escape(str(form.get('description') or ''))}</textarea><span id="job-description-help" class="help-text">Do not include an exact street address, email, or phone number.</span>{field_error('description', 'job-description-error')}</label>
         <fieldset class="project-setting-fieldset"{' aria-describedby="job-project-setting-error"' if fields.get('project_setting') else ''}>
           <legend>Where is the work happening? <span class="optional-label">Optional</span></legend>
           <p class="help-text">Choose the setting only. Do not add a building name, unit, or street address.</p>
@@ -2211,7 +2219,7 @@ def job_form_html(
       <li>Approve before chat</li>
     </ul>
     <form class="form-grid" data-dialog-fragment data-json-action="{'/api/jobs/' + str(job_id) + '/update' if is_edit else '/api/jobs'}" data-upload-after-json-template="/api/media/jobs/{{job_id}}/upload" data-success-url-template="/client/jobs/{{id}}" aria-label="{'Edit project' if is_edit else 'Post a project.'}" aria-describedby="worker-form-status">
-      <label class="wide" for="job-title">Project title <input id="job-title" name="title" value="{escape(str(row_value(job, 'title', '') or ''))}" maxlength="90" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Power wash front steps and patio" required></label>
+      <label class="wide" for="job-title">Project title <input id="job-title" name="title" value="{escape(str(row_value(job, 'title', '') or ''))}" maxlength="90" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="{escape(edit_service_name + ' project' if edit_service_name else 'Name the project')}" required></label>
       <div class="service-family-context"><span><small>Service</small><strong>{escape(edit_service_name)}</strong><small>Post a new project to change the service bucket.</small></span></div>
       <input type="hidden" name="category" value="{escape(edit_category)}">
       <input type="hidden" name="service_group_slug" value="{escape(edit_service_group_slug)}">
@@ -2230,7 +2238,7 @@ def job_form_html(
       </datalist>
       <label for="job-budget-min">Budget minimum <span class="optional-label">Optional</span> <input id="job-budget-min" name="budget_min" type="number" value="{escape(str(row_value(job, 'budget_min', '') if row_value(job, 'budget_min') is not None else ''))}" min="0" max="{JOB_BUDGET_MAX}" step="1" inputmode="numeric" placeholder="500"></label>
       <label for="job-budget-max">Budget maximum <span class="optional-label">Optional</span> <input id="job-budget-max" name="budget_max" type="number" value="{escape(str(row_value(job, 'budget_max', '') if row_value(job, 'budget_max') is not None else ''))}" min="0" max="{JOB_BUDGET_MAX}" step="1" inputmode="numeric" placeholder="1000"></label>
-      <label class="wide" for="job-description">Description <textarea id="job-description" name="description" rows="5" minlength="20" maxlength="1200" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Scope, access, timing, and desired outcome." aria-describedby="job-description-help" required>{escape(str(row_value(job, 'description', '') or ''))}</textarea><span id="job-description-help" class="help-text">Do not include an exact street address, email, or phone number.</span></label>
+      <label class="wide" for="job-description">Description <textarea id="job-description" name="description" rows="5" minlength="20" maxlength="1200" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe the {escape(edit_service_name.lower() + ' ' if edit_service_name else '')}scope, size, current condition, access, and desired outcome." aria-describedby="job-description-help" required>{escape(str(row_value(job, 'description', '') or ''))}</textarea><span id="job-description-help" class="help-text">Do not include an exact street address, email, or phone number.</span></label>
       {edit_policy_html}
       <label class="wide" for="job-photos">Photos <input id="job-photos" name="photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-describedby="job-photos-help"></label>
       <p id="job-photos-help" class="help-text wide">Private uploads. PNG, JPG, GIF, or WebP.</p>

@@ -4547,6 +4547,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             },
         )
         self.assertIn('data-project-initial-step="3"', task_form_html)
+        self.assertIn('placeholder="Pressure washing project"', task_form_html)
+        self.assertIn(
+            "Describe the pressure washing scope, size, current condition, access, and desired outcome.",
+            task_form_html,
+        )
         family_draft_html = module.public_job_draft_html(
             {"service_group_slug": "outdoor-yard"}
         )
@@ -4621,6 +4626,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Edit Project - Workdoe", edit_form_html)
         self.assertIn('data-json-action="/api/jobs/12/update"', edit_form_html)
         self.assertIn('value="Power wash steps"', edit_form_html)
+        self.assertIn('placeholder="Pressure washing project"', edit_form_html)
+        self.assertIn(
+            "Describe the pressure washing scope, size, current condition, access, and desired outcome.",
+            edit_form_html,
+        )
         self.assertIn("<strong>Pressure washing</strong>", edit_form_html)
         self.assertIn('name="service_slug" value="pressure-washing"', edit_form_html)
         self.assertIn('<option value="VA" selected>', edit_form_html)
@@ -10365,13 +10375,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Pick the closest fit. You can change it before posting.", html)
         self.assertIn("Choose one task. Add details next.", html)
         self.assertIn("More yard &amp; landscaping services", html)
-        self.assertIn('src="/project-composer.js?v=workdoe-service-tiles"', html)
+        self.assertIn(
+            'src="/project-composer.js?v=workdoe-service-tiles-guided-brief-v2"', html
+        )
         self.assertIn('/vendor/tabler-icons/trees.svg', html)
         self.assertIn('/vendor/tabler-icons/lawn-mower.svg', html)
         self.assertIn('/vendor/tabler-icons/seedling.svg', html)
         self.assertIn('/vendor/tabler-icons/plant.svg', html)
         self.assertIn('href="/styles.css?v=workdoe-contractor-trust-paths"', html)
         self.assertIn('name="service_choice"', html)
+        self.assertEqual(html.count('data-project-choice-advance'), 59)
         self.assertIn('data-selected-service-family', html)
         self.assertIn('class="service-select-control"', html)
         self.assertEqual(html.count('class="project-setting-option"'), 6)
