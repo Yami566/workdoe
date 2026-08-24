@@ -68,10 +68,11 @@ the relevant workflow through a same-domain email-code sign-in.
   or completion state, and it must reopen in the six-step composer for review.
 - Review contractor mini bids and approve or reject them. Pending offers appear
   in received order in a shared comparison surface for price, timeline,
-  availability, self-reported years/insurance, current source-checked
-  credential count, and mutually verified Workdoe project count. The comparison
-  has no score, recommendation, paid order, contact details, credential
-  identifier, or one-click approval action.
+  availability, a current visible portfolio image when one exists,
+  self-reported years/insurance, current source-checked credential signals, and
+  mutually verified Workdoe project count. Each card has an explicit Choose
+  contractor action, but the comparison has no recommendation, paid order,
+  contact details, credential identifier, or composite score.
 - See a four-bid cap and seven-day bidding deadline on every owned project;
   rejected bids continue to count toward the cap, and an expired non-full
   window may be extended seven days at a time.

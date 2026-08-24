@@ -46,6 +46,14 @@ verified project reads `1 of 3` toward Steady provider instead of an empty
 post-milestone `0 of 2` bar. The follow-up adds no table, event, score input,
 personal field, ranking weight, eligibility rule, or marketplace reorder.
 
+The 2026-08-23 contractor-choice follow-up applies the research decision to use
+portfolio evidence as a fit signal without manufacturing a recommendation. Up
+to four received-order offer cards may show the newest visible, moderated
+contractor photo; compact work-history and source-check signals sit beside that
+identity; repeated credential rows are removed from the card presentation; and
+the legal qualification note moves into a native disclosure. Photo presence
+does not change received order, the four-bid cap, eligibility, or ranking.
+
 ## Research method and limits
 
 This review uses public product pages, public help centers, public company

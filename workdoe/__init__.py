@@ -3013,6 +3013,15 @@ def register_routes(app: Flask) -> None:
                    contractor_profiles.insurance_status,
                    contractor_profiles.years_in_business,
                    (
+                       SELECT contractor_photos.id
+                       FROM contractor_photos
+                       WHERE contractor_photos.contractor_id = users.id
+                         AND contractor_photos.is_hidden = 0
+                       ORDER BY contractor_photos.created_at DESC,
+                                contractor_photos.id DESC
+                       LIMIT 1
+                   ) AS profile_photo_id,
+                   (
                        SELECT COUNT(*)
                        FROM contractor_credentials
                        WHERE contractor_credentials.contractor_id = users.id

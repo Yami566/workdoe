@@ -1073,6 +1073,24 @@ class WorkdoeFlowTests(unittest.TestCase):
 
     def test_contractor_requests_match_client_approves_and_thread_opens(self):
         job = self.one("SELECT id FROM jobs WHERE status = 'open' ORDER BY id LIMIT 1")
+        contractor = self.one(
+            "SELECT id FROM users WHERE email = ?",
+            ("contractor@workdoe.local",),
+        )
+
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                """
+                INSERT INTO contractor_photos
+                    (contractor_id, original_filename, stored_path, content_type,
+                     size_bytes, is_hidden, created_at)
+                VALUES (?, 'portfolio.webp', 'contractors/test/portfolio.webp',
+                        'image/webp', 128, 0, '2026-08-17T12:00:00+00:00')
+                """,
+                (contractor["id"],),
+            )
+            db.commit()
 
         self.login("contractor@workdoe.local", "workdoe-contractor")
         request_response = self.client.post(
@@ -1156,8 +1174,14 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertNotIn('class="selection-path"', review_html)
         self.assertIn("Source checked", review_html)
         self.assertIn("Workdoe-completed", review_html)
-        self.assertIn("there is no paid ranking", review_html)
+        self.assertIn("no paid ranking", review_html)
         self.assertIn("No source-checked record", review_html)
+        self.assertIn('class="bid-contractor-photo"', review_html)
+        self.assertRegex(
+            review_html,
+            r'src="/media/contractors/[1-9][0-9]*" alt="Rivera Exterior Care portfolio"',
+        )
+        self.assertNotIn("contractors/test/portfolio.webp", review_html)
         self.assertIn(
             f'action="/client/requests/{match["id"]}/approve"', review_html
         )
@@ -6606,6 +6630,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "source_checked_credential_count": 1,
                 "source_checked_license_count": 1,
                 "verified_work_count": 3,
+                "profile_photo_id": 12,
                 "created_at": "2026-08-17T14:00:00+00:00",
                 "email": "later@example.com",
                 "phone": "202-555-0100",
@@ -6667,6 +6692,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(
             comparison["offers"][1]["reputation"]["level_label"],
             "Steady provider",
+        )
+        self.assertEqual(
+            comparison["offers"][1]["profile_photo_url"],
+            "/media/contractors/12",
         )
         contextual = bid_comparison(rows, "pending", job_id=42)
         self.assertEqual(

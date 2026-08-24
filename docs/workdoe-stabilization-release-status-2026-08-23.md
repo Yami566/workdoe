@@ -129,6 +129,13 @@ deployment has been performed during this stabilization pass.
   expose earned, current, next, and locked states; the score identifies its
   verified-project basis; and next-threshold progress uses an absolute count.
   The Flask and Worker projections remain ranking-neutral and store no new data.
+- Made consumer contractor comparison more visual without inventing identity
+  data. Each offer can now use the contractor's newest visible moderated
+  portfolio photo, while compact factual signals preserve price, timeline,
+  availability, Workdoe completion history, insurance claim, milestone state,
+  and source-checked credential status. Missing photos remain absent rather
+  than becoming generated avatars, and received order, permissions, and
+  no-paid-ranking behavior are unchanged.
 
 ## Verification evidence
 
@@ -360,6 +367,22 @@ deployment has been performed during this stabilization pass.
   First finish state, and absolute `1 of 3` progress toward Steady provider.
   The aligned mobile before/after comparison and evidence limits are recorded
   in `docs/ux-audit/2026-08-23-contractor-milestones-friction/`.
+- The visual contractor-choice correction passed all 229 tests in 83.953
+  seconds. The complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed
+  secret across 539 non-ignored files, and no dependency drift. Cloudflare
+  preflight remained warning-free; all 32 forward-only migrations applied;
+  `EXPLAIN QUERY PLAN` used the open-job, public-job-photo, and covering
+  contractor-photo indexes without a hot-table scan; and Wrangler 4.125.0
+  packaged 48 Python modules and 86 assets at 909.15 KiB / 167.18 KiB gzip
+  without deploying.
+- Current-run contractor-choice evidence at 390x844, 820x1180, and 1280x720
+  shows zero horizontal overflow, a real moderated portfolio photo with
+  contractor-specific alternative text, compact comparison facts and signals,
+  complete Profile, Full offer, and Choose contractor actions, and a clean
+  browser console. The aligned mobile before/after comparison and evidence
+  limits are recorded in
+  `docs/ux-audit/2026-08-23-contractor-choice-cards/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

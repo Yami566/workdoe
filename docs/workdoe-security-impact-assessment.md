@@ -188,6 +188,12 @@ formal certification against OWASP ASVS or WCAG.
   completion count. The milestone track adds no stored profile field, event,
   credential inference, identity signal, eligibility change, or ranking
   weight. Flask and Worker projections are contract-tested for equality.
+- Consumer offer cards may project the newest non-hidden contractor-photo ID
+  through the existing permission-checked `/media/contractors/:id` route. The
+  comparison never receives the R2 key or original filename, does not bypass
+  photo moderation, and does not use photo presence for order, eligibility, or
+  credential status. The D1 lookup is covered by a composite contractor/media
+  visibility index.
 - State-changing Worker API routes require the Workdoe same-origin custom
   request marker; JSON endpoints also reject non-JSON bodies. This complements
   SameSite cookies and browser preflight behavior, including multipart photo

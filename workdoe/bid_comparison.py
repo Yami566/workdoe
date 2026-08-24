@@ -76,6 +76,7 @@ def offer_order_key(row) -> tuple[str, int]:
 
 def comparison_offer(row, position: int, job_id: int = 0) -> dict:
     contractor_id = count_value(row, "contractor_id")
+    profile_photo_id = count_value(row, "profile_photo_id")
     checked_credentials = count_value(row, "source_checked_credential_count")
     checked_licenses = count_value(row, "source_checked_license_count")
     verified_work = count_value(row, "verified_work_count")
@@ -90,6 +91,9 @@ def comparison_offer(row, position: int, job_id: int = 0) -> dict:
         "offer_label": f"Offer {position}",
         "contractor_name": contractor_name(row),
         "trades": str(row_value(row, "trades", "") or "Contractor profile"),
+        "profile_photo_url": (
+            f"/media/contractors/{profile_photo_id}" if profile_photo_id else ""
+        ),
         "profile_url": (
             f"/contractors/{contractor_id}?job_id={job_id}"
             if job_id > 0

@@ -3382,15 +3382,14 @@ def bid_comparison_html(comparison: dict, job_id: int = 0) -> str:
         reputation = offer.get("reputation", {})
         credential_signals = reputation.get("credential_signals", [])
         credential_signal_html = "".join(
-            '<span class="bid-credential-signal">'
-            '<img src="/static/vendor/tabler-icons/home-check.svg" alt="">'
+            '<span class="bid-card-signal is-reviewed">'
+            '<img src="/vendor/tabler-icons/home-check.svg" alt="">'
             f'<span><strong>{escape(signal.get("label", "Source checked"))}</strong>'
             f'<small>{escape(signal.get("qualifier", "Current public record"))}</small></span></span>'
             for signal in credential_signals
         ) or (
-            '<span class="bid-credential-signal bid-credential-signal--empty">'
-            '<span><strong>No source-checked record</strong>'
-            '<small>Review profile details</small></span></span>'
+            '<span class="bid-card-signal is-muted">'
+            '<span><strong>No source-checked record</strong></span></span>'
         )
         provider_facts = "".join(
             f"""
@@ -3399,22 +3398,43 @@ def bid_comparison_html(comparison: dict, job_id: int = 0) -> str:
               <dd>{escape(fact.get('value', 'Not provided'))}<small>{escape(fact.get('qualifier', ''))}</small></dd>
             </div>"""
             for fact in offer.get("provider_facts", [])
+            if fact.get("key")
+            in {"years-active", "workdoe-completed", "insurance"}
         )
+        profile_photo_url = str(offer.get("profile_photo_url", "") or "")
+        profile_photo_prefix = "/media/contractors/"
+        profile_photo_suffix = profile_photo_url.removeprefix(profile_photo_prefix)
+        profile_photo_is_valid = (
+            profile_photo_url.startswith(profile_photo_prefix)
+            and profile_photo_suffix.isdigit()
+            and int(profile_photo_suffix) > 0
+        )
+        photo_html = (
+            f'<img class="bid-contractor-photo" src="{escape(profile_photo_url)}" '
+            f'alt="{escape(offer.get("contractor_name", "Contractor"))} portfolio" '
+            'width="88" height="88" loading="lazy" decoding="async">'
+            if profile_photo_is_valid
+            else ""
+        )
+        header_class = "bid-compare-header has-photo" if photo_html else "bid-compare-header"
         offer_cards.append(
             f"""
         <article class="bid-compare-card" aria-labelledby="compare-offer-{offer_id}">
-          <header>
-            <div>
+          <header class="{header_class}">
+            {photo_html}
+            <div class="bid-compare-identity">
               <p class="bid-offer-label">{escape(offer.get('offer_label', 'Offer'))}</p>
               <h4 id="compare-offer-{offer_id}">{escape(offer.get('contractor_name', 'Contractor'))}</h4>
               <p>{escape(offer.get('trades', 'Contractor profile'))}</p>
+              <div class="bid-card-signals" aria-label="Work and reviewed-record signals">
+                <span class="bid-card-signal">
+                  <img src="/vendor/tabler-icons/sparkles.svg" alt="">
+                  <span><strong>{escape(reputation.get('level_label', 'New to Workdoe'))}</strong><small>{int(reputation.get('completion_points', 0) or 0)} points</small></span>
+                </span>
+                {credential_signal_html}
+              </div>
             </div>
           </header>
-          <div class="bid-reputation-strip">
-            <img src="/static/vendor/tabler-icons/sparkles.svg" alt="">
-            <span><strong>{escape(reputation.get('level_label', 'New to Workdoe'))}</strong><small>{int(reputation.get('completion_points', 0) or 0)} completion points</small></span>
-          </div>
-          <div class="bid-credential-signals" aria-label="Reviewed credential signals">{credential_signal_html}</div>
           <dl class="bid-compare-terms">
             <div><dt>Price</dt><dd>{escape(offer.get('price_range', 'Not provided'))}</dd></div>
             <div><dt>Timeline</dt><dd>{escape(offer.get('timeline', 'Not provided'))}</dd></div>
@@ -3448,13 +3468,12 @@ def bid_comparison_html(comparison: dict, job_id: int = 0) -> str:
     <section class="bid-comparison" aria-labelledby="bid-comparison-title">
       <div class="section-heading">
         <div><p class="eyebrow">Contractor choice</p><h3 id="bid-comparison-title">Compare offers</h3></div>
-        <span class="privacy-label">{escape(comparison.get('order_label', 'Received order'))}</span>
+        <span class="privacy-label">{escape(comparison.get('order_label', 'Received order'))} / no paid ranking</span>
       </div>
-      <p class="bid-comparison-note">Compare scope, price, timing, and reviewed records. Offers stay in received order; there is no paid ranking.</p>
+      <p class="bid-comparison-note">Compare price, timing, completed work, and reviewed records.</p>
       <nav class="comparison-filter-tabs" aria-label="Filter comparison by source-checked records">{filter_tabs}</nav>
-      <p class="comparison-filter-note">Filters change these cards only. Every offer remains in the full list below.</p>
       {comparison_grid}
-      <p class="help-text">A source-checked record means Workdoe reviewed a current public source. It does not guarantee skill, safety, insurance coverage, or legal eligibility.</p>
+      <details class="comparison-trust-note"><summary>About source-checked records</summary><p class="help-text">A source-checked record means Workdoe reviewed a current public source. It does not guarantee skill, safety, insurance coverage, or legal eligibility.</p></details>
     </section>"""
 
 

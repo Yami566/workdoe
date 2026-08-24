@@ -1175,7 +1175,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
     def test_fresh_d1_database_accepts_complete_migration_chain(self):
         migrations_dir = ROOT / "cloudflare" / "d1" / "migrations"
         migration_paths = sorted(migrations_dir.glob("[0-9][0-9][0-9][0-9]_*.sql"))
-        self.assertEqual(len(migration_paths), 31)
+        self.assertEqual(len(migration_paths), 32)
 
         connection = sqlite3.connect(":memory:")
         try:
@@ -1212,11 +1212,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             photo_indexes = {
                 row[1] for row in connection.execute("PRAGMA index_list(job_photos)")
             }
+            contractor_photo_indexes = {
+                row[1]
+                for row in connection.execute("PRAGMA index_list(contractor_photos)")
+            }
             thread_indexes = {
                 row[1] for row in connection.execute("PRAGMA index_list(threads)")
             }
             self.assertIn("idx_jobs_open_geo", job_indexes)
             self.assertIn("idx_job_photos_public_job", photo_indexes)
+            self.assertIn(
+                "idx_contractor_photos_public_contractor",
+                contractor_photo_indexes,
+            )
             self.assertIn("idx_threads_client", thread_indexes)
             self.assertIn("idx_threads_contractor", thread_indexes)
             client_unread_plan = " ".join(
@@ -3492,10 +3500,17 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         plan = json.loads(completed.stdout)
         self.assertEqual(
             plan["used_indexes"],
-            ["idx_job_photos_public_job", "idx_jobs_open_geo"],
+            [
+                "idx_contractor_photos_public_contractor",
+                "idx_job_photos_public_job",
+                "idx_jobs_open_geo",
+            ],
         )
         self.assertEqual(plan["table_scans"], [])
-        self.assertEqual(plan["last_migration"], "0031_thread_nav_indexes.sql")
+        self.assertEqual(
+            plan["last_migration"],
+            "0032_contractor_choice_photo_index.sql",
+        )
 
     def test_demo_projects_are_realistic_labeled_and_filterable(self):
         module = load_demo_projects_module()
@@ -5086,6 +5101,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                             "contractor_name": "Doe Exterior Care",
                             "trades": "Power washing",
                             "profile_url": "/contractors/7",
+                            "profile_photo_url": "/media/contractors/4",
                             "price_range": "$450-$650",
                             "timeline": "Two days",
                             "availability": "Tuesday",
@@ -5101,21 +5117,25 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                             },
                             "provider_facts": [
                                 {
+                                    "key": "years-active",
                                     "label": "Years active",
                                     "value": "5 years",
                                     "qualifier": "Self-reported",
                                 },
                                 {
+                                    "key": "source-checked",
                                     "label": "Source checked",
                                     "value": "1 credential",
                                     "qualifier": "Current records",
                                 },
                                 {
+                                    "key": "workdoe-completed",
                                     "label": "Workdoe-completed",
                                     "value": "2 projects",
                                     "qualifier": "Both sides confirmed",
                                 },
                                 {
+                                    "key": "insurance",
                                     "label": "Insurance",
                                     "value": "Self-reported",
                                     "qualifier": "Not verified by Workdoe",
@@ -5174,12 +5194,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Compare offers", client_job_html)
         self.assertIn("Received order", client_job_html)
         self.assertNotIn('class="selection-path"', client_job_html)
-        self.assertIn("Source checked", client_job_html)
+        self.assertIn("Work and reviewed-record signals", client_job_html)
         self.assertIn("License source checked", client_job_html)
         self.assertIn("Workdoe-completed", client_job_html)
+        self.assertIn(
+            'class="bid-contractor-photo" src="/media/contractors/4"',
+            client_job_html,
+        )
+        self.assertIn('alt="Doe Exterior Care portfolio"', client_job_html)
+        self.assertIn('src="/vendor/tabler-icons/sparkles.svg"', client_job_html)
+        self.assertNotIn('src="/static/vendor/tabler-icons/sparkles.svg"', client_job_html)
         self.assertIn('href="#bid-title-31"', client_job_html)
         self.assertIn('id="bid-title-31"', client_job_html)
-        self.assertIn("there is no paid ranking", client_job_html)
+        self.assertIn("no paid ranking", client_job_html)
         self.assertIn(
             'data-json-action="/api/match-requests/31/approve"', client_job_html
         )
@@ -6031,6 +6058,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "source_checked_credential_count": 1,
                 "source_checked_license_count": 1,
                 "verified_work_count": 2,
+                "profile_photo_id": 4,
                 "created_at": "2026-08-03T12:00:00+00:00",
                 "updated_at": "2026-08-03T12:00:00+00:00",
                 "thread_id": None,
@@ -6111,6 +6139,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "Doe Exterior Care",
         )
         self.assertEqual(
+            payload["comparison"]["offers"][0]["profile_photo_url"],
+            "/media/contractors/4",
+        )
+        self.assertEqual(
             payload["comparison"]["offers"][0]["provider_facts"][1]["value"],
             "1 credential",
         )
@@ -6168,6 +6200,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "source_checked_credential_count": 1,
                 "source_checked_license_count": 1,
                 "verified_work_count": 2,
+                "profile_photo_id": 14,
                 "created_at": "2026-08-17T14:00:00+00:00",
                 "email": "private@example.com",
                 "exact_address": "100 Private Street",
@@ -6202,6 +6235,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(
             worker_result["offers"][0]["profile_url"],
             "/contractors/8?job_id=42",
+        )
+        self.assertEqual(
+            worker_result["offers"][1]["profile_photo_url"],
+            "/media/contractors/14",
         )
         self.assertNotIn("private@example.com", json.dumps(worker_result))
         self.assertNotIn("Private Street", json.dumps(worker_result))

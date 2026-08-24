@@ -15,6 +15,7 @@ if str(WORKER_DIR) not in sys.path:
 from public_job_query import build_public_open_jobs_query
 
 EXPECTED_INDEXES = {
+    "idx_contractor_photos_public_contractor",
     "idx_jobs_open_geo",
     "idx_job_photos_public_job",
 }
@@ -73,6 +74,16 @@ def seed_planner_data(connection: sqlite3.Connection, count: int = 600) -> None:
                 """,
                 (item_id, item_id, f"planner/{item_id}.webp", timestamp),
             )
+        if item_id % 4 == 0:
+            connection.execute(
+                """
+                INSERT INTO contractor_photos
+                    (contractor_id, original_filename, stored_path,
+                     content_type, size_bytes, is_hidden, created_at)
+                VALUES (?, 'portfolio.webp', ?, 'image/webp', 128, 0, ?)
+                """,
+                (item_id, f"contractors/{item_id}/portfolio.webp", timestamp),
+            )
     connection.execute("ANALYZE")
 
 
@@ -105,12 +116,31 @@ def explain_public_query(connection: sqlite3.Connection) -> list[str]:
     return [str(row[3]) for row in rows]
 
 
+def explain_contractor_photo_query(connection: sqlite3.Connection) -> list[str]:
+    rows = connection.execute(
+        """
+        EXPLAIN QUERY PLAN
+        SELECT contractor_photos.id
+        FROM contractor_photos
+        WHERE contractor_photos.contractor_id = ?
+          AND contractor_photos.is_hidden = 0
+        ORDER BY contractor_photos.created_at DESC,
+                 contractor_photos.id DESC
+        LIMIT 1
+        """,
+        (4,),
+    ).fetchall()
+    return [str(row[3]) for row in rows]
+
+
 def verify_query_plan() -> dict:
     connection = sqlite3.connect(":memory:")
     try:
         migrations = apply_migrations(connection)
         seed_planner_data(connection)
-        plan = explain_public_query(connection)
+        plan = explain_public_query(connection) + explain_contractor_photo_query(
+            connection
+        )
     finally:
         connection.close()
 
@@ -122,7 +152,7 @@ def verify_query_plan() -> dict:
     scans = [
         detail
         for detail in plan
-        if detail.startswith(("SCAN jobs", "SCAN job_photos"))
+        if detail.startswith(("SCAN jobs", "SCAN job_photos", "SCAN contractor_photos"))
     ]
     return {
         "ok": used_indexes == EXPECTED_INDEXES and not scans,
