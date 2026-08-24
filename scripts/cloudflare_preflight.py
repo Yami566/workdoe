@@ -80,6 +80,7 @@ REQUIRED_RATE_LIMIT_BINDINGS = [
     }
 ]
 REQUIRED_WORKER_SECRETS = REQUIRED_DEV_ENV
+IMMUTABLE_BROWSER_CACHE = "public, max-age=31556952, immutable"
 
 
 @dataclass
@@ -126,6 +127,25 @@ def read_text(path: Path, errors: list[str]) -> str:
     except FileNotFoundError:
         errors.append(f"Missing file: {path}")
     return ""
+
+
+def parse_static_header_rules(value: str) -> dict[str, dict[str, str]]:
+    rules: dict[str, dict[str, str]] = {}
+    current_path = ""
+    for raw_line in value.splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if line[:1].isspace():
+            if not current_path or ":" not in stripped:
+                continue
+            name, header_value = stripped.split(":", 1)
+            rules[current_path][name.strip().lower()] = header_value.strip()
+            continue
+        current_path = stripped
+        rules.setdefault(current_path, {})
+    return rules
 
 
 def add_ok(checks: list[str], name: str) -> None:
@@ -383,6 +403,8 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     workdoe_dns_diagnostic_path = repo_root / "scripts" / "workdoe_dns_diagnostic.py"
     workdoe_production_smoke_path = repo_root / "scripts" / "workdoe_production_smoke.py"
     static_path = repo_root / "workdoe" / "static"
+    static_headers_path = static_path / "_headers"
+    static_headers = read_text(static_headers_path, errors)
     worker_actions_path = static_path / "worker-actions.js"
     project_composer_path = static_path / "project-composer.js"
     clerk_entry_path = static_path / "clerk-entry.js"
@@ -1270,6 +1292,51 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             "Wrangler must serve matching static assets directly from Cloudflare's asset layer.",
             checks,
             "Wrangler bypasses the Worker for matching static assets",
+        )
+        static_header_rules = parse_static_header_rules(static_headers)
+        worker_manifest = manifest.get("cloudflare_targets", {}).get("worker", {})
+        immutable_paths = worker_manifest.get("immutable_static_asset_paths", [])
+        require(
+            worker_manifest.get("static_asset_headers") == "workdoe/static/_headers",
+            errors,
+            "Cloudflare manifest must identify the native static-asset headers file.",
+            checks,
+            "Manifest records the Cloudflare static-asset headers policy",
+        )
+        require(
+            static_header_rules.get("/*", {}).get("x-content-type-options") == "nosniff",
+            errors,
+            "Cloudflare static assets must disable MIME sniffing.",
+            checks,
+            "Cloudflare static assets disable MIME sniffing",
+        )
+        missing_immutable_paths = [
+            path
+            for path in immutable_paths
+            if static_header_rules.get(path, {}).get("cache-control")
+            != IMMUTABLE_BROWSER_CACHE
+        ]
+        require(
+            not missing_immutable_paths,
+            errors,
+            "Cloudflare immutable browser caching is missing for: "
+            + ", ".join(missing_immutable_paths),
+            checks,
+            "Cloudflare caches versioned and integrity-pinned assets immutably",
+        )
+        unexpected_immutable_paths = sorted(
+            path
+            for path, headers in static_header_rules.items()
+            if headers.get("cache-control") == IMMUTABLE_BROWSER_CACHE
+            and path not in immutable_paths
+        )
+        require(
+            not unexpected_immutable_paths,
+            errors,
+            "Cloudflare immutable browser caching includes unreviewed paths: "
+            + ", ".join(unexpected_immutable_paths),
+            checks,
+            "Cloudflare immutable caching stays on reviewed asset paths",
         )
 
     if dev_vars:

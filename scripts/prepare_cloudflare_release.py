@@ -12,6 +12,7 @@ D1_MIGRATIONS_RELATIVE_PATH = D1_MIGRATION_RELATIVE_PATH.parent
 MANIFEST_RELATIVE_PATH = Path("cloudflare/workdoe-cloudflare-manifest.json")
 WRANGLER_RELATIVE_PATH = Path("cloudflare/wrangler.jsonc")
 DEV_VARS_EXAMPLE_RELATIVE_PATH = Path("cloudflare/.dev.vars.example")
+STATIC_HEADERS_RELATIVE_PATH = Path("workdoe/static/_headers")
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 D1_ID_FIELDS = ("database_id", "preview_database_id")
 IMMUTABLE_D1_BASELINE_SHA256 = "dd46194b4f45811901a8fe1718a482ea286863a4a87e3bcdce66cf60967c479e"
@@ -26,6 +27,13 @@ REQUIRED_WORKER_SECRETS = [
     "WORKDOE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SITE_KEY",
+]
+IMMUTABLE_STATIC_ASSET_PATHS = [
+    "/styles.css",
+    "/map.js",
+    "/project-composer.js",
+    "/vendor/*",
+    "/deer.svg",
 ]
 
 
@@ -86,6 +94,8 @@ def build_manifest(migration_sql: str, migration_chain_sha: str) -> dict:
                 "config": str(WRANGLER_RELATIVE_PATH).replace("\\", "/"),
                 "main": "cloudflare/worker/entry.py",
                 "dev_vars_example": str(DEV_VARS_EXAMPLE_RELATIVE_PATH).replace("\\", "/"),
+                "static_asset_headers": str(STATIC_HEADERS_RELATIVE_PATH).replace("\\", "/"),
+                "immutable_static_asset_paths": IMMUTABLE_STATIC_ASSET_PATHS,
                 "custom_domains": ["workdoe.com", "www.workdoe.com"],
                 "custom_domain_management": "preconfigured_outside_routine_deploys",
                 "compatibility_date": "2026-08-23",

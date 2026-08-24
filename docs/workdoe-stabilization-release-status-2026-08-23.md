@@ -43,6 +43,11 @@ deployment has been performed during this stabilization pass.
 - Configured matching static assets to bypass the Python Worker and use
   Cloudflare's static asset layer directly. Dynamic pages, APIs, same-domain
   Clerk proxy routes, and private media remain Worker-controlled.
+- Added Cloudflare-native immutable browser caching for the release-tokened
+  stylesheet, map, and composer plus provenance-pinned vendor and deer assets.
+  Unversioned application scripts retain revalidation; preflight rejects an
+  unreviewed immutable path; and production smoke now discovers and verifies
+  the live versioned stylesheet policy.
 - Extended production smoke testing to require direct HTTP-to-HTTPS redirects
   for both the public entry page and a static stylesheet, preventing the asset
   optimization from weakening the HTTPS launch contract.
@@ -628,6 +633,14 @@ deployment has been performed during this stabilization pass.
   dry-run mode without deploying. The accepted 390x844 trust-context and
   privacy evidence is recorded in
   `docs/ux-audit/2026-08-24-message-provider-continuity/`.
+- The Cloudflare static-cache batch passed all 236 tests in 81.151 seconds and
+  the complete security/provenance gate across 659 non-ignored files.
+  Cloudflare preflight remained warning-free; all 34 D1 migrations loaded with
+  the expected three public map/photo indexes and no table scan. Wrangler
+  4.125.0 parsed six native header rules, packaged 48 Python modules, and read
+  88 static files at 938.51 KiB / 172.35 KiB gzip in dry-run mode without
+  deploying. Exact local header responses and evidence limits are recorded in
+  `docs/release-evidence/2026-08-24-static-asset-cache.md`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

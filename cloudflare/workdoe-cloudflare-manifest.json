@@ -144,7 +144,15 @@
         "www.workdoe.com"
       ],
       "dev_vars_example": "cloudflare/.dev.vars.example",
-      "main": "cloudflare/worker/entry.py"
+      "immutable_static_asset_paths": [
+        "/styles.css",
+        "/map.js",
+        "/project-composer.js",
+        "/vendor/*",
+        "/deer.svg"
+      ],
+      "main": "cloudflare/worker/entry.py",
+      "static_asset_headers": "workdoe/static/_headers"
     }
   },
   "domain": "workdoe.com",

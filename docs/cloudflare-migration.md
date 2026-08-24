@@ -284,6 +284,12 @@ service-zone activation, or establish legal eligibility.
   hash routing. Confirm its Account and Security sections load on
   `https://workdoe.com/account` before enabling optional passkeys.
 - `cloudflare/wrangler.jsonc` declares these auth/protection names under `secrets.required`, so `wrangler deploy` should fail before production if any required value is missing.
+- `workdoe/static/_headers` uses the native Workers Static Assets header
+  contract. It gives immutable browser caching only to release-tokened
+  first-party CSS/map/composer assets and provenance-pinned vendor/logo assets;
+  unversioned application scripts retain Cloudflare revalidation. Preflight
+  rejects missing or unreviewed immutable rules, and production smoke verifies
+  the live versioned stylesheet policy.
 - `POST /api/jobs` rejects job creation unless the same-domain Clerk session resolves to an active Workdoe client/admin row and Turnstile Siteverify succeeds for `workdoe.com`.
 - `GET /api/jobs/:job_id` rejects detail access unless the same-domain Clerk session resolves to the owner, an admin, or an active contractor viewing a non-hidden job.
 - `GET /api/client/jobs` rejects dashboard access unless the same-domain Clerk session resolves to an active client and the query stays scoped to that user's jobs.
@@ -322,6 +328,7 @@ Cloudflare Email Sending must be onboarded for `workdoe.com` before production e
 - Workers Cron Triggers: https://developers.cloudflare.com/workers/configuration/cron-triggers/
 - Cloudflare Queues: https://developers.cloudflare.com/queues/
 - Cloudflare Email Service: https://developers.cloudflare.com/email-service/get-started/send-emails/
+- Workers Static Assets headers: https://developers.cloudflare.com/workers/static-assets/headers/
 - Clerk email-code sign-in-or-up: https://clerk.com/docs/guides/development/custom-flows/authentication/sign-in-or-up
 - Clerk webhook verification: https://clerk.com/docs/reference/backend/verify-webhook
 - Svix manual webhook verification: https://www.svix.com/guides/receiving/receive-webhooks-with-python-flask/

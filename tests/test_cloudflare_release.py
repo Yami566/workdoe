@@ -1098,6 +1098,20 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 ["workdoe.com", "www.workdoe.com"],
             )
             self.assertEqual(
+                manifest["cloudflare_targets"]["worker"]["static_asset_headers"],
+                "workdoe/static/_headers",
+            )
+            self.assertEqual(
+                manifest["cloudflare_targets"]["worker"]["immutable_static_asset_paths"],
+                [
+                    "/styles.css",
+                    "/map.js",
+                    "/project-composer.js",
+                    "/vendor/*",
+                    "/deer.svg",
+                ],
+            )
+            self.assertEqual(
                 manifest["cloudflare_targets"]["worker"]["custom_domain_management"],
                 "preconfigured_outside_routine_deploys",
             )
@@ -1165,6 +1179,20 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertEqual(set(wrangler["secrets"]["required"]), required_env_names)
             self.assertFalse(required_env_names & set(wrangler["vars"]))
             self.assertTrue(wrangler["observability"]["enabled"])
+
+            headers_text = (ROOT / "workdoe" / "static" / "_headers").read_text(
+                encoding="utf-8"
+            )
+            rules = load_preflight_script().parse_static_header_rules(headers_text)
+            self.assertEqual(rules["/*"]["x-content-type-options"], "nosniff")
+            for path in manifest["cloudflare_targets"]["worker"][
+                "immutable_static_asset_paths"
+            ]:
+                self.assertEqual(
+                    rules[path]["cache-control"],
+                    "public, max-age=31556952, immutable",
+                )
+            self.assertNotIn("cache-control", rules["/*"])
 
             dev_vars_example = dev_vars_example_path.read_text(encoding="utf-8")
             self.assertIn("WORKDOE_AUTH_PROVIDER=clerk", dev_vars_example)
@@ -8005,6 +8033,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             result.checks,
         )
         self.assertIn("Wrangler keeps required secret names out of vars", result.checks)
+        self.assertIn(
+            "Manifest records the Cloudflare static-asset headers policy",
+            result.checks,
+        )
+        self.assertIn("Cloudflare static assets disable MIME sniffing", result.checks)
+        self.assertIn(
+            "Cloudflare caches versioned and integrity-pinned assets immutably",
+            result.checks,
+        )
+        self.assertIn(
+            "Cloudflare immutable caching stays on reviewed asset paths",
+            result.checks,
+        )
         self.assertIn("Cloudflare Worker Python compiles", result.checks)
         self.assertIn(
             "Pilot metrics cover response, closure, and report health without private fields",
@@ -9364,6 +9405,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "Referrer-Policy": "strict-origin-when-cross-origin",
                         "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
                     }
+                elif "/styles.css?v=" in url:
+                    headers = {
+                        "Content-Type": "text/css; charset=utf-8",
+                        "Cache-Control": "public, max-age=31556952, immutable",
+                        "X-Content-Type-Options": "nosniff",
+                    }
                 elif url.endswith("/health"):
                     body = json.dumps(
                         {
@@ -9403,6 +9450,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     headers = {"Content-Type": "image/png"}
                 elif url.rstrip("/") == "https://workdoe.com":
                     body = (
+                        '<link rel="stylesheet" href="/styles.css?v=workdoe-message-provider-v1">'
                         '<meta property="og:title" content="Workdoe - a local Work Exchange">'
                         '<meta property="og:image" content="https://workdoe.com/workdoe-share.png">'
                         '<meta property="og:image:width" content="1200">'
@@ -9436,12 +9484,49 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(checks["health-json"]["status"], "ready")
         self.assertEqual(checks["public-jobs-api"]["status"], "ready")
         self.assertEqual(checks["entry-security-headers"]["status"], "ready")
+        self.assertEqual(checks["static-asset-cache"]["status"], "ready")
         self.assertEqual(checks["public-trust-pages"]["status"], "ready")
         self.assertEqual(checks["social-share-card"]["status"], "ready")
         self.assertEqual(checks["public-discovery-files"]["status"], "ready")
         self.assertEqual(checks["clerk-production-key"]["status"], "ready")
         self.assertEqual(checks["clerk-invitation-entry"]["status"], "ready")
         self.assertEqual(checks["clerk-same-domain-proxy"]["status"], "ready")
+
+    def test_workdoe_production_smoke_rejects_unversioned_or_revalidated_stylesheet(self):
+        module = load_workdoe_production_smoke_script()
+        original_fetch_url = module.fetch_url
+        try:
+            def fake_fetch(url, **kwargs):
+                if url.rstrip("/") == "https://workdoe.com":
+                    return module.FetchResult(
+                        ok=True,
+                        status_code=200,
+                        headers={"Content-Type": "text/html; charset=utf-8"},
+                        body='<link rel="stylesheet" href="/styles.css?v=release-1">',
+                        elapsed_ms=4,
+                    )
+                return module.FetchResult(
+                    ok=True,
+                    status_code=200,
+                    headers={
+                        "Content-Type": "text/css; charset=utf-8",
+                        "Cache-Control": "public, max-age=0, must-revalidate",
+                        "X-Content-Type-Options": "nosniff",
+                    },
+                    elapsed_ms=4,
+                )
+
+            module.fetch_url = fake_fetch
+            check = module.static_asset_cache_check(
+                "https://workdoe.com",
+                module.DEFAULT_TIMEOUT,
+            )
+        finally:
+            module.fetch_url = original_fetch_url
+
+        self.assertEqual(check.status, "failed")
+        self.assertIn("max-age=31556952", check.summary)
+        self.assertIn("immutable", check.summary)
 
     def test_workdoe_production_smoke_rejects_static_asset_without_https_redirect(self):
         module = load_workdoe_production_smoke_script()

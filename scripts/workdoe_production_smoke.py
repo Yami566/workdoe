@@ -43,6 +43,9 @@ OPTIONAL_DISCOVERY_PATHS = (
 CLERK_PUBLISHABLE_KEY_PATTERN = re.compile(
     r'data-clerk-publishable-key=["\']([^"\']+)["\']'
 )
+VERSIONED_STYLESHEET_PATTERN = re.compile(
+    r'<link[^>]+href=["\'](/styles\.css\?v=[^"\']+)["\'][^>]*>'
+)
 CLERK_INVITATION_SMOKE_PATH = (
     "/create-account?__clerk_status=sign_up&__clerk_ticket=workdoe-smoke-ticket"
 )
@@ -373,6 +376,65 @@ def security_headers_check(base_url: str, timeout: float) -> SmokeCheck:
     )
 
 
+def static_asset_cache_check(base_url: str, timeout: float) -> SmokeCheck:
+    page_url = check_url(base_url, "/")
+    page = fetch_url(page_url, timeout=timeout, body_limit=200000)
+    if not page.ok:
+        return response_check(
+            "static-asset-cache",
+            page_url,
+            page,
+            expected_summary="Homepage returned HTTP success.",
+        )
+    stylesheet_match = VERSIONED_STYLESHEET_PATTERN.search(page.body)
+    if not stylesheet_match:
+        return SmokeCheck(
+            name="static-asset-cache",
+            status="failed",
+            summary="Homepage is missing its versioned Workdoe stylesheet URL.",
+            url=page_url,
+            status_code=page.status_code,
+            elapsed_ms=page.elapsed_ms,
+        )
+    stylesheet_url = check_url(base_url, stylesheet_match.group(1))
+    stylesheet = fetch_url(stylesheet_url, method="HEAD", timeout=timeout)
+    if not stylesheet.ok:
+        return response_check(
+            "static-asset-cache",
+            stylesheet_url,
+            stylesheet,
+            expected_summary="Versioned Workdoe stylesheet returned HTTP success.",
+        )
+    cache_control = header_value(stylesheet.headers, "Cache-Control").lower()
+    required_cache_directives = ("public", "max-age=31556952", "immutable")
+    missing_directives = [
+        directive for directive in required_cache_directives if directive not in cache_control
+    ]
+    no_sniff = header_value(stylesheet.headers, "X-Content-Type-Options").lower()
+    if missing_directives or no_sniff != "nosniff":
+        details = []
+        if missing_directives:
+            details.append("missing " + ", ".join(missing_directives))
+        if no_sniff != "nosniff":
+            details.append("missing X-Content-Type-Options: nosniff")
+        return SmokeCheck(
+            name="static-asset-cache",
+            status="failed",
+            summary="Versioned static-asset policy is incomplete: " + "; ".join(details),
+            url=stylesheet_url,
+            status_code=stylesheet.status_code,
+            elapsed_ms=page.elapsed_ms + stylesheet.elapsed_ms,
+        )
+    return SmokeCheck(
+        name="static-asset-cache",
+        status="ready",
+        summary="Versioned Workdoe assets use immutable browser caching and MIME protection.",
+        url=stylesheet_url,
+        status_code=stylesheet.status_code,
+        elapsed_ms=page.elapsed_ms + stylesheet.elapsed_ms,
+    )
+
+
 def public_trust_pages_check(base_url: str, timeout: float) -> SmokeCheck:
     missing: list[str] = []
     elapsed_ms = 0
@@ -620,6 +682,7 @@ def build_smoke_payload(
             health_check(base_url, timeout),
             public_jobs_check(base_url, timeout),
             security_headers_check(base_url, timeout),
+            static_asset_cache_check(base_url, timeout),
             public_trust_pages_check(base_url, timeout),
             social_share_check(base_url, timeout),
             discovery_files_check(base_url, timeout),
