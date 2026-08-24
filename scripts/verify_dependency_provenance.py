@@ -114,6 +114,14 @@ def validate_browser_components(payload: dict, errors: list[str]) -> None:
     if sha256_file(deer_path) != tabler.get("deer_asset_sha256"):
         errors.append("Tabler-derived deer asset hash changed")
 
+    pencil_path = (
+        REPO_ROOT / "workdoe" / "static" / "vendor" / "tabler-icons" / "pencil.svg"
+    )
+    if not pencil_path.is_file():
+        errors.append("The pinned Tabler pencil asset is missing")
+    elif sha256_file(pencil_path) != tabler.get("pencil_asset_sha256"):
+        errors.append("Tabler pencil asset hash changed")
+
     from workdoe.service_taxonomy import SERVICE_ICON_BY_SLUG
 
     icon_directory = REPO_ROOT / "workdoe" / "static" / "vendor" / "tabler-icons"

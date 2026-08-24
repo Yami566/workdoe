@@ -3993,6 +3993,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             "tools.svg": "aac6ae77bd7d24d3819ed1ccc7262ca1b57444b541fc3dc90ee837bbbe6a6e7c",
             "paint.svg": "ab2b5b985830a0a673c0399b94420ecc7b477dc828509049d16d51eefc57672e",
             "bolt.svg": "f18f1b4476d1f1ba018219131fee671f2a7ac286c9eb3aa83ea72274e17f34e5",
+            "pencil.svg": "03a842bd4a16861b0adc0e38ed7b0eb5e7cc613012006833da22e58d56f1f1fe",
             "x.svg": "c0ef7bfcae8b25bff75d060ec437054e2288af16d301e4d1ef5fb805666afc44",
         }
         for filename, expected in tabler_hashes.items():
@@ -5660,6 +5661,14 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('composer.addEventListener("pointerdown"', composer_script)
         self.assertIn("pointerChoiceInput !== input", composer_script)
         self.assertIn("label.toLowerCase()", composer_script)
+        self.assertIn("jump.dataset.projectJumpStep", composer_script)
+        self.assertIn('showStep(Number(jump.dataset.projectJumpStep), true)', composer_script)
+
+        styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn(
+            ".form-grid[data-project-composer].is-enhanced .project-review-edit",
+            styles,
+        )
 
         self.login("contractor@workdoe.local", "workdoe-contractor")
         available = self.one(
@@ -6438,13 +6447,16 @@ class WorkdoeFlowTests(unittest.TestCase):
             form.data,
         )
         self.assertIn(
-            b'/static/project-composer.js?v=workdoe-service-tiles-guided-brief-v2',
+            b'/static/project-composer.js?v=workdoe-service-tiles-review-edit-v3',
             form.data,
         )
         self.assertIn(b'name="service_group_slug"', form.data)
         self.assertIn(b'name="service_slug"', form.data)
         self.assertIn(b'name="service_choice"', form.data)
         self.assertEqual(form.data.count(b'data-project-choice-advance'), 59)
+        self.assertEqual(form.data.count(b'data-project-jump-step='), 4)
+        self.assertIn(b'aria-label="Edit project details"', form.data)
+        self.assertIn(b'/static/vendor/tabler-icons/pencil.svg', form.data)
         self.assertIn(b'data-selected-service-family', form.data)
         self.assertIn(b'class="service-select-control"', form.data)
         self.assertEqual(form.data.count(b'class="project-setting-option"'), 6)

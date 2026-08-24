@@ -3007,8 +3007,9 @@ button.compact {
 
 .project-review > div {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: 112px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 12px;
   border-bottom: 1px solid var(--line-soft);
   padding: 13px 0;
 }
@@ -3028,6 +3029,55 @@ button.compact {
   overflow-wrap: anywhere;
 }
 
+.project-review-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.project-review-copy strong,
+.project-review-copy small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.project-review-copy small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.project-review-edit {
+  display: none;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--accent-dark);
+  cursor: pointer;
+}
+
+.form-grid[data-project-composer].is-enhanced .project-review-edit {
+  display: grid;
+}
+
+.project-review-edit:hover {
+  border-color: var(--accent-dark);
+  background: var(--surface-strong);
+}
+
+.project-review-edit:focus-visible {
+  outline: 3px solid rgba(27, 94, 32, 0.24);
+  outline-offset: 2px;
+}
+
+.project-review-edit img {
+  width: 18px;
+  height: 18px;
+}
+
 @media (min-width: 760px) {
   .site-dialog-content .project-composer-step[data-project-step="6"] {
     gap: 10px;
@@ -3039,7 +3089,7 @@ button.compact {
   }
 
   .site-dialog-content .project-composer-step[data-project-step="6"] .project-review > div {
-    grid-template-columns: 76px minmax(0, 1fr);
+    grid-template-columns: 76px minmax(0, 1fr) 44px;
     gap: 10px;
     padding: 7px 10px;
   }
@@ -6087,7 +6137,8 @@ textarea:focus {
   }
 
   .project-review > div {
-    grid-template-columns: 88px minmax(0, 1fr);
+    grid-template-columns: 84px minmax(0, 1fr) 44px;
+    gap: 8px;
   }
 
   .brief-signal-list {

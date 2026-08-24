@@ -98,6 +98,10 @@ deployment has been performed during this stabilization pass.
   advancing valid family and service choices. Keyboard and no-JavaScript paths
   retain explicit Continue controls, while title and description guidance now
   follows the selected canonical service in both runtimes and on edit forms.
+- Consolidated the final project review from eight passive rows into four
+  editable task groups. Consumers can jump directly to work, project details,
+  area, or timing and budget while retaining entered values; no-JavaScript
+  forms keep every step visible in document order.
 - Reframed the private message inbox around conversation triage. Compact All
   and Unread views replace non-actionable summary cards, rows identify the
   other participant, and the validated server-side filter preserves private
@@ -562,6 +566,13 @@ deployment has been performed during this stabilization pass.
   gzip without deploying. Responsive evidence and the corrected Lawn mowing
   guidance are recorded in
   `docs/ux-audit/2026-08-24-consumer-dashboard-posting/`.
+- The editable-review batch passed all 235 tests in 81.701 seconds and the
+  complete security/provenance gate across 627 non-ignored files. Cloudflare
+  preflight remained warning-free; the D1 verifier loaded all 33 migrations,
+  used the expected geographic and public-media indexes, and found no table
+  scan. Wrangler 4.125.0 packaged 48 Python modules and 87 assets at 928.45 KiB
+  / 170.57 KiB gzip without deploying. Direct and same-page dialog evidence is
+  recorded in `docs/ux-audit/2026-08-24-project-review-editing/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

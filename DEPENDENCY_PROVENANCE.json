@@ -158,6 +158,7 @@
       "retained_license_sha256": "b740a1d46122672da62833e97f7e7c8a13fa85cbc7445b584b297cc00dde93db",
       "package_integrity": "sha512-f2RYFl3fzPwj5WO82x6en0dmkjefxEfOm16D1ByM6cj/McNiwOkL4VaPUoP9VVIrXAD9WnTSVFr70px703b//A==",
       "deer_asset_sha256": "d7af5631b8385e4bbbd88544210ffedcf902d73b6fc7bd22aa50a150a5ceb8a3",
+      "pencil_asset_sha256": "03a842bd4a16861b0adc0e38ed7b0eb5e7cc613012006833da22e58d56f1f1fe",
       "service_icon_count": 50,
       "service_icon_manifest_sha256": "b52f6c73b3afb6b19df964190046fd51748cce40d15c090054909f7007e8fcfe"
     }

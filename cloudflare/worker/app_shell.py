@@ -633,7 +633,7 @@ def layout(
     if include_actions or authenticated:
         scripts.append('<script defer src="/worker-actions.js"></script>')
     if include_project_composer:
-        scripts.append('<script defer src="/project-composer.js?v=workdoe-service-tiles-guided-brief-v2"></script>')
+        scripts.append('<script defer src="/project-composer.js?v=workdoe-service-tiles-review-edit-v3"></script>')
     if include_clerk:
         clerk_asset_base_url = clerk_runtime_frontend_api_url(
             clerk_publishable_key,
@@ -2087,8 +2087,13 @@ def project_composer_fields_html(
         <div class="project-step-actions"><button class="button secondary" type="button" data-project-back>Back</button><button class="button" type="button" data-project-next>Review project</button></div>
       </fieldset>
       <fieldset class="project-composer-step wide" data-project-step="6" data-step-title="Review the project">
-        <legend>Ready to send the signal?</legend>
-        <dl class="project-review" aria-label="Project summary"><div><dt>Work</dt><dd data-review-service>Choose a service</dd></div><div><dt>Project</dt><dd data-review-title>Add a title</dd></div><div><dt>Setting</dt><dd data-review-setting>Not specified</dd></div><div><dt>Scope</dt><dd data-review-scope>Description only</dd></div><div><dt>Brief</dt><dd data-review-brief>Brief 0 of 6</dd></div><div><dt>Area</dt><dd data-review-location>Add a city and ZIP</dd></div><div><dt>Timing</dt><dd data-review-timing>Flexible</dd></div><div><dt>Budget</dt><dd data-review-budget>Open</dd></div></dl>
+        <legend>Ready to post?</legend>
+        <dl class="project-review" aria-label="Project summary">
+          <div><dt>Work</dt><dd data-review-service>Choose a service</dd><button class="project-review-edit" type="button" data-project-jump-step="1" aria-label="Edit work selection" title="Edit work selection"><img src="/vendor/tabler-icons/pencil.svg" alt=""></button></div>
+          <div><dt>Project</dt><dd class="project-review-copy"><strong data-review-title>Add a title</strong><small><span data-review-setting>Not specified</span><span aria-hidden="true"> · </span><span data-review-scope>Description only</span><span aria-hidden="true"> · </span><span data-review-brief>Brief 0 of 6</span></small></dd><button class="project-review-edit" type="button" data-project-jump-step="3" aria-label="Edit project details" title="Edit project details"><img src="/vendor/tabler-icons/pencil.svg" alt=""></button></div>
+          <div><dt>Area</dt><dd data-review-location>Add a city and ZIP</dd><button class="project-review-edit" type="button" data-project-jump-step="4" aria-label="Edit project area" title="Edit project area"><img src="/vendor/tabler-icons/pencil.svg" alt=""></button></div>
+          <div><dt>Timing &amp; budget</dt><dd class="project-review-copy"><strong data-review-timing>Flexible</strong><small data-review-budget>Open</small></dd><button class="project-review-edit" type="button" data-project-jump-step="5" aria-label="Edit timing and budget" title="Edit timing and budget"><img src="/vendor/tabler-icons/pencil.svg" alt=""></button></div>
+        </dl>
         {policy_panel}{photos_html}{turnstile}
         <div class="project-step-actions"><button class="button secondary" type="button" data-project-back>Back</button><button class="button" type="submit" aria-label="{escape(submit_label)}">{escape(submit_label)}</button></div>
       </fieldset>"""

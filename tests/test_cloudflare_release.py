@@ -10376,7 +10376,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Choose one task. Add details next.", html)
         self.assertIn("More yard &amp; landscaping services", html)
         self.assertIn(
-            'src="/project-composer.js?v=workdoe-service-tiles-guided-brief-v2"', html
+            'src="/project-composer.js?v=workdoe-service-tiles-review-edit-v3"', html
         )
         self.assertIn('/vendor/tabler-icons/trees.svg', html)
         self.assertIn('/vendor/tabler-icons/lawn-mower.svg', html)
@@ -10385,6 +10385,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('href="/styles.css?v=workdoe-contractor-trust-paths"', html)
         self.assertIn('name="service_choice"', html)
         self.assertEqual(html.count('data-project-choice-advance'), 59)
+        self.assertEqual(html.count('data-project-jump-step='), 4)
+        self.assertIn('aria-label="Edit project details"', html)
+        self.assertIn('/vendor/tabler-icons/pencil.svg', html)
         self.assertIn('data-selected-service-family', html)
         self.assertIn('class="service-select-control"', html)
         self.assertEqual(html.count('class="project-setting-option"'), 6)

@@ -277,9 +277,12 @@
   }
 
   composer.addEventListener("click", function (event) {
+    var jump = event.target.closest("[data-project-jump-step]");
     var next = event.target.closest("[data-project-next]");
     var back = event.target.closest("[data-project-back]");
-    if (next) {
+    if (jump) {
+      showStep(Number(jump.dataset.projectJumpStep), true);
+    } else if (next) {
       var active = steps[currentStep - 1];
       if (active && validateStep(active)) {
         showStep(currentStep + 1, true);
