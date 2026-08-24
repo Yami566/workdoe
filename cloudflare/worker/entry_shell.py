@@ -394,17 +394,19 @@ def job_row(row, selected_id: str, target: str) -> str:
     sample = '<span class="sample-badge">Sample</span>' if project["is_demo"] else ""
     icon_name = service_icon(project.get("service_slug") or project["service_name"])
     return f"""
-          <a class="{row_class}" role="listitem" data-job-id="{escape(job_id)}" href="{escape(project['detail_url'])}"{current}>
-            <span class="project-result-topline">
-              <span class="job-service-chip"><img src="/vendor/tabler-icons/{escape(icon_name)}" alt="" width="16" height="16">{escape(project['service_name'])}</span>
-              {sample}
-            </span>
-            <strong>{escape(project['title'])}</strong>
-            <span class="project-result-facts">
-              <span>{escape(project['city'])}, {escape(project['state'])}</span>
-              <span>{escape(project['budget'])}</span>
-            </span>
-          </a>"""
+          <div class="project-result-item" role="listitem">
+            <a class="{row_class}" data-job-id="{escape(job_id)}" href="{escape(project['detail_url'])}" aria-label="View details for {escape(project['title'])}"{current}>
+              <span class="project-result-topline">
+                <span class="job-service-chip"><img src="/vendor/tabler-icons/{escape(icon_name)}" alt="" width="16" height="16">{escape(project['service_name'])}</span>
+                {sample}
+              </span>
+              <span class="project-result-heading"><strong>{escape(project['title'])}</strong><span class="project-result-action">View</span></span>
+              <span class="project-result-facts">
+                <span>{escape(project['city'])}, {escape(project['state'])}</span>
+                <span>{escape(project['budget'])}</span>
+              </span>
+            </a>
+          </div>"""
 
 
 def job_list_html(rows: list, selected_id: str, target: str) -> str:
@@ -831,7 +833,7 @@ def build_entry_shell_html(
   <link rel="stylesheet" href="/vendor/leaflet-markercluster/MarkerCluster.Default.css">"""
     map_scripts_html = "" if embedded else """  <script src="/vendor/leaflet/leaflet.js"></script>
   <script src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>
-  <script src="/map.js?v=workdoe-map-popup-action"></script>"""
+  <script src="/map.js?v=workdoe-semantic-project-links"></script>"""
     dialog_html = "" if embedded else site_dialog_html()
     dialog_script_html = "" if embedded else '  <script defer src="/site-dialogs.js?v=workdoe-bid-dialog"></script>'
     return f"""<!doctype html>
@@ -864,7 +866,7 @@ def build_entry_shell_html(
   <link rel="canonical" href="https://workdoe.com/">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=workdoe-map-popup-action">
+  <link rel="stylesheet" href="/styles.css?v=workdoe-semantic-project-links">
 {map_styles_html}
 </head>
 <body class="{escape(body_class)}" data-default-mobile-panel="{escape(mobile_default)}">

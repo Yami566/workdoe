@@ -274,14 +274,21 @@
       var availability = bidding.availability_label || job.budget || "Budget not provided";
       var photoCount = Number(job.photo_count || 0);
       var photoLabel = photoCount + (photoCount === 1 ? " photo" : " photos");
-      var rowLabel = job.request_status ? "Open sent bid for " : "View ";
+      var actionCue = detailContent
+        ? (job.request_status ? "Sent" : "View")
+        : (job.row_cue || job.action_label || "View");
+      var rowLabel = detailContent
+        ? (job.request_status ? "Open sent bid for " : "View details for ")
+        : actionCue + " for ";
       var readinessFact = readiness.label ? "<span>" + escapeHtml(readiness.label) + "</span>" : "";
       return (
-        '<a class="project-result' + (active ? " is-map-active" : "") + '" role="listitem" data-job-id="' + escapeAttribute(job.id) + '" href="' + escapeAttribute(job.detail_url || job.url || "#") + '" aria-label="' + escapeAttribute(rowLabel + (job.title || "open project")) + '"' + (active ? ' aria-current="true"' : "") + ">" +
-          '<span class="project-result-topline">' + fit + '<span class="job-service-chip">' + escapeHtml(job.service_name || job.category || "Project") + "</span>" + status + sample + "</span>" +
-          "<strong>" + escapeHtml(job.title || "Open project") + "</strong>" +
-          '<span class="project-result-facts"><span>' + escapeHtml(placeLabel(job)) + "</span><span>" + escapeHtml(availability) + "</span><span>" + escapeHtml(photoLabel) + "</span>" + readinessFact + "</span>" +
-        "</a>"
+        '<div class="project-result-item" role="listitem">' +
+          '<a class="project-result' + (active ? " is-map-active" : "") + '" data-job-id="' + escapeAttribute(job.id) + '" href="' + escapeAttribute(job.detail_url || job.url || "#") + '" aria-label="' + escapeAttribute(rowLabel + (job.title || "open project")) + '"' + (active ? ' aria-current="true"' : "") + ">" +
+            '<span class="project-result-topline">' + fit + '<span class="job-service-chip">' + escapeHtml(job.service_name || job.category || "Project") + "</span>" + status + sample + "</span>" +
+            '<span class="project-result-heading"><strong>' + escapeHtml(job.title || "Open project") + '</strong><span class="project-result-action">' + escapeHtml(actionCue) + "</span></span>" +
+            '<span class="project-result-facts"><span>' + escapeHtml(placeLabel(job)) + "</span><span>" + escapeHtml(availability) + "</span><span>" + escapeHtml(photoLabel) + "</span>" + readinessFact + "</span>" +
+          "</a>" +
+        "</div>"
       );
     }
 

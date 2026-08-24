@@ -846,6 +846,11 @@ button.compact {
   gap: 12px;
 }
 
+.job-result-item,
+.project-result-item {
+  min-width: 0;
+}
+
 .job-list.compact-list {
   gap: 8px;
 }
@@ -5310,6 +5315,7 @@ textarea:focus {
 }
 
 .project-result-topline,
+.project-result-heading,
 .project-result-facts {
   display: flex;
   align-items: center;
@@ -5318,6 +5324,23 @@ textarea:focus {
   min-width: 0;
   color: var(--muted);
   font-size: 0.68rem;
+}
+
+.project-result-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.project-result-heading strong {
+  color: var(--ink);
+}
+
+.project-result-action {
+  color: var(--accent-dark);
+  font-size: 0.68rem;
+  font-weight: 850;
+  white-space: nowrap;
 }
 
 .project-result-topline > span:first-child,

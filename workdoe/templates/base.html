@@ -28,7 +28,7 @@
     <link rel="canonical" href="https://workdoe.com{{ request.path if request.endpoint in ['safety', 'privacy', 'terms'] else '/' }}">
     <link rel="icon" href="{{ url_for('static', filename='deer.svg') }}" type="image/svg+xml">
     <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=workdoe-map-popup-action">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=workdoe-semantic-project-links">
     {% if turnstile_enabled() %}
       <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     {% endif %}

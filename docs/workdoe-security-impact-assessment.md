@@ -84,6 +84,11 @@ formal certification against OWASP ASVS or WCAG.
   exact-location value, contact field, identity inference, recipient, storage,
   or authorization bypass. Signed-out actions retain only the public project
   ID in the validated `next` path and use the existing same-page auth dialog.
+- Semantic project-result wrappers and visible action cues are presentation
+  only. They reuse existing action labels, same-domain URLs, request status,
+  and public project fields; they add no endpoint, payload field, private value,
+  storage, inference, ranking signal, or authorization decision. The anchor,
+  not its list wrapper, remains the sole interactive element.
 - Production service publication and new bidding fail closed through a
   canonical service-zone activation record. A market requires reviewed scope,
   approval and freshness timestamps, an active status, and a live minimum count

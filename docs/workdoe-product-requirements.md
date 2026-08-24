@@ -309,6 +309,11 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
   same-page email-code dialog with the selected project retained; authorized
   contractors continue to the existing review/bid action. Closing a dialog
   restores the selected pin, map state, URL, and invoking-action focus.
+- Every server-rendered or API-refreshed project result remains a real link
+  inside a semantic list item. Its visible cue reflects the action available in
+  that surface, such as Sign in, View, or Sent; activating it retains the
+  existing permission-aware URL, and closing an in-page dialog restores focus
+  to the originating result.
 - Public home, sign-in, account-start, and contractor lead-board views place a
   compact `00` all-work control plus numbered `01`-`06` family icon controls
   above the existing search and map/list results. Selecting a family is a real

@@ -616,7 +616,7 @@ def layout(
             [
                 '<script src="/vendor/leaflet/leaflet.js"></script>',
                 '<script src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>',
-                '<script src="/map.js?v=workdoe-map-popup-action"></script>',
+                '<script src="/map.js?v=workdoe-semantic-project-links"></script>',
             ]
         )
     if include_actions or authenticated:
@@ -680,7 +680,7 @@ def layout(
   <link rel="canonical" href="{escape(canonical_url)}">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=workdoe-map-popup-action">
+  <link rel="stylesheet" href="/styles.css?v=workdoe-semantic-project-links">
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet/leaflet.css\">" if include_map else ""}
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.css\"><link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.Default.css\">" if include_map else ""}
   {script_html}
@@ -1546,20 +1546,22 @@ def lead_board_html(user, payload: dict) -> str:
         )
         rows.append(
             f"""
-      <a class="project-result{' is-map-active' if job is selected else ''}" role="listitem" data-job-id="{escape(str(job.get('id', '')))}" href="{escape(job.get('url', '#'))}" aria-label="{escape(row_label)}"{' aria-current="true"' if job is selected else ''}>
-        <span class="project-result-topline">
-          {('<span class="lead-fit fit-' + str(int(job.get('fit_score', 0) or 0)) + '">' + escape(job.get('fit_label', '')) + '</span>') if job.get('fit_label') else ''}
-          <span class="job-service-chip"><img src="/vendor/tabler-icons/{escape(icon_name)}" alt="" width="16" height="16">{escape(job_service_name(job))}</span>
-          {('<span class="status ' + escape(job.get('request_status', '')) + '">Bid ' + escape(job.get('request_status', '')) + '</span>') if job.get('request_status') else ''}
-        </span>
-        <strong>{escape(job.get('title', ''))}</strong>
-        <span class="project-result-facts">
-          <span>{escape(job.get('city', ''))}, {escape(job.get('state', ''))}</span>
-          <span>{escape(job.get('bid_window', {}).get('availability_label', ''))}</span>
-          <span>{escape(photo_count_label(int(job.get('photo_count', 0) or 0)))}</span>
-          {brief_readiness_pill_html(job.get('brief_readiness'))}
-        </span>
-      </a>"""
+      <div class="project-result-item" role="listitem">
+        <a class="project-result{' is-map-active' if job is selected else ''}" data-job-id="{escape(str(job.get('id', '')))}" href="{escape(job.get('url', '#'))}" aria-label="{escape(row_label)}"{' aria-current="true"' if job is selected else ''}>
+          <span class="project-result-topline">
+            {('<span class="lead-fit fit-' + str(int(job.get('fit_score', 0) or 0)) + '">' + escape(job.get('fit_label', '')) + '</span>') if job.get('fit_label') else ''}
+            <span class="job-service-chip"><img src="/vendor/tabler-icons/{escape(icon_name)}" alt="" width="16" height="16">{escape(job_service_name(job))}</span>
+            {('<span class="status ' + escape(job.get('request_status', '')) + '">Bid ' + escape(job.get('request_status', '')) + '</span>') if job.get('request_status') else ''}
+          </span>
+          <span class="project-result-heading"><strong>{escape(job.get('title', ''))}</strong><span class="project-result-action">{escape(row_cue)}</span></span>
+          <span class="project-result-facts">
+            <span>{escape(job.get('city', ''))}, {escape(job.get('state', ''))}</span>
+            <span>{escape(job.get('bid_window', {}).get('availability_label', ''))}</span>
+            <span>{escape(photo_count_label(int(job.get('photo_count', 0) or 0)))}</span>
+            {brief_readiness_pill_html(job.get('brief_readiness'))}
+          </span>
+        </a>
+      </div>"""
         )
     list_html = "\n".join(rows) if rows else '<div class="market-list-empty"><strong>No matching projects</strong><span>Clear filters to widen the map.</span></div>'
     map_jobs = payload.get("map_jobs", [])

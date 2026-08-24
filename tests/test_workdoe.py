@@ -4018,7 +4018,13 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'id="lead-results" class="project-results" data-project-results aria-label="Open leads" role="list"', board.data)
         self.assertIn(b'id="market-map-panel" class="market-map-stage" data-market-panel="map"', board.data)
         self.assertIn(b'id="market-details-panel" class="market-detail-rail" data-market-panel="details"', board.data)
-        self.assertIn(b'class="project-result is-map-active" role="listitem" data-job-id="', board.data)
+        self.assertIn(b'class="project-result-item" role="listitem"', board.data)
+        self.assertIn(b'class="project-result is-map-active" data-job-id="', board.data)
+        self.assertIn(b'class="project-result-action">View</span>', board.data)
+        self.assertNotIn(
+            b'class="project-result is-map-active" role="listitem"',
+            board.data,
+        )
         self.assertIn(b'class="job-service-chip"', board.data)
         self.assertIn(b'/static/vendor/tabler-icons/wash.svg', board.data)
         self.assertIn(b'data-project-detail-content data-job-id="', board.data)
@@ -4318,7 +4324,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertNotIn(b"unpkg.com", home.data)
         self.assertIn(b'aria-controls="home-open-job-results lead-map"', home.data)
         self.assertIn(b'id="home-open-job-results" class="job-result-list" aria-label="Open job results" role="list"', home.data)
-        self.assertIn(b'class="job-row link-row compact-lead-row" role="listitem"', home.data)
+        self.assertIn(b'class="job-result-item" role="listitem"', home.data)
+        self.assertIn(b'class="job-row link-row compact-lead-row" data-job-id="', home.data)
+        self.assertNotIn(
+            b'class="job-row link-row compact-lead-row" role="listitem"',
+            home.data,
+        )
         self.assertIn(b'class="job-service-chip"', home.data)
         self.assertIn(b'/static/vendor/tabler-icons/wash.svg', home.data)
         self.assertIn(b'data-job-id="', home.data)
@@ -4716,8 +4727,13 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn("window.history.replaceState", script)
         self.assertIn('setOptionalParam(url, "job_id", activeJobId)', script)
         self.assertIn("mergeJobPayload", script)
-        self.assertIn('var rowLabel = job.request_status ? "Open sent bid for " : "View ";', script)
+        self.assertIn('class="project-result-item" role="listitem"', script)
+        self.assertIn('class="project-result-action"', script)
+        self.assertIn('var actionCue = detailContent', script)
+        self.assertIn('job.row_cue || job.action_label || "View"', script)
+        self.assertIn('"View details for "', script)
         self.assertIn('aria-label="\' + escapeAttribute(rowLabel', script)
+        self.assertNotIn('" role="listitem" data-job-id="\' + escapeAttribute(job.id)', script)
         self.assertIn('"request_status", "bid_window", "brief_readiness"', script)
         self.assertIn("Object.prototype.hasOwnProperty.call(current, field)", script)
         self.assertIn('event.key === "ArrowRight"', script)
@@ -4727,7 +4743,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn("if (!detailContent)", script)
         home = self.client.get("/")
         self.assertIn(
-            b'/static/map.js?v=workdoe-map-popup-action',
+            b'/static/map.js?v=workdoe-semantic-project-links',
             home.data,
         )
 
@@ -6232,7 +6248,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'/vendor/tabler-icons/seedling.svg', form.data)
         self.assertIn(b'/vendor/tabler-icons/plant.svg', form.data)
         self.assertIn(
-            b'/static/styles.css?v=workdoe-map-popup-action',
+            b'/static/styles.css?v=workdoe-semantic-project-links',
             form.data,
         )
         self.assertIn(b'/static/project-composer.js?v=workdoe-service-tiles', form.data)

@@ -160,6 +160,12 @@ deployment has been performed during this stabilization pass.
   dialog with the selected project retained, while map URL state and focus are
   restored on close. The live-region message now describes the available next
   step truthfully on both simple and detail-rail map surfaces.
+- Restored project-result link semantics across Flask templates, Worker entry
+  and app shells, and live map refreshes. List grouping now sits on a
+  noninteractive wrapper, each unchanged anchor is announced as a link, and a
+  compact Sign in, View, or Sent cue survives API replacement. The selected
+  project, permission-aware URL, keyboard row navigation, dialog behavior, and
+  no-JavaScript fallback are unchanged.
 
 ## Verification evidence
 
@@ -464,6 +470,19 @@ deployment has been performed during this stabilization pass.
   same-page Sign in with `next=/jobs/5`, and restoration to `/?job_id=5` after
   closing. The aligned before/after comparison and evidence limits are recorded
   in `docs/ux-audit/2026-08-24-public-map-selection-flow/`.
+- The semantic project-result correction passed all 232 tests in 80.055
+  seconds. The complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed secret
+  across 579 non-ignored files, and no dependency drift. Cloudflare preflight
+  remained warning-free; all 32 forward-only migrations and all three expected
+  D1 indexes passed without a table scan; and Wrangler 4.125.0 packaged 48
+  Python modules and 86 assets at 915.69 KiB / 168.38 KiB gzip without
+  deploying.
+- Current-run public-list evidence shows both refreshed results announced as
+  specific links, visible Sign in cues, same-page auth at
+  `/login?next=%2Fjobs%2F5`, and focus restored to the originating result after
+  close. Mobile and desktop captures plus the focused comparison are recorded
+  in `docs/ux-audit/2026-08-24-public-list-continuation-flow/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

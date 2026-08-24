@@ -97,18 +97,20 @@
       {% for job in open_jobs %}
         {% set job_href = url_for('contractor_job_detail', job_id=job.id) if g.user and g.user.role in ['contractor', 'admin'] else (url_for('dashboard') if g.user else url_for('login', next=url_for('contractor_job_detail', job_id=job.id))) %}
         {% set row_cue = "View" if g.user and g.user.role in ['contractor', 'admin'] else ("Dashboard" if g.user else "Sign in") %}
-        <a class="job-row link-row compact-lead-row" role="listitem" data-job-id="{{ job.id }}" href="{{ job_href }}" aria-label="{{ row_cue }} for {{ job.title }}">
-          <div>
-            <div class="row-meta">
-              <span class="job-service-chip"><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(job.service_slug or job.category)) }}" alt="" width="16" height="16">{{ job.service_slug|service_name(job.category) }}</span>
-              <span>{{ job.city }}, {{ job.state }}</span>
-              {% if job.desired_date %}<span>Target <time datetime="{{ job.desired_date }}">{{ job.desired_date|date_label }}</time></span>{% endif %}
-              <span>{{ job.photo_count|photo_count_label }}</span>
+        <div class="job-result-item" role="listitem">
+          <a class="job-row link-row compact-lead-row" data-job-id="{{ job.id }}" href="{{ job_href }}" aria-label="{{ row_cue }} for {{ job.title }}">
+            <div>
+              <div class="row-meta">
+                <span class="job-service-chip"><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(job.service_slug or job.category)) }}" alt="" width="16" height="16">{{ job.service_slug|service_name(job.category) }}</span>
+                <span>{{ job.city }}, {{ job.state }}</span>
+                {% if job.desired_date %}<span>Target <time datetime="{{ job.desired_date }}">{{ job.desired_date|date_label }}</time></span>{% endif %}
+                <span>{{ job.photo_count|photo_count_label }}</span>
+              </div>
+              <h3>{{ job.title }}</h3>
             </div>
-            <h3>{{ job.title }}</h3>
-          </div>
-          <span class="row-cue">{{ row_cue }}</span>
-        </a>
+            <span class="row-cue">{{ row_cue }}</span>
+          </a>
+        </div>
       {% else %}
         <div class="empty-state field-empty-state">
           <img class="empty-state-visual" src="{{ url_for('static', filename='field-doe.webp') }}" alt="" width="180" height="180">
@@ -131,5 +133,5 @@
 
 <script id="map-jobs-data" type="application/json">{{ map_jobs|tojson }}</script>
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
-<script src="{{ url_for('static', filename='map.js') }}?v=workdoe-map-popup-action"></script>
+<script src="{{ url_for('static', filename='map.js') }}?v=workdoe-semantic-project-links"></script>
 {% endblock %}

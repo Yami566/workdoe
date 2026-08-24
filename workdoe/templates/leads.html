@@ -113,20 +113,22 @@
       {% for job in jobs %}
         {% set row_cue = "Sent" if job.request_status else "View" %}
         {% set row_label = "Open sent bid for " ~ job.title if job.request_status else "View " ~ job.title %}
-        <a class="project-result{% if selected_job and job.id == selected_job.id %} is-map-active{% endif %}" role="listitem" data-job-id="{{ job.id }}" href="{{ url_for('contractor_job_detail', job_id=job.id) }}" aria-label="{{ row_label }}" {% if selected_job and job.id == selected_job.id %}aria-current="true"{% endif %}>
-          <span class="project-result-topline">
-            {% if job.fit_label %}<span class="lead-fit fit-{{ job.fit_score }}">{{ job.fit_label }}</span>{% endif %}
-            <span class="job-service-chip"><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(job.service_slug or job.category)) }}" alt="" width="16" height="16">{{ job.service_slug|service_name(job.category) }}</span>
-            {% if job.request_status %}<span class="status {{ job.request_status }}">Bid {{ job.request_status }}</span>{% endif %}
-          </span>
-          <strong>{{ job.title }}</strong>
-          <span class="project-result-facts">
-            <span>{{ job.city }}, {{ job.state }}</span>
-            <span>{{ job.bid_window.availability_label }}</span>
-            <span>{{ job.photo_count|photo_count_label }}</span>
-            <span>{{ job.brief_readiness.label }}</span>
-          </span>
-        </a>
+        <div class="project-result-item" role="listitem">
+          <a class="project-result{% if selected_job and job.id == selected_job.id %} is-map-active{% endif %}" data-job-id="{{ job.id }}" href="{{ url_for('contractor_job_detail', job_id=job.id) }}" aria-label="{{ row_label }}" {% if selected_job and job.id == selected_job.id %}aria-current="true"{% endif %}>
+            <span class="project-result-topline">
+              {% if job.fit_label %}<span class="lead-fit fit-{{ job.fit_score }}">{{ job.fit_label }}</span>{% endif %}
+              <span class="job-service-chip"><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(job.service_slug or job.category)) }}" alt="" width="16" height="16">{{ job.service_slug|service_name(job.category) }}</span>
+              {% if job.request_status %}<span class="status {{ job.request_status }}">Bid {{ job.request_status }}</span>{% endif %}
+            </span>
+            <span class="project-result-heading"><strong>{{ job.title }}</strong><span class="project-result-action">{{ row_cue }}</span></span>
+            <span class="project-result-facts">
+              <span>{{ job.city }}, {{ job.state }}</span>
+              <span>{{ job.bid_window.availability_label }}</span>
+              <span>{{ job.photo_count|photo_count_label }}</span>
+              <span>{{ job.brief_readiness.label }}</span>
+            </span>
+          </a>
+        </div>
       {% else %}
         <div class="market-list-empty">
           <strong>{% if lead_view == "sent" %}No bids sent yet{% elif lead_view == "new" %}No new leads{% else %}No leads match this search{% endif %}</strong>
@@ -176,5 +178,5 @@
 
 <script id="map-jobs-data" type="application/json">{{ map_jobs|tojson }}</script>
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
-<script src="{{ url_for('static', filename='map.js') }}?v=workdoe-map-popup-action"></script>
+<script src="{{ url_for('static', filename='map.js') }}?v=workdoe-semantic-project-links"></script>
 {% endblock %}
