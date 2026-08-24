@@ -2985,6 +2985,90 @@ button.compact {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.license-preference-option {
+  display: grid;
+  grid-template-columns: 24px 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.license-preference-option:has(input:checked) {
+  border-color: var(--accent);
+  background: rgba(59, 91, 69, 0.08);
+}
+
+.license-preference-option input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+
+.license-preference-option img {
+  width: 22px;
+  height: 22px;
+}
+
+.license-preference-option strong,
+.license-preference-option small {
+  display: block;
+}
+
+.license-preference-option small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.license-preference-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 12px 0;
+  border-left: 3px solid var(--signal);
+  padding: 9px 11px;
+  background: rgba(59, 91, 69, 0.08);
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.license-preference-note img {
+  flex: 0 0 auto;
+  width: 19px;
+  height: 19px;
+}
+
+.license-preference-note strong,
+.license-preference-note small {
+  display: block;
+}
+
+.license-preference-note small {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.job-license-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: rgba(59, 91, 69, 0.08);
+  color: var(--ink);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
 .project-step-actions {
   display: flex;
   align-items: center;

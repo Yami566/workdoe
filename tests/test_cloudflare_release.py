@@ -1175,7 +1175,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
     def test_fresh_d1_database_accepts_complete_migration_chain(self):
         migrations_dir = ROOT / "cloudflare" / "d1" / "migrations"
         migration_paths = sorted(migrations_dir.glob("[0-9][0-9][0-9][0-9]_*.sql"))
-        self.assertEqual(len(migration_paths), 33)
+        self.assertEqual(len(migration_paths), 34)
 
         connection = sqlite3.connect(":memory:")
         try:
@@ -3475,6 +3475,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "state": "VA",
                     "zip_code": "22201",
                     "description": "Paint the stairwell walls and trim.",
+                    "license_preference": 1,
                     "client_email": "client@example.com",
                     "approx_lat": 38.8871,
                     "approx_lng": -77.0932,
@@ -3506,6 +3507,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertNotIn("client_email", job)
         self.assertEqual(job["service_group_slug"], "remodel-finish")
         self.assertEqual(job["service_name"], "Interior painting")
+        self.assertTrue(job["license_preference"])
 
         sample = module.public_job_payload(
             {
@@ -3597,7 +3599,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(plan["table_scans"], [])
         self.assertEqual(
             plan["last_migration"],
-            "0033_single_approved_match.sql",
+            "0034_project_license_preference.sql",
         )
 
     def test_demo_projects_are_realistic_labeled_and_filterable(self):
@@ -3743,6 +3745,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "pk_test_workdoe",
             "https://clerk.workdoe.com",
         )
+        map_script = (ROOT / "workdoe" / "static" / "map.js").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("<title>Join Workdoe</title>", html)
         self.assertIn(
             '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
@@ -3764,13 +3769,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', html)
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', html)
         self.assertIn(
-            'href="/styles.css?v=workdoe-work-history-disclosure-v2"', html
+            'href="/styles.css?v=workdoe-license-preference-v1"', html
         )
         self.assertIn('href="/vendor/leaflet/leaflet.css"', html)
         self.assertIn('href="/vendor/leaflet-markercluster/MarkerCluster.css"', html)
         self.assertIn('src="/vendor/leaflet/leaflet.js"', html)
         self.assertIn('src="/vendor/leaflet-markercluster/leaflet.markercluster.js"', html)
-        self.assertIn('src="/map.js?v=workdoe-semantic-project-links"', html)
+        self.assertIn('src="/map.js?v=workdoe-license-preference-v1"', html)
+        self.assertIn('getAttribute("data-asset-root")', map_script)
+        self.assertIn("assetRoot + '/vendor/tabler-icons/home-check.svg\"", map_script)
         self.assertIn('src="/clerk-entry.js"', html)
         self.assertIn("data-clerk-entry", html)
         self.assertIn("Loading secure email sign-in...", html)
@@ -5078,6 +5085,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "city": "Alexandria",
                         "state": "VA",
                         "description": "Ground-floor exterior glass.",
+                        "license_preference": True,
                         "photo_count": 1,
                         "row_cue": "View",
                         "url": "/jobs/21",
@@ -5095,6 +5103,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "lng": -77.0469,
                         "url": "/jobs/21",
                         "action_label": "View",
+                        "license_preference": True,
                     }
                 ],
                 "filters": {
@@ -5134,7 +5143,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('id="lead-map"', lead_html)
         self.assertEqual(module.photo_count_label(1), "1 photo")
         self.assertEqual(module.photo_count_label(None), "0 photos")
-        self.assertIn('src="/map.js?v=workdoe-semantic-project-links"', lead_html)
+        self.assertIn('src="/map.js?v=workdoe-license-preference-v1"', lead_html)
         self.assertIn('class="market-workspace signed-in-market-workspace"', lead_html)
         self.assertIn('id="lead-results" class="project-results" data-project-results aria-label="Open leads" role="list"', lead_html)
         self.assertIn('class="market-map-stage"', lead_html)
@@ -5146,6 +5155,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Filters &amp; alerts", lead_html)
         self.assertIn("Window cleaning / Newest", lead_html)
         self.assertIn('class="lead-tools-alert-state is-on">Email on</span>', lead_html)
+        self.assertIn("License preferred", lead_html)
+        self.assertIn(
+            "Preference only. Confirm whether your license covers this work and jurisdiction.",
+            lead_html,
+        )
         self.assertIn('role="listitem"', lead_html)
         self.assertIn('class="project-result-item" role="listitem"', lead_html)
         self.assertIn('class="project-result-action">View</span>', lead_html)
@@ -5706,6 +5720,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "request_status": "pending",
                 "client_id": 8,
                 "client_email": "private@example.com",
+                "license_preference": 1,
             },
             {
                 "id": 13,
@@ -5743,6 +5758,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertFalse(payload["jobs"][0]["can_request_match"])
         self.assertEqual(payload["jobs"][0]["fit_label"], "Best fit")
         self.assertEqual(payload["jobs"][0]["fit_score"], 3)
+        self.assertTrue(payload["jobs"][0]["license_preference"])
+        self.assertTrue(payload["map_jobs"][0]["license_preference"])
         self.assertEqual(payload["map_jobs"][0]["action_label"], "View bid status")
         self.assertEqual(payload["map_jobs"][0]["description"], "Townhouse front steps need cleaning.")
         self.assertEqual(payload["map_jobs"][0]["desired_date"], "2026-09-01")
@@ -5931,6 +5948,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "title": "Wash storefront entrance",
             "description": "Clean the entrance and protect adjacent surfaces.",
             "project_setting": "business",
+            "license_preference": 1,
             "budget_min": 450,
             "budget_max": 700,
             "city": "Private city must not copy",
@@ -5944,11 +5962,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertNotIn("zip_code", response)
         self.assertNotIn("desired_date", response)
         self.assertNotIn("stored_path", response)
+        self.assertEqual(response["license_preference"], 1)
         form = module.project_template_job_form(row)
         self.assertEqual(form["city"], "")
         self.assertEqual(form["zip_code"], "")
         self.assertEqual(form["desired_date"], "")
         self.assertEqual(form["title"], "Wash storefront entrance")
+        self.assertEqual(form["license_preference"], "1")
 
         shell = load_app_shell_module()
         html = shell.client_profile_html(
@@ -6549,6 +6569,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "close_reason": "plans-changed",
             "close_note": "Timing moved.",
             "closed_at": "2026-08-17T12:00:00+00:00",
+            "license_preference": 1,
         }
         photos = [
             {
@@ -6569,6 +6590,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(contractor_job["area_label"], "Arlington, VA 222xx")
         self.assertEqual(contractor_job["zip_prefix"], "222xx")
         self.assertTrue(contractor_job["can_request_match"])
+        self.assertTrue(contractor_job["license_preference"])
         self.assertNotIn("zip_code", contractor_job)
         self.assertNotIn("close_note", contractor_job)
         self.assertNotIn("stored_path", contractor_payload["photos"][0])
@@ -7156,6 +7178,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "description": "Need first-floor storefront windows cleaned before opening.",
             "budget_min": "500",
             "budget_max": "900",
+            "license_preference": "1",
             "service_policy_acknowledgement": "2026-08-22",
         }
         payload = module.job_post_payload(valid_form, today=module.date(2026, 8, 3))
@@ -7167,6 +7190,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(payload["budget_min"], "500")
         self.assertEqual(payload["budget_max"], "900")
         self.assertEqual(payload["project_setting"], "business-space")
+        self.assertEqual(payload["license_preference"], "1")
         self.assertEqual(module.project_setting_label(payload["project_setting"]), "Business or office")
         self.assertEqual(module.budget_label(payload), "$500-$900")
         self.assertEqual(
@@ -10386,14 +10410,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Choose one task. Add details next.", html)
         self.assertIn("More yard &amp; landscaping services", html)
         self.assertIn(
-            'src="/project-composer.js?v=workdoe-service-tiles-review-edit-v3"', html
+            'src="/project-composer.js?v=workdoe-license-preference-v1"', html
         )
         self.assertIn('/vendor/tabler-icons/trees.svg', html)
         self.assertIn('/vendor/tabler-icons/lawn-mower.svg', html)
         self.assertIn('/vendor/tabler-icons/seedling.svg', html)
         self.assertIn('/vendor/tabler-icons/plant.svg', html)
         self.assertIn(
-            'href="/styles.css?v=workdoe-work-history-disclosure-v2"', html
+            'href="/styles.css?v=workdoe-license-preference-v1"', html
         )
         self.assertIn('name="service_choice"', html)
         self.assertEqual(html.count('data-project-choice-advance'), 59)
@@ -10404,6 +10428,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('class="service-select-control"', html)
         self.assertEqual(html.count('class="project-setting-option"'), 6)
         self.assertIn('data-review-setting', html)
+        self.assertIn('name="license_preference" type="checkbox" value="1"', html)
+        self.assertIn('data-review-license', html)
+        self.assertIn("Workdoe source check only.", html)
         self.assertIn('data-service-scope-set="lawn-mowing"', html)
         self.assertIn('name="scope_grass_height"', html)
         self.assertIn('data-review-scope', html)
@@ -10516,6 +10543,26 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("idx_match_requests_one_approved_per_job", single_match_migration)
         self.assertIn("WHERE status = 'approved'", single_match_migration)
+
+        project_license_preference_migration = (
+            ROOT
+            / "cloudflare"
+            / "d1"
+            / "migrations"
+            / "0034_project_license_preference.sql"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(
+            project_license_preference_migration.count(
+                "ADD COLUMN license_preference INTEGER NOT NULL DEFAULT 0"
+            ),
+            3,
+        )
+        self.assertEqual(
+            project_license_preference_migration.count(
+                "CHECK (license_preference IN (0, 1))"
+            ),
+            3,
+        )
 
         project_outcomes_migration = (
             ROOT / "cloudflare" / "d1" / "migrations" / "0010_project_outcomes.sql"

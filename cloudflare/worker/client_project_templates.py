@@ -59,6 +59,10 @@ def project_template_values(name: str, job_form: dict) -> dict:
         "title": str(job_form.get("title") or ""),
         "description": str(job_form.get("description") or ""),
         "project_setting": str(job_form.get("project_setting") or ""),
+        "license_preference": 1
+        if str(job_form.get("license_preference") or "").strip().lower()
+        in {"1", "true", "yes", "on"}
+        else 0,
         "budget_min": job_form.get("budget_min") or None,
         "budget_max": job_form.get("budget_max") or None,
     }
@@ -75,6 +79,7 @@ def project_template_response(row) -> dict:
         "title": str(row_value(row, "title", "") or ""),
         "description": str(row_value(row, "description", "") or ""),
         "project_setting": str(row_value(row, "project_setting", "") or ""),
+        "license_preference": int(row_value(row, "license_preference", 0) or 0),
         "budget_min": row_value(row, "budget_min"),
         "budget_max": row_value(row, "budget_max"),
         "created_at": str(row_value(row, "created_at", "") or ""),
@@ -90,6 +95,9 @@ def project_template_job_form(row) -> dict[str, str]:
         "category": str(row_value(row, "category", "Other") or "Other"),
         "title": str(row_value(row, "title", "") or ""),
         "project_setting": str(row_value(row, "project_setting", "") or ""),
+        "license_preference": (
+            "1" if int(row_value(row, "license_preference", 0) or 0) == 1 else ""
+        ),
         "city": "",
         "state": "DC",
         "zip_code": "",

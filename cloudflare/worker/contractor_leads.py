@@ -137,6 +137,9 @@ def contractor_lead_card(row) -> dict:
         "state": row_value(row, "state", "") or "",
         "description": row_value(row, "description", "") or "",
         "desired_date": row_value(row, "desired_date", "") or "",
+        "license_preference": bool(
+            int(row_value(row, "license_preference", 0) or 0)
+        ),
         "created_at": row_value(row, "created_at", "") or "",
         "photo_count": count_value(row, "photo_count"),
         "budget": budget_label(row),
@@ -164,6 +167,9 @@ def contractor_lead_map_marker(row) -> dict:
         "state": row_value(row, "state", "") or "",
         "description": row_value(row, "description", "") or "",
         "desired_date": row_value(row, "desired_date", "") or "",
+        "license_preference": bool(
+            int(row_value(row, "license_preference", 0) or 0)
+        ),
         "photo_count": count_value(row, "photo_count"),
         "budget": budget_label(row),
         "lat": row_value(row, "approx_lat"),

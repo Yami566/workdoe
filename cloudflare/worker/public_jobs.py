@@ -122,6 +122,9 @@ def public_job_payload(row, target: str = "start") -> dict:
         "category": row_value(row, "category", ""),
         "service_group_slug": row_value(row, "service_group_slug", ""),
         "service_slug": row_value(row, "service_slug", ""),
+        "license_preference": bool(
+            int(row_value(row, "license_preference", 0) or 0)
+        ),
         "service_name": service_label(
             row_value(row, "service_slug", ""), row_value(row, "category", "")
         ),

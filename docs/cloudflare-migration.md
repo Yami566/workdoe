@@ -105,7 +105,7 @@ Webhook sync is intentionally limited to rows that already have `users.auth_prov
 
 Onboarding is also fail-closed: the Worker requires a verified Clerk email claim before creating the D1 `users` row. If the Clerk session template does not include that claim, configure the claim in Clerk or add a verified Clerk Backend API lookup before enabling production account creation.
 
-The Cloudflare public jobs API intentionally mirrors the local Flask map contract: `id`, `title`, `category`, `city`, `state`, `lat`, `lng`, `url`, and `action_label`. It does not return ZIP codes, descriptions, client contact fields, exact addresses, or photo storage keys before a match is approved.
+The Cloudflare public jobs API intentionally mirrors the local Flask map contract: `id`, `title`, `category`, `city`, `state`, `lat`, `lng`, `url`, `action_label`, and the non-personal `license_preference` boolean. The preference is advisory only and never changes order or access. It does not return ZIP codes, descriptions, client contact fields, exact addresses, or photo storage keys before a match is approved.
 
 The Cloudflare same-domain entry shell intentionally mirrors the local `/create-account`, `/post-project`, and `/login` direction: the lead map and lead list appear before account creation, Clerk mounts inside `workdoe.com`, email-code sign-in stays on the same site, and the shell only renders public job facts. `/post-project` carries consumer intent directly into `/jobs/new`; `/login` is kept to sign-in only and sends unlinked Clerk identities to `/create-account` with the selected job preserved so role/profile creation stays explicit.
 
@@ -265,6 +265,10 @@ Migration `0023_contractor_proposal_templates.sql` adds six owner-only reusable
 wording templates per contractor. It stores scope, timeline, experience,
 questions, and availability from an owned mini bid, but no price, project,
 client, contact, location, media, ranking, message, or outcome field.
+Migration `0034_project_license_preference.sql` adds the same checked boolean to
+projects, anonymous drafts, and reusable consumer project templates. The field
+is presentation-only: it does not filter contractors, rank bids, determine
+service-zone activation, or establish legal eligibility.
 
 - Set `WORKDOE_ENV=production`.
 - Set `WORKDOE_AUTH_PROVIDER=clerk` once Clerk is ready.

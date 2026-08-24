@@ -303,6 +303,13 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
         / "migrations"
         / "0033_single_approved_match.sql"
     )
+    project_license_preference_migration_path = (
+        repo_root
+        / "cloudflare"
+        / "d1"
+        / "migrations"
+        / "0034_project_license_preference.sql"
+    )
     manifest_path = repo_root / "cloudflare" / "workdoe-cloudflare-manifest.json"
     wrangler_path = repo_root / "cloudflare" / "wrangler.jsonc"
     dev_vars_path = repo_root / "cloudflare" / ".dev.vars.example"
@@ -462,6 +469,10 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     )
     single_approved_match_migration_sql = read_text(
         single_approved_match_migration_path,
+        errors,
+    )
+    project_license_preference_migration_sql = read_text(
+        project_license_preference_migration_path,
         errors,
     )
     manifest = read_json(manifest_path, errors)
@@ -1003,6 +1014,21 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             "D1 single-approved-match index is missing or incomplete.",
             checks,
             "D1 enforces one approved contractor per project",
+        )
+    if project_license_preference_migration_sql:
+        require(
+            project_license_preference_migration_sql.count(
+                "ADD COLUMN license_preference INTEGER NOT NULL DEFAULT 0"
+            )
+            == 3
+            and project_license_preference_migration_sql.count(
+                "CHECK (license_preference IN (0, 1))"
+            )
+            == 3,
+            errors,
+            "D1 project license-preference migration is missing a compatible table or boolean check.",
+            checks,
+            "D1 stores the neutral license-record preference on projects, drafts, and templates",
         )
     if idempotency_migration_sql:
         require(
@@ -2411,7 +2437,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 'class="service-option"',
                 'class="service-select-control"',
                 "data-service-option-group",
-                "workdoe-service-tiles",
+                "workdoe-license-preference-v1",
                 "serviceChoices",
                 "syncServiceChoices",
                 "serviceSelect.value = choice.value",

@@ -262,6 +262,12 @@ def cleaned_job_payload(payload: dict) -> dict:
         "description": (payload.get("description") or "").strip(),
         "budget_min": compact_spaces(payload.get("budget_min")),
         "budget_max": compact_spaces(payload.get("budget_max")),
+        "license_preference": (
+            "1"
+            if str(payload.get("license_preference") or "").strip().lower()
+            in {"1", "true", "yes", "on"}
+            else ""
+        ),
         "service_policy_acknowledgement": compact_spaces(
             payload.get("service_policy_acknowledgement")
         ),

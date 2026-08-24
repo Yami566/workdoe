@@ -21,6 +21,7 @@
     var mapResultCount = document.querySelector("[data-map-result-count]");
     var detailContent = document.querySelector("[data-project-detail-content]");
     var jobsApi = mapElement.getAttribute("data-jobs-api") || "";
+    var assetRoot = (mapElement.getAttribute("data-asset-root") || "").replace(/\/+$/, "");
     var tileUrl = mapElement.getAttribute("data-tile-url") || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
     var tileAttribution = mapElement.getAttribute("data-tile-attribution") || '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
     var map = window.L.map(mapElement, {
@@ -269,6 +270,7 @@
       var sample = job.is_demo ? '<span class="sample-badge">Sample</span>' : "";
       var fit = job.fit_label ? '<span class="lead-fit fit-' + escapeAttribute(job.fit_score || 0) + '">' + escapeHtml(job.fit_label) + "</span>" : "";
       var status = job.request_status ? '<span class="status ' + escapeAttribute(job.request_status) + '">Bid ' + escapeHtml(job.request_status) + "</span>" : "";
+      var licensePreference = job.license_preference ? '<span class="job-license-chip">License preferred</span>' : "";
       var bidding = job.bid_window || {};
       var readiness = job.brief_readiness || {};
       var availability = bidding.availability_label || job.budget || "Budget not provided";
@@ -284,7 +286,7 @@
       return (
         '<div class="project-result-item" role="listitem">' +
           '<a class="project-result' + (active ? " is-map-active" : "") + '" data-job-id="' + escapeAttribute(job.id) + '" href="' + escapeAttribute(job.detail_url || job.url || "#") + '" aria-label="' + escapeAttribute(rowLabel + (job.title || "open project")) + '"' + (active ? ' aria-current="true"' : "") + ">" +
-            '<span class="project-result-topline">' + fit + '<span class="job-service-chip">' + escapeHtml(job.service_name || job.category || "Project") + "</span>" + status + sample + "</span>" +
+            '<span class="project-result-topline">' + fit + '<span class="job-service-chip">' + escapeHtml(job.service_name || job.category || "Project") + "</span>" + licensePreference + status + sample + "</span>" +
             '<span class="project-result-heading"><strong>' + escapeHtml(job.title || "Open project") + '</strong><span class="project-result-action">' + escapeHtml(actionCue) + "</span></span>" +
             '<span class="project-result-facts"><span>' + escapeHtml(placeLabel(job)) + "</span><span>" + escapeHtml(availability) + "</span><span>" + escapeHtml(photoLabel) + "</span>" + readinessFact + "</span>" +
           "</a>" +
@@ -366,6 +368,7 @@
             "<strong>" + escapeHtml(job.title || "Open project") + "</strong>" +
             "<span>" + escapeHtml(placeLabel(job)) + "</span>" +
             "<span>" + escapeHtml(job.budget || "Budget not provided") + "</span>" +
+            (job.license_preference ? '<span class="job-license-chip">License preferred</span>' : "") +
             '<a class="map-popup-action" href="' + escapeAttribute(actionUrl) + '" data-dialog-title="' + escapeAttribute(actionLabel) + '" aria-label="' + escapeAttribute(actionLabel + " for " + (job.title || "open project")) + '">' + escapeHtml(actionLabel) + "</a>" +
           "</div>",
           {
@@ -437,7 +440,7 @@
         return;
       }
       if (!job) {
-        detailContent.outerHTML = '<div class="market-detail-empty" data-project-detail-content><img src="/field-doe.webp" alt="" width="160" height="160"><h2>No projects match</h2><p>Move the map or adjust the filters.</p></div>';
+        detailContent.outerHTML = '<div class="market-detail-empty" data-project-detail-content><img src="' + assetRoot + '/field-doe.webp" alt="" width="160" height="160"><h2>No projects match</h2><p>Move the map or adjust the filters.</p></div>';
         detailContent = document.querySelector("[data-project-detail-content]");
         return;
       }
@@ -445,6 +448,9 @@
       var bidding = job.bid_window || {};
       var biddingFact = bidding.usage_label ? "<div><dt>Mini bids</dt><dd>" + escapeHtml(bidding.usage_label) + "</dd></div>" : "";
       var actionLabel = job.action_label || "Review and bid";
+      var licensePreference = job.license_preference
+        ? '<p class="license-preference-note"><img src="' + assetRoot + '/vendor/tabler-icons/home-check.svg" alt=""><span><strong>Current license record preferred</strong><small>Preference only. Confirm scope and legal eligibility directly.</small></span></p>'
+        : "";
       detailContent.outerHTML = (
         '<article class="market-project-detail" data-project-detail-content data-job-id="' + escapeAttribute(job.id) + '">' +
           '<div class="project-detail-heading">' + sample + "<span>" + escapeHtml(job.service_name || job.category || "Project") + "</span></div>" +
@@ -452,6 +458,7 @@
           '<p class="project-detail-location">' + escapeHtml(placeLabel(job)) + "</p>" +
           '<dl class="project-facts"><div><dt>Estimated budget</dt><dd>' + escapeHtml(job.budget || "Budget not provided") + "</dd></div>" +
           "<div><dt>Desired date</dt><dd>" + escapeHtml(job.desired_date || "Flexible") + "</dd></div>" + biddingFact + "</dl>" +
+          licensePreference +
           '<div class="project-description"><h3>Project overview</h3><p>' + escapeHtml(job.description || "Project details are available after sign-in.") + "</p></div>" +
           '<p class="project-privacy-note">Location is intentionally approximate until a match is approved.</p>' +
           '<div class="project-detail-actions"><a class="button primary" href="' + escapeAttribute(job.url || "/start") + '" data-dialog-title="' + escapeAttribute(actionLabel) + '">' + escapeHtml(actionLabel) + "</a></div>" +

@@ -1117,6 +1117,10 @@ def ensure_schema_migrations(db: sqlite3.Connection) -> None:
         db.execute("ALTER TABLE jobs ADD COLUMN closed_at TEXT")
     if "project_setting" not in job_columns:
         db.execute("ALTER TABLE jobs ADD COLUMN project_setting TEXT NOT NULL DEFAULT ''")
+    if "license_preference" not in job_columns:
+        db.execute(
+            "ALTER TABLE jobs ADD COLUMN license_preference INTEGER NOT NULL DEFAULT 0"
+        )
     db.execute(
         "UPDATE jobs SET bid_limit = ? "
         "WHERE bid_limit IS NULL OR bid_limit < 1 OR bid_limit > 8",
@@ -1195,6 +1199,7 @@ def ensure_schema_migrations(db: sqlite3.Connection) -> None:
             budget_max INTEGER,
             service_group_slug TEXT,
             service_slug TEXT,
+            license_preference INTEGER NOT NULL DEFAULT 0,
             expires_at TEXT NOT NULL,
             consumed_at TEXT,
             created_at TEXT NOT NULL,
@@ -1215,6 +1220,19 @@ def ensure_schema_migrations(db: sqlite3.Connection) -> None:
     if "project_setting" not in draft_columns:
         db.execute(
             "ALTER TABLE job_drafts ADD COLUMN project_setting TEXT NOT NULL DEFAULT ''"
+        )
+    if "license_preference" not in draft_columns:
+        db.execute(
+            "ALTER TABLE job_drafts ADD COLUMN license_preference INTEGER NOT NULL DEFAULT 0"
+        )
+    project_template_columns = {
+        row["name"]
+        for row in db.execute("PRAGMA table_info(client_project_templates)").fetchall()
+    }
+    if "license_preference" not in project_template_columns:
+        db.execute(
+            "ALTER TABLE client_project_templates "
+            "ADD COLUMN license_preference INTEGER NOT NULL DEFAULT 0"
         )
     db.execute(
         """
@@ -2629,9 +2647,9 @@ def register_routes(app: Flask) -> None:
                 INSERT INTO client_project_templates
                     (client_id, name, source_job_id, service_group_slug,
                      service_slug, category, title, description,
-                     project_setting, budget_min, budget_max,
+                     project_setting, license_preference, budget_min, budget_max,
                      created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     g.user["id"],
@@ -2643,6 +2661,7 @@ def register_routes(app: Flask) -> None:
                     values["title"],
                     values["description"],
                     values["project_setting"],
+                    values["license_preference"],
                     values["budget_min"],
                     values["budget_max"],
                     timestamp,
@@ -2806,10 +2825,11 @@ def register_routes(app: Flask) -> None:
                     """
                     INSERT INTO jobs
                         (client_id, title, category, service_group_slug, service_slug,
-                         service_zone_slug, project_setting, city, state, zip_code, description,
+                         service_zone_slug, project_setting, license_preference,
+                         city, state, zip_code, description,
                          desired_date, budget_min, budget_max, status, approx_lat, approx_lng,
                          bid_limit, bidding_closes_at, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         g.user["id"],
@@ -2819,6 +2839,7 @@ def register_routes(app: Flask) -> None:
                         form["service_slug"],
                         service_zone_slug,
                         form["project_setting"],
+                        int(form["license_preference"] == "1"),
                         form["city"],
                         form["state"],
                         form["zip_code"],
@@ -2945,6 +2966,7 @@ def register_routes(app: Flask) -> None:
                         service_slug = ?,
                         service_zone_slug = ?,
                         project_setting = ?,
+                        license_preference = ?,
                         city = ?,
                         state = ?,
                         zip_code = ?,
@@ -2964,6 +2986,7 @@ def register_routes(app: Flask) -> None:
                         form["service_slug"],
                         service_zone_slug,
                         form["project_setting"],
+                        int(form["license_preference"] == "1"),
                         form["city"],
                         form["state"],
                         form["zip_code"],
@@ -6192,10 +6215,10 @@ def save_job_draft(form: dict) -> None:
         """
         INSERT INTO job_drafts
             (token_hash, title, category, service_group_slug, service_slug,
-             project_setting, city, state, zip_code, description,
+             project_setting, license_preference, city, state, zip_code, description,
              desired_date, budget_min, budget_max, expires_at, consumed_at,
              created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
         """,
         (
             hash_token(token),
@@ -6204,6 +6227,7 @@ def save_job_draft(form: dict) -> None:
             form["service_group_slug"],
             form["service_slug"],
             form["project_setting"],
+            int(form["license_preference"] == "1"),
             form["city"],
             form["state"],
             form["zip_code"],
@@ -6431,6 +6455,7 @@ def blank_job_form() -> dict:
         "description": "",
         "budget_min": "",
         "budget_max": "",
+        "license_preference": "",
         "service_policy_acknowledgement": "",
         "scope_answers": {},
     }
@@ -6464,6 +6489,11 @@ def job_to_form(job) -> dict:
         "description": job["description"],
         "budget_min": str(job["budget_min"]) if job["budget_min"] is not None else "",
         "budget_max": str(job["budget_max"]) if job["budget_max"] is not None else "",
+        "license_preference": (
+            "1" if int(job["license_preference"] or 0) == 1 else ""
+        )
+        if "license_preference" in job_keys
+        else "",
         "service_policy_acknowledgement": "",
         "scope_answers": scope_answers,
     }
@@ -7106,6 +7136,12 @@ def cleaned_job_form(form) -> dict:
         "description": (form.get("description") or "").strip(),
         "budget_min": compact_spaces(form.get("budget_min")),
         "budget_max": compact_spaces(form.get("budget_max")),
+        "license_preference": (
+            "1"
+            if str(form.get("license_preference") or "").strip().lower()
+            in {"1", "true", "yes", "on"}
+            else ""
+        ),
         "service_policy_acknowledgement": compact_spaces(
             form.get("service_policy_acknowledgement")
         ),
@@ -8358,6 +8394,7 @@ def public_open_jobs_page(
             "category": row["category"],
             "service_group_slug": row["service_group_slug"],
             "service_slug": row["service_slug"],
+            "license_preference": bool(row["license_preference"]),
             "service_name": service_label(row["service_slug"], row["category"]),
             "city": row["city"],
             "state": row["state"],

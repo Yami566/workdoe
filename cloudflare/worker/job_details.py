@@ -77,6 +77,9 @@ def job_detail_payload(
             "category": row_value(job, "category", ""),
             "service_slug": row_value(job, "service_slug", ""),
             "project_setting": row_value(job, "project_setting", ""),
+            "license_preference": bool(
+                int(row_value(job, "license_preference", 0) or 0)
+            ),
             "project_setting_label": project_setting_label(
                 row_value(job, "project_setting", "")
             ),

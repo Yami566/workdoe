@@ -202,6 +202,10 @@
     var minimum = moneyValue(fieldValue("budget_min"));
     var maximum = moneyValue(fieldValue("budget_max"));
     var budget = minimum && maximum ? minimum + " - " + maximum : minimum ? minimum + "+" : maximum ? "Up to " + maximum : "Open";
+    var licensePreference = composer.elements.license_preference;
+    var licenseLabel = licensePreference && licensePreference.checked
+      ? "License record preferred"
+      : "Any provider";
     var activeScope = scopePanels.filter(function (panel) { return !panel.hidden; })[0];
     var scope = activeScope ? updateScopeReadiness(activeScope) : {complete: 0, total: 0};
     var photoInput = composer.elements.photos;
@@ -223,6 +227,7 @@
     writeReview("[data-review-location]", location || "Add a city and ZIP");
     writeReview("[data-review-timing]", desiredDate || "Flexible");
     writeReview("[data-review-budget]", budget);
+    writeReview("[data-review-license]", licenseLabel);
   }
 
   function resetStepScroll() {

@@ -627,13 +627,13 @@ def layout(
             [
                 '<script src="/vendor/leaflet/leaflet.js"></script>',
                 '<script src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>',
-                '<script src="/map.js?v=workdoe-semantic-project-links"></script>',
+                '<script src="/map.js?v=workdoe-license-preference-v1"></script>',
             ]
         )
     if include_actions or authenticated:
         scripts.append('<script defer src="/worker-actions.js"></script>')
     if include_project_composer:
-        scripts.append('<script defer src="/project-composer.js?v=workdoe-service-tiles-review-edit-v3"></script>')
+        scripts.append('<script defer src="/project-composer.js?v=workdoe-license-preference-v1"></script>')
     if include_clerk:
         clerk_asset_base_url = clerk_runtime_frontend_api_url(
             clerk_publishable_key,
@@ -691,7 +691,7 @@ def layout(
   <link rel="canonical" href="{escape(canonical_url)}">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=workdoe-work-history-disclosure-v2">
+  <link rel="stylesheet" href="/styles.css?v=workdoe-license-preference-v1">
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet/leaflet.css\">" if include_map else ""}
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.css\"><link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.Default.css\">" if include_map else ""}
   {script_html}
@@ -1587,6 +1587,11 @@ def lead_board_html(user, payload: dict) -> str:
             if row_cue == "Sent"
             else f"View {job.get('title', 'lead')}"
         )
+        license_chip = (
+            '<span class="job-license-chip">License preferred</span>'
+            if job.get("license_preference")
+            else ""
+        )
         rows.append(
             f"""
       <div class="project-result-item" role="listitem">
@@ -1594,6 +1599,7 @@ def lead_board_html(user, payload: dict) -> str:
           <span class="project-result-topline">
             {('<span class="lead-fit fit-' + str(int(job.get('fit_score', 0) or 0)) + '">' + escape(job.get('fit_label', '')) + '</span>') if job.get('fit_label') else ''}
             <span class="job-service-chip"><img src="/vendor/tabler-icons/{escape(icon_name)}" alt="" width="16" height="16">{escape(job_service_name(job))}</span>
+            {license_chip}
             {('<span class="status ' + escape(job.get('request_status', '')) + '">Bid ' + escape(job.get('request_status', '')) + '</span>') if job.get('request_status') else ''}
           </span>
           <span class="project-result-heading"><strong>{escape(job.get('title', ''))}</strong><span class="project-result-action">{escape(row_cue)}</span></span>
@@ -1660,6 +1666,11 @@ def lead_board_html(user, payload: dict) -> str:
             if selected.get("request_status")
             else "Review and bid"
         )
+        license_note = (
+            '<p class="license-preference-note"><img src="/vendor/tabler-icons/home-check.svg" alt=""><span><strong>Current license record preferred</strong><small>Preference only. Confirm whether your license covers this work and jurisdiction.</small></span></p>'
+            if selected.get("license_preference")
+            else ""
+        )
         detail_html = f"""
         <article class="market-project-detail" data-project-detail-content data-job-id="{escape(str(selected.get('id', '')))}">
           <div class="project-detail-heading"><span class="live-badge">Open project</span><span>{escape(selected.get('category', ''))}</span></div>
@@ -1670,6 +1681,7 @@ def lead_board_html(user, payload: dict) -> str:
             <div><dt>Desired date</dt><dd>{desired_date}</dd></div>
             <div><dt>Mini bids</dt><dd>{escape(selected.get('bid_window', {}).get('usage_label', ''))}</dd></div>
           </dl>
+          {license_note}
           <div class="project-description"><h3>Field brief</h3><p>{escape(selected.get('description', ''))}</p></div>
           <p class="project-privacy-note">Location is intentionally approximate until a match is approved.</p>
           <div class="project-detail-actions"><a class="button primary" href="{escape(selected.get('url', '#'))}" data-dialog-title="{escape(action_label)}">{escape(action_label)}</a></div>
@@ -1907,6 +1919,12 @@ def project_composer_fields_html(
     selected_policy = service_policy(selected_service)
     selected_state = str(form.get("state") or "DC")
     selected_setting = str(form.get("project_setting") or "")
+    license_preference_checked = (
+        " checked"
+        if str(form.get("license_preference") or "").strip().lower()
+        in {"1", "true", "yes", "on"}
+        else ""
+    )
     scope_panels = scope_questions_html(
         selected_service,
         form.get("scope_answers", {}),
@@ -2092,6 +2110,11 @@ def project_composer_fields_html(
           <label for="job-budget-min">Budget minimum <span class="optional-label">Optional</span> <input id="job-budget-min" name="budget_min" type="number" value="{escape(str(form.get('budget_min') or ''))}" min="0" max="{JOB_BUDGET_MAX}" step="1" inputmode="numeric" placeholder="500"{invalid('budget_min', 'job-budget-min-error')}>{field_error('budget_min', 'job-budget-min-error')}</label>
           <label for="job-budget-max">Budget maximum <span class="optional-label">Optional</span> <input id="job-budget-max" name="budget_max" type="number" value="{escape(str(form.get('budget_max') or ''))}" min="0" max="{JOB_BUDGET_MAX}" step="1" inputmode="numeric" placeholder="1000"{invalid('budget_max', 'job-budget-max-error')}>{field_error('budget_max', 'job-budget-max-error')}</label>
         </div>
+        <label class="license-preference-option" for="job-license-preference">
+          <input id="job-license-preference" name="license_preference" type="checkbox" value="1"{license_preference_checked}>
+          <img src="/vendor/tabler-icons/home-check.svg" alt="" width="22" height="22">
+          <span><strong>Prefer a current license record</strong><small>Workdoe source check only. Confirm that the license covers this project and location.</small></span>
+        </label>
         <div class="project-step-actions"><button class="button secondary" type="button" data-project-back>Back</button><button class="button" type="button" data-project-next>Review project</button></div>
       </fieldset>
       <fieldset class="project-composer-step wide" data-project-step="6" data-step-title="Review the project">
@@ -2100,7 +2123,7 @@ def project_composer_fields_html(
           <div><dt>Work</dt><dd data-review-service>Choose a service</dd><button class="project-review-edit" type="button" data-project-jump-step="1" aria-label="Edit work selection" title="Edit work selection"><img src="/vendor/tabler-icons/pencil.svg" alt=""></button></div>
           <div><dt>Project</dt><dd class="project-review-copy"><strong data-review-title>Add a title</strong><small><span data-review-setting>Not specified</span><span aria-hidden="true"> · </span><span data-review-scope>Description only</span><span aria-hidden="true"> · </span><span data-review-brief>Brief 0 of 6</span></small></dd><button class="project-review-edit" type="button" data-project-jump-step="3" aria-label="Edit project details" title="Edit project details"><img src="/vendor/tabler-icons/pencil.svg" alt=""></button></div>
           <div><dt>Area</dt><dd data-review-location>Add a city and ZIP</dd><button class="project-review-edit" type="button" data-project-jump-step="4" aria-label="Edit project area" title="Edit project area"><img src="/vendor/tabler-icons/pencil.svg" alt=""></button></div>
-          <div><dt>Timing &amp; budget</dt><dd class="project-review-copy"><strong data-review-timing>Flexible</strong><small data-review-budget>Open</small></dd><button class="project-review-edit" type="button" data-project-jump-step="5" aria-label="Edit timing and budget" title="Edit timing and budget"><img src="/vendor/tabler-icons/pencil.svg" alt=""></button></div>
+          <div><dt>Timing &amp; budget</dt><dd class="project-review-copy"><strong data-review-timing>Flexible</strong><small><span data-review-budget>Open</span><span aria-hidden="true"> / </span><span data-review-license>Any provider</span></small></dd><button class="project-review-edit" type="button" data-project-jump-step="5" aria-label="Edit timing and budget" title="Edit timing and budget"><img src="/vendor/tabler-icons/pencil.svg" alt=""></button></div>
         </dl>
         {policy_panel}{photos_html}{turnstile}
         <div class="project-step-actions"><button class="button secondary" type="button" data-project-back>Back</button><button class="button" type="submit" aria-label="{escape(submit_label)}">{escape(submit_label)}</button></div>
@@ -2132,6 +2155,11 @@ def job_form_html(
             "description": str(row_value(job, "description", "") or ""),
             "budget_min": str(row_value(job, "budget_min", "") or ""),
             "budget_max": str(row_value(job, "budget_max", "") or ""),
+            "license_preference": (
+                "1"
+                if int(row_value(job, "license_preference", 0) or 0) == 1
+                else ""
+            ),
             "scope_answers": dict(row_value(job, "scope_answers", {}) or {}),
         }
         composer = project_composer_fields_html(
@@ -2189,6 +2217,9 @@ def job_form_html(
         )
     selected_state = str(row_value(job, "state", "DC") or "DC")
     selected_setting = str(row_value(job, "project_setting", "") or "")
+    edit_license_checked = (
+        " checked" if int(row_value(job, "license_preference", 0) or 0) == 1 else ""
+    )
     project_setting_options = "\n".join(
         [
             '<option value="">Not specified</option>',
@@ -2251,6 +2282,7 @@ def job_form_html(
       </datalist>
       <label for="job-budget-min">Budget minimum <span class="optional-label">Optional</span> <input id="job-budget-min" name="budget_min" type="number" value="{escape(str(row_value(job, 'budget_min', '') if row_value(job, 'budget_min') is not None else ''))}" min="0" max="{JOB_BUDGET_MAX}" step="1" inputmode="numeric" placeholder="500"></label>
       <label for="job-budget-max">Budget maximum <span class="optional-label">Optional</span> <input id="job-budget-max" name="budget_max" type="number" value="{escape(str(row_value(job, 'budget_max', '') if row_value(job, 'budget_max') is not None else ''))}" min="0" max="{JOB_BUDGET_MAX}" step="1" inputmode="numeric" placeholder="1000"></label>
+      <label class="license-preference-option wide" for="job-license-preference"><input id="job-license-preference" name="license_preference" type="checkbox" value="1"{edit_license_checked}><img src="/vendor/tabler-icons/home-check.svg" alt="" width="22" height="22"><span><strong>Prefer a current license record</strong><small>Workdoe source check only. Confirm that the license covers this project and location.</small></span></label>
       <label class="wide" for="job-description">Description <textarea id="job-description" name="description" rows="5" minlength="20" maxlength="1200" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe the {escape(edit_service_name.lower() + ' ' if edit_service_name else '')}scope, size, current condition, access, and desired outcome." aria-describedby="job-description-help" required>{escape(str(row_value(job, 'description', '') or ''))}</textarea><span id="job-description-help" class="help-text">Do not include an exact street address, email, or phone number.</span></label>
       {edit_policy_html}
       <label class="wide" for="job-photos">Photos <input id="job-photos" name="photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-describedby="job-photos-help"></label>
@@ -3375,6 +3407,11 @@ def contractor_job_detail_html(
     bid_form = payload.get("bid_form", {})
     scope_html = quote_ready_details_html(payload.get("scope_answers", []))
     brief_html = brief_readiness_html(job.get("brief_readiness"))
+    license_note = (
+        '<p class="license-preference-note"><img src="/vendor/tabler-icons/home-check.svg" alt=""><span><strong>Current license record preferred</strong><small>Preference only. Workdoe source checks records but does not confirm legal eligibility for this project.</small></span></p>'
+        if job.get("license_preference")
+        else ""
+    )
     photo_html = "\n".join(
         f'<figure><img src="{escape(photo.get("url", ""))}" alt="Job photo"><figcaption>{escape(photo.get("original_filename", ""))}</figcaption></figure>'
         for photo in photos
@@ -3546,6 +3583,7 @@ def contractor_job_detail_html(
           <div><dt>Photos</dt><dd>{len(photos)}</dd></div>
           <div><dt>Bids</dt><dd>{escape(bidding.get('usage_label', ''))}</dd></div>
         </dl>
+        {license_note}
         {brief_html}
         {scope_html}
         <p class="preline">{escape(job.get('description', ''))}</p>
@@ -3602,7 +3640,12 @@ def match_choice_dialog_html(
     </dialog>"""
 
 
-def bid_comparison_html(comparison: dict, job_id: int = 0) -> str:
+def bid_comparison_html(
+    comparison: dict,
+    job_id: int = 0,
+    *,
+    license_preference: bool = False,
+) -> str:
     offers = comparison.get("offers", [])
     if not offers and not comparison.get("pending_count"):
         return ""
@@ -3699,7 +3742,7 @@ def bid_comparison_html(comparison: dict, job_id: int = 0) -> str:
         <div><p class="eyebrow">Contractor choice</p><h3 id="bid-comparison-title">Compare offers</h3></div>
         <span class="privacy-label">{escape(comparison.get('order_label', 'Received order'))} / no paid ranking</span>
       </div>
-      <p class="bid-comparison-note">Compare price, timing, completed work, and reviewed records.</p>
+      <p class="bid-comparison-note">{'This project prefers a current license record. Compare that signal with price, timing, and completed work.' if license_preference else 'Compare price, timing, completed work, and reviewed records.'}</p>
       <nav class="comparison-filter-tabs" aria-label="Filter comparison by source-checked records">{filter_tabs}</nav>
       {comparison_grid}
       <details class="comparison-trust-note"><summary>About source-checked records</summary><p class="help-text">A source-checked record means Workdoe reviewed a current public source. It does not guarantee skill, safety, insurance coverage, or legal eligibility.</p></details>
@@ -3718,11 +3761,18 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
     view = requests_payload.get("view", "all")
     job_id = int(job.get("id", 0) or 0)
     comparison_html = bid_comparison_html(
-        requests_payload.get("comparison", {}), job_id=job_id
+        requests_payload.get("comparison", {}),
+        job_id=job_id,
+        license_preference=bool(job.get("license_preference")),
     )
     reviews_by_request = requests_payload.get("reviews_by_request", {})
     scope_html = quote_ready_details_html(detail_payload.get("scope_answers", []))
     brief_html = brief_readiness_html(job.get("brief_readiness"))
+    license_note = (
+        '<p class="license-preference-note"><img src="/vendor/tabler-icons/home-check.svg" alt=""><span><strong>Current license record preferred</strong><small>Use the license-record filter below, then confirm scope and legal eligibility directly.</small></span></p>'
+        if job.get("license_preference")
+        else ""
+    )
     photo_html = "\n".join(
         f'<figure><img src="{escape(photo.get("url", ""))}" alt="Job photo"><figcaption>{escape(photo.get("original_filename", ""))}</figcaption></figure>'
         for photo in photos
@@ -3957,6 +4007,7 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
           <div><dt>Photos</dt><dd>{len(photos)}</dd></div>
           <div><dt>Bids</dt><dd>{escape(bidding.get('usage_label', ''))}</dd></div>
         </dl>
+        {license_note}
         {brief_html}
         {scope_html}
         <p class="preline">{escape(job.get('description', ''))}</p>

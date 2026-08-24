@@ -2782,10 +2782,11 @@ class Default(WorkerEntrypoint):
             """
             INSERT INTO jobs
                 (client_id, title, category, service_group_slug, service_slug,
-                 service_zone_slug, project_setting, city, state, zip_code, description,
+                 service_zone_slug, project_setting, license_preference,
+                 city, state, zip_code, description,
                  desired_date, budget_min, budget_max, status, approx_lat, approx_lng,
                  bid_limit, bidding_closes_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
             """,
             row_value(user, "id"),
             job["title"],
@@ -2794,6 +2795,7 @@ class Default(WorkerEntrypoint):
             job["service_slug"],
             service_zone_slug,
             job["project_setting"],
+            int(job["license_preference"] == "1"),
             job["city"],
             job["state"],
             job["zip_code"],
@@ -2992,6 +2994,7 @@ class Default(WorkerEntrypoint):
                 service_slug = ?,
                 service_zone_slug = ?,
                 project_setting = ?,
+                license_preference = ?,
                 city = ?,
                 state = ?,
                 zip_code = ?,
@@ -3010,6 +3013,7 @@ class Default(WorkerEntrypoint):
             job["service_slug"],
             service_zone_slug,
             job["project_setting"],
+            int(job["license_preference"] == "1"),
             job["city"],
             job["state"],
             job["zip_code"],
@@ -3845,10 +3849,11 @@ class Default(WorkerEntrypoint):
             INSERT INTO client_project_templates
                 (client_id, name, source_job_id, service_group_slug,
                  service_slug, category, title, description, project_setting,
-                 budget_min, budget_max, created_at, updated_at)
+                 license_preference, budget_min, budget_max, created_at, updated_at)
             SELECT ?, ?, jobs.id, jobs.service_group_slug, jobs.service_slug,
                    jobs.category, jobs.title, jobs.description,
-                   jobs.project_setting, jobs.budget_min, jobs.budget_max, ?, ?
+                   jobs.project_setting, jobs.license_preference,
+                   jobs.budget_min, jobs.budget_max, ?, ?
             FROM jobs
             WHERE jobs.id = ? AND jobs.client_id = ?
               AND (SELECT COUNT(*) FROM client_project_templates WHERE client_id = ?) < ?
@@ -8898,6 +8903,7 @@ async def client_jobs_for_user(env, client_id: int) -> list[dict]:
             jobs.category,
             jobs.service_slug,
             jobs.project_setting,
+            jobs.license_preference,
             jobs.city,
             jobs.state,
             jobs.zip_code,
@@ -9450,6 +9456,9 @@ def job_draft_form(row) -> dict:
         "service_group_slug": str(row_value(row, "service_group_slug", "") or ""),
         "service_slug": str(row_value(row, "service_slug", "") or ""),
         "project_setting": str(row_value(row, "project_setting", "") or ""),
+        "license_preference": (
+            "1" if int(row_value(row, "license_preference", 0) or 0) == 1 else ""
+        ),
         "desired_date": str(row_value(row, "desired_date", "") or ""),
         "city": str(row_value(row, "city", "") or ""),
         "state": str(row_value(row, "state", "DC") or "DC"),
@@ -9518,10 +9527,10 @@ async def save_job_draft_record(env, request, form: dict) -> str:
         """
         INSERT INTO job_drafts
             (token_hash, title, category, service_group_slug, service_slug,
-             project_setting, city, state, zip_code, description,
+             project_setting, license_preference, city, state, zip_code, description,
              desired_date, budget_min, budget_max, expires_at, consumed_at,
              created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
         """,
         job_draft_token_hash(token, secret),
         form["title"],
@@ -9529,6 +9538,7 @@ async def save_job_draft_record(env, request, form: dict) -> str:
         form["service_group_slug"],
         form["service_slug"],
         form["project_setting"],
+        int(form["license_preference"] == "1"),
         form["city"],
         form["state"],
         form["zip_code"],

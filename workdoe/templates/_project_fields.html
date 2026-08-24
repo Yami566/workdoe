@@ -57,6 +57,11 @@
   <input id="job-budget-max" name="budget_max" type="number" value="{{ form.budget_max }}" min="0" max="{{ budget_max }}" step="1" inputmode="numeric" placeholder="1000" {% if field_errors.budget_max %}aria-invalid="true" aria-describedby="job-budget-max-error"{% endif %}>
   {% if field_errors.budget_max %}<span id="job-budget-max-error" class="field-error">{{ field_errors.budget_max[0] }}</span>{% endif %}
 </label>
+<label class="license-preference-option wide" for="job-license-preference">
+  <input id="job-license-preference" name="license_preference" type="checkbox" value="1" {% if form.license_preference == '1' %}checked{% endif %}>
+  <img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt="" width="22" height="22">
+  <span><strong>Prefer a current license record</strong><small>Workdoe source check only. Confirm that the license covers this project and location.</small></span>
+</label>
 <label class="wide" for="job-description">
   Description
   <textarea id="job-description" name="description" rows="5" minlength="{{ description_min }}" maxlength="{{ description_max }}" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe the {{ selected_service_name|lower ~ ' ' if selected_service_name else '' }}scope, size, current condition, access, and desired outcome." required aria-describedby="job-description-help{% if field_errors.description %} job-description-error{% endif %}" {% if field_errors.description %}aria-invalid="true"{% endif %}>{{ form.description }}</textarea>

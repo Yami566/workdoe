@@ -49,6 +49,9 @@
       <div><dt>Budget</dt><dd>{{ job|budget_label }}</dd></div>
       <div><dt>Photos</dt><dd>{{ photos|length }}</dd></div>
     </dl>
+    {% if job.license_preference %}
+      <p class="license-preference-note"><img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt=""><span><strong>Current license record preferred</strong><small>Preference only. Workdoe source checks records but does not confirm legal eligibility for this project.</small></span></p>
+    {% endif %}
     {% include "_brief_readiness.html" %}
     {% if scope_answers %}
       <section class="quote-ready-details" aria-labelledby="quote-ready-details-title">

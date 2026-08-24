@@ -187,6 +187,11 @@
       {% if field_errors.budget_max %}<span id="job-budget-max-error" class="field-error">{{ field_errors.budget_max[0] }}</span>{% endif %}
     </label>
   </div>
+  <label class="license-preference-option" for="job-license-preference">
+    <input id="job-license-preference" name="license_preference" type="checkbox" value="1" {% if form.license_preference == '1' %}checked{% endif %}>
+    <img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt="" width="22" height="22">
+    <span><strong>Prefer a current license record</strong><small>Workdoe source check only. Confirm that the license covers this project and location.</small></span>
+  </label>
   <div class="project-step-actions">
     <button class="button secondary" type="button" data-project-back>Back</button>
     <button class="button" type="button" data-project-next>Review project</button>
@@ -214,7 +219,7 @@
     </div>
     <div>
       <dt>Timing &amp; budget</dt>
-      <dd class="project-review-copy"><strong data-review-timing>Flexible</strong><small data-review-budget>Open</small></dd>
+      <dd class="project-review-copy"><strong data-review-timing>Flexible</strong><small><span data-review-budget>Open</span><span aria-hidden="true"> / </span><span data-review-license>Any provider</span></small></dd>
       <button class="project-review-edit" type="button" data-project-jump-step="5" aria-label="Edit timing and budget" title="Edit timing and budget"><img src="{{ url_for('static', filename='vendor/tabler-icons/pencil.svg') }}" alt=""></button>
     </div>
   </dl>

@@ -29,6 +29,7 @@ SELECT
     jobs.category,
     jobs.service_group_slug,
     jobs.service_slug,
+    jobs.license_preference,
     jobs.city,
     jobs.state,
     jobs.description,

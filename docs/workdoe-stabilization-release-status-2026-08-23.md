@@ -588,6 +588,22 @@ deployment has been performed during this stabilization pass.
   comparison measured a 910-pixel document-height reduction; tablet and desktop
   checks also had no horizontal overflow. Evidence is recorded in
   `docs/ux-audit/2026-08-24-contractor-work-history/`.
+- The project license-record preference batch passed all 235 tests in 80.980
+  seconds. Consumers can preserve one optional preference through anonymous
+  drafts, published projects, edits, and reusable templates; contractors see
+  it before bidding in the list, map popup, and selected-project detail. The
+  signal remains advisory, does not filter or rank contractors, does not change
+  received-order bid comparison, and does not establish legal eligibility.
+- The complete security/provenance gate passed across 644 non-ignored files
+  with no known Python or Node vulnerabilities, no medium/high Bandit or Ruff
+  findings, no unreviewed secret, and no dependency drift. Cloudflare preflight
+  remained warning-free; the D1 verifier loaded all 34 forward-only migrations,
+  used all three expected public map/photo indexes, and found no table scan.
+  Wrangler 4.125.0 packaged 48 Python modules and 87 assets at 933.56 KiB /
+  171.52 KiB gzip in dry-run mode without deploying.
+- Mobile, tablet, and desktop interaction evidence, including the corrected
+  Flask/Worker dynamic asset-root contract, is recorded in
+  `docs/ux-audit/2026-08-24-project-license-preference/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

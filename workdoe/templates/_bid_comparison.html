@@ -7,7 +7,7 @@
       </div>
       <span class="privacy-label">{{ bid_comparison.order_label }} / no paid ranking</span>
     </div>
-    <p class="bid-comparison-note">Compare price, timing, completed work, and reviewed records.</p>
+    <p class="bid-comparison-note">{% if job.license_preference %}This project prefers a current license record. Compare that signal with price, timing, and completed work.{% else %}Compare price, timing, completed work, and reviewed records.{% endif %}</p>
     <nav class="comparison-filter-tabs" aria-label="Filter comparison by source-checked records">
       {% for item in bid_comparison.credential_filter_options %}
         <a href="{{ item.url }}"{% if item.value == bid_comparison.credential_filter %} aria-current="page"{% endif %}>

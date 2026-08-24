@@ -133,6 +133,12 @@ formal certification against OWASP ASVS or WCAG.
   expired audit history. Public projections fail closed to current
   `verified` records, omit identifiers and private review notes, normalize the
   source to public HTTPS, and describe the result only as `Source checked`.
+- A consumer may attach one boolean license-record preference to a project,
+  pre-verification draft, or reusable project template. Public and contractor
+  projections expose only that boolean and advisory copy. It never filters
+  bids, changes received order, affects lead fit, or represents a
+  scope/jurisdiction eligibility decision; both roles are told to confirm the
+  current record directly.
 - Contractor availability and saved lead views use allow-listed states,
   canonical work-family slugs, categories, and sort values plus a bounded
   search string. Invalid family values are cleared from public reads and
@@ -372,6 +378,9 @@ formal certification against OWASP ASVS or WCAG.
    activation therefore requires an assigned reviewer, recheck cadence,
    escalation path, and counsel-approved public wording; no source-checked
    label may be treated as a legal or safety guarantee.
+   The project-level preference increases the chance that users overread the
+   signal, so copy and contract tests must continue to describe it as a
+   preference and prohibit any ranking, gate, or Workdoe eligibility claim.
 10. Completion-gated reviews can still be retaliatory, collusive, mistaken, or
     discriminatory. Mutual completion proves a marketplace relationship, not
     factual accuracy. Keep a staffed report/moderation process, apply the same

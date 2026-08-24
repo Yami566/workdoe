@@ -118,6 +118,7 @@
             <span class="project-result-topline">
               {% if job.fit_label %}<span class="lead-fit fit-{{ job.fit_score }}">{{ job.fit_label }}</span>{% endif %}
               <span class="job-service-chip"><img src="{{ url_for('static', filename='vendor/tabler-icons/' ~ service_icon(job.service_slug or job.category)) }}" alt="" width="16" height="16">{{ job.service_slug|service_name(job.category) }}</span>
+              {% if job.license_preference %}<span class="job-license-chip">License preferred</span>{% endif %}
               {% if job.request_status %}<span class="status {{ job.request_status }}">Bid {{ job.request_status }}</span>{% endif %}
             </span>
             <span class="project-result-heading"><strong>{{ job.title }}</strong><span class="project-result-action">{{ row_cue }}</span></span>
@@ -162,6 +163,9 @@
           <div><dt>Desired date</dt><dd>{% if selected_job.desired_date %}{{ selected_job.desired_date|date_label }}{% else %}Flexible{% endif %}</dd></div>
           <div><dt>Mini bids</dt><dd>{{ selected_job.bid_window.usage_label }}</dd></div>
         </dl>
+        {% if selected_job.license_preference %}
+          <p class="license-preference-note"><img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt=""><span><strong>Current license record preferred</strong><small>Preference only. Confirm whether your license covers this work and jurisdiction.</small></span></p>
+        {% endif %}
         <div class="project-description"><h3>Field brief</h3><p>{{ selected_job.description }}</p></div>
         <p class="project-privacy-note">Location stays approximate until a match is approved.</p>
         <div class="project-detail-actions"><a class="button" href="{{ url_for('contractor_job_detail', job_id=selected_job.id) }}" data-dialog-title="Review and bid">Review and bid</a></div>
@@ -178,5 +182,5 @@
 
 <script id="map-jobs-data" type="application/json">{{ map_jobs|tojson }}</script>
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
-<script src="{{ url_for('static', filename='map.js') }}?v=workdoe-semantic-project-links"></script>
+<script src="{{ url_for('static', filename='map.js') }}?v=workdoe-license-preference-v1"></script>
 {% endblock %}

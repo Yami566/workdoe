@@ -2060,6 +2060,13 @@ class WorkdoeFlowTests(unittest.TestCase):
             "SELECT * FROM jobs WHERE client_id = ? ORDER BY id LIMIT 1",
             (client["id"],),
         )
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                "UPDATE jobs SET license_preference = 1 WHERE id = ?",
+                (source["id"],),
+            )
+            db.commit()
         self.login("client@workdoe.local", "workdoe-client")
 
         profile = self.client.get(
@@ -2088,6 +2095,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(template["source_job_id"], source["id"])
         self.assertEqual(template["title"], source["title"])
         self.assertEqual(template["description"], source["description"])
+        self.assertEqual(template["license_preference"], 1)
         self.assertNotIn("city", template.keys())
         self.assertNotIn("zip_code", template.keys())
         self.assertNotIn("desired_date", template.keys())
@@ -2100,6 +2108,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'id="job-city" name="city" value=""', composer.data)
         self.assertIn(b'id="job-zip-code" name="zip_code" value=""', composer.data)
         self.assertIn(b'id="job-desired-date" name="desired_date" type="date" value=""', composer.data)
+        self.assertIn(b'name="license_preference" type="checkbox" value="1" checked', composer.data)
 
         duplicate = self.client.post(
             "/client/profile/templates",
@@ -4912,10 +4921,13 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('event.key === "ArrowLeft"', script)
         self.assertIn("buttons[nextIndex].focus()", script)
         self.assertIn("https://tile.openstreetmap.org/{z}/{x}/{y}.png", script)
+        self.assertIn('getAttribute("data-asset-root")', script)
+        self.assertIn("assetRoot + '/vendor/tabler-icons/home-check.svg\"", script)
         self.assertIn("if (!detailContent)", script)
         home = self.client.get("/")
+        self.assertIn(b'data-asset-root="/static/"', home.data)
         self.assertIn(
-            b'/static/map.js?v=workdoe-semantic-project-links',
+            b'/static/map.js?v=workdoe-license-preference-v1',
             home.data,
         )
 
@@ -5047,6 +5059,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "scope_area_size": "small",
                 "scope_water_access": "yes",
                 "scope_height": "ground",
+                "license_preference": "1",
                 "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             },
             follow_redirects=True,
@@ -5059,6 +5072,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(draft["service_slug"], "pressure-washing")
         self.assertEqual(draft["budget_min"], 450)
         self.assertEqual(draft["budget_max"], 700)
+        self.assertEqual(draft["license_preference"], 1)
         draft_scope = self.all(
             "SELECT question_key, answer_code FROM job_draft_scope_answers WHERE draft_id = ?",
             (draft["id"],),
@@ -5090,6 +5104,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'value="Wash the front walk"', verified.data)
         self.assertIn(b'name="budget_min" type="number" value="450"', verified.data)
         self.assertIn(b'name="budget_max" type="number" value="700"', verified.data)
+        self.assertIn(b'name="license_preference" type="checkbox" value="1" checked', verified.data)
         self.assertIn(b'name="scope_surface"', verified.data)
         self.assertIn(b'value="concrete" selected', verified.data)
         self.assertIn(
@@ -5114,6 +5129,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "scope_area_size": "small",
                 "scope_water_access": "yes",
                 "scope_height": "ground",
+                "license_preference": "1",
                 "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             },
             follow_redirects=True,
@@ -5122,6 +5138,8 @@ class WorkdoeFlowTests(unittest.TestCase):
         created = self.one("SELECT * FROM jobs WHERE title = ?", ("Wash the front walk",))
         self.assertEqual(created["budget_min"], 450)
         self.assertEqual(created["budget_max"], 700)
+        self.assertEqual(created["license_preference"], 1)
+        self.assertIn(b"Current license record preferred", posted.data)
         created_scope = self.all(
             "SELECT question_key, answer_code FROM job_scope_answers WHERE job_id = ?",
             (created["id"],),
@@ -5129,6 +5147,19 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(len(created_scope), 4)
         consumed = self.one("SELECT * FROM job_drafts WHERE id = ?", (draft["id"],))
         self.assertIsNotNone(consumed["consumed_at"])
+
+        public_job = next(
+            job
+            for job in self.client.get("/api/jobs/open").get_json()["jobs"]
+            if job["id"] == created["id"]
+        )
+        self.assertTrue(public_job["license_preference"])
+        self.logout()
+        self.login("contractor@workdoe.local", "workdoe-contractor")
+        contractor_detail = self.client.get(f"/jobs/{created['id']}")
+        self.assertIn(b"Current license record preferred", contractor_detail.data)
+        self.assertIn(b"does not confirm legal eligibility", contractor_detail.data)
+        self.assertNotIn(b"Workdoe confirms legal eligibility", contractor_detail.data)
 
     def test_project_budget_validation_and_permanent_account_roles(self):
         self.login("client@workdoe.local", "workdoe-client")
@@ -6457,11 +6488,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'/vendor/tabler-icons/seedling.svg', form.data)
         self.assertIn(b'/vendor/tabler-icons/plant.svg', form.data)
         self.assertIn(
-            b'/static/styles.css?v=workdoe-work-history-disclosure-v2',
+            b'/static/styles.css?v=workdoe-license-preference-v1',
             form.data,
         )
         self.assertIn(
-            b'/static/project-composer.js?v=workdoe-service-tiles-review-edit-v3',
+            b'/static/project-composer.js?v=workdoe-license-preference-v1',
             form.data,
         )
         self.assertIn(b'name="service_group_slug"', form.data)
@@ -6519,6 +6550,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "service_group_slug": "outdoor-yard",
                 "service_slug": "lawn-mowing",
                 "project_setting": "outdoor-area",
+                "license_preference": "",
                 "city": "Arlington",
                 "state": "VA",
                 "zip_code": "22201",
@@ -6537,6 +6569,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(created["service_group_slug"], "outdoor-yard")
         self.assertEqual(created["service_slug"], "lawn-mowing")
         self.assertEqual(created["project_setting"], "outdoor-area")
+        self.assertEqual(created["license_preference"], 0)
         self.assertEqual(created["category"], "Landscaping")
         self.assertIn(b"Lawn mowing", posted.data)
         self.assertIn(b"Outdoor area", posted.data)
