@@ -2566,11 +2566,19 @@ def public_contractor_profile_html(user, payload: dict) -> str:
         decision_action = ""
         if choice_context.get("can_choose"):
             include_actions = True
+            choice_request_id = int(choice_context.get("request_id", 0) or 0)
+            choice_job_id = int(choice_context.get("job_id", 0) or 0)
             decision_action = f"""
-          <form data-json-action="/api/match-requests/{int(choice_context.get('request_id', 0) or 0)}/approve" data-success-url-template="/client/jobs/{int(choice_context.get('job_id', 0) or 0)}" aria-describedby="profile-choice-status">
-            <button class="button" type="submit" aria-label="Choose {escape(contractor.get('business_name', 'contractor'))} for {escape(choice_context.get('job_title', 'project'))}">Choose contractor</button>
-            <span id="profile-choice-status" class="form-status" role="status" aria-live="polite"></span>
-          </form>"""
+          <button class="button" type="button" data-inline-dialog-open="choose-profile-contractor" aria-haspopup="dialog" aria-label="Choose {escape(contractor.get('business_name', 'contractor'))} for {escape(choice_context.get('job_title', 'project'))}">Choose contractor</button>"""
+            decision_action += match_choice_dialog_html(
+                choice_request_id,
+                str(contractor.get("business_name", "Contractor") or "Contractor"),
+                choice_job_id,
+                str(choice_context.get("price_range", "") or ""),
+                str(choice_context.get("timeline", "") or ""),
+                str(choice_context.get("availability", "") or ""),
+                dialog_id="choose-profile-contractor",
+            )
         elif choice_context.get("thread_url"):
             decision_action = f'<a class="button" href="{escape(choice_context.get("thread_url", ""))}">Message contractor</a>'
         profile_actions_html = f"""
@@ -3537,6 +3545,42 @@ def contractor_job_detail_html(
     )
 
 
+def match_choice_dialog_html(
+    request_id: int,
+    contractor_name: str,
+    job_id: int,
+    price_range: str,
+    timeline: str,
+    availability: str,
+    *,
+    dialog_id: str | None = None,
+) -> str:
+    safe_dialog_id = dialog_id or f"choose-contractor-{request_id}"
+    title_id = f"{safe_dialog_id}-title"
+    status_id = f"{safe_dialog_id}-status"
+    return f"""
+    <dialog id="{escape(safe_dialog_id)}" class="inline-dialog match-choice-dialog" data-inline-dialog aria-labelledby="{escape(title_id)}">
+      <form class="inline-dialog-surface stack-form" data-json-action="/api/match-requests/{request_id}/approve" data-success-url-template="/client/jobs/{job_id}" aria-describedby="{escape(status_id)}">
+        <header class="inline-dialog-header">
+          <div><p class="eyebrow">Confirm match</p><h2 id="{escape(title_id)}">Choose {escape(contractor_name)}?</h2></div>
+          <button class="button secondary compact" type="button" data-inline-dialog-close>Cancel</button>
+        </header>
+        <p>This opens a private message thread and closes the other pending offers for this project. No payment is created.</p>
+        <dl class="job-facts match-choice-facts">
+          <div><dt>Price</dt><dd>{escape(price_range or 'Not provided')}</dd></div>
+          <div><dt>Timeline</dt><dd>{escape(timeline or 'Not provided')}</dd></div>
+          <div><dt>Availability</dt><dd>{escape(availability or 'Not provided')}</dd></div>
+        </dl>
+        <p class="help-text">You can keep the project open while work is underway, then close it when the outcome is known.</p>
+        <div class="inline-dialog-actions">
+          <button class="button secondary" type="button" data-inline-dialog-close>Keep comparing</button>
+          <button class="button" type="submit">Confirm contractor</button>
+        </div>
+        <p id="{escape(status_id)}" class="help-text" data-form-status aria-live="polite"></p>
+      </form>
+    </dialog>"""
+
+
 def bid_comparison_html(comparison: dict, job_id: int = 0) -> str:
     offers = comparison.get("offers", [])
     if not offers and not comparison.get("pending_count"):
@@ -3610,10 +3654,9 @@ def bid_comparison_html(comparison: dict, job_id: int = 0) -> str:
             <a class="button secondary compact" href="{escape(offer.get('profile_url', '#'))}">Profile</a>
             <a class="button secondary compact" href="#bid-title-{offer_id}">Full offer</a>
           </div>
-          <form class="bid-choose-form" method="post" data-json-action="/api/match-requests/{offer_id}/approve" data-success-url-template="/client/jobs/{job_id}">
-            <button class="button compact" type="submit" aria-label="Choose {escape(offer.get('contractor_name', 'contractor'))}" aria-describedby="compare-offer-{offer_id}-status">Choose contractor</button>
-            <span class="form-status" id="compare-offer-{offer_id}-status" role="status" aria-live="polite"></span>
-          </form>
+          <div class="bid-choose-form">
+            <button class="button compact" type="button" data-inline-dialog-open="choose-contractor-{offer_id}" aria-haspopup="dialog" aria-label="Choose {escape(offer.get('contractor_name', 'contractor'))}">Choose contractor</button>
+          </div>
         </article>"""
         )
     count = min(4, max(1, len(offers)))
@@ -3757,18 +3800,26 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
     else:
         status_form = '<p class="help-text">This job is hidden by moderation.</p>'
     request_rows = []
+    choice_dialogs = []
     for request in requests:
         request_id = int(request.get("id", 0) or 0)
         request_status = request.get("status", "")
         actions = ""
         if request.get("can_approve"):
             contractor_name = request.get("contractor_name", "contractor")
+            choice_dialogs.append(
+                match_choice_dialog_html(
+                    request_id,
+                    str(contractor_name or "Contractor"),
+                    job_id,
+                    str(request.get("price_range", "") or ""),
+                    str(request.get("timeline", "") or ""),
+                    str(request.get("availability", "") or ""),
+                )
+            )
             actions = f"""
           <div class="bid-actions">
-            <form data-json-action="/api/match-requests/{request_id}/approve" data-success-url-template="/client/jobs/{job_id}" aria-label="Approve mini bid from {escape(contractor_name)}" aria-describedby="match-request-{request_id}-approve-status">
-              <button class="button" type="submit">Approve</button>
-              <p id="match-request-{request_id}-approve-status" class="help-text" data-form-status aria-live="polite"></p>
-            </form>
+            <button class="button" type="button" data-inline-dialog-open="choose-contractor-{request_id}" aria-haspopup="dialog" aria-label="Choose {escape(contractor_name)}">Choose</button>
             <form data-json-action="/api/match-requests/{request_id}/reject" data-success-url-template="/client/jobs/{job_id}" aria-label="Reject mini bid from {escape(contractor_name)}" aria-describedby="match-request-{request_id}-reject-status">
               <button class="button secondary" type="submit">Reject</button>
               <p id="match-request-{request_id}-reject-status" class="help-text" data-form-status aria-live="polite"></p>
@@ -3854,6 +3905,7 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
       </article>"""
         )
     requests_html = "\n".join(request_rows) if request_rows else empty_state("No mini bids yet", "/client/dashboard", "Back to dashboard")
+    choice_dialogs_html = "\n".join(choice_dialogs)
     bid_window_markup = bid_window_html(bidding, owner=True, job_id=job_id) if status == "open" else ""
     body = f"""
     <section class="dashboard-header">
@@ -3917,7 +3969,8 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
       <div class="bid-list">
 {requests_html}
       </div>
-    </section>"""
+    </section>
+    {choice_dialogs_html}"""
     return layout(user, f"/client/jobs/{job_id}", job.get("title", "Client Job"), body, include_actions=True)
 
 

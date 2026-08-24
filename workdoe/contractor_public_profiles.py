@@ -47,5 +47,8 @@ def contractor_choice_context(viewer, contractor_id: int, relationship) -> dict 
         "status": status,
         "back_url": f"/client/jobs/{job_id}#mini-bids",
         "can_choose": status == "pending",
+        "price_range": str(row_value(relationship, "price_range", "") or ""),
+        "timeline": str(row_value(relationship, "timeline", "") or ""),
+        "availability": str(row_value(relationship, "availability", "") or ""),
         "thread_url": f"/messages/{thread_id}" if status == "approved" and thread_id else "",
     }

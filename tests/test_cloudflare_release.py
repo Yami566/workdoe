@@ -1175,7 +1175,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
     def test_fresh_d1_database_accepts_complete_migration_chain(self):
         migrations_dir = ROOT / "cloudflare" / "d1" / "migrations"
         migration_paths = sorted(migrations_dir.glob("[0-9][0-9][0-9][0-9]_*.sql"))
-        self.assertEqual(len(migration_paths), 32)
+        self.assertEqual(len(migration_paths), 33)
 
         connection = sqlite3.connect(":memory:")
         try:
@@ -2788,6 +2788,60 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(conflicting.status, 409)
         self.assertEqual(json.loads(conflicting.body)["status"], "approved")
 
+    def test_cloudflare_approval_closes_other_pending_offers(self):
+        module = load_worker_entry_module()
+        worker = module.Default()
+        worker.env = SimpleNamespace(DB=object())
+        calls = []
+        events = []
+
+        async def signed_in_client(_request):
+            return {"id": 8, "role": "client", "status": "active"}
+
+        async def pending_match(_env, _request_id):
+            return {
+                "id": 42,
+                "job_id": 12,
+                "client_id": 8,
+                "contractor_id": 7,
+                "status": "pending",
+            }
+
+        async def fake_db_run(_env, query, *bindings):
+            calls.append((query, bindings))
+            changes = 2 if "AND id != ?" in query else 1
+            return {"meta": {"changes": changes}}
+
+        async def create_thread(_env, _match, _created_at):
+            return 77
+
+        async def capture_event(_env, event_type, **kwargs):
+            events.append((event_type, kwargs))
+
+        worker.optional_workdoe_user = signed_in_client
+        module.match_request_for_decision = pending_match
+        module.db_run = fake_db_run
+        module.ensure_thread_for_match = create_thread
+        module.record_event = capture_event
+
+        response = asyncio.run(
+            worker.decide_match_request(
+                SimpleNamespace(method="POST"),
+                "/api/match-requests/42/approve",
+            )
+        )
+        payload = json.loads(response.body)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["status"], "approved")
+        self.assertEqual(payload["thread_id"], 77)
+        self.assertIn("approved_request.status = 'approved'", calls[0][0])
+        self.assertIn("AND id != ?", calls[1][0])
+        self.assertEqual(calls[1][1][1:], (12, 42))
+        self.assertEqual(
+            events[0][1]["payload"]["closed_offer_count"],
+            2,
+        )
+
     def test_cloudflare_email_payloads_are_transactional_and_sanitized(self):
         module = load_email_payloads_module()
         reminder = module.build_email_message(
@@ -3492,6 +3546,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn("jobs.approx_lat BETWEEN ? AND ?", query)
         self.assertIn("jobs.approx_lng BETWEEN ? AND ?", query)
+        self.assertIn("approved_request.status = 'approved'", query)
         self.assertEqual(bindings[-2:], [25, 48])
         with self.assertRaisesRegex(module.PublicJobQueryError, "sort order"):
             module.build_public_open_jobs_query(
@@ -3542,7 +3597,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(plan["table_scans"], [])
         self.assertEqual(
             plan["last_migration"],
-            "0032_contractor_choice_photo_index.sql",
+            "0033_single_approved_match.sql",
         )
 
     def test_demo_projects_are_realistic_labeled_and_filterable(self):
@@ -4671,6 +4726,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "job_id": 12,
                         "job_title": "Power wash steps",
                         "request_id": 31,
+                        "price_range": "$450-$650",
+                        "timeline": "Two days",
+                        "availability": "Tuesday",
                         "status": "pending",
                         "back_url": "/client/jobs/12#mini-bids",
                         "can_choose": True,
@@ -4696,6 +4754,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             'data-json-action="/api/match-requests/31/approve"',
             public_profile_html,
         )
+        self.assertIn(
+            'data-inline-dialog-open="choose-profile-contractor"',
+            public_profile_html,
+        )
+        self.assertIn('id="choose-profile-contractor"', public_profile_html)
+        self.assertIn("Confirm contractor", public_profile_html)
+        self.assertIn("$450-$650", public_profile_html)
+        self.assertIn("Two days", public_profile_html)
+        self.assertIn("Tuesday", public_profile_html)
         self.assertNotIn('href="/leads">Back to leads</a>', public_profile_html)
         self.assertIn(
             "Profile details are self-reported. A source-checked record means Workdoe reviewed the linked public source",
@@ -5326,9 +5393,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('name="photo"', client_job_html)
         self.assertIn("Upload photo", client_job_html)
         self.assertIn('data-json-action="/api/match-requests/31/approve"', client_job_html)
-        self.assertIn('aria-label="Approve mini bid from Doe Exterior Care"', client_job_html)
-        self.assertIn('aria-describedby="match-request-31-approve-status"', client_job_html)
-        self.assertIn('id="match-request-31-approve-status"', client_job_html)
+        self.assertIn('data-inline-dialog-open="choose-contractor-31"', client_job_html)
+        self.assertIn('id="choose-contractor-31"', client_job_html)
+        self.assertIn('aria-label="Choose Doe Exterior Care"', client_job_html)
+        self.assertIn('aria-describedby="choose-contractor-31-status"', client_job_html)
+        self.assertIn('id="choose-contractor-31-status"', client_job_html)
+        self.assertIn("closes the other pending offers", client_job_html)
         self.assertIn('data-json-action="/api/match-requests/31/reject"', client_job_html)
         self.assertIn('aria-label="Reject mini bid from Doe Exterior Care"', client_job_html)
         self.assertIn('aria-describedby="match-request-31-reject-status"', client_job_html)
@@ -5356,8 +5426,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn('data-success-url-template="/client/jobs/12"', client_job_html)
         self.assertIn('aria-label="Choose Doe Exterior Care"', client_job_html)
-        self.assertIn('aria-describedby="compare-offer-31-status"', client_job_html)
-        self.assertIn('id="compare-offer-31-status"', client_job_html)
+        self.assertIn('aria-describedby="choose-contractor-31-status"', client_job_html)
+        self.assertIn('id="choose-contractor-31-status"', client_job_html)
         self.assertIn(">Choose contractor</button>", client_job_html)
         self.assertIn('src="/worker-actions.js"', client_job_html)
         self.assertNotIn("contractor@example.com", client_job_html)
@@ -6564,6 +6634,21 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "2026-08-24T12:00:00+00:00",
         )
 
+        matched_window = module.bid_window(
+            {
+                "status": "open",
+                "bid_limit": 4,
+                "request_count": 1,
+                "has_approved_match": 1,
+                "bidding_closes_at": "2026-08-24T12:00:00+00:00",
+            },
+            now="2026-08-17T12:00:00+00:00",
+        )
+        self.assertFalse(matched_window["accepting"])
+        self.assertFalse(matched_window["can_extend"])
+        self.assertEqual(matched_window["state"], "matched")
+        self.assertEqual(matched_window["availability_label"], "Contractor chosen")
+
     def test_cloudflare_job_status_helper_matches_client_control_contract(self):
         module = load_job_status_module()
         self.assertEqual(module.parse_job_status_path("/api/jobs/42/close"), (42, "close", "closed"))
@@ -6887,6 +6972,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "client_id": 8,
             "contractor_id": 42,
             "request_id": 31,
+            "price_range": "$450-$650",
+            "timeline": "Two days",
+            "availability": "Tuesday",
             "status": "pending",
             "thread_id": None,
         }
@@ -6897,6 +6985,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertEqual(expected_choice["back_url"], "/client/jobs/12#mini-bids")
         self.assertTrue(expected_choice["can_choose"])
+        self.assertEqual(expected_choice["price_range"], "$450-$650")
+        self.assertEqual(expected_choice["timeline"], "Two days")
+        self.assertEqual(expected_choice["availability"], "Tuesday")
         self.assertIsNone(
             module.contractor_choice_context(
                 {"id": 9, "role": "client", "status": "active"},
@@ -10387,6 +10478,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("ADD COLUMN bid_limit", bid_window_migration)
         self.assertIn("ADD COLUMN bidding_closes_at", bid_window_migration)
         self.assertIn("idx_jobs_bidding_window", bid_window_migration)
+
+        single_match_migration = (
+            ROOT
+            / "cloudflare"
+            / "d1"
+            / "migrations"
+            / "0033_single_approved_match.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("idx_match_requests_one_approved_per_job", single_match_migration)
+        self.assertIn("WHERE status = 'approved'", single_match_migration)
 
         project_outcomes_migration = (
             ROOT / "cloudflare" / "d1" / "migrations" / "0010_project_outcomes.sql"

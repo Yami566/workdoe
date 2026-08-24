@@ -296,6 +296,13 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
         / "migrations"
         / "0032_contractor_choice_photo_index.sql"
     )
+    single_approved_match_migration_path = (
+        repo_root
+        / "cloudflare"
+        / "d1"
+        / "migrations"
+        / "0033_single_approved_match.sql"
+    )
     manifest_path = repo_root / "cloudflare" / "workdoe-cloudflare-manifest.json"
     wrangler_path = repo_root / "cloudflare" / "wrangler.jsonc"
     dev_vars_path = repo_root / "cloudflare" / ".dev.vars.example"
@@ -451,6 +458,10 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     )
     contractor_choice_photo_index_migration_sql = read_text(
         contractor_choice_photo_index_migration_path,
+        errors,
+    )
+    single_approved_match_migration_sql = read_text(
+        single_approved_match_migration_path,
         errors,
     )
     manifest = read_json(manifest_path, errors)
@@ -976,6 +987,22 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             "D1 contractor-choice photo index is missing or incomplete.",
             checks,
             "D1 contractor comparison photo lookup is indexed",
+        )
+    if single_approved_match_migration_sql:
+        require(
+            all(
+                marker in single_approved_match_migration_sql
+                for marker in (
+                    "idx_match_requests_one_approved_per_job",
+                    "ON match_requests(job_id)",
+                    "WHERE status = 'approved'",
+                    "PRAGMA optimize",
+                )
+            ),
+            errors,
+            "D1 single-approved-match index is missing or incomplete.",
+            checks,
+            "D1 enforces one approved contractor per project",
         )
     if idempotency_migration_sql:
         require(

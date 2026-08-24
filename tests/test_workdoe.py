@@ -1206,11 +1206,31 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(f'href="#bid-title-{match["id"]}"', review_html)
         self.assertIn('class="job-row bid-row bid-review-row needs-review"', review_html)
         self.assertIn('class="bid-row-top"', review_html)
-        self.assertLess(review_html.index(">Approve</button>"), review_html.index("I can handle the cleaning"))
+        self.assertIn(
+            f'data-inline-dialog-open="choose-contractor-{match["id"]}"',
+            review_html,
+        )
+        self.assertIn("Confirm match", review_html)
+        self.assertIn("closes the other pending offers", review_html)
+        self.assertLess(review_html.index(">Choose</button>"), review_html.index("I can handle the cleaning"))
         self.assertIn(b"class=\"profile-facts compact-facts bid-facts\"", review.data)
         self.assertIn(b"<dt>Price</dt><dd>$450-$650</dd>", review.data)
         self.assertIn(b"<dt>Timeline</dt><dd>Two business days after approval</dd>", review.data)
         self.assertIn(b"<dt>Availability</dt><dd>Tuesday and Thursday afternoons</dd>", review.data)
+
+        contractor_profile = self.client.get(
+            f"/contractors/{contractor['id']}?job_id={job['id']}"
+        )
+        self.assertIn(b'id="choose-profile-contractor"', contractor_profile.data)
+        self.assertIn(b"<dt>Price</dt><dd>$450-$650</dd>", contractor_profile.data)
+        self.assertIn(
+            b"<dt>Timeline</dt><dd>Two business days after approval</dd>",
+            contractor_profile.data,
+        )
+        self.assertIn(
+            b"<dt>Availability</dt><dd>Tuesday and Thursday afternoons</dd>",
+            contractor_profile.data,
+        )
 
         pending_review = self.client.get(f"/client/jobs/{job['id']}?bids=pending")
         pending_html = pending_review.data.decode("utf-8")
@@ -1468,6 +1488,94 @@ class WorkdoeFlowTests(unittest.TestCase):
         )
         self.assertIn('<span class="row-cue">Message</span>', approved_dashboard_html)
         self.assertIn('<span class="status approved">approved</span>', approved_dashboard_html)
+
+    def test_choosing_contractor_closes_other_offers_and_hides_matched_lead(self):
+        client = self.one(
+            "SELECT id FROM users WHERE email = ?",
+            ("client@workdoe.local",),
+        )
+        contractor = self.one(
+            "SELECT id FROM users WHERE email = ?",
+            ("contractor@workdoe.local",),
+        )
+        job = self.one(
+            """
+            SELECT jobs.id
+            FROM jobs
+            LEFT JOIN match_requests ON match_requests.job_id = jobs.id
+            WHERE jobs.client_id = ? AND jobs.status = 'open'
+            GROUP BY jobs.id
+            HAVING COUNT(match_requests.id) = 0
+            ORDER BY jobs.id
+            LIMIT 1
+            """,
+            (client["id"],),
+        )
+        self.assertIsNotNone(job)
+        with self.app.app_context():
+            db = get_db()
+            second_contractor_id = db.execute(
+                """
+                INSERT INTO users
+                    (email, password_hash, role, display_name, company_name,
+                     status, email_verified, auth_provider, created_at)
+                VALUES (?, ?, 'contractor', 'Second Contractor', 'Second Crew',
+                        'active', 1, 'local', ?)
+                """,
+                (
+                    "second-contractor@workdoe.local",
+                    generate_password_hash("second-contractor-password"),
+                    "2026-08-24T12:00:00+00:00",
+                ),
+            ).lastrowid
+            request_ids = []
+            for contractor_id, created_at in (
+                (contractor["id"], "2026-08-24T12:01:00+00:00"),
+                (second_contractor_id, "2026-08-24T12:02:00+00:00"),
+            ):
+                request_ids.append(
+                    db.execute(
+                        """
+                        INSERT INTO match_requests
+                            (job_id, contractor_id, scope_note, price_range,
+                             timeline, experience, questions, availability,
+                             status, created_at, updated_at)
+                        VALUES (?, ?, 'Complete the posted scope.', '$300-$400',
+                                'One day', 'Relevant local work.', '', 'Next week',
+                                'pending', ?, ?)
+                        """,
+                        (job["id"], contractor_id, created_at, created_at),
+                    ).lastrowid
+                )
+            db.commit()
+
+        self.login("client@workdoe.local", "workdoe-client")
+        approval = self.client.post(
+            f"/client/requests/{request_ids[0]}/approve",
+            follow_redirects=True,
+        )
+        self.assertIn(b"other pending offer was closed", approval.data)
+        statuses = {
+            row["id"]: row["status"]
+            for row in self.all(
+                "SELECT id, status FROM match_requests WHERE job_id = ?",
+                (job["id"],),
+            )
+        }
+        self.assertEqual(statuses[request_ids[0]], "approved")
+        self.assertEqual(statuses[request_ids[1]], "rejected")
+
+        public_jobs = self.client.get("/api/jobs/open").get_json()["jobs"]
+        self.assertNotIn(job["id"], {item["id"] for item in public_jobs})
+        conflicting = self.client.post(
+            f"/client/requests/{request_ids[1]}/approve",
+        )
+        self.assertEqual(conflicting.status_code, 409)
+        with self.app.app_context(), self.assertRaises(sqlite3.IntegrityError):
+            get_db().execute(
+                "UPDATE match_requests SET status = 'approved' WHERE id = ?",
+                (request_ids[1],),
+            )
 
     def test_bid_pool_caps_at_four_and_rejected_bids_still_count(self):
         job = self.one("SELECT * FROM jobs WHERE status = 'open' ORDER BY id LIMIT 1")

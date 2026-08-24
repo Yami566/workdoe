@@ -1668,6 +1668,12 @@ def record_local_contractor_lead_alert_candidates(
         WHERE jobs.id = ?
           AND jobs.status = 'open'
           AND datetime(jobs.bidding_closes_at) > datetime('now')
+          AND NOT EXISTS (
+              SELECT 1
+              FROM match_requests AS approved_request
+              WHERE approved_request.job_id = jobs.id
+                AND approved_request.status = 'approved'
+          )
           AND contractor_lead_preferences.saved_at IS NOT NULL
           AND contractor_lead_preferences.lead_alert_preference = 'email'
           AND contractor_lead_preferences.lead_alert_consent_at IS NOT NULL
@@ -3343,20 +3349,72 @@ def register_routes(app: Flask) -> None:
                 return redirect(url_for("thread_detail", thread_id=thread_id))
             flash("Request was already rejected.", "success")
             return redirect(url_for("client_job_detail", job_id=match["job_id"]))
-        updated = db.execute(
-            """
-            UPDATE match_requests
-            SET status = ?, updated_at = ?
-            WHERE id = ? AND status = 'pending'
-            """,
-            (status, now_iso(), request_id),
-        )
+        timestamp = now_iso()
+        if status == "approved":
+            updated = db.execute(
+                """
+                UPDATE match_requests
+                SET status = 'approved', updated_at = ?
+                WHERE id = ?
+                  AND status = 'pending'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM match_requests AS approved_request
+                      WHERE approved_request.job_id = match_requests.job_id
+                        AND approved_request.status = 'approved'
+                  )
+                """,
+                (timestamp, request_id),
+            )
+        else:
+            updated = db.execute(
+                """
+                UPDATE match_requests
+                SET status = 'rejected', updated_at = ?
+                WHERE id = ? AND status = 'pending'
+                """,
+                (timestamp, request_id),
+            )
         if updated.rowcount != 1:
             db.rollback()
+            if status == "approved":
+                chosen = db.execute(
+                    """
+                    SELECT id
+                    FROM match_requests
+                    WHERE job_id = ? AND status = 'approved'
+                    LIMIT 1
+                    """,
+                    (match["job_id"],),
+                ).fetchone()
+                if chosen:
+                    flash("A contractor has already been chosen for this project.", "error")
+                    return redirect(
+                        url_for("client_job_detail", job_id=match["job_id"])
+                        + "#mini-bids"
+                    )
             abort(409)
         if status == "approved":
+            closed_offers = db.execute(
+                """
+                UPDATE match_requests
+                SET status = 'rejected', updated_at = ?
+                WHERE job_id = ?
+                  AND id != ?
+                  AND status = 'pending'
+                """,
+                (timestamp, match["job_id"], request_id),
+            ).rowcount
             thread_id = ensure_thread_for_match(match)
-            flash("Match approved. A private message thread is open.", "success")
+            if closed_offers:
+                flash(
+                    f"Contractor chosen. {closed_offers} other pending "
+                    f"offer{' was' if closed_offers == 1 else 's were'} closed, and "
+                    "the private message thread is open.",
+                    "success",
+                )
+            else:
+                flash("Contractor chosen. The private message thread is open.", "success")
             db.commit()
             return redirect(url_for("thread_detail", thread_id=thread_id))
         db.commit()
@@ -4094,6 +4152,9 @@ def register_routes(app: Flask) -> None:
                        jobs.client_id,
                        match_requests.contractor_id,
                        match_requests.id AS request_id,
+                       match_requests.price_range,
+                       match_requests.timeline,
+                       match_requests.availability,
                        match_requests.status,
                        threads.id AS thread_id
                 FROM jobs
@@ -4523,6 +4584,12 @@ def register_routes(app: Flask) -> None:
             WHERE jobs.id = ?
               AND jobs.status = 'open'
               AND datetime(jobs.bidding_closes_at) > datetime(?)
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM match_requests AS approved_request
+                  WHERE approved_request.job_id = jobs.id
+                    AND approved_request.status = 'approved'
+              )
               AND (
                 SELECT COUNT(*)
                 FROM match_requests
@@ -4555,7 +4622,13 @@ def register_routes(app: Flask) -> None:
                 """
                 SELECT jobs.*,
                        (SELECT COUNT(*) FROM match_requests WHERE job_id = jobs.id)
-                           AS request_count
+                           AS request_count,
+                       EXISTS (
+                           SELECT 1
+                           FROM match_requests AS approved_request
+                           WHERE approved_request.job_id = jobs.id
+                             AND approved_request.status = 'approved'
+                       ) AS has_approved_match
                 FROM jobs
                 WHERE jobs.id = ?
                 """,
@@ -4563,6 +4636,9 @@ def register_routes(app: Flask) -> None:
             ).fetchone()
             if not latest or latest["status"] != "open":
                 abort(404)
+            if latest["has_approved_match"]:
+                flash("This project has already chosen a contractor.", "error")
+                return redirect(url_for("leads"))
             bidding = bid_window(latest)
             if bidding["is_full"]:
                 flash("This project has received its full set of mini bids.", "error")
@@ -7525,7 +7601,13 @@ def role_required(*roles: str):
 def fetch_job(job_id: int):
     return get_db().execute(
         """
-        SELECT jobs.*, users.display_name AS client_name, users.company_name AS client_company
+        SELECT jobs.*, users.display_name AS client_name, users.company_name AS client_company,
+               EXISTS (
+                   SELECT 1
+                   FROM match_requests AS approved_request
+                   WHERE approved_request.job_id = jobs.id
+                     AND approved_request.status = 'approved'
+               ) AS has_approved_match
         FROM jobs
         JOIN users ON users.id = jobs.client_id
         WHERE jobs.id = ?
@@ -8136,6 +8218,12 @@ def contractor_repeat_invitations(contractor_id: int) -> list[dict]:
           AND datetime(jobs.bidding_closes_at) > datetime(?)
           AND NOT EXISTS (
               SELECT 1
+              FROM match_requests AS approved_request
+              WHERE approved_request.job_id = jobs.id
+                AND approved_request.status = 'approved'
+          )
+          AND NOT EXISTS (
+              SELECT 1
               FROM match_requests AS own_request
               WHERE own_request.job_id = jobs.id
                 AND own_request.contractor_id = repeat_provider_invitations.contractor_id
@@ -8204,6 +8292,12 @@ def public_open_jobs_page(
         FROM jobs
         LEFT JOIN job_photos ON job_photos.job_id = jobs.id AND job_photos.is_hidden = 0
         WHERE jobs.status = 'open'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM match_requests AS approved_request
+              WHERE approved_request.job_id = jobs.id
+                AND approved_request.status = 'approved'
+          )
         """,
     ]
     params: list[str | int] = []

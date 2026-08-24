@@ -120,12 +120,17 @@ def bid_window(job, bid_count=None, now=None) -> dict:
     deadline_value = _row_value(job, "bidding_closes_at", "")
     deadline = _utc_datetime(deadline_value) if deadline_value else current_time + timedelta(days=BID_WINDOW_DAYS)
     status = str(_row_value(job, "status", "open") or "open")
+    has_approved_match = bool(_row_value(job, "has_approved_match", False))
     remaining = max(0, limit - used)
     is_full = remaining == 0
     is_expired = deadline <= current_time
-    accepting = status == "open" and not is_full and not is_expired
+    accepting = (
+        status == "open" and not has_approved_match and not is_full and not is_expired
+    )
     if status != "open":
         state, availability_label = "closed", "Project closed"
+    elif has_approved_match:
+        state, availability_label = "matched", "Contractor chosen"
     elif is_full:
         state, availability_label = "full", "Bid pool full"
     elif is_expired:
@@ -140,7 +145,9 @@ def bid_window(job, bid_count=None, now=None) -> dict:
         "is_full": is_full,
         "is_expired": is_expired,
         "accepting": accepting,
-        "can_extend": status == "open" and is_expired and not is_full,
+        "can_extend": (
+            status == "open" and not has_approved_match and is_expired and not is_full
+        ),
         "state": state,
         "usage_label": f"{used} of {limit} bids",
         "availability_label": availability_label,

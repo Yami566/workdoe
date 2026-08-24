@@ -535,6 +535,19 @@ deployment has been performed during this stabilization pass.
   920.46 KiB / 169.43 KiB gzip without deploying. Mobile, tablet, and desktop
   evidence is recorded in
   `docs/ux-audit/2026-08-24-contractor-trust-paths/`.
+- The consumer choice path now enforces one approved contractor per project in
+  SQLite and D1, closes the remaining pending offers after a successful choice,
+  and removes matched projects from public discovery and
+  offer creation. Project and contractor-profile actions use one native
+  confirmation that explains messaging, competing-offer closure, project
+  status, and the absence of payment. Mobile focus restoration and responsive
+  evidence are recorded in
+  `docs/ux-audit/2026-08-24-contractor-choice-confirmation/`.
+- All 235 tests passed in 90.321 seconds. The complete local security and
+  provenance checks passed across 611 non-ignored files. Cloudflare preflight
+  remained warning-free, the D1 verifier loaded 33 migrations without a table
+  scan, and Wrangler 4.125.0 packaged 48 Python modules and 86 assets at 926.94
+  KiB / 170.34 KiB gzip without deploying.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

@@ -42,6 +42,12 @@ LEFT JOIN job_photos
   ON job_photos.job_id = jobs.id
  AND job_photos.is_hidden = 0
 WHERE jobs.status = 'open'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM match_requests AS approved_request
+      WHERE approved_request.job_id = jobs.id
+        AND approved_request.status = 'approved'
+  )
 """
 
 

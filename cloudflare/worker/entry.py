@@ -3180,6 +3180,12 @@ class Default(WorkerEntrypoint):
             WHERE jobs.id = ?
               AND jobs.status = 'open'
               AND datetime(jobs.bidding_closes_at) > datetime(?)
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM match_requests AS approved_request
+                  WHERE approved_request.job_id = jobs.id
+                    AND approved_request.status = 'approved'
+              )
               AND (
                 SELECT COUNT(*)
                 FROM match_requests
@@ -3219,6 +3225,12 @@ class Default(WorkerEntrypoint):
                 )
             latest = await job_for_detail(self.env, job_id)
             if latest and row_value(latest, "status") == "open":
+                if row_value(latest, "has_approved_match"):
+                    return json_response(
+                        {"ok": False, "error": "This project has already chosen a contractor."},
+                        status=409,
+                        headers={"Cache-Control": "no-store"},
+                    )
                 bidding = bid_window(latest, now=created_at)
                 if bidding["is_full"]:
                     return json_response(
@@ -5456,19 +5468,38 @@ class Default(WorkerEntrypoint):
             )
 
         updated_at = utc_now()
-        update_result = await db_run(
-            self.env,
-            """
-            UPDATE match_requests
-            SET status = ?,
-                updated_at = ?
-            WHERE id = ?
-              AND status = 'pending'
-            """,
-            status,
-            updated_at,
-            request_id,
-        )
+        if status == "approved":
+            update_result = await db_run(
+                self.env,
+                """
+                UPDATE match_requests
+                SET status = 'approved',
+                    updated_at = ?
+                WHERE id = ?
+                  AND status = 'pending'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM match_requests AS approved_request
+                      WHERE approved_request.job_id = match_requests.job_id
+                        AND approved_request.status = 'approved'
+                  )
+                """,
+                updated_at,
+                request_id,
+            )
+        else:
+            update_result = await db_run(
+                self.env,
+                """
+                UPDATE match_requests
+                SET status = 'rejected',
+                    updated_at = ?
+                WHERE id = ?
+                  AND status = 'pending'
+                """,
+                updated_at,
+                request_id,
+            )
         if d1_change_count(update_result) != 1:
             refreshed = await match_request_for_decision(self.env, request_id)
             if not refreshed:
@@ -5477,13 +5508,38 @@ class Default(WorkerEntrypoint):
                     status=404,
                     headers={"Cache-Control": "no-store"},
                 )
+            if status == "approved" and row_value(refreshed, "status") == "pending":
+                return json_response(
+                    {
+                        "ok": False,
+                        "error": "A contractor has already been chosen for this project.",
+                    },
+                    status=409,
+                    headers={"Cache-Control": "no-store"},
+                )
             return await self.existing_match_decision_response(
                 refreshed,
                 request_id,
                 requested_status=status,
             )
         thread_id = None
+        closed_offer_count = 0
         if status == "approved":
+            closed_offers = await db_run(
+                self.env,
+                """
+                UPDATE match_requests
+                SET status = 'rejected',
+                    updated_at = ?
+                WHERE job_id = ?
+                  AND id != ?
+                  AND status = 'pending'
+                """,
+                updated_at,
+                row_value(match, "job_id"),
+                request_id,
+            )
+            closed_offer_count = d1_change_count(closed_offers)
             thread_id = await ensure_thread_for_match(self.env, match, updated_at)
         event_type = "match-request-approved" if status == "approved" else "match-request-rejected"
         await record_event(
@@ -5497,6 +5553,7 @@ class Default(WorkerEntrypoint):
                 "client_id": row_value(match, "client_id"),
                 "contractor_id": row_value(match, "contractor_id"),
                 "thread_id": thread_id,
+                "closed_offer_count": closed_offer_count,
             },
             status="processed",
         )
@@ -7321,6 +7378,12 @@ async def process_contractor_lead_alert_fanout(env, job_id: int) -> int:
             WHERE jobs.id = ?
               AND jobs.status = 'open'
               AND datetime(jobs.bidding_closes_at) > datetime('now')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM match_requests AS approved_request
+                  WHERE approved_request.job_id = jobs.id
+                    AND approved_request.status = 'approved'
+              )
               AND contractor_lead_preferences.saved_at IS NOT NULL
               AND contractor_lead_preferences.lead_alert_preference = 'email'
               AND contractor_lead_preferences.lead_alert_consent_at IS NOT NULL
@@ -8803,6 +8866,9 @@ async def client_contractor_choice_for_profile(
                jobs.client_id,
                match_requests.contractor_id,
                match_requests.id AS request_id,
+               match_requests.price_range,
+               match_requests.timeline,
+               match_requests.availability,
                match_requests.status,
                threads.id AS thread_id
         FROM jobs
@@ -9014,6 +9080,12 @@ async def contractor_repeat_invitations(env, contractor_id: int) -> list[dict]:
           AND datetime(jobs.bidding_closes_at) > datetime(?)
           AND NOT EXISTS (
               SELECT 1
+              FROM match_requests AS approved_request
+              WHERE approved_request.job_id = jobs.id
+                AND approved_request.status = 'approved'
+          )
+          AND NOT EXISTS (
+              SELECT 1
               FROM match_requests AS own_request
               WHERE own_request.job_id = jobs.id
                 AND own_request.contractor_id = repeat_provider_invitations.contractor_id
@@ -9167,6 +9239,12 @@ async def entry_shell_jobs(env, params: dict) -> list[dict]:
         FROM jobs
         LEFT JOIN job_photos ON job_photos.job_id = jobs.id AND job_photos.is_hidden = 0
         WHERE jobs.status = 'open'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM match_requests AS approved_request
+              WHERE approved_request.job_id = jobs.id
+                AND approved_request.status = 'approved'
+          )
         """
     ]
     bindings: list[str | int] = []
@@ -9235,6 +9313,12 @@ async def contractor_leads_for_user(
           ON match_requests.job_id = jobs.id
          AND match_requests.contractor_id = ?
         WHERE jobs.status = 'open'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM match_requests AS approved_request
+              WHERE approved_request.job_id = jobs.id
+                AND approved_request.status = 'approved'
+          )
         """,
     ]
     bindings: list[str | int] = [contractor_id]
@@ -9487,7 +9571,13 @@ async def job_for_detail(env, job_id: int):
         """
         SELECT jobs.*, users.display_name AS client_name, users.company_name AS client_company,
                (SELECT COUNT(*) FROM match_requests WHERE job_id = jobs.id)
-                   AS request_count
+                   AS request_count,
+               EXISTS (
+                   SELECT 1
+                   FROM match_requests AS approved_request
+                   WHERE approved_request.job_id = jobs.id
+                     AND approved_request.status = 'approved'
+               ) AS has_approved_match
         FROM jobs
         JOIN users ON users.id = jobs.client_id
         WHERE jobs.id = ?

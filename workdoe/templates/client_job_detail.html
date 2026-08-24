@@ -213,10 +213,7 @@
                 </form>
               {% endif %}
               {% if item.status == 'pending' %}
-                <form method="post" action="{{ url_for('decide_request', request_id=item.id, action='approve') }}">
-                  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                  <button class="button compact" type="submit">Approve</button>
-                </form>
+                <button class="button compact" type="button" data-inline-dialog-open="choose-contractor-{{ item.id }}" aria-haspopup="dialog">Choose</button>
                 <form method="post" action="{{ url_for('decide_request', request_id=item.id, action='reject') }}">
                   <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                   <button class="button secondary compact" type="submit">Reject</button>
@@ -261,4 +258,28 @@
     {% endfor %}
   </div>
 </section>
+
+{% for item in requests if item.status == 'pending' %}
+  {% set contractor_name = item.business_name or item.company_name or item.display_name %}
+  <dialog id="choose-contractor-{{ item.id }}" class="inline-dialog match-choice-dialog" data-inline-dialog aria-labelledby="choose-contractor-title-{{ item.id }}">
+    <form class="inline-dialog-surface stack-form" method="post" action="{{ url_for('decide_request', request_id=item.id, action='approve') }}">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <header class="inline-dialog-header">
+        <div><p class="eyebrow">Confirm match</p><h2 id="choose-contractor-title-{{ item.id }}">Choose {{ contractor_name }}?</h2></div>
+        <button class="button secondary compact" type="button" data-inline-dialog-close>Cancel</button>
+      </header>
+      <p>This opens a private message thread and closes the other pending offers for this project. No payment is created.</p>
+      <dl class="job-facts match-choice-facts">
+        <div><dt>Price</dt><dd>{{ item.price_range }}</dd></div>
+        <div><dt>Timeline</dt><dd>{{ item.timeline }}</dd></div>
+        <div><dt>Availability</dt><dd>{{ item.availability }}</dd></div>
+      </dl>
+      <p class="help-text">You can keep the project open while work is underway, then close it when the outcome is known.</p>
+      <div class="inline-dialog-actions">
+        <button class="button secondary" type="button" data-inline-dialog-close>Keep comparing</button>
+        <button class="button" type="submit">Confirm contractor</button>
+      </div>
+    </form>
+  </dialog>
+{% endfor %}
 {% endblock %}

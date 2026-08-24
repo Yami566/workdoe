@@ -22,15 +22,33 @@
     <div class="profile-decision-actions">
       <a class="button secondary" href="{{ choice_context.back_url }}">Back to offers</a>
       {% if choice_context.can_choose %}
-        <form method="post" action="{{ url_for('decide_request', request_id=choice_context.request_id, action='approve') }}">
-          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-          <button class="button" type="submit">Choose contractor</button>
-        </form>
+        <button class="button" type="button" data-inline-dialog-open="choose-profile-contractor" aria-haspopup="dialog">Choose contractor</button>
       {% elif choice_context.thread_url %}
         <a class="button" href="{{ choice_context.thread_url }}">Message contractor</a>
       {% endif %}
     </div>
   </section>
+  {% if choice_context.can_choose %}
+    <dialog id="choose-profile-contractor" class="inline-dialog match-choice-dialog" data-inline-dialog aria-labelledby="choose-profile-contractor-title">
+      <form class="inline-dialog-surface stack-form" method="post" action="{{ url_for('decide_request', request_id=choice_context.request_id, action='approve') }}">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <header class="inline-dialog-header">
+          <div><p class="eyebrow">Confirm match</p><h2 id="choose-profile-contractor-title">Choose {{ contractor.business_name }}?</h2></div>
+          <button class="button secondary compact" type="button" data-inline-dialog-close>Cancel</button>
+        </header>
+        <p>This opens a private message thread and closes the other pending offers for this project. No payment is created.</p>
+        <dl class="job-facts match-choice-facts">
+          <div><dt>Price</dt><dd>{{ choice_context.price_range or 'Not provided' }}</dd></div>
+          <div><dt>Timeline</dt><dd>{{ choice_context.timeline or 'Not provided' }}</dd></div>
+          <div><dt>Availability</dt><dd>{{ choice_context.availability or 'Not provided' }}</dd></div>
+        </dl>
+        <div class="inline-dialog-actions">
+          <button class="button secondary" type="button" data-inline-dialog-close>Keep comparing</button>
+          <button class="button" type="submit">Confirm contractor</button>
+        </div>
+      </form>
+    </dialog>
+  {% endif %}
 {% else %}
   <div class="lead-action-bar public-profile-actions">
     {% if not g.user %}

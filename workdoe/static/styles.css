@@ -4173,6 +4173,18 @@ textarea:focus {
   padding-top: 4px;
 }
 
+.match-choice-dialog {
+  width: min(560px, calc(100% - 24px));
+}
+
+.match-choice-dialog .inline-dialog-surface > p {
+  margin-block: 0;
+}
+
+.match-choice-facts {
+  margin: 0;
+}
+
 .outcome-choice-list {
   display: grid;
   gap: 8px;
@@ -7897,18 +7909,32 @@ textarea:focus {
 }
 
 .bid-window-full,
-.bid-window-expired {
+.bid-window-expired,
+.bid-window-matched {
   border-top-color: var(--gold);
 }
 
 .bid-window-full progress,
-.bid-window-expired progress {
+.bid-window-expired progress,
+.bid-window-matched progress {
   accent-color: var(--gold);
 }
 
 .bid-availability.full,
-.bid-availability.expired {
+.bid-availability.expired,
+.bid-availability.matched {
   color: var(--gold);
+}
+
+@media (max-width: 520px) {
+  .match-choice-dialog .inline-dialog-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .match-choice-dialog .inline-dialog-actions .button {
+    width: 100%;
+  }
 }
 
 @media (max-width: 620px) {

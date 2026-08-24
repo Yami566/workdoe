@@ -389,6 +389,8 @@ CREATE INDEX IF NOT EXISTS idx_contractor_photos_public_contractor
 ON contractor_photos(contractor_id, is_hidden, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_match_requests_job ON match_requests(job_id, status);
 CREATE INDEX IF NOT EXISTS idx_match_requests_contractor ON match_requests(contractor_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_match_requests_one_approved_per_job
+ON match_requests(job_id) WHERE status = 'approved';
 CREATE INDEX IF NOT EXISTS idx_contractor_proposal_templates_owner
 ON contractor_proposal_templates(contractor_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_repeat_provider_invitations_contractor
