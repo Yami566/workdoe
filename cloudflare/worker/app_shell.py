@@ -691,7 +691,7 @@ def layout(
   <link rel="canonical" href="{escape(canonical_url)}">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=workdoe-contractor-trust-paths">
+  <link rel="stylesheet" href="/styles.css?v=workdoe-work-history-disclosure-v2">
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet/leaflet.css\">" if include_map else ""}
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.css\"><link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.Default.css\">" if include_map else ""}
   {script_html}
@@ -1374,29 +1374,37 @@ def contractor_dashboard_html(user, payload: dict) -> str:
                 + "".join(feedback_parts)
                 + "</section>"
             )
+        feedback_count = len(item_reviews)
+        feedback_note = ""
+        if feedback_count:
+            feedback_label = "note" if feedback_count == 1 else "notes"
+            feedback_note = f" and {feedback_count} feedback {feedback_label}"
         completed_rows.append(
             f"""
-      <div class="history-row completed-work-row">
-        <div>
+      <article class="history-row completed-work-row">
+        <div class="completed-work-summary">
           <div class="row-meta"><span>{escape(item.get('category', ''))}</span><span>{escape(item.get('city', ''))}, {escape(item.get('state', ''))}</span></div>
           <h3>{escape(item.get('title', ''))}</h3>
-          <p>{escape(item.get('scope_note', ''))}</p>
-          <dl class="history-facts">
-            <div><dt>Timeline</dt><dd>{escape(item.get('timeline', ''))}</dd></div>
-            <div><dt>Estimate</dt><dd>{escape(item.get('price_range', ''))}</dd></div>
-            <div><dt>Availability</dt><dd>{escape(item.get('availability', ''))}</dd></div>
-          </dl>
-          <div class="completion-status {escape(item.get('completion_state', 'awaiting'))}">
-            <strong>{escape(item.get('completion_label', 'Awaiting both confirmations'))}</strong>
-            <span>{'Both participants confirmed this Workdoe project.' if item.get('verified_at') else 'Both participants confirm independently. No rating or payment is created.'}</span>
-          </div>
-          {feedback_html}
+          <span class="completion-chip {escape(item.get('completion_state', 'awaiting'))}">{escape(item.get('completion_label', 'Awaiting both confirmations'))}</span>
         </div>
         <div class="history-row-actions">
           <a class="button secondary compact" href="{escape(item.get('url', '#'))}">Details</a>
           {completion_action}
         </div>
-      </div>"""
+        <details class="completed-work-disclosure">
+          <summary aria-label="View project record for {escape(item.get('title', 'project'))}"><span>Project record</span><small>Scope, accepted terms{feedback_note}</small></summary>
+          <div class="completed-work-detail-body">
+            <p>{escape(item.get('scope_note', ''))}</p>
+            <dl class="history-facts">
+              <div><dt>Timeline</dt><dd>{escape(item.get('timeline', ''))}</dd></div>
+              <div><dt>Estimate</dt><dd>{escape(item.get('price_range', ''))}</dd></div>
+              <div><dt>Availability</dt><dd>{escape(item.get('availability', ''))}</dd></div>
+            </dl>
+            <p class="help-text completion-explainer">{'Both participants confirmed this Workdoe project.' if item.get('verified_at') else 'Both participants confirm independently. No rating or payment is created.'}</p>
+            {feedback_html}
+          </div>
+        </details>
+      </article>"""
         )
     completed_html = "\n".join(completed_rows) if completed_rows else '<p class="empty history-empty">Work matched on Workdoe appears here after the consumer closes the project.</p>'
     proposal_template_rows = []

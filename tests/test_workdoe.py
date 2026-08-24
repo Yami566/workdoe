@@ -5752,7 +5752,21 @@ class WorkdoeFlowTests(unittest.TestCase):
         contractor_dashboard = self.client.get("/contractor/dashboard")
         self.assertIn(b"Matched work", contractor_dashboard.data)
         self.assertIn(b"Awaiting both confirmations", contractor_dashboard.data)
-        self.assertIn(b"Washed the steps and protected the surrounding brickwork.", contractor_dashboard.data)
+        self.assertIn(b'class="completed-work-disclosure"', contractor_dashboard.data)
+        self.assertIn(
+            b"View project record for ",
+            contractor_dashboard.data,
+        )
+        self.assertLess(
+            contractor_dashboard.data.find(b"Project record"),
+            contractor_dashboard.data.find(
+                b"Washed the steps and protected the surrounding brickwork."
+            ),
+        )
+        self.assertIn(
+            b"Washed the steps and protected the surrounding brickwork.",
+            contractor_dashboard.data,
+        )
         self.assertIn(b"One day", contractor_dashboard.data)
         self.assertIn(b"$450-$600", contractor_dashboard.data)
         self.assertIn(b"Specific addresses stay private.", contractor_dashboard.data)
@@ -6443,7 +6457,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'/vendor/tabler-icons/seedling.svg', form.data)
         self.assertIn(b'/vendor/tabler-icons/plant.svg', form.data)
         self.assertIn(
-            b'/static/styles.css?v=workdoe-contractor-trust-paths',
+            b'/static/styles.css?v=workdoe-work-history-disclosure-v2',
             form.data,
         )
         self.assertIn(

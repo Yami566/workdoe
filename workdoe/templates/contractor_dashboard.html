@@ -143,36 +143,15 @@
     {% for item in completed_work %}
       {% set completed_href = url_for('thread_detail', thread_id=item.thread_id) if item.thread_id else url_for('contractor_job_detail', job_id=item.job_id) %}
       {% set item_reviews = reviews_by_request.get(item.id, {}) %}
-      <div class="history-row completed-work-row">
-        <div>
+      <article class="history-row completed-work-row">
+        <div class="completed-work-summary">
           <div class="row-meta">
             <span>{{ item.category }}</span>
             <span>{{ item.city }}, {{ item.state }}</span>
             {% if item.desired_date %}<span>Target <time datetime="{{ item.desired_date }}">{{ item.desired_date|date_label }}</time></span>{% endif %}
           </div>
           <h3>{{ item.title }}</h3>
-          <p>{{ item.scope_note }}</p>
-          <dl class="history-facts">
-            <div><dt>Timeline</dt><dd>{{ item.timeline }}</dd></div>
-            <div><dt>Estimate</dt><dd>{{ item.price_range }}</dd></div>
-            <div><dt>Availability</dt><dd>{{ item.availability }}</dd></div>
-          </dl>
-          <div class="completion-status {{ item|completion_state }}">
-            <strong>{{ item|completion_label('contractor') }}</strong>
-            {% if item.verified_at %}<span>Both participants confirmed this Workdoe project.</span>{% else %}<span>Both participants confirm independently. No rating or payment is created.</span>{% endif %}
-          </div>
-          {% if item.verified_at %}
-            <section class="completed-feedback" aria-label="Completed-work feedback for {{ item.title }}">
-              {% if not item_reviews.get('contractor') %}
-                {% set request_id = item.id %}
-                {% set reviewer_role = 'contractor' %}
-                {% include "_match_review_form.html" %}
-              {% endif %}
-              {% for review in item_reviews.values() %}
-                {% include "_match_review_card.html" %}
-              {% endfor %}
-            </section>
-          {% endif %}
+          <span class="completion-chip {{ item|completion_state }}">{{ item|completion_label('contractor') }}</span>
         </div>
         <div class="history-row-actions">
           <a class="button secondary compact" href="{{ completed_href }}">Details</a>
@@ -183,7 +162,36 @@
             </form>
           {% endif %}
         </div>
-      </div>
+        <details class="completed-work-disclosure">
+          <summary aria-label="View project record for {{ item.title }}">
+            <span>Project record</span>
+            <small>Scope, accepted terms{% if item_reviews %} and {{ item_reviews|length }} feedback {{ "note" if item_reviews|length == 1 else "notes" }}{% endif %}</small>
+          </summary>
+          <div class="completed-work-detail-body">
+            <p>{{ item.scope_note }}</p>
+            <dl class="history-facts">
+              <div><dt>Timeline</dt><dd>{{ item.timeline }}</dd></div>
+              <div><dt>Estimate</dt><dd>{{ item.price_range }}</dd></div>
+              <div><dt>Availability</dt><dd>{{ item.availability }}</dd></div>
+            </dl>
+            <p class="help-text completion-explainer">
+              {% if item.verified_at %}Both participants confirmed this Workdoe project.{% else %}Both participants confirm independently. No rating or payment is created.{% endif %}
+            </p>
+            {% if item.verified_at %}
+              <section class="completed-feedback" aria-label="Completed-work feedback for {{ item.title }}">
+                {% if not item_reviews.get('contractor') %}
+                  {% set request_id = item.id %}
+                  {% set reviewer_role = 'contractor' %}
+                  {% include "_match_review_form.html" %}
+                {% endif %}
+                {% for review in item_reviews.values() %}
+                  {% include "_match_review_card.html" %}
+                {% endfor %}
+              </section>
+            {% endif %}
+          </div>
+        </details>
+      </article>
     {% else %}
       <p class="empty history-empty">Work matched on Workdoe appears here after the consumer closes the project.</p>
     {% endfor %}

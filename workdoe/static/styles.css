@@ -4518,6 +4518,63 @@ textarea:focus {
   margin: 12px 0 0;
 }
 
+.completed-work-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.completed-work-summary {
+  min-width: 0;
+}
+
+.completed-work-summary .completion-chip {
+  margin-top: 9px;
+}
+
+.completed-work-disclosure {
+  grid-column: 1 / -1;
+  min-width: 0;
+  border-top: 1px solid var(--line-soft);
+  margin-top: 4px;
+  padding-top: 10px;
+}
+
+.completed-work-disclosure > summary {
+  display: list-item;
+  width: fit-content;
+  min-height: 44px;
+  color: var(--accent-dark);
+  cursor: pointer;
+  font-weight: 800;
+  line-height: 1.35;
+  padding: 11px 0 9px;
+}
+
+.completed-work-disclosure > summary span {
+  margin-right: 8px;
+}
+
+.completed-work-disclosure > summary small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.completed-work-detail-body {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 12px;
+}
+
+.completed-work-detail-body > p:first-child,
+.completion-explainer {
+  margin: 0;
+}
+
+.completion-explainer {
+  margin-top: 12px;
+}
+
 .compact-heading {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -8017,6 +8074,19 @@ textarea:focus {
 
   .completed-work-row .history-row-actions .button {
     width: 100%;
+  }
+
+  .completed-work-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .completed-work-disclosure > summary {
+    width: 100%;
+  }
+
+  .completed-work-disclosure > summary small {
+    display: block;
+    margin: 2px 0 0 18px;
   }
 }
 

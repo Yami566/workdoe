@@ -102,6 +102,12 @@ deployment has been performed during this stabilization pass.
   editable task groups. Consumers can jump directly to work, project details,
   area, or timing and budget while retaining entered values; no-JavaScript
   forms keep every step visible in document order.
+- Made contractor completed-work history scannable without weakening its
+  evidence. Project, general service area, completion state, and role-correct
+  action remain visible; scope, accepted terms, and feedback now use one native
+  project-record disclosure in Flask and the Cloudflare Worker. The aligned
+  `390x844` seeded dashboard is 910 pixels shorter while preserving every
+  privacy, review, reporting, and completion control.
 - Reframed the private message inbox around conversation triage. Compact All
   and Unread views replace non-actionable summary cards, rows identify the
   other participant, and the validated server-side filter preserves private
@@ -573,6 +579,15 @@ deployment has been performed during this stabilization pass.
   scan. Wrangler 4.125.0 packaged 48 Python modules and 87 assets at 928.45 KiB
   / 170.57 KiB gzip without deploying. Direct and same-page dialog evidence is
   recorded in `docs/ux-audit/2026-08-24-project-review-editing/`.
+- The compact contractor work-history batch passed all 235 tests in 82.774
+  seconds and the complete security/provenance gate across 633 non-ignored
+  files. Cloudflare preflight remained warning-free; the D1 verifier loaded all
+  33 migrations, used the expected geographic and public-media indexes, and
+  found no table scan. Wrangler 4.125.0 packaged 48 Python modules and 87 assets
+  at 929.06 KiB / 170.72 KiB gzip without deploying. The aligned `390x844`
+  comparison measured a 910-pixel document-height reduction; tablet and desktop
+  checks also had no horizontal overflow. Evidence is recorded in
+  `docs/ux-audit/2026-08-24-contractor-work-history/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

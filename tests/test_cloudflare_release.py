@@ -3763,7 +3763,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('<meta name="twitter:card" content="summary_large_image">', html)
         self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', html)
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', html)
-        self.assertIn('href="/styles.css?v=workdoe-contractor-trust-paths"', html)
+        self.assertIn(
+            'href="/styles.css?v=workdoe-work-history-disclosure-v2"', html
+        )
         self.assertIn('href="/vendor/leaflet/leaflet.css"', html)
         self.assertIn('href="/vendor/leaflet-markercluster/MarkerCluster.css"', html)
         self.assertIn('src="/vendor/leaflet/leaflet.js"', html)
@@ -10239,6 +10241,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn("Matched work", contractor_html)
         self.assertIn("Awaiting both confirmations", contractor_html)
+        self.assertIn('class="completed-work-disclosure"', contractor_html)
+        self.assertIn(
+            'aria-label="View project record for Wash front steps"', contractor_html
+        )
+        self.assertLess(
+            contractor_html.find("Project record"),
+            contractor_html.find("Washed the steps and protected nearby brickwork."),
+        )
         self.assertIn("Washed the steps and protected nearby brickwork.", contractor_html)
         self.assertIn("Specific addresses stay private.", contractor_html)
         self.assertNotIn("20003", contractor_html)
@@ -10382,7 +10392,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('/vendor/tabler-icons/lawn-mower.svg', html)
         self.assertIn('/vendor/tabler-icons/seedling.svg', html)
         self.assertIn('/vendor/tabler-icons/plant.svg', html)
-        self.assertIn('href="/styles.css?v=workdoe-contractor-trust-paths"', html)
+        self.assertIn(
+            'href="/styles.css?v=workdoe-work-history-disclosure-v2"', html
+        )
         self.assertIn('name="service_choice"', html)
         self.assertEqual(html.count('data-project-choice-advance'), 59)
         self.assertEqual(html.count('data-project-jump-step='), 4)
@@ -10793,6 +10805,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             },
         )
         self.assertIn("Leave completed-work feedback", contractor_html)
+        self.assertIn("Scope, accepted terms and 1 feedback note", contractor_html)
+        self.assertIn(
+            'aria-label="View project record for Wash the front steps"',
+            contractor_html,
+        )
         self.assertIn('data-json-action="/api/match-requests/41/review"', contractor_html)
         self.assertIn('data-json-action="/api/reviews/51/response"', contractor_html)
         self.assertIn('data-json-action="/api/reviews/51/report"', contractor_html)
