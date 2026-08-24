@@ -1606,6 +1606,17 @@ class WorkdoeFlowTests(unittest.TestCase):
             b'class="message-form thread-message-form" method="post" aria-label="New message"',
             detail.data,
         )
+        self.assertIn(b'class="message-workspace">', detail.data)
+        self.assertIn(b'class="message-inbox-rail" aria-label="Conversations"', detail.data)
+        self.assertIn(
+            b'<nav class="message-inbox-list" aria-label="Approved match conversations">',
+            detail.data,
+        )
+        self.assertIn(
+            f'href="/messages/{thread["id"]}" aria-current="page"'.encode("ascii"),
+            detail.data,
+        )
+        self.assertIn(b"With Jordan Rivera", detail.data)
         self.assertIn(b'class="message-shell thread-message-shell"', detail.data)
         self.assertIn(b'class="message-list thread-message-list"', detail.data)
         self.assertIn(b'aria-label="Approved match summary"', detail.data)

@@ -2167,19 +2167,31 @@ class Default(WorkerEntrypoint):
                     if messages
                     else row_value(thread, "created_at"),
                 )
+            thread_payload = thread_detail_payload(thread, messages)
+            message_site_key = ""
             if role in {"client", "contractor"}:
-                user = user_with_unread_message_count(
-                    user,
-                    await unread_message_count_for_user(
+                inbox_payload = message_threads_listing_payload(
+                    await message_threads_for_user(
                         self.env,
                         row_value(user, "id"),
-                        role,
-                    ),
+                    )
                 )
+                thread_payload["inbox_threads"] = inbox_payload["threads"]
+                user = user_with_unread_message_count(
+                    user,
+                    inbox_payload["stats"]["unread"],
+                )
+                message_site_key = getattr(
+                    self.env,
+                    "WORKDOE_TURNSTILE_SITE_KEY",
+                    "",
+                )
+                include_turnstile = bool(message_site_key)
             html = message_thread_detail_html(
                 user,
-                thread_detail_payload(thread, messages),
+                thread_payload,
                 can_reply=can_send_thread_message(user, thread),
+                site_key=message_site_key,
             )
         elif path == "/admin" and role == "admin":
             html = admin_dashboard_html(user, await admin_dashboard_payload(self.env))

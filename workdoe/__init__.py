@@ -4600,58 +4600,7 @@ def register_routes(app: Flask) -> None:
     @app.route("/messages")
     @role_required("client", "contractor")
     def message_threads():
-        all_threads = get_db().execute(
-            """
-            SELECT threads.*, jobs.title, jobs.category, jobs.city, jobs.state,
-                   client.display_name AS client_name,
-                   contractor.display_name AS contractor_name,
-                   (
-                       SELECT body FROM messages
-                       WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                       ORDER BY messages.id DESC
-                       LIMIT 1
-                   ) AS last_message,
-                   (
-                       SELECT created_at FROM messages
-                       WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                       ORDER BY messages.id DESC
-                       LIMIT 1
-                   ) AS last_message_at,
-                   (
-                       SELECT id FROM messages
-                       WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                       ORDER BY messages.id DESC
-                       LIMIT 1
-                   ) AS last_message_id,
-                   (
-                       SELECT COUNT(*) FROM messages
-                       WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                   ) AS message_count,
-                   (
-                       SELECT COUNT(*) FROM messages
-                       WHERE messages.thread_id = threads.id
-                         AND messages.is_hidden = 0
-                         AND messages.sender_id != ?
-                         AND messages.id > COALESCE(
-                             (
-                                 SELECT thread_reads.last_read_message_id
-                                 FROM thread_reads
-                                 WHERE thread_reads.thread_id = threads.id
-                                   AND thread_reads.user_id = ?
-                             ),
-                             0
-                         )
-                   ) AS unread_count
-            FROM threads
-            JOIN jobs ON jobs.id = threads.job_id
-            JOIN users AS client ON client.id = threads.client_id
-            JOIN users AS contractor ON contractor.id = threads.contractor_id
-            WHERE threads.client_id = ? OR threads.contractor_id = ?
-            ORDER BY COALESCE(last_message_at, threads.created_at) DESC,
-                     COALESCE(last_message_id, 0) DESC
-            """,
-            (g.user["id"], g.user["id"], g.user["id"], g.user["id"]),
-        ).fetchall()
+        all_threads = message_threads_for_user(g.user["id"])
         thread_view = normalize_message_thread_view(request.args.get("view"))
         stats = {
             "threads": len(all_threads),
@@ -4781,6 +4730,7 @@ def register_routes(app: Flask) -> None:
             "thread_detail.html",
             thread=thread,
             messages=messages,
+            inbox_threads=message_threads_for_user(g.user["id"]) if not is_admin else [],
             draft_body=draft_body,
             message_max=MESSAGE_BODY_MAX_LENGTH,
             message_error_feedback=message_error_feedback(message_errors),
@@ -7591,6 +7541,62 @@ def fetch_thread(thread_id: int):
         """,
         (thread_id,),
     ).fetchone()
+
+
+def message_threads_for_user(user_id: int):
+    return get_db().execute(
+        """
+        SELECT threads.*, jobs.title, jobs.category, jobs.city, jobs.state,
+               client.display_name AS client_name,
+               contractor.display_name AS contractor_name,
+               (
+                   SELECT body FROM messages
+                   WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
+                   ORDER BY messages.id DESC
+                   LIMIT 1
+               ) AS last_message,
+               (
+                   SELECT created_at FROM messages
+                   WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
+                   ORDER BY messages.id DESC
+                   LIMIT 1
+               ) AS last_message_at,
+               (
+                   SELECT id FROM messages
+                   WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
+                   ORDER BY messages.id DESC
+                   LIMIT 1
+               ) AS last_message_id,
+               (
+                   SELECT COUNT(*) FROM messages
+                   WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
+               ) AS message_count,
+               (
+                   SELECT COUNT(*) FROM messages
+                   WHERE messages.thread_id = threads.id
+                     AND messages.is_hidden = 0
+                     AND messages.sender_id != ?
+                     AND messages.id > COALESCE(
+                         (
+                             SELECT thread_reads.last_read_message_id
+                             FROM thread_reads
+                             WHERE thread_reads.thread_id = threads.id
+                               AND thread_reads.user_id = ?
+                         ),
+                         0
+                     )
+               ) AS unread_count
+        FROM threads
+        JOIN jobs ON jobs.id = threads.job_id
+        JOIN users AS client ON client.id = threads.client_id
+        JOIN users AS contractor ON contractor.id = threads.contractor_id
+        WHERE threads.client_id = ? OR threads.contractor_id = ?
+        ORDER BY COALESCE(last_message_at, threads.created_at) DESC,
+                 COALESCE(last_message_id, 0) DESC
+        LIMIT 50
+        """,
+        (user_id, user_id, user_id, user_id),
+    ).fetchall()
 
 
 def mark_thread_read(

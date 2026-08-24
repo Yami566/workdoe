@@ -260,6 +260,11 @@ formal certification against OWASP ASVS or WCAG.
 - Report creation rechecks that the reporter can see the target; a private
   message can be reported only by an administrator or one of its approved
   thread participants.
+- The selected-thread conversation rail reuses the participant-scoped thread
+  listing projection and its 50-row bound. It adds no new message, identity,
+  contact, address, or recipient field. The Worker report disclosure reuses the
+  existing same-origin, authenticated-rate-limit, idempotency, target-visibility,
+  and Turnstile controls; administrators still cannot reply.
 - Server-rendered marketplace output escapes user-controlled content, with a
   regression that injects script-shaped text across representative views.
 - Project brief readiness is a six-field deterministic projection shared by

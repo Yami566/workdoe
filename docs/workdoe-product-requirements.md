@@ -76,7 +76,11 @@ the relevant workflow through a same-domain email-code sign-in.
 - See a four-bid cap and seven-day bidding deadline on every owned project;
   rejected bids continue to count toward the cap, and an expired non-full
   window may be extended seven days at a time.
-- Message only contractors whose bid has been approved.
+- Message only contractors whose bid has been approved. Desktop thread pages
+  keep up to 50 owner-visible approved-match conversations in a bounded rail so
+  the participant can switch work contexts without returning to the inbox;
+  phone and tablet views stay focused on one selected conversation. Every
+  thread retains a canonical direct URL and server-rendered fallback.
 - After closing a project, independently confirm completion for an approved
   match; the project becomes verified complete only after the contractor also
   confirms.
@@ -87,7 +91,9 @@ the relevant workflow through a same-domain email-code sign-in.
 - From a mutually verified completed match, invite that same contractor to a
   new project for the same canonical service. The invitation is private and
   creates no bid, approval, conversation, ranking boost, or reserved slot.
-- Report inappropriate jobs, profiles, or messages.
+- Report inappropriate jobs, profiles, or messages. Flask and Cloudflare
+  participant threads expose the same rate-limited, Turnstile-protected message
+  report control without exposing the message to unrelated users.
 
 ### Contractor
 

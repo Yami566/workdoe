@@ -4712,8 +4712,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "created_at": "2026-08-03T12:00:00+00:00",
                     }
                 ],
+                "inbox_threads": [
+                    {
+                        "id": 5,
+                        "title": "Window cleaning",
+                        "client_name": "Avery Client",
+                        "contractor_name": "Doe Exterior Care",
+                        "last_message": "Can you start Tuesday?",
+                        "unread_count": 0,
+                    }
+                ],
             },
             can_reply=True,
+            site_key="turnstile-site-key",
         )
         self.assertIn("Message Thread - Workdoe", thread_html)
         self.assertIn('class="message mine"', thread_html)
@@ -4727,6 +4738,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('spellcheck="true"', thread_html)
         self.assertIn('enterkeyhint="send"', thread_html)
         self.assertIn('aria-label="Send message"', thread_html)
+        self.assertIn('class="message-workspace"', thread_html)
+        self.assertIn('class="message-inbox-rail" aria-label="Conversations"', thread_html)
+        self.assertIn('aria-label="Approved match conversations"', thread_html)
+        self.assertIn('href="/messages/5" aria-current="page"', thread_html)
+        self.assertIn("With Doe Exterior Care", thread_html)
         self.assertIn('class="message-shell thread-message-shell"', thread_html)
         self.assertIn('class="message-list thread-message-list"', thread_html)
         self.assertIn('aria-label="Approved match summary"', thread_html)
@@ -4735,6 +4751,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("<dt>Timeline</dt><dd>Two business days</dd>", thread_html)
         self.assertIn("<dt>Availability</dt><dd>Tuesday morning</dd>", thread_html)
         self.assertIn('src="/worker-actions.js"', thread_html)
+        self.assertIn('data-json-action="/api/reports"', thread_html)
+        self.assertIn('name="target_type" value="message"', thread_html)
+        self.assertIn('name="target_id" value="9"', thread_html)
+        self.assertIn('aria-label="Report message from Avery Client"', thread_html)
+        self.assertIn('data-sitekey="turnstile-site-key"', thread_html)
+        self.assertIn('src="https://challenges.cloudflare.com/turnstile/v0/api.js"', thread_html)
         self.assertIn("1 message", thread_html)
         self.assertNotIn("1 messages", thread_html)
         self.assertIn("Can you start Tuesday?", thread_html)

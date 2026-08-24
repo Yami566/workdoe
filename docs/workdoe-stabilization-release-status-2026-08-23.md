@@ -142,6 +142,12 @@ deployment has been performed during this stabilization pass.
   disclosure with a compact state summary. The existing D1, Queue, and Email
   alert pipeline is unchanged; the Cloudflare Worker renderer now also matches
   Flask's lead-status tabs, photo facts, and accessible row labels.
+- Kept approved-match conversations connected on desktop. A bounded rail lets
+  participants switch among their newest 50 threads while phone and tablet
+  layouts remain focused on one conversation and its visible composer. The
+  Worker reuses that listing for the unread navigation count and now restores
+  Flask's missing participant-only message-report disclosure through the
+  existing rate-limited, Turnstile-protected moderation API.
 
 ## Verification evidence
 
@@ -403,6 +409,20 @@ deployment has been performed during this stabilization pass.
   lead states. The aligned mobile before/after comparison and evidence limits
   are recorded in
   `docs/ux-audit/2026-08-24-contractor-saved-alert-friction/`.
+- The approved-match messaging correction passed all 229 tests in 81.361
+  seconds. The complete security/provenance gate found no known Python or Node
+  vulnerabilities, no medium/high Bandit or Ruff findings, no unreviewed
+  secret across 554 non-ignored files, and no dependency drift. Cloudflare
+  preflight completed without warnings or errors; all 32 forward-only
+  migrations and all three expected D1 indexes passed without a table scan;
+  and Wrangler 4.125.0 packaged 48 Python modules and 86 assets at 915.29 KiB /
+  168.33 KiB gzip without deploying.
+- Current-run messaging evidence at 390x844, 820x1180, and 1280x720 shows a
+  compact phone header with the complete reply action above task navigation, a
+  focused tablet thread, and a desktop conversation rail that switches between
+  approved matches without returning to the inbox. The aligned before/after
+  comparisons, Worker moderation-parity correction, and evidence limits are
+  recorded in `docs/ux-audit/2026-08-24-messaging-flow-friction/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

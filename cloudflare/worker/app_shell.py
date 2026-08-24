@@ -2704,9 +2704,15 @@ def message_threads_html(user, payload: dict) -> str:
     return layout(user, "/messages", "Messages", body)
 
 
-def message_thread_detail_html(user, payload: dict, can_reply: bool = True) -> str:
+def message_thread_detail_html(
+    user,
+    payload: dict,
+    can_reply: bool = True,
+    site_key: str = "",
+) -> str:
     thread = payload.get("thread", {})
     messages = payload.get("messages", [])
+    inbox_threads = payload.get("inbox_threads", [])
     thread_id = int(thread.get("id", 0) or 0)
     user_id = int(row_value(user, "id", 0) or 0)
     role = str(row_value(user, "role", "") or "")
@@ -2719,10 +2725,57 @@ def message_thread_detail_html(user, payload: dict, can_reply: bool = True) -> s
         if can_reply and job_id
         else ""
     )
+    inbox_rows = []
+    for inbox_thread in inbox_threads:
+        inbox_thread_id = int(inbox_thread.get("id", 0) or 0)
+        unread_count = int(inbox_thread.get("unread_count", 0) or 0)
+        active = inbox_thread_id == thread_id
+        other_name = (
+            inbox_thread.get("contractor_name", "Contractor")
+            if role == "client"
+            else inbox_thread.get("client_name", "Client")
+        )
+        unread_chip = (
+            f'<span class="unread-chip">{unread_count} new</span>'
+            if unread_count
+            else ""
+        )
+        unread_label = f", {unread_count} unread" if unread_count else ""
+        inbox_rows.append(
+            f"""
+        <a class="message-inbox-link{' is-active' if active else ''}{' has-unread' if unread_count else ''}" href="/messages/{inbox_thread_id}"{' aria-current="page"' if active else ''} aria-label="Open conversation for {escape(inbox_thread.get('title', 'message thread'))}{unread_label}">
+          <span class="message-inbox-topline"><strong>{escape(inbox_thread.get('title', 'Message thread'))}</strong>{unread_chip}</span>
+          <small>With {escape(other_name)}</small>
+          <small class="thread-preview">{escape(inbox_thread.get('last_message') or 'No messages yet')}</small>
+        </a>"""
+        )
+    inbox_rail = ""
+    if can_reply:
+        inbox_rail = f"""
+      <aside class="message-inbox-rail" aria-label="Conversations">
+        <div class="message-inbox-heading"><strong>Conversations</strong><a href="/messages">View all</a></div>
+        <nav class="message-inbox-list" aria-label="Approved match conversations">{''.join(inbox_rows)}</nav>
+      </aside>"""
     message_rows = []
     for message in messages:
         is_mine = int(message.get("sender_id", 0) or 0) == user_id
         is_hidden = bool(message.get("is_hidden"))
+        message_id = int(message.get("id", 0) or 0)
+        report_html = ""
+        if can_reply and message_id:
+            status_id = f"message-report-{message_id}-status"
+            report_html = f"""
+        <details class="message-report">
+          <summary>Report message</summary>
+          <form class="inline-report" data-json-action="/api/reports" data-success-url-template="/messages/{thread_id}" aria-describedby="{status_id}">
+            <input type="hidden" name="target_type" value="message">
+            <input type="hidden" name="target_id" value="{message_id}">
+            <label for="message-report-reason-{message_id}"><span class="sr-only">Report message reason</span><input id="message-report-reason-{message_id}" name="reason" maxlength="500" placeholder="Report reason" autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required></label>
+            {turnstile_html(site_key, "report")}
+            <button class="button secondary compact" type="submit" aria-label="Report message from {escape(message.get('sender_name', 'Workdoe user'))}">Report</button>
+            <p id="{status_id}" class="help-text" data-form-status aria-live="polite"></p>
+          </form>
+        </details>"""
         message_rows.append(
             f"""
       <article class="message{' mine' if is_mine else ''}{' is-hidden' if is_hidden else ''}">
@@ -2731,6 +2784,7 @@ def message_thread_detail_html(user, payload: dict, can_reply: bool = True) -> s
           <span>{'<span class="status hidden">hidden</span>' if is_hidden else ''} {escape(message.get('created_at', ''))}</span>
         </div>
         <p class="preline">{escape(message.get('body', ''))}</p>
+        {report_html}
       </article>"""
         )
     messages_html = "\n".join(message_rows) if message_rows else '<p class="empty">No messages yet.</p>'
@@ -2756,22 +2810,32 @@ def message_thread_detail_html(user, payload: dict, can_reply: bool = True) -> s
       </div>
       <a class="button secondary" href="/messages">All messages</a>
     </section>
-    <section class="message-shell thread-message-shell">
-      <aside class="thread-match-context" aria-label="Approved match summary">
-        <p class="eyebrow">Approved match</p>
-        {project_link}
-        <dl class="thread-match-facts">
-          <div><dt>Price</dt><dd>{escape(thread.get('price_range') or 'Not provided')}</dd></div>
-          <div><dt>Timeline</dt><dd>{escape(thread.get('timeline') or 'Not provided')}</dd></div>
-          <div><dt>Availability</dt><dd>{escape(thread.get('availability') or 'Not provided')}</dd></div>
-        </dl>
-      </aside>
-      <div class="message-list thread-message-list">
+    <section class="message-workspace{' admin-message-workspace' if not can_reply else ''}">
+      {inbox_rail}
+      <section class="message-shell thread-message-shell">
+        <aside class="thread-match-context" aria-label="Approved match summary">
+          <p class="eyebrow">Approved match</p>
+          {project_link}
+          <dl class="thread-match-facts">
+            <div><dt>Price</dt><dd>{escape(thread.get('price_range') or 'Not provided')}</dd></div>
+            <div><dt>Timeline</dt><dd>{escape(thread.get('timeline') or 'Not provided')}</dd></div>
+            <div><dt>Availability</dt><dd>{escape(thread.get('availability') or 'Not provided')}</dd></div>
+          </dl>
+        </aside>
+        <div class="message-list thread-message-list">
 {messages_html}
-      </div>
-      {reply_html}
+        </div>
+        {reply_html}
+      </section>
     </section>"""
-    return layout(user, f"/messages/{thread_id}", "Message Thread", body, include_actions=can_reply)
+    return layout(
+        user,
+        f"/messages/{thread_id}",
+        "Message Thread",
+        body,
+        include_actions=can_reply,
+        include_turnstile=can_reply and bool(site_key),
+    )
 
 
 def admin_action_form(action_url: str, label: str) -> str:
