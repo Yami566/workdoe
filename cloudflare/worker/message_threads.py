@@ -3,7 +3,7 @@ from __future__ import annotations
 MESSAGE_BODY_MAX_LENGTH = 1000
 MAX_MESSAGE_BODY_BYTES = 4096
 MESSAGE_BODY_TOO_LONG = "Keep messages under 1000 characters."
-MESSAGE_THREAD_VIEW_OPTIONS = ("all", "unread")
+MESSAGE_THREAD_VIEW_OPTIONS = ("all", "reply", "unread")
 
 
 class MessageThreadError(ValueError):
@@ -85,8 +85,15 @@ def message_thread_error_field(message: str) -> str:
     return ""
 
 
-def message_thread_summary(row) -> dict:
+def message_thread_summary(row, viewer_id: int | None = None) -> dict:
     unread_count = count_value(row, "unread_count")
+    if viewer_id is None:
+        needs_reply = bool(row_value(row, "needs_reply", False))
+    else:
+        last_sender_id = count_value(row, "last_sender_id")
+        needs_reply = bool(count_value(row, "last_message_id") and last_sender_id) and (
+            last_sender_id != viewer_id
+        )
     return {
         "id": row_value(row, "id"),
         "job_id": row_value(row, "job_id"),
@@ -105,18 +112,24 @@ def message_thread_summary(row) -> dict:
         "message_count": count_value(row, "message_count"),
         "unread_count": unread_count,
         "has_unread": unread_count > 0,
+        "needs_reply": needs_reply,
         "url": f"/messages/{row_value(row, 'id')}",
     }
 
 
-def message_threads_listing_payload(rows: list[dict], view: str | None = None) -> dict:
+def message_threads_listing_payload(
+    rows: list[dict],
+    view: str | None = None,
+    viewer_id: int | None = None,
+) -> dict:
     thread_view = normalize_message_thread_view(view)
-    summaries = [message_thread_summary(thread) for thread in rows]
-    visible_threads = (
-        [thread for thread in summaries if thread["has_unread"]]
-        if thread_view == "unread"
-        else summaries
-    )
+    summaries = [message_thread_summary(thread, viewer_id) for thread in rows]
+    if thread_view == "reply":
+        visible_threads = [thread for thread in summaries if thread["needs_reply"]]
+    elif thread_view == "unread":
+        visible_threads = [thread for thread in summaries if thread["has_unread"]]
+    else:
+        visible_threads = summaries
     return {
         "ok": True,
         "view": thread_view,
@@ -126,6 +139,7 @@ def message_threads_listing_payload(rows: list[dict], view: str | None = None) -
             "messages": sum(thread["message_count"] for thread in summaries),
             "unread": sum(thread["unread_count"] for thread in summaries),
             "unread_threads": sum(1 for thread in summaries if thread["has_unread"]),
+            "reply_threads": sum(1 for thread in summaries if thread["needs_reply"]),
         },
     }
 

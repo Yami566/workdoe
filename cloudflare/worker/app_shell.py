@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from html import escape
 from urllib.parse import urlencode
 
@@ -416,6 +417,16 @@ def message_count_label(value) -> str:
     return f"{count} {'message' if count == 1 else 'messages'}"
 
 
+def datetime_label(value) -> str:
+    if value in (None, ""):
+        return ""
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return str(value)
+    return parsed.strftime("%b %d, %I:%M %p").replace(" 0", " ")
+
+
 def dmv_city_options_html() -> str:
     options = sorted({(city, state) for city, state, *_coords in DMV_ZIPS.values()})
     return "\n".join(
@@ -680,7 +691,7 @@ def layout(
   <link rel="canonical" href="{escape(canonical_url)}">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=workdoe-semantic-project-links">
+  <link rel="stylesheet" href="/styles.css?v=workdoe-message-action-queue">
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet/leaflet.css\">" if include_map else ""}
   {"<link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.css\"><link rel=\"stylesheet\" href=\"/vendor/leaflet-markercluster/MarkerCluster.Default.css\">" if include_map else ""}
   {script_html}
@@ -2660,10 +2671,23 @@ def message_threads_html(user, payload: dict) -> str:
     rows = []
     for thread in threads:
         unread_count = int(thread.get("unread_count", 0) or 0)
+        needs_reply = bool(thread.get("needs_reply"))
+        message_label = message_count_label(thread.get("message_count", 0))
         unread_label = f", {unread_count} unread" if unread_count else ""
-        unread_chip = (
+        reply_label = ", needs reply" if needs_reply and not unread_count else ""
+        state_html = (
             f'<span class="unread-chip">{unread_count} new</span>'
             if unread_count
+            else (
+                '<span class="message-reply-cue">Needs reply</span>'
+                if needs_reply
+                else ""
+            )
+        )
+        last_message_at = str(thread.get("last_message_at", "") or "")
+        time_html = (
+            f'<time datetime="{escape(last_message_at)}">{escape(datetime_label(last_message_at))}</time>'
+            if last_message_at
             else ""
         )
         other_name = (
@@ -2673,25 +2697,23 @@ def message_threads_html(user, payload: dict) -> str:
         )
         rows.append(
             f"""
-    <a class="job-row link-row{' has-unread' if unread_count else ''}" href="{escape(thread.get('url', '#'))}" aria-label="Open message thread for {escape(thread.get('title', 'message thread'))}{unread_label}">
-      <span>
-        <span class="row-meta">
-          <span>{escape(thread.get('category', ''))}</span>
-          <span>{escape(thread.get('city', ''))}, {escape(thread.get('state', ''))}</span>
-          <span>{escape(message_count_label(thread.get('message_count', 0)))}</span>
-          {unread_chip}
-        </span>
-        <strong>{escape(thread.get('title', 'Message thread'))}</strong>
-        <small class="thread-participants">With {escape(other_name)}</small>
+    <a class="message-thread-row link-row{' has-unread' if unread_count else (' needs-reply' if needs_reply else '')}" href="{escape(thread.get('url', '#'))}" aria-label="Open message thread for {escape(thread.get('title', 'message thread'))}, {escape(message_label)}{unread_label}{reply_label}">
+      <span class="message-thread-copy">
+        <span class="message-thread-topline"><strong>{escape(other_name)}</strong><span class="message-thread-state">{state_html}{time_html}</span></span>
+        <span class="message-thread-project">{escape(thread.get('title', 'Message thread'))}</span>
         <small class="thread-preview">{escape(thread.get('last_message') or 'No messages yet')}</small>
+        <small class="message-thread-facts">{escape(thread.get('category', ''))} / {escape(thread.get('city', ''))}, {escape(thread.get('state', ''))}</small>
       </span>
-      <span class="button secondary compact">{'Read' if unread_count else 'Open'}</span>
     </a>"""
         )
     thread_html = "\n".join(rows) if rows else (
-        empty_state("No unread messages", "/messages", "View all messages")
-        if thread_view == "unread"
-        else empty_state("No message threads yet", "/dashboard", "Back to dashboard")
+        empty_state("No replies waiting", "/messages", "View all messages")
+        if thread_view == "reply"
+        else (
+            empty_state("No unread messages", "/messages", "View all messages")
+            if thread_view == "unread"
+            else empty_state("No message threads yet", "/dashboard", "Back to dashboard")
+        )
     )
     tabs_html = "".join(
         (
@@ -2701,6 +2723,12 @@ def message_threads_html(user, payload: dict) -> str:
         )
         for value, label, href, count in (
             ("all", "All", "/messages", int(stats.get("threads", 0))),
+            (
+                "reply",
+                "Needs reply",
+                "/messages?view=reply",
+                int(stats.get("reply_threads", 0)),
+            ),
             (
                 "unread",
                 "Unread",
@@ -2715,7 +2743,7 @@ def message_threads_html(user, payload: dict) -> str:
       <h1>Messages</h1>
     </section>
     <nav class="work-view-tabs message-view-tabs" aria-label="Message thread view">{tabs_html}</nav>
-    <section class="job-list" aria-label="Message threads">
+    <section class="message-thread-list" aria-label="Message threads">
 {thread_html}
     </section>"""
     return layout(user, "/messages", "Messages", body)
@@ -2746,22 +2774,28 @@ def message_thread_detail_html(
     for inbox_thread in inbox_threads:
         inbox_thread_id = int(inbox_thread.get("id", 0) or 0)
         unread_count = int(inbox_thread.get("unread_count", 0) or 0)
+        needs_reply = bool(inbox_thread.get("needs_reply"))
         active = inbox_thread_id == thread_id
         other_name = (
             inbox_thread.get("contractor_name", "Contractor")
             if role == "client"
             else inbox_thread.get("client_name", "Client")
         )
-        unread_chip = (
+        state_html = (
             f'<span class="unread-chip">{unread_count} new</span>'
             if unread_count
-            else ""
+            else (
+                '<span class="message-reply-cue">Reply</span>'
+                if needs_reply
+                else ""
+            )
         )
         unread_label = f", {unread_count} unread" if unread_count else ""
+        reply_label = ", needs reply" if needs_reply and not unread_count else ""
         inbox_rows.append(
             f"""
-        <a class="message-inbox-link{' is-active' if active else ''}{' has-unread' if unread_count else ''}" href="/messages/{inbox_thread_id}"{' aria-current="page"' if active else ''} aria-label="Open conversation for {escape(inbox_thread.get('title', 'message thread'))}{unread_label}">
-          <span class="message-inbox-topline"><strong>{escape(inbox_thread.get('title', 'Message thread'))}</strong>{unread_chip}</span>
+        <a class="message-inbox-link{' is-active' if active else ''}{' has-unread' if unread_count else (' needs-reply' if needs_reply else '')}" href="/messages/{inbox_thread_id}"{' aria-current="page"' if active else ''} aria-label="Open conversation for {escape(inbox_thread.get('title', 'message thread'))}{unread_label}{reply_label}">
+          <span class="message-inbox-topline"><strong>{escape(inbox_thread.get('title', 'Message thread'))}</strong>{state_html}</span>
           <small>With {escape(other_name)}</small>
           <small class="thread-preview">{escape(inbox_thread.get('last_message') or 'No messages yet')}</small>
         </a>"""
@@ -2819,13 +2853,12 @@ def message_thread_detail_html(
         <p class="eyebrow">Private thread</p>
         <h1>{escape(thread.get('title', 'Message thread'))}</h1>
         <div class="row-meta thread-meta">
-          <span>{escape(thread.get('client_name', 'Client'))} and {escape(thread.get('contractor_name', 'Contractor'))}</span>
+          <span>With {escape(thread.get('contractor_name', 'Contractor') if role == 'client' else thread.get('client_name', 'Client'))}</span>
           <span>{escape(thread.get('category', ''))}</span>
           <span>{escape(thread.get('city', ''))}, {escape(thread.get('state', ''))}</span>
-          <span>{escape(message_count_label(len(messages)))}</span>
         </div>
       </div>
-      <a class="button secondary" href="/messages">All messages</a>
+      <a class="button secondary" href="/messages">Inbox</a>
     </section>
     <section class="message-workspace{' admin-message-workspace' if not can_reply else ''}">
       {inbox_rail}
@@ -2839,7 +2872,7 @@ def message_thread_detail_html(
             <div><dt>Availability</dt><dd>{escape(thread.get('availability') or 'Not provided')}</dd></div>
           </dl>
         </aside>
-        <div class="message-list thread-message-list">
+        <div class="message-list thread-message-list" aria-label="{escape(message_count_label(len(messages)))}">
 {messages_html}
         </div>
         {reply_html}

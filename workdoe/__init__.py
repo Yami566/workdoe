@@ -318,6 +318,7 @@ BID_VIEW_OPTIONS = (
 )
 MESSAGE_THREAD_VIEW_OPTIONS = (
     ("all", "All"),
+    ("reply", "Needs reply"),
     ("unread", "Unread"),
 )
 PROFILE_BUSINESS_MAX_LENGTH = 120
@@ -4614,12 +4615,16 @@ def register_routes(app: Flask) -> None:
             "unread_threads": sum(
                 1 for thread in all_threads if (thread["unread_count"] or 0) > 0
             ),
+            "reply_threads": sum(1 for thread in all_threads if thread["needs_reply"]),
         }
-        threads = (
-            [thread for thread in all_threads if (thread["unread_count"] or 0) > 0]
-            if thread_view == "unread"
-            else all_threads
-        )
+        if thread_view == "reply":
+            threads = [thread for thread in all_threads if thread["needs_reply"]]
+        elif thread_view == "unread":
+            threads = [
+                thread for thread in all_threads if (thread["unread_count"] or 0) > 0
+            ]
+        else:
+            threads = all_threads
         return render_template(
             "messages.html",
             threads=threads,
@@ -7549,29 +7554,15 @@ def fetch_thread(thread_id: int):
 
 
 def message_threads_for_user(user_id: int):
-    return get_db().execute(
+    rows = get_db().execute(
         """
         SELECT threads.*, jobs.title, jobs.category, jobs.city, jobs.state,
                client.display_name AS client_name,
                contractor.display_name AS contractor_name,
-               (
-                   SELECT body FROM messages
-                   WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                   ORDER BY messages.id DESC
-                   LIMIT 1
-               ) AS last_message,
-               (
-                   SELECT created_at FROM messages
-                   WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                   ORDER BY messages.id DESC
-                   LIMIT 1
-               ) AS last_message_at,
-               (
-                   SELECT id FROM messages
-                   WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                   ORDER BY messages.id DESC
-                   LIMIT 1
-               ) AS last_message_id,
+               last_visible.body AS last_message,
+               last_visible.created_at AS last_message_at,
+               last_visible.id AS last_message_id,
+               last_visible.sender_id AS last_sender_id,
                (
                    SELECT COUNT(*) FROM messages
                    WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
@@ -7595,13 +7586,29 @@ def message_threads_for_user(user_id: int):
         JOIN jobs ON jobs.id = threads.job_id
         JOIN users AS client ON client.id = threads.client_id
         JOIN users AS contractor ON contractor.id = threads.contractor_id
+        LEFT JOIN messages AS last_visible
+          ON last_visible.id = (
+              SELECT messages.id FROM messages
+              WHERE messages.thread_id = threads.id
+                AND messages.is_hidden = 0
+              ORDER BY messages.id DESC
+              LIMIT 1
+          )
         WHERE threads.client_id = ? OR threads.contractor_id = ?
-        ORDER BY COALESCE(last_message_at, threads.created_at) DESC,
-                 COALESCE(last_message_id, 0) DESC
+        ORDER BY COALESCE(last_visible.created_at, threads.created_at) DESC,
+                 COALESCE(last_visible.id, 0) DESC
         LIMIT 50
         """,
         (user_id, user_id, user_id, user_id),
     ).fetchall()
+    return [
+        {
+            **dict(thread),
+            "needs_reply": bool(thread["last_message_id"])
+            and int(thread["last_sender_id"] or 0) != user_id,
+        }
+        for thread in rows
+    ]
 
 
 def mark_thread_read(

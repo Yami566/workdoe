@@ -285,6 +285,12 @@ formal certification against OWASP ASVS or WCAG.
   contact, address, or recipient field. The Worker report disclosure reuses the
   existing same-origin, authenticated-rate-limit, idempotency, target-visibility,
   and Turnstile controls; administrators still cannot reply.
+- Message reply state is computed only inside the existing participant-scoped
+  50-thread query by comparing the current participant ID with the latest
+  non-hidden message sender. The response emits only `needs_reply`; it does not
+  return the sender ID, create a table or event, notify another recipient,
+  infer urgency or sentiment, or change ranking. The latest visible message is
+  resolved once through the existing `idx_messages_thread_unread` index.
 - Server-rendered marketplace output escapes user-controlled content, with a
   regression that injects script-shaped text across representative views.
 - Project brief readiness is a six-field deterministic projection shared by

@@ -866,7 +866,7 @@ def build_entry_shell_html(
   <link rel="canonical" href="https://workdoe.com/">
   <link rel="icon" href="/deer.svg" type="image/svg+xml">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=workdoe-semantic-project-links">
+  <link rel="stylesheet" href="/styles.css?v=workdoe-message-action-queue">
 {map_styles_html}
 </head>
 <body class="{escape(body_class)}" data-default-mobile-panel="{escape(mobile_default)}">

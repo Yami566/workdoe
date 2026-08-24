@@ -1349,6 +1349,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         )
         self.assertRegex(
             threads_html,
+            r'href="/messages\?view=reply"\s*>\s*<span>Needs reply</span>\s*<strong>0</strong>',
+        )
+        self.assertRegex(
+            threads_html,
             r'href="/messages\?view=unread"\s*>\s*<span>Unread</span>\s*<strong>0</strong>',
         )
         self.assertNotIn("message-metrics", threads_html)
@@ -1356,12 +1360,14 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertNotIn(b"2 message</span>", threads.data)
         self.assertIn(b"<time datetime=", threads.data)
         self.assertIn(b"Thanks, can you start next week?", threads.data)
-        self.assertIn(b"With Jordan Rivera", threads.data)
+        self.assertIn(b"<strong>Jordan Rivera</strong>", threads.data)
         self.assertNotIn(b"Avery Homeowner and Jordan Rivera", threads.data)
         self.assertIn(
-            b'aria-label="Open message thread for Power wash townhouse front steps"',
+            b'aria-label="Open message thread for Power wash townhouse front steps, 2 messages"',
             threads.data,
         )
+        self.assertIn(b'class="message-thread-list"', threads.data)
+        self.assertNotIn(b'class="button secondary compact">Open</span>', threads.data)
         empty_unread = self.client.get("/messages?view=unread")
         self.assertIn(b"No unread messages", empty_unread.data)
         self.assertIn(b"View all messages", empty_unread.data)
@@ -1399,11 +1405,18 @@ class WorkdoeFlowTests(unittest.TestCase):
         contractor_threads_html = contractor_threads.data.decode("utf-8")
         self.assertRegex(
             contractor_threads_html,
+            r'href="/messages\?view=reply"\s*>\s*<span>Needs reply</span>\s*<strong>1</strong>',
+        )
+        self.assertRegex(
+            contractor_threads_html,
             r'href="/messages\?view=unread"\s*>\s*<span>Unread</span>\s*<strong>1</strong>',
         )
         self.assertIn('<span class="unread-chip">1 new</span>', contractor_threads_html)
         self.assertIn("has-unread", contractor_threads_html)
-        self.assertIn("With Avery Homeowner", contractor_threads_html)
+        self.assertIn("<strong>Avery Homeowner</strong>", contractor_threads_html)
+        contractor_reply_html = self.client.get("/messages?view=reply").data.decode("utf-8")
+        self.assertIn("Power wash townhouse front steps", contractor_reply_html)
+        self.assertIn("Needs reply", contractor_reply_html)
         contractor_unread_html = self.client.get("/messages?view=unread").data.decode("utf-8")
         self.assertRegex(
             contractor_unread_html,
@@ -1426,9 +1439,23 @@ class WorkdoeFlowTests(unittest.TestCase):
             r'<span>Unread</span>\s*<strong>0</strong>',
         )
         self.assertNotIn('<span class="unread-chip">1 new</span>', read_threads_html)
+        self.assertIn('class="message-thread-row link-row needs-reply"', read_threads_html)
+        self.assertIn('<span class="message-reply-cue">Needs reply</span>', read_threads_html)
         read_unread_html = self.client.get("/messages?view=unread").data.decode("utf-8")
         self.assertIn("No unread messages", read_unread_html)
         self.assertNotIn("Power wash townhouse front steps", read_unread_html)
+        contractor_response = self.client.post(
+            f"/messages/{thread['id']}",
+            data={"body": "Yes, I can start next week."},
+            follow_redirects=True,
+        )
+        self.assertIn(b"Message sent", contractor_response.data)
+        replied_threads_html = self.client.get("/messages").data.decode("utf-8")
+        self.assertRegex(
+            replied_threads_html,
+            r'<span>Needs reply</span>\s*<strong>0</strong>',
+        )
+        self.assertNotIn('<span class="message-reply-cue">Needs reply</span>', replied_threads_html)
         approved_dashboard = self.client.get("/contractor/dashboard?bids=approved")
         approved_dashboard_html = approved_dashboard.data.decode("utf-8")
         self.assertIn(
@@ -6283,7 +6310,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'/vendor/tabler-icons/seedling.svg', form.data)
         self.assertIn(b'/vendor/tabler-icons/plant.svg', form.data)
         self.assertIn(
-            b'/static/styles.css?v=workdoe-semantic-project-links',
+            b'/static/styles.css?v=workdoe-message-action-queue',
             form.data,
         )
         self.assertIn(b'/static/project-composer.js?v=workdoe-service-tiles', form.data)

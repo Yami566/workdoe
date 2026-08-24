@@ -1387,7 +1387,7 @@ button.compact {
 }
 
 .message-view-tabs {
-  max-width: 336px;
+  max-width: 520px;
 }
 
 .client-job-tabs {
@@ -1406,9 +1406,98 @@ button.compact {
   -webkit-line-clamp: 1;
 }
 
-.job-row.has-unread {
-  border-left: 4px solid var(--signal);
+.message-thread-list {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
   background: var(--surface);
+}
+
+.message-thread-row {
+  display: block;
+  min-width: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-left: 4px solid transparent;
+  color: var(--ink);
+  padding: 13px 16px 13px 12px;
+}
+
+.message-thread-row:last-child {
+  border-bottom: 0;
+}
+
+.message-thread-row:hover,
+.message-thread-row:focus-visible {
+  background: var(--surface-strong);
+  box-shadow: none;
+  text-decoration: none;
+}
+
+.message-thread-row.has-unread {
+  border-left-color: var(--signal);
+}
+
+.message-thread-row.needs-reply {
+  border-left-color: #a15d13;
+}
+
+.message-thread-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.message-thread-topline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.message-thread-topline > strong,
+.message-thread-project,
+.message-thread-state,
+.message-thread-facts {
+  min-width: 0;
+}
+
+.message-thread-topline > strong,
+.message-thread-project,
+.message-thread-state time,
+.message-thread-facts {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-thread-topline > strong {
+  font-size: 0.94rem;
+}
+
+.message-thread-project {
+  font-size: 0.88rem;
+  font-weight: 780;
+}
+
+.message-thread-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.message-reply-cue {
+  color: #7c4f0c;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.message-thread-facts {
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 .unread-chip {
@@ -4661,6 +4750,11 @@ textarea:focus {
   padding-left: 8px;
 }
 
+.message-inbox-link.needs-reply:not(.is-active) {
+  border-left: 4px solid #a15d13;
+  padding-left: 8px;
+}
+
 .message-inbox-topline {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -6564,7 +6658,7 @@ textarea:focus {
   }
 
   .message-view-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .client-job-tabs {

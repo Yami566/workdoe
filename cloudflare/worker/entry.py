@@ -2138,6 +2138,7 @@ class Default(WorkerEntrypoint):
             payload = message_threads_listing_payload(
                 rows,
                 first_query_value(params, "view"),
+                row_value(user, "id"),
             )
             html = message_threads_html(
                 user,
@@ -2174,7 +2175,8 @@ class Default(WorkerEntrypoint):
                     await message_threads_for_user(
                         self.env,
                         row_value(user, "id"),
-                    )
+                    ),
+                    viewer_id=row_value(user, "id"),
                 )
                 thread_payload["inbox_threads"] = inbox_payload["threads"]
                 user = user_with_unread_message_count(
@@ -5582,6 +5584,7 @@ class Default(WorkerEntrypoint):
                 message_threads_listing_payload(
                     rows,
                     first_query_value(params, "view"),
+                    row_value(user, "id"),
                 ),
                 headers={"Cache-Control": "no-store"},
             )
@@ -9795,24 +9798,10 @@ async def message_threads_for_user(env, user_id: int) -> list[dict]:
         SELECT threads.*, jobs.title, jobs.category, jobs.city, jobs.state,
                client.display_name AS client_name,
                contractor.display_name AS contractor_name,
-               (
-                   SELECT body FROM messages
-                   WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                   ORDER BY messages.id DESC
-                   LIMIT 1
-               ) AS last_message,
-               (
-                   SELECT created_at FROM messages
-                   WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                   ORDER BY messages.id DESC
-                   LIMIT 1
-               ) AS last_message_at,
-               (
-                   SELECT id FROM messages
-                   WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
-                   ORDER BY messages.id DESC
-                   LIMIT 1
-               ) AS last_message_id,
+               last_visible.body AS last_message,
+               last_visible.created_at AS last_message_at,
+               last_visible.id AS last_message_id,
+               last_visible.sender_id AS last_sender_id,
                (
                    SELECT COUNT(*) FROM messages
                    WHERE messages.thread_id = threads.id AND messages.is_hidden = 0
@@ -9836,9 +9825,17 @@ async def message_threads_for_user(env, user_id: int) -> list[dict]:
         JOIN jobs ON jobs.id = threads.job_id
         JOIN users AS client ON client.id = threads.client_id
         JOIN users AS contractor ON contractor.id = threads.contractor_id
+        LEFT JOIN messages AS last_visible
+          ON last_visible.id = (
+              SELECT messages.id FROM messages
+              WHERE messages.thread_id = threads.id
+                AND messages.is_hidden = 0
+              ORDER BY messages.id DESC
+              LIMIT 1
+          )
         WHERE threads.client_id = ? OR threads.contractor_id = ?
-        ORDER BY COALESCE(last_message_at, threads.created_at) DESC,
-                 COALESCE(last_message_id, 0) DESC
+        ORDER BY COALESCE(last_visible.created_at, threads.created_at) DESC,
+                 COALESCE(last_visible.id, 0) DESC
         LIMIT 50
         """,
         user_id,

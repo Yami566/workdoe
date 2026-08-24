@@ -171,6 +171,11 @@ deployment has been performed during this stabilization pass.
   Cloudflare Worker. Active work is now the default; paused projects use clear
   owner language; completed-work actions appear only in History; and legacy
   `all`, `open`, and `closed` URLs remain compatible aliases.
+- Turned the approved-match inbox into an action queue in Flask and the
+  Cloudflare Worker. All, Needs reply, and Unread lanes now distinguish a read
+  conversation that still needs a response from a merely unread message;
+  compact rows remove faux nested Open buttons; and latest visible message
+  body, time, ID, and sender now share one indexed lookup instead of four.
 
 ## Verification evidence
 
@@ -501,6 +506,20 @@ deployment has been performed during this stabilization pass.
   history and repeat-work actions, and a default phone page reduced from 2,241
   to 1,014 pixels. The aligned comparison and evidence limits are recorded in
   `docs/ux-audit/2026-08-24-consumer-workspace-priorities/`.
+- The message action queue passed all 232 tests in 80.180 seconds. The complete
+  security/provenance gate found no known Python or Node vulnerabilities, no
+  medium/high Bandit or Ruff findings, no unreviewed secret across 595
+  non-ignored files, and no dependency drift. Cloudflare preflight remained
+  warning-free; all 32 migrations and the existing message-navigation indexes
+  passed, including the latest-visible-message plan without a thread or message
+  table scan. Wrangler 4.125.0 packaged 48 Python modules and 86 assets at
+  919.24 KiB / 169.27 KiB gzip without deploying.
+- Current-run message evidence shows all three lanes on one mobile row with two
+  compact conversations, no redundant Open control, no horizontal overflow,
+  and a 103-pixel reduction in captured page content. Needs reply remained
+  active after read-state changed while Unread cleared. The aligned mobile
+  comparison plus tablet, desktop, and thread captures are recorded in
+  `docs/ux-audit/2026-08-24-message-action-queue/`.
 
 The final release evidence must repeat these checks after migration, Worker,
 performance, accessibility, and live gates run on the final commit.

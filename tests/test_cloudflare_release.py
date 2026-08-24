@@ -1277,6 +1277,39 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertIn("idx_messages_thread_unread", contractor_unread_plan)
             self.assertNotIn("SCAN threads", client_unread_plan)
             self.assertNotIn("SCAN threads", contractor_unread_plan)
+            message_listing_plan = " ".join(
+                row[3]
+                for row in connection.execute(
+                    """
+                    EXPLAIN QUERY PLAN
+                    SELECT threads.id, last_visible.body,
+                           last_visible.created_at,
+                           last_visible.sender_id
+                    FROM threads
+                    JOIN jobs ON jobs.id = threads.job_id
+                    JOIN users AS client ON client.id = threads.client_id
+                    JOIN users AS contractor ON contractor.id = threads.contractor_id
+                    LEFT JOIN messages AS last_visible
+                      ON last_visible.id = (
+                          SELECT messages.id FROM messages
+                          WHERE messages.thread_id = threads.id
+                            AND messages.is_hidden = 0
+                          ORDER BY messages.id DESC
+                          LIMIT 1
+                      )
+                    WHERE threads.client_id = ? OR threads.contractor_id = ?
+                    ORDER BY COALESCE(last_visible.created_at, threads.created_at) DESC,
+                             COALESCE(last_visible.id, 0) DESC
+                    LIMIT 50
+                    """,
+                    (1, 1),
+                )
+            )
+            self.assertIn("idx_threads_client", message_listing_plan)
+            self.assertIn("idx_threads_contractor", message_listing_plan)
+            self.assertIn("idx_messages_thread_unread", message_listing_plan)
+            self.assertNotIn("SCAN threads", message_listing_plan)
+            self.assertNotIn("SCAN messages", message_listing_plan)
             self.assertFalse(connection.execute("PRAGMA foreign_key_check").fetchall())
         finally:
             connection.close()
@@ -3675,7 +3708,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('<meta name="twitter:card" content="summary_large_image">', html)
         self.assertIn('<link rel="icon" href="/deer.svg" type="image/svg+xml">', html)
         self.assertIn('<link rel="manifest" href="/site.webmanifest">', html)
-        self.assertIn('href="/styles.css?v=workdoe-semantic-project-links"', html)
+        self.assertIn('href="/styles.css?v=workdoe-message-action-queue"', html)
         self.assertIn('href="/vendor/leaflet/leaflet.css"', html)
         self.assertIn('href="/vendor/leaflet-markercluster/MarkerCluster.css"', html)
         self.assertIn('src="/vendor/leaflet/leaflet.js"', html)
@@ -4678,6 +4711,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "last_message": "Tuesday works.",
                         "message_count": 2,
                         "unread_count": 1,
+                        "needs_reply": True,
                     }
                 ],
                 "view": "all",
@@ -4686,15 +4720,20 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "messages": 2,
                     "unread": 1,
                     "unread_threads": 1,
+                    "reply_threads": 1,
                 },
             },
         )
         self.assertIn("Messages - Workdoe", messages_html)
         self.assertEqual(module.message_count_label(1), "1 message")
         self.assertEqual(module.message_count_label("2"), "2 messages")
+        self.assertEqual(
+            module.datetime_label("2026-08-16T14:00:00+00:00"),
+            "Aug 16, 2:00 PM",
+        )
         self.assertIn('href="/messages/5"', messages_html)
         self.assertIn(
-            'aria-label="Open message thread for Window cleaning, 1 unread"',
+            'aria-label="Open message thread for Window cleaning, 2 messages, 1 unread"',
             messages_html,
         )
         self.assertIn("2 messages", messages_html)
@@ -4709,12 +4748,18 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             messages_html,
         )
         self.assertIn(
+            '<a class="work-view-tab" href="/messages?view=reply"><span>Needs reply</span><strong>1</strong></a>',
+            messages_html,
+        )
+        self.assertIn(
             '<a class="work-view-tab" href="/messages?view=unread"><span>Unread</span><strong>1</strong></a>',
             messages_html,
         )
-        self.assertIn("With Doe Exterior Care", messages_html)
+        self.assertIn("<strong>Doe Exterior Care</strong>", messages_html)
         self.assertNotIn("Avery Client and Doe Exterior Care", messages_html)
         self.assertNotIn("message-metrics", messages_html)
+        self.assertIn('class="message-thread-list"', messages_html)
+        self.assertNotIn('class="button secondary compact">Read</span>', messages_html)
         self.assertIn("Tuesday works.", messages_html)
         self.assertNotIn("private@example.com", messages_html)
 
@@ -7312,6 +7357,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
     def test_cloudflare_message_thread_helper_matches_local_messaging_contract(self):
         module = load_message_threads_module()
         self.assertEqual(module.parse_thread_id("/api/messages/threads/42"), 42)
+        self.assertEqual(module.normalize_message_thread_view("reply"), "reply")
         self.assertEqual(module.normalize_message_thread_view("unread"), "unread")
         self.assertEqual(module.normalize_message_thread_view("invalid"), "all")
         client = {"id": 8, "role": "client", "status": "active"}
@@ -7354,19 +7400,24 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "client_name": "Avery Client",
                 "contractor_name": "Doe Powerwash",
                 "last_message": "Can you start Tuesday?",
+                "last_message_id": 9,
+                "last_sender_id": 7,
                 "message_count": 2,
                 "unread_count": 1,
                 "client_email": "private@example.com",
-            }
+            },
+            viewer_id=8,
         )
         self.assertEqual(summary["url"], "/messages/42")
         self.assertEqual(summary["message_count"], 2)
         self.assertEqual(summary["unread_count"], 1)
         self.assertTrue(summary["has_unread"])
+        self.assertTrue(summary["needs_reply"])
         self.assertEqual(summary["price_range"], "$450-$650")
         self.assertEqual(summary["timeline"], "Two business days")
         self.assertEqual(summary["availability"], "Tuesday morning")
         self.assertNotIn("client_email", summary)
+        self.assertNotIn("last_sender_id", summary)
         listing_rows = [
             summary,
             {
@@ -7374,6 +7425,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "id": 43,
                 "message_count": 4,
                 "unread_count": 0,
+                "needs_reply": False,
             },
         ]
         unread_listing = module.message_threads_listing_payload(listing_rows, "unread")
@@ -7383,6 +7435,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(unread_listing["stats"]["messages"], 6)
         self.assertEqual(unread_listing["stats"]["unread"], 1)
         self.assertEqual(unread_listing["stats"]["unread_threads"], 1)
+        self.assertEqual(unread_listing["stats"]["reply_threads"], 1)
+        reply_listing = module.message_threads_listing_payload(listing_rows, "reply")
+        self.assertEqual(reply_listing["view"], "reply")
+        self.assertEqual([thread["id"] for thread in reply_listing["threads"]], [42])
         invalid_listing = module.message_threads_listing_payload(listing_rows, "invalid")
         self.assertEqual(invalid_listing["view"], "all")
         self.assertEqual(len(invalid_listing["threads"]), 2)
@@ -10214,7 +10270,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('/vendor/tabler-icons/lawn-mower.svg', html)
         self.assertIn('/vendor/tabler-icons/seedling.svg', html)
         self.assertIn('/vendor/tabler-icons/plant.svg', html)
-        self.assertIn('href="/styles.css?v=workdoe-semantic-project-links"', html)
+        self.assertIn('href="/styles.css?v=workdoe-message-action-queue"', html)
         self.assertIn('name="service_choice"', html)
         self.assertIn('data-selected-service-family', html)
         self.assertIn('class="service-select-control"', html)

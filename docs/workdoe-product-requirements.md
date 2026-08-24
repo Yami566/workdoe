@@ -91,6 +91,11 @@ the relevant workflow through a same-domain email-code sign-in.
   the participant can switch work contexts without returning to the inbox;
   phone and tablet views stay focused on one selected conversation. Every
   thread retains a canonical direct URL and server-rendered fallback.
+- Both approved participants receive All, Needs reply, and Unread inbox lanes.
+  Needs reply is derived from the latest visible message sender and remains
+  active after a message is read until that participant responds. The
+  participant-only projection stores no new state, exposes no sender ID, and
+  never changes lead, bid, contractor, or reputation order.
 - After closing a project, independently confirm completion for an approved
   match; the project becomes verified complete only after the contractor also
   confirms.
