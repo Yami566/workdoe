@@ -32,6 +32,7 @@ IMMUTABLE_STATIC_ASSET_PATHS = [
     "/styles.css",
     "/map.js",
     "/project-composer.js",
+    "/clerk-entry.js",
     "/vendor/*",
     "/deer.svg",
 ]
@@ -39,6 +40,7 @@ VERSIONED_STATIC_ASSET_FILES = [
     "styles.css",
     "map.js",
     "project-composer.js",
+    "clerk-entry.js",
 ]
 
 

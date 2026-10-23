@@ -6,6 +6,9 @@
     "find-work": "contractor"
   };
   var PROFILE_STATE_MAX_AGE_MS = 30 * 60 * 1000;
+  var CLERK_LOAD_TIMEOUT_MS = 15000;
+  var CLERK_LOAD_TIMEOUT_MESSAGE = "Secure email sign-in is taking longer than expected. Close this window and try again.";
+  var CLERK_UNAVAILABLE_MESSAGE = "Secure email sign-in could not load. Refresh the page and try again.";
 
   function selectedIntent(scope) {
     var selected = scope.querySelector('input[name="intent"]:checked');
@@ -60,6 +63,16 @@
     if (message) {
       message.textContent = text || "";
     }
+  }
+
+  function setEntryFailure(node, message) {
+    var loading = typeof node.querySelector === "function"
+      ? node.querySelector(".clerk-entry-loading")
+      : null;
+    if (loading) {
+      loading.textContent = message;
+    }
+    setMessage(node, message);
   }
 
   function profileStateKey() {
@@ -309,15 +322,34 @@
     setMessage(node, "");
   }
 
+  function loadClerkWithTimeout(node) {
+    var timeoutId;
+    var timedOut = new Promise(function (resolve, reject) {
+      timeoutId = window.setTimeout(function () {
+        reject(new Error(CLERK_LOAD_TIMEOUT_MESSAGE));
+      }, CLERK_LOAD_TIMEOUT_MS);
+    });
+    return Promise.race([
+      Promise.resolve(window.Clerk.load(clerkLoadOptions(node))),
+      timedOut
+    ]).then(function (value) {
+      window.clearTimeout(timeoutId);
+      return value;
+    }, function (error) {
+      window.clearTimeout(timeoutId);
+      throw error;
+    });
+  }
+
   async function loadClerk(node) {
     if (!window.Clerk || typeof window.Clerk.load !== "function" || !window.__internal_ClerkUICtor) {
       node.dataset.state = "unavailable";
-      setMessage(node, "Secure email sign-in is not available yet.");
+      setEntryFailure(node, CLERK_UNAVAILABLE_MESSAGE);
       return;
     }
 
     bindProfileState(node);
-    await window.Clerk.load(clerkLoadOptions(node));
+    await loadClerkWithTimeout(node);
 
     if (window.Clerk.isSignedIn) {
       if (node.dataset.clerkMode === "start") {
@@ -333,10 +365,19 @@
 
   function boot() {
     document.querySelectorAll("[data-clerk-entry]").forEach(function (node) {
+      if (node.dataset.clerkInitialized === "true") {
+        return;
+      }
+      node.dataset.clerkInitialized = "true";
       loadClerk(node).catch(function (error) {
-        window.console.error("Clerk sign-in initialization failed.", error);
+        window.console.error("Clerk sign-in initialization failed.");
         node.dataset.state = "failed";
-        setMessage(node, "Secure email sign-in could not load.");
+        setEntryFailure(
+          node,
+          error && error.message === CLERK_LOAD_TIMEOUT_MESSAGE
+            ? CLERK_LOAD_TIMEOUT_MESSAGE
+            : CLERK_UNAVAILABLE_MESSAGE
+        );
       });
     });
   }

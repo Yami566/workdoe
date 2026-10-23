@@ -12,6 +12,9 @@
 /project-composer.js
   Cache-Control: public, max-age=31556952, immutable
 
+/clerk-entry.js
+  Cache-Control: public, max-age=31556952, immutable
+
 # Vendored assets and the Tabler-derived home mark are integrity-pinned.
 /vendor/*
   Cache-Control: public, max-age=31556952, immutable

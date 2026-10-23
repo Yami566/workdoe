@@ -803,7 +803,7 @@ def build_entry_shell_html(
         <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>"""
         auth_scripts_html = f"""  <script defer crossorigin="anonymous" src="{escape(clerk_asset_base_url)}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
   <script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_script_attr} src="{escape(clerk_asset_base_url)}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
-  <script defer src="/clerk-entry.js"></script>"""
+  <script defer src="/clerk-entry.js?v={ASSET_RELEASE_TOKEN}"></script>"""
     if path == "/":
         auth_scripts_html = ""
         right_panel_html = f"""

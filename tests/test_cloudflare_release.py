@@ -1101,7 +1101,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
             self.assertEqual(
                 manifest["cloudflare_targets"]["worker"]["versioned_static_assets"],
-                ["styles.css", "map.js", "project-composer.js"],
+                ["styles.css", "map.js", "project-composer.js", "clerk-entry.js"],
             )
             self.assertEqual(
                 manifest["cloudflare_targets"]["database"]["migrations_dir"],
@@ -1131,6 +1131,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "/styles.css",
                     "/map.js",
                     "/project-composer.js",
+                    "/clerk-entry.js",
                     "/vendor/*",
                     "/deer.svg",
                 ],
@@ -3941,7 +3942,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn(f'src="/map.js?v={module.ASSET_RELEASE_TOKEN}"', html)
         self.assertIn('getAttribute("data-asset-root")', map_script)
         self.assertIn("assetRoot + '/vendor/tabler-icons/home-check.svg\"", map_script)
-        self.assertIn('src="/clerk-entry.js"', html)
+        self.assertIn(f'src="/clerk-entry.js?v={module.ASSET_RELEASE_TOKEN}"', html)
         self.assertIn("data-clerk-entry", html)
         self.assertIn("Loading secure email sign-in...", html)
         self.assertNotIn("data-clerk-email-code-form", html)
