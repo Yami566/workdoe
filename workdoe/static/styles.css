@@ -1822,6 +1822,20 @@ button.compact {
   text-align: center;
 }
 
+.clerk-entry-loading[hidden],
+.clerk-entry-recovery[hidden] {
+  display: none !important;
+}
+
+.clerk-entry-recovery {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(27, 94, 32, 0.22);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  padding: 18px;
+}
+
 .clerk-entry-note {
   padding: 10px 12px;
 }

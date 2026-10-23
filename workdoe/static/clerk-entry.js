@@ -9,6 +9,7 @@
   var CLERK_LOAD_TIMEOUT_MS = 15000;
   var CLERK_LOAD_TIMEOUT_MESSAGE = "Secure email sign-in is taking longer than expected. Close this window and try again.";
   var CLERK_UNAVAILABLE_MESSAGE = "Secure email sign-in could not load. Refresh the page and try again.";
+  var SESSION_REFRESH_MESSAGE = "We could not confirm the previous sign-in. Use a new email code to continue.";
 
   function selectedIntent(scope) {
     var selected = scope.querySelector('input[name="intent"]:checked');
@@ -73,6 +74,53 @@
       loading.textContent = message;
     }
     setMessage(node, message);
+  }
+
+  function sessionRecovery(node) {
+    return entryScope(node).querySelector("[data-clerk-session-recovery]");
+  }
+
+  function showSessionRecovery(node) {
+    var recovery = sessionRecovery(node);
+    if (!recovery) {
+      setEntryFailure(node, SESSION_REFRESH_MESSAGE);
+      return;
+    }
+    hideEntryLoading(node);
+    recovery.hidden = false;
+    recovery.removeAttribute("aria-hidden");
+    node.dataset.state = "session-rejected";
+    setMessage(node, SESSION_REFRESH_MESSAGE);
+  }
+
+  async function restartWithFreshEmailCode(node) {
+    var clerk = window.Clerk;
+    if (!clerk || typeof clerk.signOut !== "function") {
+      setEntryFailure(node, "Refresh this page, then use a new email code.");
+      return;
+    }
+    setMessage(node, "Resetting this browser session...");
+    await clerk.signOut({ redirectUrl: clerkReturnUrl() });
+    window.location.assign(clerkReturnUrl());
+  }
+
+  function bindSessionRecovery(node) {
+    var recovery = sessionRecovery(node);
+    if (!recovery || recovery.dataset.bound === "true") {
+      return;
+    }
+    recovery.dataset.bound = "true";
+    var button = recovery.querySelector("[data-clerk-session-retry]");
+    if (!button) {
+      return;
+    }
+    button.addEventListener("click", function () {
+      button.disabled = true;
+      restartWithFreshEmailCode(node).catch(function () {
+        button.disabled = false;
+        setMessage(node, "Refresh this page, then use a new email code.");
+      });
+    });
   }
 
   function hideEntryLoading(node) {
@@ -195,7 +243,9 @@
       return {};
     });
     if (!response.ok) {
-      throw new Error(payload.error || "Workdoe could not finish sign-in.");
+      var error = new Error(payload.error || "Workdoe could not finish sign-in.");
+      error.status = response.status;
+      throw error;
     }
     return payload;
   }
@@ -248,6 +298,10 @@
       return true;
     } catch (error) {
       delete node.dataset.clerkOnboarding;
+      if (error && error.status === 401) {
+        showSessionRecovery(node);
+        return false;
+      }
       setMessage(node, error.message || "Workdoe could not finish sign-in.");
       return false;
     }
@@ -278,6 +332,10 @@
       return true;
     } catch (error) {
       delete node.dataset.clerkOnboarding;
+      if (error && error.status === 401) {
+        showSessionRecovery(node);
+        return false;
+      }
       setMessage(node, error.message || "Workdoe could not finish sign-in.");
       return false;
     }
@@ -360,6 +418,7 @@
     }
 
     bindProfileState(node);
+    bindSessionRecovery(node);
     await loadClerkWithTimeout(node);
 
     if (window.Clerk.isSignedIn) {

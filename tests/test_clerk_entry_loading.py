@@ -19,9 +19,12 @@ class ClerkEntryLoadingTests(unittest.TestCase):
             const fs = require('node:fs');
             const vm = require('node:vm');
             const source = fs.readFileSync(process.argv[1], 'utf8');
-            const settle = async () => { for (let step = 0; step < 4; step += 1) await new Promise(setImmediate); };
+            const settle = async () => {
+              for (let step = 0; step < 12; step += 1) await new Promise(setImmediate);
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            };
 
-            function fixture(clerk) {
+            function fixture(clerk, sessionResponse) {
               const status = { textContent: 'Loading secure email sign-in...' };
               const loading = {
                 textContent: 'Loading secure email sign-in...',
@@ -30,12 +33,25 @@ class ClerkEntryLoadingTests(unittest.TestCase):
                 setAttribute(name, value) { this.attributes[name] = value; }
               };
               const node = {
-                dataset: {},
+                dataset: { sessionUrl: '/api/auth/session' },
                 querySelector: (selector) => selector === '.clerk-entry-loading' ? loading : null,
                 closest: () => scope
               };
+              const retry = { disabled: false, addEventListener(type, callback) { this.callback = callback; } };
+              const recovery = {
+                dataset: {},
+                hidden: true,
+                attributes: {},
+                querySelector: (selector) => selector === '[data-clerk-session-retry]' ? retry : null,
+                setAttribute(name, value) { this.attributes[name] = value; },
+                removeAttribute(name) { delete this.attributes[name]; }
+              };
               const scope = {
-                querySelector: (selector) => selector === '[data-clerk-onboarding-message]' ? status : null,
+                querySelector: (selector) => {
+                  if (selector === '[data-clerk-onboarding-message]') return status;
+                  if (selector === '[data-clerk-session-recovery]') return recovery;
+                  return null;
+                },
                 addEventListener() {}
               };
               const timers = [];
@@ -44,13 +60,14 @@ class ClerkEntryLoadingTests(unittest.TestCase):
                 __internal_ClerkUICtor: function FixtureUi() {},
                 console: { error() {} },
                 location: { pathname: '/login', search: '', assign() {} },
+                fetch: async () => sessionResponse || { ok: true, status: 200, json: async () => ({ workdoe_user: { role: 'client' } }) },
                 sessionStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
                 setTimeout: (callback) => { timers.push(callback); return timers.length; },
                 clearTimeout() {}
               };
               const document = { readyState: 'complete', querySelectorAll: () => [node] };
               vm.runInNewContext(source, { window, document, Promise, URLSearchParams });
-              return { node, status, loading, timers };
+              return { node, status, loading, recovery, retry, timers };
             }
 
             (async () => {
@@ -82,6 +99,15 @@ class ClerkEntryLoadingTests(unittest.TestCase):
               assert.equal(mounted.node.dataset.state, 'ready');
               assert.equal(mounted.loading.hidden, true);
               assert.equal(mounted.loading.attributes['aria-hidden'], 'true');
+
+              const rejected = fixture(
+                { isSignedIn: true, load: () => Promise.resolve(), mountSignIn() {} },
+                { ok: false, status: 401, json: async () => ({ error: 'Session token not verified.' }) }
+              );
+              await settle();
+              assert.equal(rejected.node.dataset.state, 'session-rejected');
+              assert.equal(rejected.recovery.hidden, false);
+              assert.match(rejected.status.textContent, /Use a new email code/);
             })().catch((error) => { console.error(error.stack); process.exitCode = 1; });
             """
         )

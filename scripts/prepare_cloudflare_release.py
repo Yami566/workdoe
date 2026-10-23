@@ -42,6 +42,10 @@ VERSIONED_STATIC_ASSET_FILES = [
     "project-composer.js",
     "clerk-entry.js",
 ]
+ASSET_RELEASE_MODULE_RELATIVE_PATHS = [
+    Path("workdoe/asset_release.py"),
+    Path("cloudflare/worker/asset_release.py"),
+]
 
 
 def valid_d1_id(value: str | None) -> bool:
@@ -83,6 +87,24 @@ def static_asset_release_token(repo_root: Path) -> str:
         digest.update((static_root / filename).read_bytes())
         digest.update(b"\0")
     return f"asset-{digest.hexdigest()[:16]}"
+
+
+def asset_release_module_source(asset_release_token: str) -> str:
+    return (
+        "from __future__ import annotations\n\n"
+        f'ASSET_RELEASE_TOKEN = "{asset_release_token}"\n'
+    )
+
+
+def sync_asset_release_modules(repo_root: Path, asset_release_token: str) -> dict[str, bool]:
+    source = asset_release_module_source(asset_release_token)
+    return {
+        str(relative_path).replace("\\", "/"): write_text_if_changed(
+            repo_root / relative_path,
+            source,
+        )
+        for relative_path in ASSET_RELEASE_MODULE_RELATIVE_PATHS
+    }
 
 
 def immutable_baseline_sql(repo_root: Path) -> str:
@@ -409,6 +431,12 @@ def prepare_release(repo_root: Path = REPO_ROOT, output_root: Path | None = None
     manifest_changed = write_text_if_changed(manifest_path, manifest_json)
     wrangler_changed = write_text_if_changed(wrangler_path, wrangler_json)
     dev_vars_example_changed = write_text_if_changed(dev_vars_example_path, dev_vars_example)
+    asset_release_modules_changed = {}
+    if output_root.resolve() == (repo_root / "cloudflare").resolve():
+        asset_release_modules_changed = sync_asset_release_modules(
+            repo_root,
+            asset_release_token,
+        )
 
     return {
         "migration": str(migration_path),
@@ -419,6 +447,7 @@ def prepare_release(repo_root: Path = REPO_ROOT, output_root: Path | None = None
         "manifest_changed": manifest_changed,
         "wrangler_changed": wrangler_changed,
         "dev_vars_example_changed": dev_vars_example_changed,
+        "asset_release_modules_changed": asset_release_modules_changed,
         "migration_sha256": manifest["cloudflare_targets"]["database"]["migration_sha256"],
         "migration_chain_sha256": manifest["cloudflare_targets"]["database"][
             "migration_chain_sha256"

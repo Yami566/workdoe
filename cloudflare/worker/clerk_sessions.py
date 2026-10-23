@@ -6,6 +6,8 @@ import json
 import time
 from urllib.parse import urlparse
 
+CLERK_BACKEND_JWKS_URL = "https://api.clerk.com/v1/jwks"
+
 
 class SessionVerificationError(ValueError):
     pass
@@ -185,22 +187,121 @@ async def verify_rs256_signature_with_webcrypto(
         ) from exc
 
 
+async def fetch_clerk_jwks(secret_key: str) -> dict:
+    if not str(secret_key or "").strip():
+        raise SessionVerificationError("CLERK_SECRET_KEY is required for Clerk JWKS lookup.")
+    try:
+        from js import Object, fetch
+        from pyodide.ffi import to_js
+    except Exception as exc:
+        raise SessionVerificationError(
+            "Clerk JWKS lookup requires the Workers JavaScript runtime."
+        ) from exc
+    options = to_js(
+        {
+            "headers": {
+                "Accept": "application/json",
+                "Authorization": f"Bearer {str(secret_key).strip()}",
+            }
+        },
+        dict_converter=Object.fromEntries,
+    )
+    try:
+        response = await fetch(CLERK_BACKEND_JWKS_URL, options)
+        if not response.ok:
+            raise SessionVerificationError("Clerk JWKS lookup was not accepted.")
+        payload = await response.json()
+        payload = payload.to_py() if hasattr(payload, "to_py") else payload
+    except SessionVerificationError:
+        raise
+    except Exception as exc:
+        raise SessionVerificationError("Clerk JWKS lookup failed.") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("keys"), list):
+        raise SessionVerificationError("Clerk JWKS response is invalid.")
+    return payload
+
+
+def clerk_jwk_for_key_id(jwks: dict, key_id: str) -> dict:
+    for key in jwks.get("keys", []):
+        if isinstance(key, dict) and str(key.get("kid") or "") == str(key_id or ""):
+            return key
+    raise SessionVerificationError("Clerk JWKS does not contain the session signing key.")
+
+
+async def verify_rs256_signature_with_jwk(
+    jwk: dict,
+    signing_input: str,
+    signature: bytes,
+) -> bool:
+    try:
+        from js import Object, Uint8Array, crypto
+        from pyodide.ffi import to_js
+    except Exception as exc:
+        raise SessionVerificationError(
+            "Web Crypto is required for Clerk session signature verification."
+        ) from exc
+
+    algorithm = to_js(
+        {"name": "RSASSA-PKCS1-v1_5", "hash": "SHA-256"},
+        dict_converter=Object.fromEntries,
+    )
+    try:
+        public_key = await crypto.subtle.importKey(
+            "jwk",
+            to_js(jwk, dict_converter=Object.fromEntries),
+            algorithm,
+            False,
+            to_js(["verify"]),
+        )
+        return bool(
+            await crypto.subtle.verify(
+                algorithm,
+                public_key,
+                Uint8Array.new(list(signature)).buffer,
+                Uint8Array.new(list(signing_input.encode("ascii"))).buffer,
+            )
+        )
+    except Exception as exc:
+        raise SessionVerificationError(
+            "Clerk JWKS session signature verification failed."
+        ) from exc
+
+
 async def verify_clerk_session_token(
     token: str,
     jwt_key: str,
     authorized_parties: list[str],
     now: int | None = None,
     signature_verifier=None,
+    secret_key: str = "",
+    jwks_fetcher=None,
+    jwk_signature_verifier=None,
 ) -> dict:
     if not token:
         raise SessionVerificationError("Session token is required.")
-    if not jwt_key:
-        raise SessionVerificationError("CLERK_JWT_KEY is required.")
-    _, claims, signing_input, signature = decode_unverified_jwt(token)
-    verifier = signature_verifier or verify_rs256_signature_with_webcrypto
-    verified = verifier(jwt_key, signing_input, signature)
-    if inspect.isawaitable(verified):
-        verified = await verified
+    header, claims, signing_input, signature = decode_unverified_jwt(token)
+    verified = False
+    if jwt_key:
+        verifier = signature_verifier or verify_rs256_signature_with_webcrypto
+        try:
+            verified = verifier(jwt_key, signing_input, signature)
+            if inspect.isawaitable(verified):
+                verified = await verified
+        except SessionVerificationError:
+            verified = False
+    if not verified and secret_key:
+        fetcher = jwks_fetcher or fetch_clerk_jwks
+        jwks = fetcher(secret_key)
+        if inspect.isawaitable(jwks):
+            jwks = await jwks
+        verifier = jwk_signature_verifier or verify_rs256_signature_with_jwk
+        verified = verifier(
+            clerk_jwk_for_key_id(jwks, str(header.get("kid") or "")),
+            signing_input,
+            signature,
+        )
+        if inspect.isawaitable(verified):
+            verified = await verified
     if not verified:
         raise SessionVerificationError("Session token signature is invalid.")
     return validate_clerk_session_claims(

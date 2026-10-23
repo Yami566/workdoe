@@ -1261,6 +1261,24 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
         )
 
+    def test_release_prep_syncs_asset_release_modules(self):
+        release_module = load_release_script()
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            token = "asset-0123456789abcdef"
+            changes = release_module.sync_asset_release_modules(repo_root, token)
+
+            self.assertEqual(
+                set(changes),
+                {"workdoe/asset_release.py", "cloudflare/worker/asset_release.py"},
+            )
+            self.assertTrue(all(changes.values()))
+            for relative_path in changes:
+                self.assertIn(
+                    token,
+                    (repo_root / relative_path).read_text(encoding="utf-8"),
+                )
+
     def test_fresh_d1_database_accepts_complete_migration_chain(self):
         migrations_dir = ROOT / "cloudflare" / "d1" / "migrations"
         migration_paths = sorted(migrations_dir.glob("[0-9][0-9][0-9][0-9]_*.sql"))
@@ -3475,6 +3493,27 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
         )
         self.assertEqual(verified["sub"], "user_workdoe_123")
+
+        async def current_jwks(secret_key):
+            self.assertEqual(secret_key, "sk_live_workdoe")
+            return {"keys": [{"kid": "kid_workdoe", "kty": "RSA", "n": "test", "e": "AQAB"}]}
+
+        async def accepts_jwk(jwk, signing_input, signature):
+            return jwk["kid"] == "kid_workdoe" and signature == b"workdoe-signature"
+
+        verified_with_current_jwks = asyncio.run(
+            module.verify_clerk_session_token(
+                token,
+                jwt_key="stale-pem-key",
+                secret_key="sk_live_workdoe",
+                authorized_parties=["https://workdoe.com"],
+                now=1700000000,
+                signature_verifier=lambda *args: False,
+                jwks_fetcher=current_jwks,
+                jwk_signature_verifier=accepts_jwk,
+            )
+        )
+        self.assertEqual(verified_with_current_jwks["sid"], "sess_workdoe_123")
 
         async def rejects_signature(jwt_key, signing_input, signature):
             return False

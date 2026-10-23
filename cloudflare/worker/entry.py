@@ -5828,6 +5828,7 @@ class Default(WorkerEntrypoint):
         return await verify_clerk_session_token(
             token=token,
             jwt_key=getattr(self.env, "CLERK_JWT_KEY", ""),
+            secret_key=getattr(self.env, "CLERK_SECRET_KEY", ""),
             authorized_parties=authorized_parties_from_env(self.env, request.url),
         )
 

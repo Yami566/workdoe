@@ -800,6 +800,10 @@ def build_entry_shell_html(
         >
           <p class="help-text clerk-entry-loading">Loading secure email sign-in...</p>
         </div>
+        <div class="clerk-entry-recovery" data-clerk-session-recovery hidden aria-hidden="true">
+          <p class="help-text">We could not confirm the previous sign-in. Use a new email code to continue.</p>
+          <button class="button secondary" type="button" data-clerk-session-retry>Use a new email code</button>
+        </div>
         <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>"""
         auth_scripts_html = f"""  <script defer crossorigin="anonymous" src="{escape(clerk_asset_base_url)}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
   <script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_script_attr} src="{escape(clerk_asset_base_url)}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
