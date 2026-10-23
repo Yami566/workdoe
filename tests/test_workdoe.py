@@ -8,6 +8,7 @@ import sqlite3
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -47,6 +48,7 @@ from workdoe.service_scope import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+FUTURE_DESIRED_DATE = (datetime.now(tz=UTC).date() + timedelta(days=30)).isoformat()
 
 
 class WorkdoeFlowTests(unittest.TestCase):
@@ -676,7 +678,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "city": "Alexandria",
                 "state": "VA",
                 "zip_code": "22314",
-                "desired_date": "2026-09-01",
+                "desired_date": FUTURE_DESIRED_DATE,
                 "description": "Need first-floor storefront windows cleaned before reopening.",
                 "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
                 "photos": (
@@ -748,7 +750,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "city": "Washington",
                 "state": "DC",
                 "zip_code": "20003",
-                "desired_date": "2026-09-01",
+                "desired_date": FUTURE_DESIRED_DATE,
                 "description": "Need the patio cleaned before weekend guests arrive.",
                 "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
             },
@@ -797,7 +799,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "city": "Alexandria",
                 "state": "VA",
                 "zip_code": "22314",
-                "desired_date": "2026-09-03",
+                "desired_date": FUTURE_DESIRED_DATE,
                 "description": "Need patio doors and exterior glass cleaned before weekend guests arrive.",
                 "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
                 "photos": (
@@ -5214,7 +5216,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "city": "Washington",
                 "state": "DC",
                 "zip_code": "20003",
-                "desired_date": "2026-09-10",
+                "desired_date": FUTURE_DESIRED_DATE,
                 "budget_min": "450",
                 "budget_max": "700",
                 "description": "Clean the front walk and steps before a family gathering.",
@@ -5284,7 +5286,7 @@ class WorkdoeFlowTests(unittest.TestCase):
                 "city": "Washington",
                 "state": "DC",
                 "zip_code": "20003",
-                "desired_date": "2026-09-10",
+                "desired_date": FUTURE_DESIRED_DATE,
                 "budget_min": "450",
                 "budget_max": "700",
                 "description": "Clean the front walk and steps before a family gathering.",
