@@ -19,8 +19,8 @@ on:
         required: true
         type: boolean
         default: false
-      restricted_signup_confirmed:
-        description: Confirm Clerk Restricted sign-up mode is enabled.
+      public_signup_confirmed:
+        description: Confirm Clerk Access mode is Open for public email-code sign-up.
         required: true
         type: boolean
         default: false
@@ -58,7 +58,7 @@ jobs:
           test "${{ github.ref }}" = "refs/heads/main"
           test "${{ inputs.deploy }}" = "DEPLOY"
           test "${{ inputs.clerk_proxy_confirmed }}" = "true"
-          test "${{ inputs.restricted_signup_confirmed }}" = "true"
+          test "${{ inputs.public_signup_confirmed }}" = "true"
           test "${{ inputs.email_code_only_confirmed }}" = "true"
           test "${{ inputs.legal_consent_confirmed }}" = "true"
 

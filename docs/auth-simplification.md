@@ -34,7 +34,7 @@ Clerk's current docs support a combined sign-in-or-up flow and email-code/passwo
 - Sign in with email enabled.
 - Email-code OTP as the primary strategy.
 - Password sign-in disabled.
-- Restricted sign-up mode enabled for the controlled beta.
+- Open access mode enabled for public email-code sign-up.
 - No username requirement.
 - `https://workdoe.com/create-account` configured as Clerk's custom sign-up URL,
   so application invitation tickets return to the Workdoe role form.
@@ -42,8 +42,8 @@ Clerk's current docs support a combined sign-in-or-up flow and email-code/passwo
   `/login`, not a public jump to a hosted Clerk login page.
 - `CLERK_FRONTEND_API_URL=https://workdoe.com/__clerk` and `CLERK_PROXY_URL=https://workdoe.com/__clerk` so the in-page mount uses Workdoe's same-domain Clerk Frontend API proxy.
 - `CLERK_FAPI=https://frontend-api.clerk.dev` as the upstream Clerk Frontend API target for the Worker proxy.
-- Invitation-ticket sign-up for new controlled-beta accounts; normal email-code
-  sign-in for existing invited accounts.
+- Public email-code sign-up for new accounts and normal email-code sign-in for
+  existing accounts.
 - `users.auth_provider = 'clerk'` and `users.external_subject = <Clerk user id>` after identity verification.
 - Workdoe-owned role/profile creation after Clerk identity verification.
 - Clerk's prebuilt `SignIn` with `withSignUp: true` and hash routing on Workdoe entry pages.

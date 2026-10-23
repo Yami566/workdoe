@@ -224,7 +224,7 @@ def clerk_confirmations_from_proof(proof_path: Path) -> dict[str, bool]:
     confirmed = not clerk_proxy_proof_error(proof_path)
     return {
         "clerk_proxy_confirmed": confirmed,
-        "restricted_signup_confirmed": confirmed,
+        "public_signup_confirmed": confirmed,
         "email_code_only_confirmed": confirmed,
         "legal_consent_confirmed": confirmed,
     }

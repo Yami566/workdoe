@@ -210,7 +210,7 @@ Worker version or deploy immediately, so rotations must be treated as releases.
 4. For Clerk, rotate `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`,
    `CLERK_JWT_KEY`, and `CLERK_WEBHOOK_SECRET` as one production-instance
    change.
-   Reconfirm Restricted sign-up, the Workdoe custom sign-up URL, email-code
+   Reconfirm Open access mode, the Workdoe custom sign-up URL, email-code
    sign-in, disabled password sign-in, and the `workdoe.com/__clerk` proxy.
 5. For Turnstile, rotate the site/secret pair and verify allowed hostnames and
    server-side action checks.
@@ -425,5 +425,5 @@ placeholders are resolved, the drills above pass, and evidence is reviewed.
 - [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/)
 - [Workers secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
 - [Cloudflare API tokens](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)
-- [Clerk restricted sign-up](https://clerk.com/docs/guides/secure/restricting-access)
+- [Clerk access settings](https://clerk.com/docs/guides/configure/auth-strategies/sign-up-sign-in-options)
 - [Clerk application invitations](https://clerk.com/docs/guides/development/custom-flows/authentication/application-invitations)

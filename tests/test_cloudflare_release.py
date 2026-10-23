@@ -1864,7 +1864,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://workdoe.com/__clerk",
                         "confirmed": True,
-                        "restricted_sign_up_mode": True,
+                        "public_sign_up_enabled": True,
                         "email_code_sign_in": True,
                         "password_sign_in_disabled": True,
                         "custom_sign_up_url": "https://workdoe.com/create-account",
@@ -1906,7 +1906,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
             self.assertIn(
                 "python scripts\\cloudflare_clerk_proxy_proof.py --confirm "
-                "--confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent",
+                "--confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent",
                 invalid["next_steps"],
             )
 
@@ -2108,7 +2108,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
             with self.assertRaisesRegex(module.ClerkProxyProofError, "Use --confirm"):
                 module.build_proof(confirmed=False)
-            with self.assertRaisesRegex(module.ClerkProxyProofError, "Restricted sign-up"):
+            with self.assertRaisesRegex(module.ClerkProxyProofError, "Open access mode"):
                 module.build_proof(confirmed=True)
             with self.assertRaisesRegex(
                 module.ClerkProxyProofError,
@@ -2121,14 +2121,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             with self.assertRaisesRegex(module.ClerkProxyProofError, "Legal requires express consent"):
                 module.build_proof(
                     confirmed=True,
-                    restricted_sign_up_mode=True,
+                    public_sign_up_enabled=True,
                     email_code_sign_in=True,
                     password_sign_in_disabled=True,
                 )
             with self.assertRaisesRegex(module.ClerkProxyProofError, "Terms URL"):
                 module.build_proof(
                     confirmed=True,
-                    restricted_sign_up_mode=True,
+                    public_sign_up_enabled=True,
                     email_code_sign_in=True,
                     password_sign_in_disabled=True,
                     express_legal_consent=True,
@@ -2137,7 +2137,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
             proof = module.build_proof(
                 confirmed=True,
-                restricted_sign_up_mode=True,
+                public_sign_up_enabled=True,
                 email_code_sign_in=True,
                 password_sign_in_disabled=True,
                 express_legal_consent=True,
@@ -2153,7 +2153,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             saved = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertEqual(saved["domain"], "workdoe.com")
             self.assertEqual(saved["frontend_api_proxy_url"], "https://workdoe.com/__clerk")
-            self.assertTrue(saved["restricted_sign_up_mode"])
+            self.assertTrue(saved["public_sign_up_enabled"])
             self.assertTrue(saved["email_code_sign_in"])
             self.assertTrue(saved["password_sign_in_disabled"])
             self.assertEqual(saved["custom_sign_up_url"], "https://workdoe.com/create-account")
@@ -8413,7 +8413,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             result.checks,
         )
         self.assertIn(
-            "Cloudflare Clerk controlled-beta proof helper is confirm-gated",
+            "Cloudflare Clerk public-sign-up proof helper is confirm-gated",
             result.checks,
         )
         self.assertIn(
@@ -8467,7 +8467,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Cloudflare secret presence was not checked; pass --secret-list-json for deploy proof.", local.warnings)
         self.assertIn("wrangler secret put WORKDOE_SECRET_KEY", local.next_steps)
         self.assertIn(
-            "python ..\\scripts\\cloudflare_clerk_proxy_proof.py --confirm --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent --output ..\\clerk-proxy-proof.local.json",
+            "python ..\\scripts\\cloudflare_clerk_proxy_proof.py --confirm --confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent --output ..\\clerk-proxy-proof.local.json",
             local.next_steps,
         )
         for command in (
@@ -8533,7 +8533,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://workdoe.com/__clerk",
                         "confirmed": True,
-                        "restricted_sign_up_mode": True,
+                        "public_sign_up_enabled": True,
                         "email_code_sign_in": True,
                         "password_sign_in_disabled": True,
                         "custom_sign_up_url": "https://workdoe.com/create-account",
@@ -8591,7 +8591,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://clerk.workdoe.com",
                         "confirmed": True,
-                        "restricted_sign_up_mode": True,
+                        "public_sign_up_enabled": True,
                         "email_code_sign_in": True,
                         "password_sign_in_disabled": True,
                         "custom_sign_up_url": "https://workdoe.com/create-account",
@@ -8626,7 +8626,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://workdoe.com/__clerk",
                         "confirmed": True,
-                        "restricted_sign_up_mode": True,
+                        "public_sign_up_enabled": True,
                         "email_code_sign_in": True,
                         "password_sign_in_disabled": True,
                         "custom_sign_up_url": "https://workdoe.com/create-account",
@@ -8778,7 +8778,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://workdoe.com/__clerk",
                         "confirmed": True,
-                        "restricted_sign_up_mode": True,
+                        "public_sign_up_enabled": True,
                         "email_code_sign_in": True,
                         "password_sign_in_disabled": True,
                         "custom_sign_up_url": "https://workdoe.com/create-account",
@@ -8821,7 +8821,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://workdoe.com/__clerk",
                         "confirmed": True,
-                        "restricted_sign_up_mode": True,
+                        "public_sign_up_enabled": True,
                         "email_code_sign_in": True,
                         "password_sign_in_disabled": True,
                         "custom_sign_up_url": "https://workdoe.com/create-account",
@@ -8859,7 +8859,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("github.ref == 'refs/heads/main'", workflow)
         self.assertIn('test "${{ inputs.deploy }}" = "DEPLOY"', workflow)
         self.assertIn('test "${{ inputs.clerk_proxy_confirmed }}" = "true"', workflow)
-        self.assertIn('test "${{ inputs.restricted_signup_confirmed }}" = "true"', workflow)
+        self.assertIn('test "${{ inputs.public_signup_confirmed }}" = "true"', workflow)
         self.assertIn('test "${{ inputs.email_code_only_confirmed }}" = "true"', workflow)
         self.assertIn('test "${{ inputs.legal_consent_confirmed }}" = "true"', workflow)
         self.assertNotIn("inputs.clerk_proxy_url", workflow)
@@ -9102,17 +9102,17 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("--ref", plan["command"])
         self.assertIn("deploy=DEPLOY", plan["command"])
         self.assertIn("clerk_proxy_confirmed=false", plan["command"])
-        self.assertIn("restricted_signup_confirmed=false", plan["command"])
+        self.assertIn("public_signup_confirmed=false", plan["command"])
         self.assertIn("email_code_only_confirmed=false", plan["command"])
         self.assertIn("legal_consent_confirmed=false", plan["command"])
         confirmed_command = module.dispatch_command(
             clerk_proxy_confirmed=True,
-            restricted_signup_confirmed=True,
+            public_signup_confirmed=True,
             email_code_only_confirmed=True,
             legal_consent_confirmed=True,
         )
         self.assertIn("clerk_proxy_confirmed=true", confirmed_command)
-        self.assertIn("restricted_signup_confirmed=true", confirmed_command)
+        self.assertIn("public_signup_confirmed=true", confirmed_command)
         self.assertIn("email_code_only_confirmed=true", confirmed_command)
         self.assertIn("legal_consent_confirmed=true", confirmed_command)
         self.assertNotIn("clerk_proxy_url=https://workdoe.com/__clerk", plan["command"])
@@ -9174,7 +9174,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "ref": "main",
                 "operator_confirmations": {
                     "clerk_proxy_confirmed": False,
-                    "restricted_signup_confirmed": False,
+                    "public_signup_confirmed": False,
                     "email_code_only_confirmed": False,
                     "legal_consent_confirmed": False,
                 },
@@ -9183,7 +9183,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "git": {},
                 "doctor": {},
                 "blockers": [
-                    "Dispatch requires explicit confirmation of the Clerk same-domain proxy, restricted sign-up, email-code-only sign-in, and express legal consent settings."
+                    "Dispatch requires explicit confirmation of the Clerk same-domain proxy, Open access mode, email-code-only sign-in, and express legal consent settings."
                 ],
             }
             module.run_dispatch = lambda *args, **kwargs: self.fail(
@@ -9205,7 +9205,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
         self.assertFalse(payload["ready_to_dispatch"])
         self.assertIn(
-            "Dispatch requires explicit confirmation of the Clerk same-domain proxy, restricted sign-up, email-code-only sign-in, and express legal consent settings.",
+            "Dispatch requires explicit confirmation of the Clerk same-domain proxy, Open access mode, email-code-only sign-in, and express legal consent settings.",
             payload["blockers"],
         )
 
@@ -9365,7 +9365,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         key: kwargs[key]
                         for key in (
                             "clerk_proxy_confirmed",
-                            "restricted_signup_confirmed",
+                            "public_signup_confirmed",
                             "email_code_only_confirmed",
                             "legal_consent_confirmed",
                         )
@@ -9400,7 +9400,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             captured_confirmations,
             {
                 "clerk_proxy_confirmed": True,
-                "restricted_signup_confirmed": True,
+                "public_signup_confirmed": True,
                 "email_code_only_confirmed": True,
                 "legal_consent_confirmed": True,
             },
@@ -10379,7 +10379,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://workdoe.com/__clerk",
                         "confirmed": True,
-                        "restricted_sign_up_mode": True,
+                        "public_sign_up_enabled": True,
                         "email_code_sign_in": True,
                         "password_sign_in_disabled": True,
                         "custom_sign_up_url": "https://workdoe.com/create-account",
@@ -10436,7 +10436,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         "domain": "workdoe.com",
                         "frontend_api_proxy_url": "https://workdoe.com/__clerk",
                         "confirmed": True,
-                        "restricted_sign_up_mode": True,
+                        "public_sign_up_enabled": True,
                         "email_code_sign_in": True,
                         "password_sign_in_disabled": True,
                         "custom_sign_up_url": "https://workdoe.com/create-account",

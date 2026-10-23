@@ -36,7 +36,7 @@ def build_proof(
     domain: str = WORKDOE_PUBLIC_DOMAIN,
     proxy_url: str = DEFAULT_PROXY_URL,
     confirmed: bool = False,
-    restricted_sign_up_mode: bool = False,
+    public_sign_up_enabled: bool = False,
     email_code_sign_in: bool = False,
     password_sign_in_disabled: bool = False,
     custom_sign_up_url: str = DEFAULT_SIGN_UP_URL,
@@ -56,8 +56,8 @@ def build_proof(
         raise ClerkProxyProofError(
             "Use --confirm only after Clerk Domains shows https://workdoe.com/__clerk."
         )
-    if restricted_sign_up_mode is not True:
-        raise ClerkProxyProofError("Confirm Clerk Restricted sign-up mode before release.")
+    if public_sign_up_enabled is not True:
+        raise ClerkProxyProofError("Confirm Clerk Open access mode before release.")
     if email_code_sign_in is not True or password_sign_in_disabled is not True:
         raise ClerkProxyProofError(
             "Confirm email-code sign-in is enabled and password sign-in is disabled."
@@ -81,7 +81,7 @@ def build_proof(
         "domain": normalized_domain,
         "frontend_api_proxy_url": normalized_proxy_url,
         "confirmed": True,
-        "restricted_sign_up_mode": True,
+        "public_sign_up_enabled": True,
         "email_code_sign_in": True,
         "password_sign_in_disabled": True,
         "custom_sign_up_url": normalized_sign_up_url,
@@ -108,7 +108,7 @@ def dry_run_payload(output: Path, domain: str, proxy_url: str) -> dict:
         "domain": str(domain or "").strip(),
         "frontend_api_proxy_url": str(proxy_url or "").strip(),
         "next_step": (
-            "Confirm Clerk uses the Workdoe proxy, Restricted sign-up mode, the Workdoe "
+            "Confirm Clerk uses the Workdoe proxy, Open access mode, the Workdoe "
             "custom sign-up URL, email-code-only access, and express legal consent for "
             "the Workdoe policy URLs; then rerun with all confirm flags."
         ),
@@ -137,9 +137,9 @@ def main() -> int:
         help="Write the proof file after visually confirming Clerk Domains uses the Workdoe proxy URL.",
     )
     parser.add_argument(
-        "--confirm-restricted-sign-up",
+        "--confirm-public-sign-up",
         action="store_true",
-        help="Confirm Clerk Restrictions has Restricted sign-up mode enabled.",
+        help="Confirm Clerk Access mode is Open so public email-code sign-up is available.",
     )
     parser.add_argument(
         "--confirm-email-code-only",
@@ -205,7 +205,7 @@ def main() -> int:
             domain=args.domain,
             proxy_url=args.proxy_url,
             confirmed=True,
-            restricted_sign_up_mode=args.confirm_restricted_sign_up,
+            public_sign_up_enabled=args.confirm_public_sign_up,
             email_code_sign_in=args.confirm_email_code_only,
             password_sign_in_disabled=args.confirm_email_code_only,
             custom_sign_up_url=args.custom_sign_up_url,

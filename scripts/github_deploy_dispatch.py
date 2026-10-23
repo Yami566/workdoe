@@ -95,7 +95,7 @@ def dispatch_command(
     workflow: str = DEFAULT_WORKFLOW,
     ref: str = DEFAULT_REF,
     clerk_proxy_confirmed: bool = False,
-    restricted_signup_confirmed: bool = False,
+    public_signup_confirmed: bool = False,
     email_code_only_confirmed: bool = False,
     legal_consent_confirmed: bool = False,
 ) -> list[str]:
@@ -113,7 +113,7 @@ def dispatch_command(
         "-f",
         f"clerk_proxy_confirmed={str(clerk_proxy_confirmed).lower()}",
         "-f",
-        f"restricted_signup_confirmed={str(restricted_signup_confirmed).lower()}",
+        f"public_signup_confirmed={str(public_signup_confirmed).lower()}",
         "-f",
         f"email_code_only_confirmed={str(email_code_only_confirmed).lower()}",
         "-f",
@@ -129,7 +129,7 @@ def build_dispatch_plan(
     ref: str = DEFAULT_REF,
     local_url: str = DEFAULT_LOCAL_URL,
     clerk_proxy_confirmed: bool = False,
-    restricted_signup_confirmed: bool = False,
+    public_signup_confirmed: bool = False,
     email_code_only_confirmed: bool = False,
     legal_consent_confirmed: bool = False,
 ) -> dict:
@@ -144,14 +144,14 @@ def build_dispatch_plan(
     blockers.extend(git_state.blockers)
     confirmations = {
         "clerk_proxy_confirmed": clerk_proxy_confirmed,
-        "restricted_signup_confirmed": restricted_signup_confirmed,
+        "public_signup_confirmed": public_signup_confirmed,
         "email_code_only_confirmed": email_code_only_confirmed,
         "legal_consent_confirmed": legal_consent_confirmed,
     }
     if not all(confirmations.values()):
         blockers.append(
             "Dispatch requires explicit confirmation of the Clerk same-domain proxy, "
-            "restricted sign-up, email-code-only sign-in, and express legal consent settings."
+            "Open access mode, email-code-only sign-in, and express legal consent settings."
         )
 
     command = dispatch_command(
@@ -244,9 +244,9 @@ def main() -> int:
         help="Confirm Clerk Domains uses https://workdoe.com/__clerk.",
     )
     parser.add_argument(
-        "--confirm-restricted-sign-up",
+        "--confirm-public-sign-up",
         action="store_true",
-        help="Confirm Clerk Restricted sign-up mode is enabled.",
+        help="Confirm Clerk Access mode is Open for public email-code sign-up.",
     )
     parser.add_argument(
         "--confirm-email-code-only",
@@ -272,7 +272,7 @@ def main() -> int:
         ref=args.ref,
         local_url=args.local_url,
         clerk_proxy_confirmed=args.confirm_clerk_proxy,
-        restricted_signup_confirmed=args.confirm_restricted_sign_up,
+        public_signup_confirmed=args.confirm_public_sign_up,
         email_code_only_confirmed=args.confirm_email_code_only,
         legal_consent_confirmed=args.confirm_legal_consent,
     )

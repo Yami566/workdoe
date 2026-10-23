@@ -3046,12 +3046,12 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "build_proof",
                 "dry_run",
                 "--confirm",
-                "--confirm-restricted-sign-up",
+                "--confirm-public-sign-up",
                 "--confirm-email-code-only",
                 "--confirm-legal-consent",
                 "https://workdoe.com/__clerk",
                 "https://workdoe.com/create-account",
-                "restricted_sign_up_mode",
+                "public_sign_up_enabled",
                 "password_sign_in_disabled",
                 "express_legal_consent",
                 "https://workdoe.com/terms",
@@ -3067,7 +3067,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             "Cloudflare Clerk proxy proof helper is missing safety markers: "
             + ", ".join(missing_clerk_proxy_proof_markers),
             checks,
-            "Cloudflare Clerk controlled-beta proof helper is confirm-gated",
+            "Cloudflare Clerk public-sign-up proof helper is confirm-gated",
         )
         missing_secret_evidence_markers = [
             marker

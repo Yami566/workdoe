@@ -213,7 +213,7 @@ def build_launch_plan(
             commands=command_block(
                 [
                     "confirm Clerk Domains uses proxy URL https://workdoe.com/__clerk",
-                    "python scripts\\cloudflare_clerk_proxy_proof.py --confirm --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent",
+                    "python scripts\\cloudflare_clerk_proxy_proof.py --confirm --confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent",
                 ]
             ),
         ),

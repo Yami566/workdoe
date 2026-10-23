@@ -187,10 +187,10 @@ python scripts\cloudflare_resource_bootstrap.py --execute --yes --no-secret-prob
 ```
 
 Then copy `cloudflare/.dev.vars.example` to local secret storage for preview, and set the real Clerk, Turnstile, and Workdoe secrets in Cloudflare.
-Confirm `CLERK_FRONTEND_API_URL` and `CLERK_PROXY_URL` in `cloudflare/wrangler.jsonc` are both `https://workdoe.com/__clerk`, and confirm Clerk's Domains page uses that same proxy URL before turning on production auth. In Clerk, also enable Restricted sign-up mode, set the custom sign-up URL to `https://workdoe.com/create-account`, enable email-code sign-in, disable password sign-in, and enable Legal Compliance express consent for `https://workdoe.com/terms` and `https://workdoe.com/privacy`. Invitation links then return to Workdoe with Clerk's one-time ticket and never move account creation to an off-domain page. Clerk's maintained sign-up component owns the consent checkbox. After those visual checks, write a local, non-secret proof file so strict readiness and deploy can verify the operator step:
+Confirm `CLERK_FRONTEND_API_URL` and `CLERK_PROXY_URL` in `cloudflare/wrangler.jsonc` are both `https://workdoe.com/__clerk`, and confirm Clerk's Domains page uses that same proxy URL before turning on production auth. In Clerk, enable Open access mode for public email-code sign-up, set the custom sign-up URL to `https://workdoe.com/create-account`, enable email-code sign-in, disable password sign-in, and enable Legal Compliance express consent for `https://workdoe.com/terms` and `https://workdoe.com/privacy`. New-account email-code verification returns to Workdoe and never moves account creation to an off-domain page. Clerk's maintained sign-up component owns the consent checkbox. After those visual checks, write a local, non-secret proof file so strict readiness and deploy can verify the operator step:
 
 ```powershell
-python scripts\cloudflare_clerk_proxy_proof.py --confirm --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent
+python scripts\cloudflare_clerk_proxy_proof.py --confirm --confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent
 ```
 
 Apply D1 migrations and deploy only after those values are set:

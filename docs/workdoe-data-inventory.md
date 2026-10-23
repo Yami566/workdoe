@@ -153,7 +153,7 @@ Workdoe application JavaScript does not intentionally store marketplace data in
 | Provider | Data handled | Boundary |
 | --- | --- | --- |
 | Cloudflare Workers, D1, R2, Queues, Email Service, Turnstile, and Logs | Application records, private media, email jobs, request/security metadata | Primary production platform; access, retention, backup, and deletion settings require operator approval and drills |
-| Clerk | Email identity, invitations, email-code verification, sessions, user subject | Production identity provider; Restricted sign-up and production-instance proof remain launch gates |
+| Clerk | Email identity, email-code verification, sessions, user subject | Production identity provider; Open access mode and production-instance proof remain launch gates |
 | OpenStreetMap tile service | Tile request metadata such as requester IP and browser headers | Public map tiles only; no exact Workdoe address or browser geolocation is sent by application code |
 | GitHub Actions | Source, tests, release metadata, Cloudflare deployment credentials | Release tooling; production user exports and database/media backups must not be attached as workflow artifacts |
 

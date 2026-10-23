@@ -301,9 +301,9 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
   combinations, a 12 MB limit, scoped object keys, and D1 ownership metadata.
 - Suspended users cannot continue protected marketplace actions.
 - All moderation actions create audit records.
-- The first release is a controlled beta. Clerk Restricted sign-up mode limits
-  account creation to invited users; invitation tickets return to
-  `https://workdoe.com/create-account` and role selection remains on Workdoe.
+- The first release uses Clerk Open access mode. Account creation uses email
+  codes at `https://workdoe.com/create-account`, and role selection remains on
+  Workdoe.
 - Production pages must publish Privacy, Terms, and Safety information before
   unrestricted public account creation.
 - The owner must define data retention, account deletion, law-enforcement
@@ -382,7 +382,7 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
 
 - Public HTTPS, security headers, health endpoint, static assets, map/list, and
   open-jobs API pass production smoke tests.
-- Non-secret release evidence confirms Clerk Restricted sign-up mode, the
+- Non-secret release evidence confirms Clerk Open access mode, the
   Workdoe custom sign-up URL, email-code sign-in, and disabled password sign-in.
 - A real test consumer can receive an email code, create a job with a photo,
   review a bid, approve it, and exchange messages.

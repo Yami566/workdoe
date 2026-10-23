@@ -59,7 +59,7 @@ Set `WORKDOE_TURNSTILE_SITE_KEY` and `WORKDOE_TURNSTILE_SECRET_KEY` to enable Cl
 
 Set `WORKDOE_ENV=production` for Cloudflare deployment. Production mode requires a real `WORKDOE_SECRET_KEY`, secure cookies, disabled demo seeding, and Turnstile keys before the app starts.
 Set `WORKDOE_AUTH_PROVIDER=clerk` only when Clerk is configured; Clerk mode also requires `CLERK_FRONTEND_API_URL=https://workdoe.com/__clerk`, `CLERK_PROXY_URL=https://workdoe.com/__clerk`, `CLERK_FAPI=https://frontend-api.clerk.dev`, `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`, and `CLERK_JWT_KEY`.
-When Clerk mode is active, `/login`, `/create-account`, and `/post-project` mount Clerk's in-page email-code component on Workdoe pages and keep the local one-time-code form as the local fallback. The Cloudflare Worker proxies `/__clerk/*` so login API traffic also stays on `workdoe.com`. The controlled beta uses Clerk Restricted sign-up mode; invitation tickets return to `https://workdoe.com/create-account`, where users choose one permanent Workdoe role without leaving the site. Clerk Legal Compliance must require express consent to `https://workdoe.com/terms` and `https://workdoe.com/privacy` before sign-up. Production deploy checks require a non-secret `clerk-proxy-proof.local.json` confirming those settings, the same-domain proxy, Restricted mode, the custom sign-up URL, email-code sign-in, and disabled password sign-in.
+When Clerk mode is active, `/login`, `/create-account`, and `/post-project` mount Clerk's in-page email-code component on Workdoe pages and keep the local one-time-code form as the local fallback. The Cloudflare Worker proxies `/__clerk/*` so login API traffic also stays on `workdoe.com`. Clerk Access mode is Open so people can create a Workdoe account by email code, choose one permanent Workdoe role, and remain on the Workdoe domain. Clerk Legal Compliance must require express consent to `https://workdoe.com/terms` and `https://workdoe.com/privacy` before sign-up. Production deploy checks require a non-secret `clerk-proxy-proof.local.json` confirming those settings, the same-domain proxy, Open access mode, the custom sign-up URL, email-code sign-in, and disabled password sign-in.
 
 ## Test
 
@@ -184,7 +184,7 @@ npm run cf:clerk:proof:confirm
 npm run cf:deploy:plan
 npm run cf:deploy
 npm run github:deploy:plan
-npm run github:deploy -- --confirm-clerk-proxy --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent
+npm run github:deploy -- --confirm-clerk-proxy --confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent
 npm run launch:handoff
 npm run launch:handoff:shareable
 npm run launch:handoff:write
@@ -228,7 +228,7 @@ only after the live launch doctor is ready:
 
 ```powershell
 npm run github:deploy:plan
-npm run github:deploy -- --confirm-clerk-proxy --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent
+npm run github:deploy -- --confirm-clerk-proxy --confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent
 ```
 
 Generate a redacted launch handoff checklist from the same live gates:
@@ -304,10 +304,10 @@ python scripts\cloudflare_resource_bootstrap.py --execute --yes --no-secret-prob
 cd cloudflare
 python ..\scripts\cloudflare_secret_evidence.py --execute --yes --output ..\cloudflare-secret-list.local.json
 cd ..
-python scripts\cloudflare_clerk_proxy_proof.py --confirm --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent
+python scripts\cloudflare_clerk_proxy_proof.py --confirm --confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent
 python scripts\cloudflare_release_evidence.py --json
 python scripts\cloudflare_readiness.py --strict-production --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
 python scripts\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
 python scripts\github_deploy_dispatch.py
-python scripts\github_deploy_dispatch.py --execute --yes --confirm-clerk-proxy --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent
+python scripts\github_deploy_dispatch.py --execute --yes --confirm-clerk-proxy --confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent
 ```

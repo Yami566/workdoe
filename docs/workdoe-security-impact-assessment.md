@@ -325,7 +325,7 @@ formal certification against OWASP ASVS or WCAG.
    the browser reports a Clerk development-instance warning. Clerk development
    instances have a relaxed posture and are not suitable for production. Move
     Workdoe to a Clerk production instance, replace the related Cloudflare
-    secrets as one consistent set, enable Restricted sign-up mode, configure the
+    secrets as one consistent set, enable Open access mode, configure the
     Workdoe custom sign-up URL and email-code-only authentication, verify the
     production domain/proxy/webhook, and rerun the strict smoke before beta login.
 2. Production-candidate Privacy, Terms, Safety, footer-policy navigation,

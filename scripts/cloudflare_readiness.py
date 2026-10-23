@@ -188,8 +188,8 @@ def clerk_proxy_proof_error(path: Path | None) -> str:
     )
     if not valid_workdoe_clerk_proxy_url(str(proxy_url)):
         return "Clerk proxy proof must use https://workdoe.com/__clerk."
-    if data.get("restricted_sign_up_mode") is not True:
-        return "Clerk proof must confirm Restricted sign-up mode."
+    if data.get("public_sign_up_enabled") is not True:
+        return "Clerk proof must confirm Open access mode."
     if data.get("email_code_sign_in") is not True:
         return "Clerk proof must confirm email-code sign-in."
     if data.get("password_sign_in_disabled") is not True:
@@ -227,7 +227,7 @@ def command_steps() -> list[str]:
         "wrangler secret put WORKDOE_TURNSTILE_SITE_KEY",
         "wrangler secret put WORKDOE_TURNSTILE_SECRET_KEY",
         "python ..\\scripts\\cloudflare_secret_evidence.py --execute --yes --output ..\\cloudflare-secret-list.local.json",
-        "python ..\\scripts\\cloudflare_clerk_proxy_proof.py --confirm --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent --output ..\\clerk-proxy-proof.local.json",
+        "python ..\\scripts\\cloudflare_clerk_proxy_proof.py --confirm --confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent --output ..\\clerk-proxy-proof.local.json",
         "python ..\\scripts\\cloudflare_release_evidence.py --json --secret-list-json ..\\cloudflare-secret-list.local.json --clerk-proxy-proof-json ..\\clerk-proxy-proof.local.json",
         "python ..\\scripts\\cloudflare_readiness.py --strict-production --secret-list-json ..\\cloudflare-secret-list.local.json --clerk-proxy-proof-json ..\\clerk-proxy-proof.local.json",
         "cd ..",

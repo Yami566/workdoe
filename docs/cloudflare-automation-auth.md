@@ -110,7 +110,7 @@ Use Cloudflare Email Service for Workdoe-owned transactional email:
 
 1. Keep the current local prototype passing all tests.
 2. Create the Clerk production app and configure email-code authentication.
-3. Configure Clerk's Frontend API proxy URL as `https://workdoe.com/__clerk`, enable Restricted sign-up mode, set the custom sign-up URL to `https://workdoe.com/create-account`, enable email-code sign-in, and disable password sign-in. Confirm the Worker route is deployed before enabling the proxy, then write `clerk-proxy-proof.local.json` from the verified Clerk settings.
+3. Configure Clerk's Frontend API proxy URL as `https://workdoe.com/__clerk`, enable Open access mode for public email-code sign-up, set the custom sign-up URL to `https://workdoe.com/create-account`, enable email-code sign-in, and disable password sign-in. Confirm the Worker route is deployed before enabling the proxy, then write `clerk-proxy-proof.local.json` from the verified Clerk settings.
 4. Run `python scripts\cloudflare_resource_bootstrap.py --json --no-secret-probe`, then `python scripts\cloudflare_resource_bootstrap.py --execute --yes --no-secret-probe` to create D1/R2/Queue resources and apply validated D1 IDs without manual editing. The R2 and Queue steps can be rerun; existing resources are reported as `done-existing`.
 5. Configure the Clerk session token template to include a verified primary email claim for Workdoe onboarding, or replace that claim with a verified Clerk Backend API lookup before enabling production account creation.
 6. Confirm `/login`, `/create-account`, and `/post-project` load Clerk from `CLERK_FRONTEND_API_URL` and finish onboarding through `/api/auth/session` and `/api/auth/onboard`.
@@ -158,14 +158,14 @@ python scripts\cloudflare_launch_status.py
 cd cloudflare
 python ..\scripts\cloudflare_secret_evidence.py --execute --yes --output ..\cloudflare-secret-list.local.json
 cd ..
-python scripts\cloudflare_clerk_proxy_proof.py --confirm --confirm-restricted-sign-up --confirm-email-code-only --confirm-legal-consent
+python scripts\cloudflare_clerk_proxy_proof.py --confirm --confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent
 python scripts\cloudflare_release_evidence.py --json
 python scripts\cloudflare_readiness.py --strict-production --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
 python scripts\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
 python scripts\cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
 ```
 
-This verifies the required secret names without exposing secret values, and verifies that Clerk was explicitly checked for the same-domain Frontend API proxy, Restricted sign-up, email-code-only access, and Legal Compliance express consent to Workdoe's Terms and Privacy URLs. Clerk's maintained sign-up component owns the checkbox; Workdoe does not implement a parallel custom consent control.
+This verifies the required secret names without exposing secret values, and verifies that Clerk was explicitly checked for the same-domain Frontend API proxy, Open access mode, email-code-only access, and Legal Compliance express consent to Workdoe's Terms and Privacy URLs. Clerk's maintained sign-up component owns the checkbox; Workdoe does not implement a parallel custom consent control.
 `cloudflare_launch_status.py` is read-only and safe to rerun between each step; it reports the current phase and the next command without touching Cloudflare.
 
 For the approved GitHub-to-Cloudflare release path, `workdoe_launch_doctor.py --live`
