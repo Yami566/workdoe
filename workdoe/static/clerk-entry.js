@@ -75,6 +75,16 @@
     setMessage(node, message);
   }
 
+  function hideEntryLoading(node) {
+    var loading = typeof node.querySelector === "function"
+      ? node.querySelector(".clerk-entry-loading")
+      : null;
+    if (loading) {
+      loading.hidden = true;
+      loading.setAttribute("aria-hidden", "true");
+    }
+  }
+
   function profileStateKey() {
     return "workdoe-clerk-profile-v1:" + window.location.pathname;
   }
@@ -320,6 +330,7 @@
     });
     node.dataset.state = "ready";
     setMessage(node, "");
+    hideEntryLoading(node);
   }
 
   function loadClerkWithTimeout(node) {

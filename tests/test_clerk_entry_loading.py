@@ -23,7 +23,12 @@ class ClerkEntryLoadingTests(unittest.TestCase):
 
             function fixture(clerk) {
               const status = { textContent: 'Loading secure email sign-in...' };
-              const loading = { textContent: 'Loading secure email sign-in...' };
+              const loading = {
+                textContent: 'Loading secure email sign-in...',
+                hidden: false,
+                attributes: {},
+                setAttribute(name, value) { this.attributes[name] = value; }
+              };
               const node = {
                 dataset: {},
                 querySelector: (selector) => selector === '.clerk-entry-loading' ? loading : null,
@@ -67,6 +72,16 @@ class ClerkEntryLoadingTests(unittest.TestCase):
               assert.equal(stalled.node.dataset.state, 'failed');
               assert.match(stalled.loading.textContent, /taking longer than expected/);
               assert.equal(stalled.status.textContent, stalled.loading.textContent);
+
+              const mounted = fixture({
+                isSignedIn: false,
+                load: () => Promise.resolve(),
+                mountSignIn() {}
+              });
+              await settle();
+              assert.equal(mounted.node.dataset.state, 'ready');
+              assert.equal(mounted.loading.hidden, true);
+              assert.equal(mounted.loading.attributes['aria-hidden'], 'true');
             })().catch((error) => { console.error(error.stack); process.exitCode = 1; });
             """
         )
