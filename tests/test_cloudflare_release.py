@@ -1055,12 +1055,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "WORKDOE_SECRET_KEY",
                 manifest["cloudflare_targets"]["identity"]["required_env"],
             )
-            self.assertIn(
-                "expire-login-codes",
-                {
-                    job["name"]
-                    for job in manifest["cloudflare_targets"]["automation"]["scheduled_jobs"]
-                },
+            self.assertEqual(
+                manifest["cloudflare_targets"]["automation"]["scheduled_jobs"],
+                [],
+            )
+            self.assertEqual(
+                manifest["cloudflare_targets"]["automation"]["scheduled_jobs_status"],
+                "disabled-for-free-tier-beta",
             )
             self.assertIn(
                 "EMAIL_QUEUE",
@@ -1166,7 +1167,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
             self.assertEqual(
                 set(wrangler["triggers"]["crons"]),
-                {"*/15 * * * *", "0 14 * * *", "0 13 * * 1-5"},
+                set(),
             )
             self.assertEqual(
                 wrangler["vars"]["WORKDOE_AUTH_PROVIDER"],

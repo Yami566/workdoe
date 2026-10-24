@@ -27,7 +27,7 @@ REQUIRED_QUEUES = {
     "EMAIL_QUEUE": "workdoe-email",
     "MEDIA_QUEUE": "workdoe-media-review",
 }
-REQUIRED_CRONS = {"*/15 * * * *", "0 14 * * *", "0 13 * * 1-5"}
+REQUIRED_CRONS: set[str] = set()
 PLACEHOLDERS = {"", "replace-me", "changeme", "todo", "set-me"}
 WORKDOE_PUBLIC_DOMAIN = "workdoe.com"
 CLERK_PROXY_PATH = "/__clerk"
@@ -355,8 +355,8 @@ def run_readiness(
             set(wrangler.get("triggers", {}).get("crons", [])) == REQUIRED_CRONS,
             checks,
             blockers,
-            "Cron automation schedule is configured",
-            "Wrangler cron triggers do not match Workdoe automation.",
+            "Cron automation is explicitly disabled for the free-tier beta",
+            "Wrangler must explicitly disable cron triggers for the Workdoe free-tier beta.",
         )
         add_requirement(
             wrangler.get("send_email") == [

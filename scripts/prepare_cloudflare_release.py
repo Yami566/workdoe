@@ -239,23 +239,17 @@ def build_manifest(
                 "key": "authenticated Workdoe user ID",
             },
             "automation": {
-                "scheduled_jobs": [
-                    {
-                        "name": "expire-login-codes",
-                        "cron_utc": "*/15 * * * *",
-                        "purpose": "mark stale local fallback login codes and reset tokens unusable",
-                    },
-                    {
-                        "name": "stale-match-reminders",
-                        "cron_utc": "0 14 * * *",
-                        "purpose": "queue client reminders for pending mini bids older than 24 hours",
-                    },
-                    {
-                        "name": "moderation-digest",
-                        "cron_utc": "0 13 * * 1-5",
-                        "purpose": "email admins a weekday report queue summary",
-                    },
-                ],
+                # The beta runs on a Workers Free account that has no remaining
+                # account-wide cron capacity. Keep this explicit empty list so a
+                # Wrangler deployment removes any old Workdoe schedules instead
+                # of preserving them. Queue consumers still handle event-driven
+                # publication, media review, and transactional delivery.
+                "scheduled_jobs": [],
+                "scheduled_jobs_status": "disabled-for-free-tier-beta",
+                "scheduled_jobs_note": (
+                    "Recurring reminders and moderation digests are operated manually "
+                    "until account-wide Cron Trigger capacity is available."
+                ),
                 "queues": [
                     {
                         "binding": "EMAIL_QUEUE",
@@ -347,6 +341,8 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
                 for queue in queues
             ],
         },
+        # An empty crons array tells Wrangler to remove previously deployed cron
+        # triggers. Omitting this key would leave them in place.
         "triggers": {"crons": crons},
         "vars": {
             "WORKDOE_ENV": "production",

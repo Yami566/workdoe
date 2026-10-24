@@ -93,11 +93,7 @@
     }
   ],
   "triggers": {
-    "crons": [
-      "*/15 * * * *",
-      "0 14 * * *",
-      "0 13 * * 1-5"
-    ]
+    "crons": []
   },
   "vars": {
     "WORKDOE_ADMIN_EMAIL": "admin@workdoe.com",

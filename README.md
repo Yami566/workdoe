@@ -103,7 +103,7 @@ migration chain, and writes `cloudflare/wrangler.jsonc`, the release manifest,
 and `cloudflare/.dev.vars.example`.
 If `cloudflare/wrangler.jsonc` already has real D1 IDs, release prep preserves them.
 The first Cloudflare Worker scaffold is in `cloudflare/worker/entry.py` for health
-checks, cron automation, queue consumers, Clerk session/webhook intake, the `/__clerk`
+checks, event-driven queue consumers, Clerk session/webhook intake, the `/__clerk`
 same-origin Clerk Frontend API proxy, the public project-draft handoff, the public
 jobs map API, the same-domain `/`, `/login`, and `/create-account` Clerk entry shell, authenticated post-login app shells for dashboard/lead/post-job-with-photos/client-bid-review/job-photo-upload/contractor-profile/message/admin routes, signed-in job detail API with contractor ZIP redaction, contractor profile updates, privacy-safe public contractor profile pages and APIs, contractor lead board data, contractor mini-bid dashboard data, client job dashboard data, client mini-bid review data, client job creation with Turnstile and private photo upload, client close/reopen controls, contractor mini-bid requests
 with duplicate checks, client bid approval/rejection with private thread

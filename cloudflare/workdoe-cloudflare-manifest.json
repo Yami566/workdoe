@@ -30,23 +30,9 @@
           ]
         }
       ],
-      "scheduled_jobs": [
-        {
-          "cron_utc": "*/15 * * * *",
-          "name": "expire-login-codes",
-          "purpose": "mark stale local fallback login codes and reset tokens unusable"
-        },
-        {
-          "cron_utc": "0 14 * * *",
-          "name": "stale-match-reminders",
-          "purpose": "queue client reminders for pending mini bids older than 24 hours"
-        },
-        {
-          "cron_utc": "0 13 * * 1-5",
-          "name": "moderation-digest",
-          "purpose": "email admins a weekday report queue summary"
-        }
-      ]
+      "scheduled_jobs": [],
+      "scheduled_jobs_note": "Recurring reminders and moderation digests are operated manually until account-wide Cron Trigger capacity is available.",
+      "scheduled_jobs_status": "disabled-for-free-tier-beta"
     },
     "bot_protection": {
       "forms": [

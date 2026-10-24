@@ -38,11 +38,12 @@ Required production environment values:
 
 ## Cloudflare Automation Targets
 
-Use Workers Cron Triggers for recurring maintenance:
-
-- `expire-login-codes`: every 15 minutes, mark stale local fallback login codes and password reset tokens unusable.
-- `stale-match-reminders`: daily at 14:00 UTC, queue reminder emails for client mini bids that have been pending longer than 24 hours.
-- `moderation-digest`: weekdays at 13:00 UTC, queue an admin digest for open reports, hidden media, suspended users, and unresolved audit actions.
+Recurring maintenance is intentionally disabled for the Workers Free beta because the
+Cloudflare account has no remaining account-wide Cron Trigger capacity. The release
+configuration declares `triggers.crons: []` so deployment removes any old Workdoe
+schedules rather than retaining them. The operator handles stale-match reminders and
+moderation-digest review manually until capacity is available; event-driven queue work
+such as publication notifications and media review remains enabled.
 
 Use Cloudflare Queues for background jobs:
 
@@ -56,7 +57,7 @@ Use Cloudflare Email Service for Workdoe-owned transactional email:
 
 ## Current Scaffold
 
-- `cloudflare/wrangler.jsonc` declares `workdoe.com` custom domains, Python Workers, D1, R2, static assets, queues, cron triggers, and observability.
+- `cloudflare/wrangler.jsonc` declares `workdoe.com` custom domains, Python Workers, D1, R2, static assets, queues, explicit empty cron triggers for the free-tier beta, and observability.
 - `cloudflare/wrangler.jsonc` includes `CLERK_FRONTEND_API_URL`, `CLERK_PROXY_URL`, and `CLERK_FAPI` so the in-page Clerk script uses Workdoe's same-domain `/__clerk` Frontend API proxy.
 - `cloudflare/wrangler.jsonc` declares required Clerk, Turnstile, and Workdoe secrets so Wrangler blocks deploys when production auth values are missing.
 - `/login`, `/create-account`, and `/post-project` now render an in-page Clerk mount when `WORKDOE_AUTH_PROVIDER=clerk`; local mode keeps the Workdoe one-time-code forms.

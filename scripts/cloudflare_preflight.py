@@ -71,7 +71,7 @@ def valid_clerk_fapi_url(value: str) -> bool:
         and parsed.netloc == expected.netloc
         and parsed.path.rstrip("/") == ""
     )
-REQUIRED_CRONS = {"*/15 * * * *", "0 14 * * *", "0 13 * * 1-5"}
+REQUIRED_CRONS: set[str] = set()
 REQUIRED_QUEUE_BINDINGS = {"EMAIL_QUEUE": "workdoe-email", "MEDIA_QUEUE": "workdoe-media-review"}
 REQUIRED_RATE_LIMIT_BINDINGS = [
     {
@@ -1264,9 +1264,9 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
         require(
             crons == REQUIRED_CRONS,
             errors,
-            "Wrangler cron triggers do not match the Workdoe automation plan.",
+            "Wrangler must explicitly disable cron triggers for the Workdoe free-tier beta.",
             checks,
-            "Wrangler cron triggers match automation plan",
+            "Wrangler cron triggers are explicitly disabled for the beta",
         )
         require(
             wrangler.get("vars", {}).get("WORKDOE_AUTH_PROVIDER")
