@@ -55,19 +55,33 @@ class ClerkEntryLoadingTests(unittest.TestCase):
                 addEventListener() {}
               };
               const timers = [];
+              const requests = [];
               const window = {
                 Clerk: clerk,
                 __internal_ClerkUICtor: function FixtureUi() {},
                 console: { error() {} },
-                location: { pathname: '/login', search: '', assign() {} },
-                fetch: async () => sessionResponse || { ok: true, status: 200, json: async () => ({ workdoe_user: { role: 'client' } }) },
+                location: { origin: 'https://workdoe.com', pathname: '/login', search: '', assign() {} },
+                fetch: async (url, options) => {
+                  requests.push({ url, options });
+                  return sessionResponse || { ok: true, status: 200, json: async () => ({ workdoe_user: { role: 'client' } }) };
+                },
                 sessionStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
                 setTimeout: (callback) => { timers.push(callback); return timers.length; },
                 clearTimeout() {}
               };
               const document = { readyState: 'complete', querySelectorAll: () => [node] };
-              vm.runInNewContext(source, { window, document, Promise, URLSearchParams });
-              return { node, status, loading, recovery, retry, timers };
+              vm.runInNewContext(source, { window, document, Promise, URL, URLSearchParams });
+              return { node, status, loading, recovery, retry, timers, requests };
+            }
+
+            function signedOutClerk() {
+              return {
+                isSignedIn: false,
+                session: { getToken: async () => 'fresh-session-token' },
+                load: () => Promise.resolve(),
+                mountSignIn() {},
+                addListener(callback) { this.listener = callback; return () => {}; }
+              };
             }
 
             (async () => {
@@ -77,11 +91,9 @@ class ClerkEntryLoadingTests(unittest.TestCase):
               assert.match(unavailable.loading.textContent, /could not load/);
               assert.equal(unavailable.status.textContent, unavailable.loading.textContent);
 
-              const stalled = fixture({
-                isSignedIn: false,
-                load: () => new Promise(() => {}),
-                mountSignIn() {}
-              });
+              const stalled = fixture(Object.assign(signedOutClerk(), {
+                load: () => new Promise(() => {})
+              }));
               await settle();
               assert.equal(stalled.timers.length, 1);
               stalled.timers[0]();
@@ -90,18 +102,19 @@ class ClerkEntryLoadingTests(unittest.TestCase):
               assert.match(stalled.loading.textContent, /taking longer than expected/);
               assert.equal(stalled.status.textContent, stalled.loading.textContent);
 
-              const mounted = fixture({
-                isSignedIn: false,
-                load: () => Promise.resolve(),
-                mountSignIn() {}
-              });
+              const mountedClerk = signedOutClerk();
+              const mounted = fixture(mountedClerk);
               await settle();
               assert.equal(mounted.node.dataset.state, 'ready');
               assert.equal(mounted.loading.hidden, true);
               assert.equal(mounted.loading.attributes['aria-hidden'], 'true');
+              mountedClerk.listener({ session: {}, user: {} });
+              await settle();
+              assert.equal(mounted.requests[0].url, '/api/auth/session');
+              assert.equal(mounted.requests[0].options.headers.Authorization, 'Bearer fresh-session-token');
 
               const rejected = fixture(
-                { isSignedIn: true, load: () => Promise.resolve(), mountSignIn() {} },
+                Object.assign(signedOutClerk(), { isSignedIn: true }),
                 { ok: false, status: 401, json: async () => ({ error: 'Session token not verified.' }) }
               );
               await settle();

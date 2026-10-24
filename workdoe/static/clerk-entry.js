@@ -234,11 +234,44 @@
     return node.dataset.dashboardUrl || "/dashboard";
   }
 
+  async function clerkSessionToken() {
+    var clerk = window.Clerk;
+    if (!clerk || !clerk.session || typeof clerk.session.getToken !== "function") {
+      return "";
+    }
+    try {
+      // A fresh token avoids a race between Clerk completing the email-code flow
+      // and the app cookie being available to the Worker.
+      return await clerk.session.getToken({skipCache: true}) || "";
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function isSameOrigin(url) {
+    try {
+      return new URL(url, window.location.origin).origin === window.location.origin;
+    } catch (error) {
+      return false;
+    }
+  }
+
   async function fetchJson(url, options) {
+    var requestOptions = Object.assign({}, options || {});
+    var headers = Object.assign(
+      { "Accept": "application/json" },
+      requestOptions.headers || {}
+    );
+    if (isSameOrigin(url) && !headers.Authorization && !headers.authorization) {
+      var token = await clerkSessionToken();
+      if (token) {
+        headers.Authorization = "Bearer " + token;
+      }
+    }
+    requestOptions.headers = headers;
     var response = await window.fetch(url, Object.assign({
-      credentials: "include",
-      headers: { "Accept": "application/json" }
-    }, options || {}));
+      credentials: "include"
+    }, requestOptions));
     var payload = await response.json().catch(function () {
       return {};
     });
@@ -391,6 +424,34 @@
     hideEntryLoading(node);
   }
 
+  function continueWithActiveSession(node) {
+    if (node.dataset.clerkOnboarding === "running") {
+      return;
+    }
+    if (node.dataset.clerkMode === "start") {
+      finishStartOnboarding(node);
+      return;
+    }
+    finishSignIn(node);
+  }
+
+  function bindClerkSessionListener(node) {
+    if (
+      node.dataset.clerkListenerBound === "true" ||
+      !window.Clerk ||
+      typeof window.Clerk.addListener !== "function"
+    ) {
+      return;
+    }
+    node.dataset.clerkListenerBound = "true";
+    window.Clerk.addListener(function (emission) {
+      if (!emission || !emission.session || !emission.user) {
+        return;
+      }
+      continueWithActiveSession(node);
+    }, {skipInitialEmit: true});
+  }
+
   function loadClerkWithTimeout(node) {
     var timeoutId;
     var timedOut = new Promise(function (resolve, reject) {
@@ -420,13 +481,10 @@
     bindProfileState(node);
     bindSessionRecovery(node);
     await loadClerkWithTimeout(node);
+    bindClerkSessionListener(node);
 
     if (window.Clerk.isSignedIn) {
-      if (node.dataset.clerkMode === "start") {
-        await finishStartOnboarding(node);
-        return;
-      }
-      await finishSignIn(node);
+      continueWithActiveSession(node);
       return;
     }
 
