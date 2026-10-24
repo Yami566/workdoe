@@ -40,6 +40,11 @@
     "launch:doctor:live": "python scripts/workdoe_launch_doctor.py --live"
   },
   "devDependencies": {
-    "wrangler": "4.125.0"
+    "wrangler": "4.152.0"
+  },
+  "overrides": {
+    "miniflare": {
+      "undici": "7.30.1"
+    }
   }
 }

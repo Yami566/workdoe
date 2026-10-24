@@ -65,11 +65,11 @@
         },
         {
           "name": "Werkzeug",
-          "version": "3.1.8",
+          "version": "3.1.9",
           "license": "BSD-3-Clause",
-          "official_source": "https://pypi.org/project/Werkzeug/3.1.8/",
-          "artifact": "werkzeug-3.1.8.tar.gz",
-          "sha256": "9bad61a4268dac112f1c5cd4630a56ede601b6ed420300677a869083d70a4c44"
+          "official_source": "https://pypi.org/project/Werkzeug/3.1.9/",
+          "artifact": "werkzeug-3.1.9.tar.gz",
+          "sha256": "55ca7c70a75689be937aa27f8ff4b018f06ff4838fc73045560bf0f5a1291060"
         }
       ]
     },
@@ -115,11 +115,11 @@
   "node_tooling": [
     {
       "name": "wrangler",
-      "version": "4.125.0",
+      "version": "4.152.0",
       "purpose": "Cloudflare Worker validation and deployment",
       "license": "MIT OR Apache-2.0",
-      "official_source": "https://www.npmjs.com/package/wrangler/v/4.125.0",
-      "integrity": "sha512-yFpvggu+xk1Hdm/Uxwaqa19bb7GArME4CrCS3Vov68a2TZq2MPO+wLocKbbnIC9K0oLowcdau7/ycxbbNHKCEg=="
+      "official_source": "https://www.npmjs.com/package/wrangler/v/4.152.0",
+      "integrity": "sha512-lmXTF1sCDEqBaEMpreGczvg/x3AIh1d/qxc4BN7utQ4jEDwdA4YG0L6kr3ev0TtVLHRb6QLySNAOAunwn+dHeA=="
     }
   ],
   "browser_components": [
