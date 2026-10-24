@@ -422,6 +422,7 @@ STATIC_ASSET_PATHS = {
     "/email-code-entry.js",
     "/field-doe.webp",
     "/map.js",
+    "/project-composer.js",
     "/site-dialogs.js",
     "/site.webmanifest",
     "/styles.css",

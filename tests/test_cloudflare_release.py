@@ -2427,6 +2427,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("process_media_review_queue_message", entrypoint)
         self.assertIn("media-review-message-accepted", entrypoint)
 
+    def test_cloudflare_worker_serves_the_project_composer_controller(self):
+        module = load_worker_entry_module()
+
+        self.assertTrue(module.is_static_asset_path("/project-composer.js"))
+
     def test_cloudflare_form_reader_bounds_public_project_drafts(self):
         module = load_worker_entry_module()
 
