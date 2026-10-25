@@ -43,11 +43,12 @@ If real D1 IDs are already present, release prep preserves them instead of repla
   `IMAGES` binding and write WebP output to R2 using scoped keys:
   - `jobs/{job_id}/{uuid}.webp`
   - `contractors/{contractor_id}/{uuid}.webp`
-- Keep photo buckets private. Serve files through app routes that check role, ownership, match status, and moderation status.
-- Keep upload permissions route-owned: clients can upload photos only to their own jobs, admins can assist on job photos, and contractors can upload only to their own portfolio.
-- Enqueue `workdoe-media-review` after each successful sanitized R2 upload and
-  D1 metadata insert so moderation has an audit trail. This queue is for human
-  content review and reconciliation; it is not represented as malware scanning.
+- For a future approved media feature, keep photo buckets private and serve files through app routes that check role, ownership, match status, and moderation status.
+- For that future feature, keep upload permissions route-owned: clients can upload photos only to their own jobs, admins can assist on job photos, and contractors can upload only to their own portfolio.
+- After each future successful sanitized R2 upload and D1 metadata insert,
+  enqueue `workdoe-media-review` so moderation has an audit trail. This queue
+  is for human content review and reconciliation; it is not represented as
+  malware scanning.
 - Keep the native one-time-code adapter only for isolated development tests; production login uses Clerk email-code OTP.
 - Link Clerk users to Workdoe rows through `users.auth_provider` and `users.external_subject`.
 - Send match reminders and admin digests through transactional email once Cloudflare Email Service is enabled for `workdoe.com`; production password reset is intentionally unavailable.
@@ -77,8 +78,8 @@ It currently handles:
 - `GET /api/contractor/preferences`, `POST /api/contractor/preferences/availability`, and `POST /api/contractor/preferences/lead-view`, which keep a contractor's coarse self-reported availability and owner-only saved lead view in D1 without creating an automatic ranking signal.
 - `GET` and `POST /api/client/templates` plus `POST /api/client/templates/:id/delete`, which copy reusable scope only from an owned project and exclude location, date, media, bid, message, and outcome data.
 - `GET` and `POST /api/contractor/credentials` plus `POST /api/contractor/credentials/:id/remove`, which let an active contractor manage only their own unconfirmed credential claims.
-- `GET /contractors/:contractor_id` and `GET /api/contractors/:contractor_id`, which return a privacy-safe public contractor profile with visible portfolio photo URLs and no direct contact or R2 storage fields.
-- `POST /api/jobs`, which lets a Clerk-linked client create a D1 job after server-side Turnstile validation, curated category/DMV ZIP validation, approximate coordinate derivation, and allow-listed service-scope validation; normalized quote-readiness codes are replaced through a D1 batch and the `/jobs/new` shell can then upload selected photos through the private media route.
+- `GET /contractors/:contractor_id` and `GET /api/contractors/:contractor_id`, which return a privacy-safe public contractor profile with only retained legacy/demo portfolio photo URLs and no direct contact or R2 storage fields.
+- `POST /api/jobs`, which lets a Clerk-linked client create a D1 job after server-side Turnstile validation, curated category/DMV ZIP validation, approximate coordinate derivation, and allow-listed service-scope validation; normalized quote-readiness codes are replaced through a D1 batch. The beta `/jobs/new` shell does not expose a photo upload action.
 - `POST /api/jobs/:job_id/close` and `/reopen`, which let the owning Clerk-linked client close or reopen a non-hidden job and audit the status change.
 - D1 migration `0020_job_scope_answers.sql`, which adds versioned,
   queryable answer-code rows for published projects and pre-verification drafts
@@ -111,9 +112,9 @@ The Cloudflare public jobs API intentionally mirrors the local Flask map contrac
 
 The Cloudflare same-domain entry shell intentionally mirrors the local `/create-account`, `/post-project`, and `/login` direction: the lead map and lead list appear before account creation, Clerk mounts inside `workdoe.com`, email-code sign-in stays on the same site, and the shell only renders public job facts. `/post-project` carries consumer intent directly into `/jobs/new`; `/login` is kept to sign-in only and sends unlinked Clerk identities to `/create-account` with the selected job preserved so role/profile creation stays explicit.
 
-The Cloudflare authenticated app shell closes the first post-login gap: unauthenticated app routes redirect to `/login?next=...`, `/dashboard` routes by Workdoe role, clients can reach a post-job form backed by `POST /api/jobs`, selected job photos are uploaded immediately afterward through `/api/media/jobs/:job_id/upload`, clients can review/approve/reject mini bids, close/reopen jobs, and upload private job photos at `/client/jobs/:job_id`, contractors can browse `/leads`, contractors can update `/contractor/profile`, approved matches can message through `/messages/:thread_id`, admins can operate `/admin`, and selected contractor jobs can submit mini bids through `POST /api/jobs/:job_id/request`.
+The Cloudflare authenticated app shell closes the first post-login gap: unauthenticated app routes redirect to `/login?next=...`, `/dashboard` routes by Workdoe role, clients can reach a post-job form backed by `POST /api/jobs`, clients can review/approve/reject mini bids and close/reopen jobs, contractors can browse `/leads`, contractors can update `/contractor/profile`, approved matches can message through `/messages/:thread_id`, admins can operate `/admin`, and selected contractor jobs can submit mini bids through `POST /api/jobs/:job_id/request`. The beta hides and rejects new job and portfolio photo uploads.
 
-The Cloudflare signed-in job detail API intentionally mirrors the local contractor lead detail contract: contractors can view non-hidden jobs, see the description and visible photo URLs, but only receive city/state plus ZIP prefix; owners and admins can see the full ZIP and hidden-photo review flags.
+The Cloudflare signed-in job detail API intentionally mirrors the local contractor lead detail contract: contractors can view non-hidden jobs, see the description and any retained legacy/demo visible photo URLs, but only receive city/state plus ZIP prefix; owners and admins can see the full ZIP and hidden-photo review flags.
 
 The Cloudflare client jobs API intentionally mirrors the local client dashboard contract: active clients can list only jobs they own, filter all/open/review/closed, and see total/pending/approved/rejected mini-bid counts without receiving contractor contact fields.
 
@@ -127,7 +128,7 @@ The Cloudflare contractor profile API intentionally mirrors the local profile fo
 
 The Cloudflare credential API intentionally mirrors the local claim ledger. Contractors may submit allow-listed credential types and DMV/federal/other jurisdictions but cannot mark a claim source checked, change review provenance, or delete source-checked/expired history. Active administrators may set only source-checked, needs-info, not-confirmed, or expired states. Source checks require a normalized public HTTPS link and create both moderation and automation audit records. Public profile payloads fail closed to current source-checked records and omit the stored identifier, claimed name, reviewer, and private note.
 
-The Cloudflare public contractor profile API intentionally mirrors the local public profile contract: active profiles are public, inactive profiles require an active admin session, visible portfolio photos are linked through `/media/contractors/:photo_id`, and direct contact details plus R2 object keys stay out of the payload.
+The Cloudflare public contractor profile API intentionally mirrors the local public profile contract: active profiles are public, inactive profiles require an active admin session, retained visible portfolio photos can be linked through `/media/contractors/:photo_id`, and direct contact details plus R2 object keys stay out of the payload. New portfolio uploads remain disabled for the beta.
 
 The Cloudflare moderation report API intentionally mirrors the local report form contract: only active signed-in users can report, targets are limited to jobs/messages/contractor profiles that still exist, reason notes stay under 500 characters, and the response never echoes the report reason.
 
@@ -151,7 +152,7 @@ The Cloudflare mini-bid decision API intentionally mirrors the local client revi
 
 The Cloudflare private messaging API intentionally mirrors the local approved-thread contract: only the client and contractor on a thread can list/read/reply, admins can inspect a thread for moderation but cannot reply, hidden messages stay hidden from normal users, and responses do not expose contact emails or exact addresses.
 
-The Cloudflare private media routes intentionally mirror the local Flask media contract:
+The Cloudflare retained private-media routes intentionally mirror the local Flask media contract:
 
 - Job photos require a verified same-domain Clerk session linked to an active Workdoe user.
 - Clients can see their own job photos, contractors can see photos on open jobs, approved matched contractors can keep access after a job closes, and admins can review hidden media.

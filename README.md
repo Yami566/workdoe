@@ -1,8 +1,9 @@
 # Workdoe
 
-Workdoe is a local project exchange for the DMV area. Consumers post projects
-with photos, contractors search leads and send mini bids, and approved matches
-open private message threads.
+Workdoe is a local project exchange for the DMV area. Consumers post
+privacy-minimized project briefs, contractors search leads and send mini bids,
+and approved matches open private message threads. Public photo uploads are
+disabled for the current production beta.
 
 Workdoe's first-party source, product copy, visual design, and original assets
 are proprietary under [LICENSE](LICENSE). Open-source dependencies retain their
@@ -13,7 +14,7 @@ own licenses and notices; the repository itself is not an open-source project.
 - Python + Flask for the web app
 - Server-rendered HTML templates and CSS
 - SQLite for local structured data
-- Private local upload storage for job and contractor photos
+- Development-only private local upload storage for job and contractor photos
 - Vendored Leaflet 1.9.4 + OpenStreetMap tiles only for the embedded map view
 - Leaflet's BSD 2-Clause license is retained at `workdoe/static/vendor/leaflet/LICENSE`
 - Deer logo mark from Tabler Icons, an MIT-licensed open-source icon set
@@ -40,7 +41,7 @@ These are seeded for local testing only:
 - Contractor: `contractor@workdoe.local` / `workdoe-contractor`
 - Admin: `admin@workdoe.local` / `workdoe-admin`
 
-New client and contractor accounts use `/create-account`, a local 1-2-3 email-code flow. Consumers can draft a project at `/post-project` before creating an account; the 24-hour server-side draft survives verification and prefills `/jobs/new`. Photos are added only after verification. `/start` remains a compatibility alias:
+New client and contractor accounts use `/create-account`, a local 1-2-3 email-code flow. Consumers can draft a project at `/post-project` before creating an account; the 24-hour server-side draft survives verification and prefills `/jobs/new`. The local reference app can exercise private-media behavior after verification, but the production beta hides and rejects new photo uploads. `/start` remains a compatibility alias:
 
 1. Choose whether to post a job or find work.
 2. Enter an email and a non-identifying public business label or handle.
@@ -81,8 +82,8 @@ python -m unittest discover -s tests
   the minimum account mapping needed for roles and marketplace operations.
 - Profile data lives in `client_profiles` and `contractor_profiles`.
 - Marketplace data lives in `jobs`, `job_drafts`, `match_requests`, `match_completions`, `threads`, and `messages`; approved-match message and two-sided completion permissions are mirrored in the Cloudflare Worker.
-- Media metadata lives in `job_photos` and `contractor_photos`.
-- Uploaded files are stored under the Flask `instance/` folder and served only through permission-checked routes.
+- Media metadata tables `job_photos` and `contractor_photos` remain for retained legacy/demo records and a future reviewed media release.
+- Local-development uploaded files are stored under the Flask `instance/` folder and served only through permission-checked routes. The production beta does not accept new uploads.
 - Moderation data lives in `reports` and `moderation_actions`.
 
 ## Cloudflare Migration
@@ -114,18 +115,19 @@ If `cloudflare/wrangler.jsonc` already has real D1 IDs, release prep preserves t
 The first Cloudflare Worker scaffold is in `cloudflare/worker/entry.py` for health
 checks, event-driven queue consumers, Clerk session/webhook intake, the `/__clerk`
 same-origin Clerk Frontend API proxy, the public project-draft handoff, the public
-jobs map API, the same-domain `/`, `/login`, and `/create-account` Clerk entry shell, authenticated post-login app shells for dashboard/lead/post-job-with-photos/client-bid-review/job-photo-upload/contractor-profile/message/admin routes, signed-in job detail API with contractor ZIP redaction, contractor profile updates, privacy-safe public contractor profile pages and APIs, contractor lead board data, contractor mini-bid dashboard data, client job dashboard data, client mini-bid review data, client job creation with Turnstile and private photo upload, client close/reopen controls, contractor mini-bid requests
+jobs map API, the same-domain `/`, `/login`, and `/create-account` Clerk entry shell, authenticated post-login app shells for dashboard/lead/post-job/client-bid-review/contractor-profile/message/admin routes, signed-in job detail API with contractor ZIP redaction, contractor profile updates, privacy-safe public contractor profile pages and APIs, contractor lead board data, contractor mini-bid dashboard data, client job dashboard data, client mini-bid review data, client job creation with Turnstile, client close/reopen controls, contractor mini-bid requests
 with duplicate checks, client bid approval/rejection with private thread
 creation, approved-match message APIs, signed-in moderation report intake, admin
-moderation actions, and private Cloudflare Images-sanitized R2 media
-upload/serving routes. Production uploads are decoded through the `IMAGES`
-binding, resized to at most 1600 pixels per side, flattened to one frame,
-transcoded to WebP with metadata discarded, and accepted for R2 only when the
-sanitized result is below 1.5 MB. Source uploads are capped at 4 MB; each
-project can hold six photos, each contractor profile eight, and each account
-can create at most 12 uploads in a rolling 24-hour period. The
-upload path fails closed when Images is unavailable; enabling a Cloudflare
-Images Paid subscription is therefore a production prerequisite.
+moderation actions, and retained private-media authorization routes. The current
+production beta hides all photo upload controls and rejects upload requests
+before reading a request body or invoking any storage binding. It deliberately
+omits the Cloudflare Images binding, so Cloudflare Images Paid is not a beta
+production prerequisite. A future reviewed media release may restore the
+private R2 upload/serving route: it must first approve a sanitizer/provider,
+retention, authorization, quota, abuse, and cost decision. The retained future
+contract caps source uploads at 4 MB, sanitizes an accepted derivative below
+1.5 MB, limits projects to six photos and contractor profiles to eight, and
+limits accounts to 12 successful uploads per rolling 24 hours.
 Authenticated Worker writes also pass through Cloudflare's `WRITE_RATE_LIMITER`
 binding at 40 changes per user per 60 seconds. Authentication keeps its stricter
 email/IP limits, and the local reference app retains its own development limiter.

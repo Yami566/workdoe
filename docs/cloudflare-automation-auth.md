@@ -73,8 +73,8 @@ Use Cloudflare Email Service for Workdoe-owned transactional email:
 - `cloudflare/worker/email_payloads.py` renders supported login-code, stale-match-reminder, contractor lead-alert, repeat-provider invitation, and moderation-digest emails with escaped HTML, plain text, normalized recipients, and strict payload validation. It rejects password-reset payloads.
 - `cloudflare/worker/clerk_webhooks.py` verifies Clerk/Svix webhook signatures with raw-body HMAC, timestamp tolerance, and constant-time signature comparison.
 - The Cloudflare Worker also serves authenticated post-login shells for `/dashboard`, `/client/dashboard`, `/client/jobs/:job_id`, `/contractor/dashboard`, `/contractor/profile`, `/messages`, `/messages/:thread_id`, `/admin`, `/leads`, `/jobs/new`, and contractor `/jobs/:job_id` routes so Clerk redirects land inside usable Workdoe pages instead of generic JSON.
-- `cloudflare/worker/media_access.py` keeps private R2 photo serving testable: it parses only supported Workdoe media routes, rejects unsafe object keys, and mirrors role, ownership, match, and moderation checks before `entry.py` reads from `MEDIA`.
-- `cloudflare/worker/media_uploads.py` keeps private R2 uploads testable: it validates Workdoe upload routes, image extensions, MIME types, size limits, ownership, scoped object keys, and media-review queue payloads.
+- `cloudflare/worker/media_access.py` keeps retained legacy/demo private R2 photo serving testable: it parses only supported Workdoe media routes, rejects unsafe object keys, and mirrors role, ownership, match, and moderation checks before `entry.py` reads from `MEDIA`.
+- `cloudflare/worker/media_uploads.py` contains the future reviewed private-R2 upload contract. The beta disables its public route before request-body parsing and does not attach the Cloudflare Images binding.
 - `automation_events` records cron and queue activity so background work has an audit trail before real email delivery is enabled.
 - The admin console shows recent automation events beside moderation audit rows so cron, queue, email, media review, Clerk onboarding, and webhook activity can be checked from `workdoe.com`.
 - `cloudflare/.dev.vars.example` lists the Clerk, Turnstile, and Workdoe secret values needed for local Wrangler previews.
@@ -83,12 +83,12 @@ Use Cloudflare Email Service for Workdoe-owned transactional email:
 - `POST /api/auth/onboard` verifies the Clerk session again, requires a verified Clerk email claim, then creates the app-owned `users`, `client_profiles`, or `contractor_profiles` rows after the person chooses client or contractor.
 - `GET /api/client/jobs` verifies the Clerk session, requires an active client account, lists only that client's jobs, and returns open/review/closed dashboard counts from D1.
 - `GET /api/client/jobs/:job_id/requests` verifies the Clerk session, requires the owning client or active admin, lists contractor mini bids for one job, and returns review counts plus profile/message links without contractor contact fields.
-- The authenticated `/jobs/new` shell submits the job through `POST /api/jobs`, then uploads any selected photos through `/api/media/jobs/:job_id/upload` before opening the client job page.
-- The authenticated `/client/jobs/:job_id` shell uses those same D1 contracts and exposes close/reopen actions plus private job-photo uploads through the existing Worker routes.
+- The authenticated `/jobs/new` shell submits the job through `POST /api/jobs`, then opens the client job page. The beta exposes no photo input or upload action.
+- The authenticated `/client/jobs/:job_id` shell uses those same D1 contracts and exposes close/reopen actions. New job-photo uploads are disabled during the beta.
 - `GET /api/contractor/leads` verifies the Clerk session, requires an active contractor account, lists open leads with that contractor's `new/sent` bid state, and returns approximate map pins without client contact or ZIP fields.
 - `GET /api/contractor/bids` verifies the Clerk session, requires an active contractor account, lists only that contractor's mini bids, returns pending/approved/rejected dashboard counts, and links approved bids to private message threads.
 - `GET` and `POST /api/contractor/profile` verify the Clerk session, require an active contractor account, apply the local profile validation rules, upsert the D1 profile row, and audit `contractor-profile-updated`.
-- `GET /contractors/:contractor_id` and `GET /api/contractors/:contractor_id` return privacy-safe public contractor profile facts and visible portfolio photo URLs; inactive profiles are visible only to active admins and direct contact fields stay out of the payload.
+- `GET /contractors/:contractor_id` and `GET /api/contractors/:contractor_id` return privacy-safe public contractor profile facts and, only for retained legacy/demo records, visible portfolio photo URLs. Inactive profiles are visible only to active admins and direct contact fields stay out of the payload.
 - `GET /api/jobs/:job_id` verifies the Clerk session, lets owners/admins see full job detail, lets active contractors inspect non-hidden leads, redacts contractor ZIPs to a prefix, and never returns R2 storage keys.
 - `POST /api/jobs` verifies the Clerk session, requires an active client/admin Workdoe row, verifies Turnstile server-side, validates the local job form contract, stores approximate DMV map coordinates, and audits `job-created`.
 - `POST /api/jobs/:job_id/close` and `/reopen` verify the Clerk session, require the owning active client, block hidden moderation-owned jobs, update status, and audit `job-closed` or `job-reopened`.
@@ -98,8 +98,8 @@ Use Cloudflare Email Service for Workdoe-owned transactional email:
 - `POST /api/reports` verifies the Clerk session, requires an active Workdoe account, validates job/message/profile targets, writes an open D1 report, and audits `report-created`.
 - `/admin` renders the same-domain moderation console, and `/api/admin/*` moderation action routes verify the Clerk session, require an active admin account, update users/jobs/photos/messages/reports through explicit allow-listed actions, insert `moderation_actions`, and audit `admin-moderation-action`.
 - The `workdoe-email` queue consumer sends only supported transactional payloads through the `EMAIL` binding, acknowledges invalid payloads after auditing them, and retries transient send failures.
-- The Workdoe media routes stream from R2 only after D1 metadata checks. Job photos require a linked Clerk session; active, unhidden contractor portfolio photos can remain visible on public profile pages without exposing the R2 bucket.
-- The Workdoe upload routes write images to R2 through the `MEDIA` binding and enqueue `workdoe-media-review` tasks through `MEDIA_QUEUE`; the consumer audits accepted and rejected review messages in `automation_events`.
+- The Workdoe media routes stream retained R2 objects only after D1 metadata checks. Job photos require a linked Clerk session; active, unhidden retained contractor portfolio photos can remain visible on public profile pages without exposing the R2 bucket.
+- The Workdoe upload implementation remains in the source for a future reviewed feature. The beta rejects new upload requests before calling `MEDIA` or `MEDIA_QUEUE` and does not bind `IMAGES`.
 - Clerk webhooks do not create first-time Workdoe roles or profiles. Workdoe onboarding remains the source of truth for whether someone is a client or contractor.
 
 ## Data Migration Shape
@@ -118,7 +118,7 @@ Use Cloudflare Email Service for Workdoe-owned transactional email:
 4. Run `python scripts\cloudflare_resource_bootstrap.py --json --no-secret-probe`, then `python scripts\cloudflare_resource_bootstrap.py --execute --yes --no-secret-probe` to create D1/R2/Queue resources and apply validated D1 IDs without manual editing. The R2 and Queue steps can be rerun; existing resources are reported as `done-existing`.
 5. Configure the Clerk session token template to include a verified primary email claim for Workdoe onboarding, or replace that claim with a verified Clerk Backend API lookup before enabling production account creation.
 6. Confirm `/login`, `/create-account`, and `/post-project` load Clerk from `CLERK_FRONTEND_API_URL` and finish onboarding through `/api/auth/session` and `/api/auth/onboard`.
-7. Move SQLite to D1 and route uploads through the Workdoe Worker into R2.
+7. Move SQLite to D1. Keep production uploads disabled until the separate media decision is approved; any future approved upload path routes through the Workdoe Worker into private R2.
 8. Enable Cron Triggers and Queues from `cloudflare/wrangler.jsonc`.
 9. Turn on Cloudflare Email Service for Workdoe operational mail.
 10. Run a beta with local fallback auth disabled only after Clerk session verification and webhooks are stable.
