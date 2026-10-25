@@ -248,7 +248,7 @@ def next_actions(
     github_path_ready = github_release_path_ready(github)
     release_credentials_ready = not token_missing or github_path_ready
     blockers = "\n".join(cloudflare["blockers"])
-    if not local_ok:
+    if not local_ok and not live:
         actions.append("python run.py")
 
     if not live:
@@ -411,8 +411,17 @@ def build_doctor(
     phases = [
         DoctorPhase(
             name="local-prototype",
-            status="ready" if local_ok else "pending",
-            summary=f"{local_url} returned {local_detail}." if local_ok else f"{local_url} is not reachable: {local_detail}",
+            status="ready" if local_ok else ("not-running" if live else "pending"),
+            summary=(
+                f"{local_url} returned {local_detail}."
+                if local_ok
+                else (
+                    f"{local_url} is not reachable: {local_detail}. "
+                    "A local development server is not a production release blocker."
+                    if live
+                    else f"{local_url} is not reachable: {local_detail}"
+                )
+            ),
             next_command="python run.py" if not local_ok else "",
         ),
         DoctorPhase(
@@ -484,11 +493,11 @@ def build_doctor(
         blockers.append("Wrangler is not authenticated for live Cloudflare operations.")
     if live and not dns_ready:
         blockers.extend(f"DNS: {blocker}" for blocker in dns_blockers)
-    if not local_ok:
+    if not local_ok and not live:
         blockers.append(f"Local prototype is not reachable at {local_url}.")
 
     ready = (
-        local_ok
+        (local_ok or live)
         and (github.ready if github else True)
         and (wrangler_authenticated if live else True)
         and cloudflare_release_ready
@@ -510,6 +519,13 @@ def build_doctor(
                         "Local CLOUDFLARE_API_TOKEN is not set; the verified GitHub production environment remains the credentialed non-interactive deployment path."
                     ]
                     if github_path_ready and token_missing
+                    else []
+                )
+                + (
+                    [
+                        "This is a pre-deployment readiness report; public acceptance still requires the post-deploy production smoke check."
+                    ]
+                    if live
                     else []
                 )
             )
@@ -549,7 +565,7 @@ def render_text(payload: dict) -> str:
         "Workdoe launch doctor",
         f"Domain: {payload['domain']}",
         f"Live checks: {payload['live']}",
-        f"Ready: {payload['ready']}",
+        f"Ready to deploy: {payload['ready']}",
         "",
         "Phases:",
     ]

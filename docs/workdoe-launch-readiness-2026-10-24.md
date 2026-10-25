@@ -365,6 +365,34 @@ fixed requested dates in the public API, while their detail view lacks a
 visible sample-timing label. No Cloudflare deployment was attempted during this
 verification because no local deployment token was available.
 
+## 2026-10-25 map and release-reporting addendum
+
+Local commit `53bad0f` adds a debounced Leaflet `invalidateSize` call after a
+browser resize. This keeps the map canvas correctly sized after iPad rotation,
+tablet resizing, and desktop-window changes without changing map bounds,
+search results, or the location-privacy model. Its asset release token and
+Cloudflare manifest were regenerated from the reviewed static bytes.
+
+The map candidate passed 262 unit and integration tests in 90.394 seconds;
+the current candidate, including the release-reporting correction, passed all
+263 tests in 89.732 seconds. Cloudflare preflight, Ruff, and
+dependency-provenance verification also passed. There was no GitHub push,
+Cloudflare deployment, sign-in, or marketplace write during this follow-up.
+
+The live launch doctor now distinguishes **ready to deploy** from public
+acceptance. A stopped local development server is reported as `not-running`
+when live Cloudflare, DNS, and release-credential checks are being evaluated;
+it is not a production deploy blocker. The report explicitly warns that a
+successful post-deploy production smoke check is still required for public
+acceptance. Its ready-to-deploy result currently reflects an available GitHub
+deployment path, not authorization to use it and not evidence that the local
+candidate is live.
+
+The direct Cloudflare deployment path remains deliberately unexecuted: the
+expected ignored token file was not present at
+`cloudflare/.deploy-token`. The fresh smoke result above continues to prove
+that the deployed public revision is not yet the reviewed candidate.
+
 ## Decision
 
 The deployed production site is operating for a controlled owner-supervised

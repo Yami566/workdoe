@@ -10996,6 +10996,64 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             any("verified GitHub production environment" in warning for warning in payload["warnings"])
         )
 
+    def test_workdoe_launch_doctor_live_does_not_require_local_server(self):
+        module = load_workdoe_launch_doctor_script()
+        github_status = load_github_release_status_script().GithubReleaseStatus(
+            repository="Yami566/workdoe",
+            environment="production",
+            live=True,
+            ready=True,
+            environment_ready=True,
+            secrets_ready=True,
+            blockers=[],
+            warnings=[],
+        )
+        original_head_ok = module.http_head_ok
+        original_cloudflare = module.build_launch_status
+        original_github_live = module.build_github_live_status
+        original_wrangler_auth = module.wrangler_auth_status
+        original_wrangler_secrets = module.wrangler_secret_names_status
+        original_dns_diagnostic = module.build_dns_diagnostic
+        try:
+            module.http_head_ok = lambda url: (False, "connection refused")
+            module.build_launch_status = lambda repo_root=ROOT: {
+                "ready_to_deploy": False,
+                "current_phase": "cloudflare-token",
+                "next_command": "set CLOUDFLARE_API_TOKEN in this shell without committing it",
+                "blockers": [
+                    "CLOUDFLARE_API_TOKEN is not set; local Cloudflare resource bootstrap, secret evidence, and deploy execute commands cannot run."
+                ],
+                "warnings": [],
+            }
+            module.build_github_live_status = lambda: github_status
+            module.wrangler_auth_status = lambda repo_root=ROOT: (True, "Wrangler is authenticated.")
+            module.wrangler_secret_names_status = lambda repo_root=ROOT: (
+                False,
+                set(),
+                "Noninteractive secret listing requires CLOUDFLARE_API_TOKEN.",
+            )
+            module.build_dns_diagnostic = lambda: {
+                "ready": True,
+                "checks": [],
+                "blockers": [],
+                "next_actions": [],
+            }
+            payload = module.build_doctor(ROOT, live=True)
+        finally:
+            module.http_head_ok = original_head_ok
+            module.build_launch_status = original_cloudflare
+            module.build_github_live_status = original_github_live
+            module.wrangler_auth_status = original_wrangler_auth
+            module.wrangler_secret_names_status = original_wrangler_secrets
+            module.build_dns_diagnostic = original_dns_diagnostic
+
+        self.assertTrue(payload["ready"])
+        local_phase = next(phase for phase in payload["phases"] if phase["name"] == "local-prototype")
+        self.assertEqual(local_phase["status"], "not-running")
+        self.assertIn("not a production release blocker", local_phase["summary"])
+        self.assertFalse(any("Local prototype is not reachable" in blocker for blocker in payload["blockers"]))
+        self.assertNotIn("python run.py", payload["next_actions"])
+
     def test_cloudflare_wrangler_resolver_accepts_env_or_local_binary(self):
         module = load_wrangler_helper_script()
         original_env = os.environ.get(module.WRANGLER_ENV_VAR)
