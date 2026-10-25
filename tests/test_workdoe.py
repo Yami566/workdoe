@@ -1046,6 +1046,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Privacy Policy", privacy.data)
         self.assertIn(b"We do not sell personal information", privacy.data)
         self.assertIn(b"Moose Bay and Company LLC", privacy.data)
+        self.assertIn(
+            b"New photo uploads are unavailable during this beta;", privacy.data
+        )
+        self.assertIn(
+            b"retained legacy or demonstration photos", privacy.data
+        )
         self.assertIn(b"Terms of Use", terms.data)
         self.assertIn(b"Prohibited work", terms.data)
         self.assertIn(b"Moose Bay and Company LLC", terms.data)
@@ -3613,6 +3619,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(post_project.status_code, 200)
         self.assertIn(b"<title>Post Project - Workdoe</title>", post_project.data)
         self.assertIn(b"<h1>What needs doing?</h1>", post_project.data)
+        self.assertIn(b"Review before posting", post_project.data)
         self.assertIn(b'aria-label="Project draft"', post_project.data)
         self.assertIn(
             b'href="/post-project" data-dialog-title="Post a project" aria-current="page">Post project</a>',
