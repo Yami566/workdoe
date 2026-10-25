@@ -339,6 +339,32 @@ Cloudflare, Clerk, and OpenStreetMap are operational providers whose current
 terms and configuration requirements remain separate from open-source
 dependency licensing.
 
+## 2026-10-25 beta-media and production-smoke addendum
+
+Local release commit `5523e6d` deliberately keeps
+`WORKDOE_MEDIA_UPLOADS_ENABLED=false`. The generated Wrangler configuration
+omits the Cloudflare Images binding, the signed-in UI hides project and
+portfolio upload controls, and upload routes reject requests before reading a
+body or invoking any storage binding. This is a no-paid-media beta posture,
+not a claim that Workdoe has a production photo feature. A future media launch
+requires a separately reviewed provider, retention, quota, authorization, and
+valid/invalid/oversize acceptance decision.
+
+The local release candidate passed 262 unit and integration tests in 89.622
+seconds. Cloudflare preflight passed with no errors or warnings. The complete
+security and provenance gate reported no known Node or Python dependency
+vulnerabilities, no Bandit medium/high findings, a passing secret gate across
+702 non-ignored files, and passing dependency provenance verification.
+
+The read-only production smoke check against `https://workdoe.com` confirmed
+DNS, HTTP-to-HTTPS redirects, health, security headers, static cache headers,
+trust/discovery pages, social-preview asset, production Clerk key, invitation
+entry, and same-domain Clerk proxy. It remains not-ready because the deployed
+site predates the local candidate: `demo-01`, `demo-02`, and `demo-03` expose
+fixed requested dates in the public API, while their detail view lacks a
+visible sample-timing label. No Cloudflare deployment was attempted during this
+verification because no local deployment token was available.
+
 ## Decision
 
 The deployed production site is operating for a controlled owner-supervised
