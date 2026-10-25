@@ -12,6 +12,7 @@ REPO_ROOT = SCRIPT_DIR.parent
 CLOUDFLARE_DIR = REPO_ROOT / "cloudflare"
 DEFAULT_SECRET_LIST_PATH = REPO_ROOT / "cloudflare-secret-list.local.json"
 DEFAULT_CLERK_PROXY_PROOF_PATH = REPO_ROOT / "clerk-proxy-proof.local.json"
+DEFAULT_STAGED_API_TOKEN_PATH = REPO_ROOT / "cloudflare" / ".deploy-token"
 
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
@@ -222,6 +223,14 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--use-staged-api-token-if-present",
+        action="store_true",
+        help=(
+            "Use cloudflare/.deploy-token when it is present; otherwise preserve "
+            "the current CLOUDFLARE_API_TOKEN environment behavior."
+        ),
+    )
+    parser.add_argument(
         "--clerk-proxy-proof-json",
         type=Path,
         default=DEFAULT_CLERK_PROXY_PROOF_PATH,
@@ -302,11 +311,12 @@ def main() -> int:
         return 1
 
     try:
-        api_token = (
-            cloudflare_api_token_from_file(args.api_token_file)
-            if args.api_token_file is not None
-            else None
-        )
+        if args.api_token_file is not None:
+            api_token = cloudflare_api_token_from_file(args.api_token_file)
+        elif args.use_staged_api_token_if_present and DEFAULT_STAGED_API_TOKEN_PATH.is_file():
+            api_token = cloudflare_api_token_from_file(DEFAULT_STAGED_API_TOKEN_PATH)
+        else:
+            api_token = None
     except ValueError as exc:
         print(
             json.dumps(

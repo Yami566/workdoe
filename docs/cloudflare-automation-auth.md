@@ -170,11 +170,19 @@ python scripts\cloudflare_production_deploy.py --execute --yes --secret-list-jso
 ```
 
 For a direct local deploy from Codex without GitHub, the operator may instead
-create the ignored file `cloudflare/.deploy-token` in a local editor. It must
-contain exactly one Cloudflare API token and no other text. Do not paste that
-token into chat, commit it, or add it to a tracked configuration file. The
-guarded deploy command can then receive only the file path; it reads the token
-in-process and never includes its value in output or release evidence:
+stage the ignored `cloudflare/.deploy-token` file using the hidden local prompt:
+
+```powershell
+npm run cf:token:stage
+```
+
+The helper accepts exactly one Cloudflare API token, never displays it, and
+refuses to overwrite a token already staged unless `--replace` is supplied.
+Do not paste the token into chat, commit it, or add it to a tracked
+configuration file. `npm run cf:deploy` reads the staged token in-process when
+it is present, otherwise it preserves the existing `CLOUDFLARE_API_TOKEN`
+environment behavior for GitHub Actions. A direct command can instead receive
+only the file path; it never includes the token in output or release evidence:
 
 ```powershell
 python scripts\cloudflare_production_deploy.py --execute --yes --api-token-file cloudflare\.deploy-token --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json

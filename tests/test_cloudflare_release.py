@@ -32,6 +32,7 @@ RELEASE_EVIDENCE_SCRIPT_PATH = ROOT / "scripts" / "cloudflare_release_evidence.p
 D1_ID_APPLY_SCRIPT_PATH = ROOT / "scripts" / "apply_cloudflare_d1_ids.py"
 RESOURCE_BOOTSTRAP_SCRIPT_PATH = ROOT / "scripts" / "cloudflare_resource_bootstrap.py"
 PRODUCTION_DEPLOY_SCRIPT_PATH = ROOT / "scripts" / "cloudflare_production_deploy.py"
+TOKEN_STAGING_SCRIPT_PATH = ROOT / "scripts" / "stage_cloudflare_deploy_token.py"
 GITHUB_RELEASE_STATUS_SCRIPT_PATH = ROOT / "scripts" / "github_release_status.py"
 GITHUB_DEPLOY_DISPATCH_SCRIPT_PATH = ROOT / "scripts" / "github_deploy_dispatch.py"
 WORKDOE_LAUNCH_DOCTOR_SCRIPT_PATH = ROOT / "scripts" / "workdoe_launch_doctor.py"
@@ -297,6 +298,17 @@ def load_production_deploy_script():
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_token_staging_script():
+    spec = importlib.util.spec_from_file_location(
+        "stage_cloudflare_deploy_token",
+        TOKEN_STAGING_SCRIPT_PATH,
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
 
@@ -2324,6 +2336,72 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(captured["token"], token)
         self.assertNotIn(token, output.getvalue())
+
+    def test_token_staging_helper_validates_and_preserves_the_token_value(self):
+        module = load_token_staging_script()
+        token = "local-cloudflare-token-not-for-output"
+        with tempfile.TemporaryDirectory() as tmp:
+            token_path = Path(tmp) / ".deploy-token"
+            self.assertEqual(module.stage_token(token, token_path), len(token))
+            self.assertEqual(token_path.read_text(encoding="utf-8"), f"{token}\n")
+            self.assertEqual(module.cloudflare_api_token_from_file(token_path), token)
+            with self.assertRaisesRegex(module.TokenStagingError, "already exists"):
+                module.stage_token(token, token_path)
+            with self.assertRaisesRegex(module.TokenStagingError, "no whitespace"):
+                module.stage_token("invalid token", Path(tmp) / "invalid-token")
+
+    def test_cloudflare_production_deploy_uses_staged_token_when_present(self):
+        module = load_production_deploy_script()
+        original_argv = sys.argv
+        original_staged_path = module.DEFAULT_STAGED_API_TOKEN_PATH
+        original_readiness_payload = module.readiness_payload
+        original_execute_steps = module.execute_steps
+        original_token = os.environ.pop("CLOUDFLARE_API_TOKEN", None)
+        token = "staged-cloudflare-token-not-for-output"
+        captured = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            token_path = Path(tmp) / ".deploy-token"
+            token_path.write_text(f"{token}\n", encoding="utf-8")
+            try:
+                module.DEFAULT_STAGED_API_TOKEN_PATH = token_path
+                module.readiness_payload = lambda *args, **kwargs: {
+                    "ready": True,
+                    "blockers": [],
+                    "warnings": [],
+                }
+
+                def fake_execute(steps, deploy_env=None):
+                    captured["token"] = deploy_env["CLOUDFLARE_API_TOKEN"]
+                    return steps, [], []
+
+                module.execute_steps = fake_execute
+                sys.argv = [
+                    "cloudflare_production_deploy.py",
+                    "--execute",
+                    "--yes",
+                    "--json",
+                    "--use-staged-api-token-if-present",
+                ]
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.assertEqual(module.main(), 0)
+                payload = json.loads(output.getvalue())
+            finally:
+                module.DEFAULT_STAGED_API_TOKEN_PATH = original_staged_path
+                module.execute_steps = original_execute_steps
+                module.readiness_payload = original_readiness_payload
+                sys.argv = original_argv
+                if original_token is not None:
+                    os.environ["CLOUDFLARE_API_TOKEN"] = original_token
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(captured["token"], token)
+        self.assertNotIn(token, output.getvalue())
+
+    def test_package_deploy_uses_a_staged_token_only_when_it_exists(self):
+        scripts = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["scripts"]
+        self.assertEqual(scripts["cf:token:stage"], "python scripts/stage_cloudflare_deploy_token.py")
+        self.assertIn("--use-staged-api-token-if-present", scripts["cf:deploy"])
 
     def test_cloudflare_clerk_proxy_proof_helper_is_confirm_gated(self):
         module = load_clerk_proxy_proof_script()

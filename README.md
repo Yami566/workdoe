@@ -196,6 +196,7 @@ npm run cf:secrets:evidence
 npm run cf:clerk:proof
 npm run cf:clerk:proof:confirm
 npm run cf:deploy:plan
+npm run cf:token:stage
 npm run cf:deploy
 npm run github:deploy:plan
 npm run github:deploy -- --confirm-clerk-proxy --confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent
