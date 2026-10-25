@@ -475,3 +475,34 @@ called ready until the reviewed release is deployed and the smoke check passes.
 It is also not ready to be represented as an unrestricted commercial launch
 because the legal, data-operations, incident-response, live two-role workflow,
 media-acceptance, and reviewed-release gates above remain open.
+
+## 2026-10-25 independent release-gate rerun
+
+This follow-up did not push to GitHub, deploy a Worker, read a deployment
+token, authenticate as a marketplace user, or create marketplace data. It
+re-ran the following checks against local commit `6b36110`:
+
+- Ten focused public-surface, responsive-layout, Clerk entry-shell, private
+  media-access, demonstration-data, and onboarding tests passed in 5.013
+  seconds. A standalone Clerk session-verification probe separately passed
+  the signed-session, current-JWKS fallback, and invalid-signature paths.
+- `npm run provenance:verify` passed. `npm run cf:d1:query-plan` confirmed the
+  required geo, visible-photo, and media-window indexes with no table scans.
+  `npm run cf:preflight` completed all 186 checks with no errors or warnings.
+- The local Python 3.13 sandbox cannot complete the full imported
+  `test_cloudflare_release` session-verification test: after importing that
+  large test module, even `asyncio.run(asyncio.sleep(0))` stalls. The same
+  verifier completed normally when loaded without the test harness. This is a
+  test-host limitation, not a passing full-suite result; the prior complete
+  suite evidence above remains historical evidence only.
+- The read-only strict production smoke was rerun outside the sandbox because
+  its sandbox DNS resolver cannot resolve public names. Live DNS, HTTPS
+  redirects, health, headers, cache policy, trust/discovery pages, social
+  metadata, production Clerk, invitation entry, and same-domain Clerk proxy
+  passed. The only failures remain the deployed fixture dates for `demo-01`,
+  `demo-02`, and `demo-03` and the missing public `Sample timing` label.
+
+The direct deployment gate still reports only one technical execute blocker:
+`CLOUDFLARE_API_TOKEN` is absent. The ignored token file was not present at
+`cloudflare/.deploy-token` during this rerun, so the reviewed candidate remains
+local and the live production revision remains unchanged.
