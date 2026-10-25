@@ -22,7 +22,9 @@ the current requirements, policy gates, or release status.
 - `workdoe-data-inventory.md`: data classes, storage, visibility, providers,
   and unresolved retention decisions.
 - `workdoe-security-impact-assessment.md`: security boundaries, implemented
-  controls, residual risks, and required live verification.
+  controls, residual risks, and required live verification. Its historical
+  Cloudflare Images references are superseded by the current no-public-media
+  beta decision in the readiness record.
 - `workdoe-policy-review-checklist.md`: public-policy content and owner/legal
   approval gates.
 - `workdoe-operations-runbook.md`: incident, moderation, recovery, credential,

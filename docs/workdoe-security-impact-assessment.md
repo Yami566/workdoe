@@ -1,13 +1,21 @@
 # Workdoe Security Impact Assessment
 
 Assessment date: 2026-08-17; source-license finding reviewed 2026-08-23;
-status-specific production evidence refreshed 2026-10-24.
+status-specific production evidence refreshed 2026-10-25.
 
 The current deployment and Clerk findings in
 `workdoe-launch-readiness-2026-10-24.md` supersede this document's original
 status-specific evidence. This assessment remains the engineering risk model;
 the open operational, legal, and live-workflow risks below remain active until
 the owner checklist is completed.
+
+**Current beta media decision (2026-10-25):** Public project and contractor
+photo uploads are disabled. `WORKDOE_MEDIA_UPLOADS_ENABLED=false`; the
+production Worker has no Cloudflare Images binding and no public upload control.
+References below to Cloudflare Images resizing, portfolio photos, or active
+media-intake controls describe a future, separately reviewed design rather than
+current beta functionality. Retained demonstration or legacy media remains
+permission-scoped.
 
 Scope: the local Flask reference app, Cloudflare Python Worker, D1 schema, R2
 media routes, Clerk same-domain email-code flow, Turnstile validation,
@@ -33,7 +41,7 @@ formal certification against OWASP ASVS or WCAG.
 ### Marketplace and communication data
 
 - Job description, category, city/ZIP, desired date, approximate coordinates,
-  optional budget bounds, status, photos, mini bids, prices/ranges,
+  optional budget bounds, status, legacy media metadata, mini bids, prices/ranges,
   availability, messages, reports, and moderation/audit records.
 - Public project, bid, message, contractor-profile, and onboarding-label text
   reject common email, phone, and street-address patterns before storage. This
@@ -64,7 +72,8 @@ formal certification against OWASP ASVS or WCAG.
 
 ## Security objectives
 
-- Keep exact/contact/private media data from public and unmatched users.
+- Keep exact/contact and any retained private-media data from public and
+  unmatched users.
 - Prevent horizontal and vertical privilege escalation among consumer,
   contractor, and admin roles.
 - Make login, signup, content creation, bidding, messaging, and reports
@@ -264,16 +273,12 @@ formal certification against OWASP ASVS or WCAG.
 - Private R2 storage with object-key prefix validation, no bucket listing,
   private/no-store media responses, and scoped D1/R2 compensating cleanup when
   metadata or queue handoff fails.
-- Production media intake requires Cloudflare Images before R2. Matching
-  extension/MIME/signature input is decoded, orientation is applied, output is
-  bounded to 1600 pixels per side, animation is flattened, and the result is
-  transcoded to WebP so invisible metadata is discarded. Source files are
-  capped at 4 MB and the sanitized result must remain below 1.5 MB. A
-  user-supplied source filename is used only to validate its extension and is
-  then replaced with a generic photo label before D1, R2 metadata, headers, or
-  UI. Per-project, profile, and rolling per-account quotas reject excess uploads
-  before decoding. Raw request bytes are not persisted, and a missing or failed
-  Images binding fails closed.
+- A future media intake design requires Cloudflare Images before R2. Matching
+  extension/MIME/signature input would be decoded, orientation applied, output
+  bounded to 1600 pixels per side, animation flattened, and the result
+  transcoded to WebP so invisible metadata is discarded. The inactive code path
+  retains source-file, sanitized-result, quota, generic-filename, and
+  fail-closed binding checks, but it is not enabled or a public beta promise.
 - Server-side Turnstile Siteverify checks, expected hostname/action checks, and
   fail-closed production configuration.
 - Curated DMV ZIP/category validation, upload MIME/extension/signature allow
@@ -384,13 +389,11 @@ formal certification against OWASP ASVS or WCAG.
 4. OpenStreetMap's public tile service has an availability/usage-policy
    boundary. Attribution is present, but a production growth plan should avoid
    assuming unlimited capacity or an SLA.
-5. Cloudflare Images now performs a managed decode and WebP re-encode before
-   R2 storage, with metadata removal, animation flattening, and fixed dimension
-   bounds. This materially reduces parser and metadata exposure but is not a
-   malware-scanning claim or a substitute for human content moderation. Keep
-   uploads supervised during the controlled beta, enable the required Images
-   Paid subscription, and complete a live invalid-file plus transformed-upload
-   acceptance test before public uploads.
+5. The future Cloudflare Images design provides managed decode and WebP
+   re-encoding before R2 storage, with metadata removal, animation flattening,
+   and fixed dimension bounds. It is currently disabled, is not a
+   malware-scanning claim, and must not be enabled without a separate media
+   policy, cost, moderation, and live valid/invalid-upload acceptance review.
 6. Project creation, ordinary messages, reports, and media uploads now accept a
    durable 24-hour application idempotency key. The Worker browser client uses
    Web Crypto, D1/SQLite store only a SHA-256 hash plus generic resource

@@ -24,7 +24,8 @@ the relevant workflow through a same-domain email-code sign-in.
 - Create an account with an email code without leaving `workdoe.com`.
 - Draft a project before account verification, then post it with title, curated
   category, coarse project setting, city/ZIP, short description, desired date,
-  optional budget range, and optional private photos.
+  and optional budget range. Public photo uploads are disabled for the current
+  beta.
 - Choose one of six numbered work families, then choose a canonical task from
   numbered family-scoped tiles. Each family presents six common tasks first
   and keeps the remaining canonical services behind a plainly labeled
@@ -116,7 +117,8 @@ the relevant workflow through a same-domain email-code sign-in.
   account.
 - Create a contractor account and profile.
 - Complete a seven-item storefront-readiness checklist covering business name,
-  description, services, zones, experience, HTTPS website, and portfolio work.
+  description, services, zones, experience, HTTPS website, and portfolio
+  readiness. Public portfolio-photo uploads are disabled for the current beta.
 - Select canonical service capabilities and practical DMV service zones on the
   profile instead of relying only on free text.
 - Search and filter available work by one of the six canonical work families,
@@ -217,10 +219,10 @@ available with its applicable policy acknowledgement and public disclaimer.
 - Same-domain account and security management using Clerk's maintained profile
   component; optional passkeys may be enabled only after production-domain validation.
 - D1 marketplace and moderation records.
-- Cloudflare Images decode/re-encode before private R2 storage: accepted PNG,
-  JPEG, GIF, and WebP uploads become metadata-free, single-frame WebP output
-  bounded to 1600 pixels per side and below 1.5 MB before permission-checked
-  delivery. Source uploads are capped at 4 MB.
+- Retained legacy or demonstration media, if present, remains private and
+  permission-scoped. New project and portfolio photo uploads are disabled for
+  this beta; enabling the separately designed Cloudflare Images/R2 pipeline
+  requires a new release decision.
 - Deterministic six-signal project brief readiness in the composer, consumer
   workspace, contractor lead board, and both project-detail views.
 - Contractor-owned storefront profiles with deterministic readiness feedback,
@@ -287,6 +289,9 @@ available with its applicable policy acknowledgement and public disclaimer.
   guarantees. A source-checked record is a dated human lookup, not an
   endorsement of skill, safety, coverage, or legal eligibility.
 - Expansion outside DC, Maryland, and Virginia.
+- New project and contractor portfolio photo uploads. The future private-media
+  design is deliberately deferred pending separate retention, abuse,
+  metadata-sanitization, and billing approval.
 - Automatic rebooking, recurring schedules, contractor reservation, automatic
   bid or approval, and any paid advantage in an invited project.
 
@@ -299,9 +304,10 @@ available with its applicable policy acknowledgement and public disclaimer.
   or a consumer with a bid relationship and are labeled as self-reported.
 - Each protected route re-verifies identity, active status, role, ownership,
   and match state rather than trusting browser state.
-- Job and profile photos are uploaded only through allow-listed MIME/extension
-  combinations, a 4 MB source-file limit, a sanitized stored-WebP limit below
-  1.5 MB, scoped object keys, and D1 ownership metadata.
+- New job and profile photo uploads are disabled. Any retained legacy or
+  demonstration media remains behind scoped object keys, D1 ownership metadata,
+  and permission-checked delivery. The future upload path must be re-approved
+  before it can accept user content.
 - Suspended users cannot continue protected marketplace actions.
 - All moderation actions create audit records.
 - The first release uses Clerk Open access mode. Account creation uses email
