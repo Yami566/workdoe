@@ -356,6 +356,45 @@ security and provenance gate reported no known Node or Python dependency
 vulnerabilities, no Bandit medium/high findings, a passing secret gate across
 702 non-ignored files, and passing dependency provenance verification.
 
+### Media alternatives reviewed
+
+The controlled beta's no-upload posture remains the selected release decision.
+It avoids taking raw property images, enables no Cloudflare Images binding, and
+does not depend on a billing threshold to protect a privacy-sensitive workflow.
+It is therefore the only media posture included in the current production
+acceptance scope.
+
+The following alternatives were reviewed against the current [Cloudflare Images
+pricing documentation](https://developers.cloudflare.com/images/pricing/) and
+the [Worker upload-transform guide](https://developers.cloudflare.com/images/tutorials/optimize-user-uploaded-image/), and deliberately deferred:
+
+1. **Direct private R2 originals without transformation.** This could avoid
+   Cloudflare Images Paid by accepting only pre-sized images and enforcing
+   file type, byte, per-account, and rate limits. It would still retain raw
+   image bytes and embedded metadata unless clients reliably remove them, so
+   it needs a separate privacy, deletion, abuse, and authorization review.
+2. **Cloudflare Images Free URL transformations.** Images Free supports up to
+   5,000 unique transformations each month for images stored outside Images,
+   including R2. New transformations fail with error 9422 above that limit;
+   the limit is not a private-media authorization model or a replacement for
+   an upload sanitizer. The URL interface also requires a safely reachable
+   source URL, which is not an accepted route for private Workdoe project
+   photos without further design and live authorization tests.
+3. **Cloudflare Images binding.** Cloudflare's Worker upload-transform guide
+   requires Images Paid for the binding used to resize, strip metadata, and
+   store a sanitized derivative. It remains the reviewed option for a future
+   private-photo feature, provided the operator separately approves its
+   billing and media-retention controls.
+4. **Third-party public image hosts.** These are rejected for the beta. They
+   weaken Workdoe's control over property-photo access, deletion, retention,
+   availability, and provider terms, and are inconsistent with the
+   privacy-minimizing marketplace design.
+
+Cloudflare's free tier and budget alerts are useful monitoring tools, but they
+are not application-level hard spend caps. Workdoe must not describe a
+best-effort quota or a provider free tier as a guarantee that an account will
+never be charged.
+
 The read-only production smoke check against `https://workdoe.com` confirmed
 DNS, HTTP-to-HTTPS redirects, health, security headers, static cache headers,
 trust/discovery pages, social-preview asset, production Clerk key, invitation
