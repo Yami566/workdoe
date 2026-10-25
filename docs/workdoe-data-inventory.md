@@ -22,10 +22,10 @@ Privacy Policy and it does not establish retention periods.
 
 | Data group | Fields and source | Purpose | Stored in | Current visibility |
 | --- | --- | --- | --- | --- |
-| Account identity | Email, display name, company/household name, permanent role, status, verification state, Clerk subject | Sign-in, role enforcement, suspension, account display | Clerk plus D1 `users` | Account owner and active administrators; display/business name may appear in role-appropriate marketplace views |
-| Authentication | Clerk session, email code, code/token hashes, attempt count, keyed IP hash, reset-token hash | Verify identity, limit abuse, recover local/demo accounts | Clerk cookies/session; D1 `login_codes` and local `password_reset_tokens` | Authentication systems only; never public |
+| Account identity | Email, one required public business name or non-identifying handle, permanent role, status, verification state, Clerk subject | Sign-in, role enforcement, suspension, account display | Clerk plus D1 `users` | Account owner and active administrators; the user-entered public label may appear in role-appropriate marketplace views. Clerk names and email local parts are never copied into the public profile. Workdoe no longer collects a separate household or organization name during onboarding. |
+| Authentication | Clerk session, email-code state/claims, native-development code hashes, attempt count, keyed IP hash, and the provider marker in the legacy `users.password_hash` column | Verify identity and limit abuse without Workdoe password credentials | Clerk cookies/session; D1 `login_codes` only for the isolated native-development adapter; legacy `password_reset_tokens` table remains for schema compatibility but is not reachable in Clerk production | Authentication systems only; never public. Clerk-linked Worker rows use the literal marker `clerk-managed`, not a user password or password hash. |
 | Idempotent write record | Actor ID, allow-listed action, SHA-256 request-key hash, generic resource type/ID, processing/completed state, creation/completion/expiry timestamps | Prevent browser or network retries from creating duplicate projects, ordinary messages, moderation reports, or private photos | D1/SQLite `idempotency_requests`; browser key created with Web Crypto | Internal application control only. It stores no raw key, identity/contact value, project content, message/report text, media path, location, bid term, or ranking field. Records expire after 24 hours and are opportunistically removed by later protected creates |
-| Consumer profile | Organization/household name, workspace type, email-reminder preference, email-reminder consent timestamp, private note, legacy optional phone | Support households, recurring users, and small organizations without making them public marketplace profiles; prove affirmative consent before optional bid-reminder email | D1 `client_profiles` | Account owner and active administrators; current marketplace payloads do not expose these profile fields or phone. New/pre-consent profiles use the Workdoe inbox only; disabling email clears the consent timestamp and the scheduled queue requires both the email preference and a timestamp |
+| Consumer profile | Public-label copy, workspace type, email-reminder preference, email-reminder consent timestamp, private note, legacy phone column | Support recurring users without making them public marketplace profiles; prove affirmative consent before optional bid-reminder email | D1 `client_profiles` | Account owner and active administrators; current marketplace payloads do not expose these profile fields or phone. Workspace labels and private notes reject common email, phone, and street-address patterns before storage. New/pre-consent profiles use the Workdoe inbox only; disabling email clears the consent timestamp and the scheduled queue requires both the email preference and a timestamp |
 | Saved project area | Owner-defined label, city, state, ZIP, timestamps | Prefill the approximate-location step for recurring work | D1 `client_saved_locations` | Owning consumer and active administrators; project composer shows only the owner's records and no street address is collected |
 | Project template | Owner-defined name plus service family/task, category, title, description, coarse project setting, optional budget, optional license-record preference, source-project ID, timestamps | Reuse recurring scope without silently carrying stale or sensitive project state | D1 `client_project_templates` | Owning consumer and active administrators through controlled operations. The schema excludes city, state, ZIP, desired date, photos/media paths, bids, messages, close outcomes, and completion state; use opens the six-step composer with location/date blank |
 | Repeat-provider invitation | New project ID, prior project and approved-match IDs, consumer and contractor IDs, canonical service, pending/bid-sent/declined/withdrawn state, timestamps | Let a consumer ask a contractor from mutually verified work to consider a new same-service project without silently recreating prior terms; measure invitation, fresh-bid, and verified-repeat outcomes | D1 `repeat_provider_invitations`; one immediate Cloudflare email queue job in production | Owning consumer sees status; invited contractor sees the new project and may pass or submit a fresh ordinary mini bid; active administrators receive aggregate funnel counts and a recent project-level queue. The table contains no address, ZIP, media, message, contact, prior bid, price, schedule, or ranking fields. The email carries only recipient, new-project title, city/state, and a same-domain `/jobs/:id` URL; its D1 audit record replaces recipient with a keyed hash and omits message content |
@@ -41,8 +41,8 @@ Privacy Policy and it does not establish retention periods.
 | Service-zone pulse projection | Monday week, canonical service, coarse DMV zone, aggregate published/brief-ready/with-bid/matched/verified counts, median project-to-first-bid time, desired-date count, controlled close-out buckets, open-project-report count, total bid count, and current eligible/minimum contractor counts | Let an administrator detect thin demand, slow response, poor close outcomes, open review load, and supply gaps before expansion or monetization | Computed from existing D1 marketplace and activation records in Python; not stored as a separate analytics table | Active administrators only. First-bid timestamps are reduced to a project-level duration and then a cell median; raw timestamps are not returned. Open reports are counted once per project without reason text. Output contains no project/account ID, name, email, phone, street address, ZIP, coordinates, narrative, media, message, bid terms, close note, report reason, or private feedback. Local `.local` demo accounts are excluded. Current supply is a review-time snapshot, not the historical count at first bid, and the projection never changes ranking, moderation, account status, or eligibility |
 | Pre-verification draft | Project fields above except email and photos, including the optional license-record preference; random token hash and expiry | Let a consumer begin before email verification | D1 `job_drafts`; HttpOnly draft cookie | Token holder until consumed or expired; not publicly listed; the coarse setting and neutral preference follow the same restrictions as the published project |
 | Draft scope answers | Draft ID, scope schema version, controlled question key, controlled answer code, timestamps | Preserve optional quote-readiness choices through same-domain email verification | D1 `job_draft_scope_answers` | Available only through the valid draft token, then copied from the submitted form into the published project's normalized answer rows. The table has the same location/contact exclusions as project scope answers |
-| Project media | Cloudflare Images-sanitized single-frame WebP bytes, original filename in D1, sanitized content type/size, generic storage key, uploader/owner IDs, moderation state | Show project conditions to eligible contractors while discarding embedded metadata and never persisting raw upload bytes | Cloudflare Images transform, private R2 `workdoe-media`, and D1 `job_photos` | Owning consumer, active contractors for open jobs or approved matches, and active administrators; never publicly listable |
-| Contractor media | Cloudflare Images-sanitized single-frame WebP bytes and the same metadata categories | Portfolio display and moderation while discarding embedded metadata and never persisting raw upload bytes | Cloudflare Images transform, private R2, and D1 `contractor_photos` | Active public profile unless hidden; owner and active administrators retain management access |
+| Project media | Cloudflare Images-sanitized single-frame WebP bytes below 1.5 MB, generic photo label, sanitized content type/size, generic storage key, uploader/owner IDs, moderation state | Show project conditions to eligible contractors while discarding embedded metadata and user-controlled source filenames; never persist raw upload bytes | Cloudflare Images transform, private R2 `workdoe-media`, D1 `job_photos`, and redacted `media-uploaded` audit events | Owning consumer, active contractors for open jobs or approved matches, and active administrators; never publicly listable. Source files are capped at 4 MB, each project at six photos, and every account shares the 12-successful-upload rolling 24-hour allowance. |
+| Contractor media | Cloudflare Images-sanitized single-frame WebP bytes below 1.5 MB and the same metadata categories | Portfolio display and moderation while discarding embedded metadata and never persisting raw upload bytes | Cloudflare Images transform, private R2, D1 `contractor_photos`, and redacted `media-uploaded` audit events | Active public profile unless hidden; owner and active administrators retain management access. Source files are capped at 4 MB, each profile at eight photos, and every account at 12 successful uploads per rolling 24 hours. Removing a photo does not reset that rolling allowance. |
 | Mini bid | Scope note, price/range, timeline, experience, questions, availability, status | Let a contractor request a match | D1 `match_requests` | Submitting contractor, project owner, and active administrators |
 | Contractor proposal template | Owner-defined name, source mini-bid ID, reusable scope note, timeline, experience, questions, availability, timestamps | Reduce repeat typing while forcing a new commercial estimate for each project | D1 `contractor_proposal_templates` | Owning contractor and active administrators through controlled operations. The schema has no price, project ID, client identity, email, phone, location, address, ZIP, media, message, ranking, or outcome field. Applying a template prefills only reusable wording and leaves price blank |
 | Consumer bid comparison projection | Up to four pending bid IDs, contractor ID/display name/trades, latest visible contractor-photo ID, price range, timeline, availability, received-order position, self-reported years/insurance presence, current source-checked credential count, and mutually verified Workdoe project count | Let the owning consumer compare like-for-like offer and provider facts before opening a profile or approving a match | Computed in shared local/Worker Python code from existing bid/profile/credential/completion/media records; not stored separately | Owning consumer and active administrators through the protected project view. The media projection emits only `/media/contractors/:id` for a non-hidden active-profile photo and never emits the R2 key or original filename. It also excludes email, phone, address, ZIP, coordinates, website, license/credential identifier, review narrative, private messages, fit score, recommendation, and paid placement. Source checks, completion history, and self-reported fields remain separately labeled and never become a composite score |
@@ -51,7 +51,7 @@ Privacy Policy and it does not establish retention periods.
 | Completed-work feedback | Approved match ID, reviewer and subject IDs, reviewer role, four controlled dimension codes, work-together-again code, optional capped narrative, one optional recipient response, hidden state, timestamps | Capture two-sided project evidence only after mutual completion without manufacturing a star score or recommendation rank | D1 `match_reviews` | One record per reviewer/match. Both participants see match feedback in their workspaces; client-authored contractor feedback may appear only where the contractor profile itself is relationship-visible. The projection excludes emails, contact fields, location, address, media, and bid terms |
 | Feedback report | Review ID, reporter ID, capped reason, open/resolved state, timestamps | Let either review participant request human moderation | D1 `match_review_reports` | Review participants can create one report each; active administrators can inspect and resolve it. Automation events retain only role/action metadata, not the reason |
 | Approved conversation | Thread participants, message body, sender, timestamp, hidden state, and per-participant last-read message ID/time | Private post-approval communication and durable unread state | D1 `threads`, `messages`, and `thread_reads` | Approved consumer/contractor participants; administrators have read-only moderation inspection. The participant inbox derives a `needs_reply` boolean from the latest visible sender at response time, but does not store or return that sender ID, add a behavioral profile, or affect marketplace ordering |
-| Safety report | Reporter, target type/ID, reason, status, timestamps | Review abuse, privacy, and safety issues | D1 `reports` | Creation requires the reporter to be authorized to view the target; reporter confirmation and active administrators can view the resulting record |
+| Safety report | Reporter, target type/ID, reason, status, timestamps | Review abuse, privacy, and safety issues | D1 `reports`; one generic Cloudflare email queue event | Creation requires the reporter to be authorized to view the target; reporter confirmation and active administrators can view the resulting record. The operator alert contains only report/target IDs, target type, and a private admin-console link; it excludes reason text, reporter identity, account email, project details, messages, and media. |
 | Moderation/audit | Administrator ID, action, target, reason/notes, timestamps; allow-listed automation metadata | Accountability, recovery, queue operations, abuse investigation | D1 `moderation_actions` and `automation_events` | Active administrators |
 | Platform request data | IP address sent transiently to Turnstile and Clerk proxy; keyed IP hash for native-code rate limits; internal Workdoe user ID used transiently as the authenticated Worker rate-limit key; request/error metadata in Workers Logs | Bot defense, rate limiting, authentication proxy, service diagnosis | Cloudflare processing, limited D1 keyed hash, Workers Logs | Authorized operators and service providers |
 
@@ -94,12 +94,16 @@ star score, recommendation order, or paid placement.
 An active contractor can see open project descriptions, ZIP prefix, budget,
 desired date, and job photos so they can prepare a mini bid. Exact street
 address is not a structured Workdoe field. Project-entry forms warn consumers
-not to place an exact address, email, or phone in free text.
+not to place an exact address, email, or phone in free text. The current
+application also rejects common email-address, US phone-number, street-address,
+and PO Box patterns before it stores project titles/descriptions, mini bids,
+messages, or contractor introductions. This boundary deliberately leaves the
+dedicated contractor HTTPS website field available for a business URL.
 
-Residual risk: a consumer can ignore that warning and type contact or address
-data into a title, description, message, or image. Before unrestricted launch,
-the owner must choose moderation-only handling or an approved detection/blocking
-rule and false-positive process.
+Residual risk: deterministic patterns cannot identify every personal-data
+disclosure, including contact details embedded in an image or unusually written
+addresses. Moderation, reports, and an owner-reviewed false-positive process
+remain necessary before unrestricted launch.
 
 ### Approved matches
 
@@ -153,7 +157,7 @@ Workdoe application JavaScript does not intentionally store marketplace data in
 | Provider | Data handled | Boundary |
 | --- | --- | --- |
 | Cloudflare Workers, D1, R2, Queues, Email Service, Turnstile, and Logs | Application records, private media, email jobs, request/security metadata | Primary production platform; access, retention, backup, and deletion settings require operator approval and drills |
-| Clerk | Email identity, email-code verification, sessions, user subject | Production identity provider; Open access mode and production-instance proof remain launch gates |
+| Clerk | Email identity, email-code verification, sessions, user subject | Production identity provider; Open access mode and the non-secret production proof are verified locally, while retention and deletion operations remain launch gates |
 | OpenStreetMap tile service | Tile request metadata such as requester IP and browser headers | Public map tiles only; no exact Workdoe address or browser geolocation is sent by application code |
 | GitHub Actions | Source, tests, release metadata, Cloudflare deployment credentials | Release tooling; production user exports and database/media backups must not be attached as workflow artifacts |
 
@@ -218,8 +222,12 @@ operator-identity, contact-ownership, and legal decisions tracked in
 - Uploads require matching allow-listed extension, MIME type, and file header;
   failed metadata or queue handoffs trigger scoped D1/R2 cleanup and an audit
   event so private orphaned objects can be reconciled.
-- Project forms now warn against exact street addresses, email addresses, and
-  phone numbers.
+- Project forms warn against exact street addresses, email addresses, and phone
+  numbers. The shared application guard also rejects common email-address, US
+  phone-number, street-address, and PO Box patterns in user-authored project,
+  bid, message, contractor-profile, onboarding-label, private-workspace, and
+  saved-area-label text before storage. It does not claim universal free-text
+  or image-based personal-data detection.
 - Reports can be created only for targets the reporter is authorized to see;
   private-message reports require membership in the approved thread.
 - Contractor websites are accepted only as public HTTPS URLs. Validation
@@ -227,16 +235,16 @@ operator-identity, contact-ownership, and legal decisions tracked in
   ports, malformed DNS labels, and whitespace/control characters. Rendered
   links open in a new tab with `noopener`, `noreferrer`, `nofollow`, and
   `external` relationships.
-- The unused contractor phone input was removed. Existing legacy database
-  columns remain for migration compatibility and are cleared when a contractor
-  profile is saved.
+- The unused contractor phone input was removed. Existing legacy phone columns
+  remain for migration compatibility and are cleared when a contractor profile
+  is saved; onboarding inserts empty values.
 
 ## Owner decisions required
 
-1. Decide whether client profile phone is also removed until a supported use
-   exists.
-2. Approve whether free-text contact/address leakage is handled through user
-   instruction and moderation or through a blocking detector and appeal path.
+1. Verify that imported legacy client-profile phone values, if any, are cleared
+   before launch; new Workdoe onboarding does not collect or write phone data.
+2. Assign an owner for reviewing reported personal-data disclosures and
+   documented false positives from the current deterministic text guard.
 3. Set retention/deletion periods for accounts, identity links, projects,
    drafts, media, bids, messages, reports, moderation/audit records, and logs.
 4. Name the privacy-request owner, identity-verification method, export format,

@@ -2,7 +2,7 @@
 
 Status: launch-candidate requirements baseline
 
-Last reviewed: 2026-08-21
+Last reviewed: 2026-10-24
 
 ## Product statement
 
@@ -203,8 +203,9 @@ Quote-readiness question sets are currently implemented for house, deep, and
 move cleaning; packing/unpacking; in-home lifting; freestanding furniture
 assembly; lawn mowing; gardening; landscaping; local moving; pressure washing;
 window cleaning; interior painting; and kitchen remodeling. A question set in
-code is not permission to launch that service-zone pair: activation still
-requires the reviewed legal, safety, evidence, supply, and operator gates below.
+code supports a clearer brief; it is not a legal, credential, or safety
+determination. During the advisory-only beta, every curated service remains
+available with its applicable policy acknowledgement and public disclaimer.
 
 ### Included
 
@@ -218,7 +219,8 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
 - D1 marketplace and moderation records.
 - Cloudflare Images decode/re-encode before private R2 storage: accepted PNG,
   JPEG, GIF, and WebP uploads become metadata-free, single-frame WebP output
-  bounded to 2400 pixels per side before permission-checked delivery.
+  bounded to 1600 pixels per side and below 1.5 MB before permission-checked
+  delivery. Source uploads are capped at 4 MB.
 - Deterministic six-signal project brief readiness in the composer, consumer
   workspace, contractor lead board, and both project-detail views.
 - Contractor-owned storefront profiles with deterministic readiness feedback,
@@ -248,14 +250,14 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
   a Workdoe-match close eligible for completion confirmation.
 - Normalized contractor service capabilities and DMV coverage zones with
   legacy-profile inference during migration.
-- Jurisdiction-specific service activation records that fail closed when the
-  allowed scope, required evidence, verification status, minimum eligible
-  supply, or escalation owner is missing or expired.
-- An initial controlled lane limited to interior cleaning, move cleaning,
-  packing/unpacking, in-home heavy lifting, and freestanding furniture assembly;
-  exterior work, vehicle transport, disposal, wall attachment, real-property
-  alteration, and licensed trades remain inactive until their service-zone gate
-  is approved.
+- Every curated service remains visible and bid-enabled in the advisory-only
+  beta. Each service has a versioned policy record; elevated and regulated
+  services require the relevant client or contractor acknowledgement before a
+  project is posted or a mini bid is submitted.
+- Jurisdiction-specific service activation records remain an internal review
+  and future rollout tool. They do not change posting, bidding, discovery, or
+  ranking during this beta; enabling that separate gate requires an explicitly
+  reviewed configuration change and legal/operational approval.
 - Repeat-project prefilling from consumer project history.
 - A privacy-safe project-setting choice for house, apartment/condo, business
   space, shared building area, outdoor area, or other; no property listing,
@@ -298,7 +300,8 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
 - Each protected route re-verifies identity, active status, role, ownership,
   and match state rather than trusting browser state.
 - Job and profile photos are uploaded only through allow-listed MIME/extension
-  combinations, a 12 MB limit, scoped object keys, and D1 ownership metadata.
+  combinations, a 4 MB source-file limit, a sanitized stored-WebP limit below
+  1.5 MB, scoped object keys, and D1 ownership metadata.
 - Suspended users cannot continue protected marketplace actions.
 - All moderation actions create audit records.
 - The first release uses Clerk Open access mode. Account creation uses email
@@ -411,9 +414,10 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
   contrast, and zoom/reflow pass.
 - Privacy Policy, Terms, Safety, security contact, retention/deletion policy,
   and contractor disclaimers are approved and linked from public pages.
-- Every live service-zone pair has an approved allowed/excluded scope, evidence
-  path, at least three eligible contractors plus an operational backup, tested
-  intake questions, and a monitored safety escalation owner.
+- The advisory-only service-policy wording, acknowledgement paths, and incident
+  escalation process have counsel and operator approval before unrestricted
+  public registration. Service-zone review records may inform a future gated
+  rollout, but they do not limit the 53-service beta catalogue.
 - Qualified-match, time-to-first-eligible-bid, approved-match, verified-
   completion, and safety metrics are reviewed by service, zone, and week rather
   than only as a regional aggregate.

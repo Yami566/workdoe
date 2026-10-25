@@ -10,20 +10,38 @@ Production changes remain manual and must use the guarded release path.
 
 ## Required owners and contacts
 
-The following decisions must be filled before public beta invitations are sent.
+The following decisions must be filled before unrestricted public registration
+or public beta invitations are opened.
 
 | Responsibility | Named owner | Monitored contact | Response target |
 | --- | --- | --- | --- |
 | Incident commander | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED |
 | Cloudflare/release operator | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED |
 | Clerk/auth operator | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED |
-| Privacy and deletion requests | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED |
-| Safety and abuse reports | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED |
+| Privacy and deletion requests | Owner-designated operator | `admin@workdoe.com` | 1-5 business days for ordinary requests |
+| Safety and abuse reports | Owner-designated operator | `admin@workdoe.com` | 1-5 business days for ordinary requests; urgent path still required |
 | Legal notification decision | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED |
 
 Do not publish an inbox until a person owns and monitors it. Do not put secrets,
 email codes, session tokens, exact addresses, or private message bodies in an
 incident ticket or chat channel.
+
+## Operator alert routing
+
+The Worker queues a generic alert for every new moderation report. The alert
+goes to `WORKDOE_ADMIN_EMAIL` (`admin@workdoe.com` in the reviewed release),
+links only to the private `/admin` console, and intentionally omits report
+text, reporter identity, project details, message content, and media.
+
+Before enabling this alert in production, configure Cloudflare Email Routing to
+forward `admin@workdoe.com` to the owner-controlled `moosebay@gmail.com`
+destination. Cloudflare will require the destination owner to verify that
+forwarding address. Keep `admin@workdoe.com` as the public contact so the
+application configuration does not contain a personal mailbox. Test one
+controlled report after the verification: confirm that the alert arrives, its
+link requires an administrator session, and no report content appears in the
+email. This alert is a notification, not a substitute for the P0/P1 incident
+response procedure or emergency services.
 
 ## Service inventory
 
@@ -35,34 +53,37 @@ incident ticket or chat channel.
 | R2 | `workdoe-media` / binding `MEDIA` | Private project and contractor media |
 | Queues | `workdoe-email`, `workdoe-media-review` | Transactional email and media-review work |
 | Email Service | binding `EMAIL` | Email Sending is enabled for `workdoe.com`; mail is restricted to `no-reply@workdoe.com`; Cloudflare currently labels sending a Workers Paid public-beta service |
-| Clerk | Workdoe production instance | Invitation-only email-code identity and sessions |
+| Clerk | Workdoe production instance | Open-access email-code identity and sessions; password sign-in is disabled |
 | Turnstile | Workdoe production widget | Bot checks for protected writes |
 | Workers Rate Limiting | binding `WRITE_RATE_LIMITER` | Per-user authenticated write protection |
 | GitHub Actions | `Workdoe Cloudflare Release` | Manual guarded release workflow |
 
-Production sets `WORKDOE_ENFORCE_SERVICE_ACTIVATION=true`. The release preflight
-must reject a configuration that removes this gate.
+Production sets `WORKDOE_ENFORCE_SERVICE_ACTIVATION=false` for the advisory-only
+beta. The release preflight rejects accidental service-zone gating so all 53
+curated services remain available, subject to their policy acknowledgements.
 
 Before enabling project or portfolio uploads in production:
 
 1. Enable Cloudflare Images Paid on the same account that owns the `workdoe`
    Worker and confirm Wrangler reports `env.IMAGES` in a dry-run package.
 2. Upload one controlled valid image and verify the R2 object is WebP, no more
-   than 2400 pixels per side, private, and readable only through the expected
-   permission-checked route.
+   than 1600 pixels per side and below 1.5 MB, private, and readable only
+   through the expected permission-checked route.
 3. Submit one invalid image with a misleading extension and confirm Workdoe
    rejects it without creating an R2 object, D1 photo row, or completed
    idempotency record.
 4. Record the test date, operator, object/row IDs, expected authorization
    outcomes, and cleanup. Do not retain the raw test upload or expose its key.
 
-## Service-zone launch control
+## Service-zone review records
 
-Workdoe activates a service in one practical DMV zone at a time. Migration
-`0011_service_zone_activations.sql` seeds the controlled pilot combinations as
-`candidate`; applying the migration does not open a market.
+Workdoe retains service-zone review records as an internal planning and future
+rollout control. Migration `0011_service_zone_activations.sql` seeds candidate
+records; those records do not open, close, rank, or otherwise limit a service
+during the advisory-only beta.
 
-An activation is live only when all of these conditions hold:
+For a future gated rollout, an activation is live only when all of these
+conditions hold:
 
 1. The status is `active`, and the canonical service and zone remain enabled.
 2. Allowed scope, excluded scope, and the operator requirements summary are
@@ -70,7 +91,7 @@ An activation is live only when all of these conditions hold:
 3. Approval and review timestamps are present and the record has not expired.
 4. The live count of active contractors selecting both that service and that
    zone meets `minimum_eligible_contractors`.
-5. The production enforcement variable is exactly `true`.
+5. The operator has separately approved a future gated-rollout configuration.
 
 Before changing a candidate to active, the operator must attach a private
 evidence record containing the service and zone, source links and retrieval
@@ -79,7 +100,7 @@ minimum supply rationale, reviewer, approver, review date, and expiry date.
 Legal interpretation and insurance adequacy require qualified human review;
 neither free text nor an embedding may approve a market.
 
-Activation procedure:
+Future gated-rollout procedure:
 
 1. Run strict readiness and record a D1 Time Travel bookmark/export.
 2. Confirm the exact canonical slugs with a read-only query against
@@ -94,10 +115,13 @@ Activation procedure:
 5. Run preflight, the controlled two-role smoke test, and public job/API checks.
    Record the result without copying private user or project data.
 
-To stop new publication and bidding immediately, set the exact row to `paused`
-with a reviewed, scoped D1 update and record the reason. Existing approved
-matches retain their private thread so participants are not stranded. Use
-`retired` only when the market should not be reopened from the same evidence.
+If the future gate is explicitly enabled, setting the exact row to `paused`
+stops new publication and bidding for that service-zone pair; record the reason.
+During the advisory-only beta, a paused record has no marketplace effect. Use
+the existing moderation and incident controls to hide unsafe content or suspend
+an account, and retain approved private threads so participants are not
+stranded. Use `retired` only when the market should not be reopened from the
+same evidence.
 
 The initial candidate set is interior house cleaning, deep cleaning, move
 cleaning, packing/unpacking, in-home heavy lifting, and freestanding furniture
@@ -397,6 +421,39 @@ No row may be marked complete without a date, operator, approver, evidence path,
 and an observed result. Drill evidence must be redacted and kept outside public
 artifacts when it contains account or infrastructure details.
 
+### Controlled beta marketplace acceptance
+
+Before changing the beta's operating status, run this journey with two
+owner-controlled test accounts and synthetic content only. The owner enters each
+email code personally. Do not put email addresses, codes, session identifiers,
+exact addresses, or private-message bodies in the evidence record.
+
+1. Sign in as a consumer with the one-time email code. Confirm the session
+   reaches the consumer workspace and that a refresh retains the authenticated
+   session without exposing the code in the URL or page source.
+2. Post one project using a service-family and service selection, a city and ZIP
+   only, and neutral test scope text. Confirm the form rejects an email address,
+   phone number, or street address in its free-text fields. Upload one valid
+   synthetic image.
+3. Sign in as the contractor test account with its own email code. Confirm the
+   map/list shows only an approximate location, the service filters return the
+   project, and the contractor can open the authorized photo without learning a
+   street address, contact detail, raw storage key, or source filename.
+4. Submit a synthetic mini bid. From the consumer account, review and approve
+   it; confirm that a private message thread opens only for those two matched
+   accounts. Send a neutral test message and confirm the text guard rejects
+   contact or street details.
+5. Mark the test project complete, then confirm each account's history shows
+   the appropriate project/work result without an exact address. Confirm a
+   third, unmatched account cannot retrieve the project photo or message.
+6. Record pass/fail for every assertion, a redacted timestamp, application
+   release SHA, and the operator/approver in private operating evidence. A
+   failure leaves the drill pending; it is not fixed by editing this document.
+
+Run the media-specific valid, invalid, oversize, quota, rate-limit, and cleanup
+checks separately under the media drill. Run an export/deletion test only after
+the retention, legal-hold, and identity-verification rules are approved.
+
 | Drill | Environment | Date | Operator/approver | Evidence | Result |
 | --- | --- | --- | --- | --- | --- |
 | D1 export and import into separate test D1 | Isolated local D1 | 2026-08-16 | Codex / N/A for local isolation | `docs/launch-readiness-2026-08-16/D1_LOCAL_RECOVERY_DRILL.md` | Pass locally; production recovery remains unproved |
@@ -404,6 +461,8 @@ artifacts when it contains account or infrastructure details.
 | R2 manifest, sampled backup, and restore | Non-production | Not run | Not assigned | None | Pending |
 | Clerk production credential rotation | Production-safe rotation | Not run | Not assigned | None | Pending |
 | Cloudflare/GitHub token rotation | Production-safe rotation | Not run | Not assigned | None | Pending |
+| Two-account marketplace journey and authorization boundary | Production | Not run | Owner / Not assigned | Private redacted acceptance record | Pending |
+| Valid, invalid, oversize, quota, rate-limit, and cleanup media checks | Production | Not run | Owner / Not assigned | Private redacted media acceptance record | Pending |
 | Synthetic account export and deletion | Production or production-equivalent | Not run | Not assigned | None | Pending |
 | Abuse report, hide, suspend, resolve, and appeal | Production-equivalent | Not run | Not assigned | None | Pending |
 | Worker rollback and strict smoke | Production or production-equivalent | Not run | Not assigned | None | Pending |

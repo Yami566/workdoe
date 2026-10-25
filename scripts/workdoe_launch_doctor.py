@@ -343,14 +343,24 @@ def build_doctor(
                     "Cloudflare is missing required secret bindings: "
                     + ", ".join(missing_secret_names)
                 )
+    sanitized_secret_evidence_ready = any(
+        phase.get("name") == "identity-and-secrets"
+        and phase.get("status") == "ready"
+        for phase in cloudflare.get("phases", [])
+        if isinstance(phase, dict)
+    )
     evidence_missing_secret_names = missing_worker_secret_names(cloudflare["blockers"])
     effective_missing_secret_names = (
         missing_secret_names
         if secret_bindings_checked and missing_secret_names is not None
+        else []
+        if sanitized_secret_evidence_ready
         else evidence_missing_secret_names
     )
     binding_evidence_source = "live-wrangler" if secret_bindings_checked else "unavailable"
-    if not secret_bindings_checked and evidence_missing_secret_names:
+    if not secret_bindings_checked and (
+        sanitized_secret_evidence_ready or evidence_missing_secret_names
+    ):
         binding_evidence_source = "sanitized-evidence"
         secret_bindings_summary = (
             "Live Wrangler secret-name probing requires a local API token; sanitized "
@@ -449,7 +459,11 @@ def build_doctor(
                     + (
                         f"Worker secret evidence: {len(WORKER_SECRET_NAMES) - len(effective_missing_secret_names)}/{len(WORKER_SECRET_NAMES)} required present."
                         if effective_missing_secret_names
-                        else "Direct non-interactive secret-name probing requires CLOUDFLARE_API_TOKEN; the release gate uses sanitized local evidence when present."
+                        else (
+                            "Worker secret names are proven by sanitized local evidence."
+                            if binding_evidence_source == "sanitized-evidence"
+                            else "Direct non-interactive secret-name probing requires CLOUDFLARE_API_TOKEN; the release gate uses sanitized local evidence when present."
+                        )
                     )
                 )
             ),
@@ -510,7 +524,7 @@ def build_doctor(
                 len(present_secret_names)
                 if secret_bindings_checked
                 else len(WORKER_SECRET_NAMES) - len(effective_missing_secret_names)
-                if evidence_missing_secret_names
+                if binding_evidence_source == "sanitized-evidence"
                 else 0
             ),
             "missing": effective_missing_secret_names,

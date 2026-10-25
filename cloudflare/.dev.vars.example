@@ -4,8 +4,10 @@ WORKDOE_ENV=production
 WORKDOE_AUTH_PROVIDER=clerk
 WORKDOE_DOMAIN=workdoe.com
 WORKDOE_PUBLIC_URL=https://workdoe.com
+WORKDOE_MAP_TILE_URL=https://tile.openstreetmap.org/{z}/{x}/{y}.png
+WORKDOE_MAP_TILE_ATTRIBUTION=&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>
 WORKDOE_LOGIN_MODE=same_domain_email_code
-WORKDOE_ENFORCE_SERVICE_ACTIVATION=true
+WORKDOE_ENFORCE_SERVICE_ACTIVATION=false
 CLERK_JWT_KEY=replace-me
 CLERK_PUBLISHABLE_KEY=replace-me
 CLERK_SECRET_KEY=replace-me

@@ -1,6 +1,13 @@
 # Workdoe Security Impact Assessment
 
-Assessment date: 2026-08-17; source-license finding reviewed 2026-08-23
+Assessment date: 2026-08-17; source-license finding reviewed 2026-08-23;
+status-specific production evidence refreshed 2026-10-24.
+
+The current deployment and Clerk findings in
+`workdoe-launch-readiness-2026-10-24.md` supersede this document's original
+status-specific evidence. This assessment remains the engineering risk model;
+the open operational, legal, and live-workflow risks below remain active until
+the owner checklist is completed.
 
 Scope: the local Flask reference app, Cloudflare Python Worker, D1 schema, R2
 media routes, Clerk same-domain email-code flow, Turnstile validation,
@@ -15,7 +22,9 @@ formal certification against OWASP ASVS or WCAG.
 ### Account and identity data
 
 - Email, external Clerk subject/session identifiers, Workdoe role, account
-  status, display name, and optional organization name.
+  status, and one required public business name or non-identifying handle.
+  Clerk profile names and email local-parts are not used as the Workdoe public
+  label. Onboarding does not collect a separate household or organization name.
 - Clerk owns public identity verification; Workdoe owns role, marketplace
   authorization, and profile records.
 - The browser presents a token. The Worker verifies its RS256 signature and
@@ -26,8 +35,14 @@ formal certification against OWASP ASVS or WCAG.
 - Job description, category, city/ZIP, desired date, approximate coordinates,
   optional budget bounds, status, photos, mini bids, prices/ranges,
   availability, messages, reports, and moderation/audit records.
-- Private consumer workspace type, note, reminder preference, and owner-scoped
-  saved city/ZIP project areas. Workdoe does not collect a saved street address.
+- Public project, bid, message, contractor-profile, and onboarding-label text
+  reject common email, phone, and street-address patterns before storage. This
+  deterministic guard reduces common accidental disclosures but cannot
+  establish that arbitrary free text contains no personal information.
+- Private consumer workspace type, label, note, reminder preference, and
+  owner-scoped saved city/ZIP project areas. Workspace labels, notes, and
+  saved-area labels reject common email, phone, and street-address patterns.
+  Workdoe does not collect a saved street address.
 - Anonymous project drafts are stored in D1/SQLite under a random-token hash,
   contain no email or photos, expire after 24 hours, and are consumed after the
   verified client posts the project. The raw token stays in an HttpOnly,
@@ -105,12 +120,13 @@ formal certification against OWASP ASVS or WCAG.
   stored field, public response, recipient, notification, inference, or access
   path. Legacy view aliases normalize before filtering; active, paused, and
   history rows keep their existing same-domain owner URLs and private fields.
-- Production service publication and new bidding fail closed through a
-  canonical service-zone activation record. A market requires reviewed scope,
-  approval and freshness timestamps, an active status, and a live minimum count
-  of eligible contractors; candidate, paused, expired, undersupplied, or missing
-  records stay closed. Existing approved conversations remain available when a
-  market is paused.
+- The controlled beta keeps all 53 curated services available with a versioned
+  advisory policy. Elevated and regulated services require a current policy
+  acknowledgement before a project or mini bid is stored. Service-zone
+  activation records are retained for review and a future explicitly approved
+  gated rollout; they cannot silently change beta publication, bidding,
+  discovery, or ranking. Existing approved conversations remain available if a
+  future gated market is paused.
 - Mini-bid creation uses one conditional `INSERT ... SELECT` statement that
   rechecks project status, deadline, total response count, and per-contractor
   uniqueness at write time. Rejected responses still count, preventing a
@@ -198,7 +214,7 @@ formal certification against OWASP ASVS or WCAG.
   canonical service. Invitation actions recheck the exact consumer or
   contractor ID, and bid conversion updates only that contractor's pending
   invitation. Closing the new project withdraws an unanswered invitation. No
-  invitation bypasses service activation, bid cap, deadline, duplicate-bid,
+  invitation bypasses service-policy acknowledgement, bid cap, deadline, duplicate-bid,
   Turnstile, or match-approval controls.
 - A production repeat invitation queues one transactional email after the new
   invitation record exists. Its link validator accepts only HTTPS
@@ -250,14 +266,18 @@ formal certification against OWASP ASVS or WCAG.
   metadata or queue handoff fails.
 - Production media intake requires Cloudflare Images before R2. Matching
   extension/MIME/signature input is decoded, orientation is applied, output is
-  bounded to 2400 pixels per side, animation is flattened, and the result is
-  transcoded to WebP so invisible metadata is discarded. Raw request bytes are
-  not persisted, generic object filenames are used, and a missing or failed
+  bounded to 1600 pixels per side, animation is flattened, and the result is
+  transcoded to WebP so invisible metadata is discarded. Source files are
+  capped at 4 MB and the sanitized result must remain below 1.5 MB. A
+  user-supplied source filename is used only to validate its extension and is
+  then replaced with a generic photo label before D1, R2 metadata, headers, or
+  UI. Per-project, profile, and rolling per-account quotas reject excess uploads
+  before decoding. Raw request bytes are not persisted, and a missing or failed
   Images binding fails closed.
 - Server-side Turnstile Siteverify checks, expected hostname/action checks, and
   fail-closed production configuration.
 - Curated DMV ZIP/category validation, upload MIME/extension/signature allow
-  lists, and a 12 MB upload cap.
+  lists, a 4 MB source-file cap, and a sanitized stored-WebP cap below 1.5 MB.
 - Consumer profile and saved-area routes require an active consumer role,
   scope reads/deletes by the stored owner ID, cap each account at eight areas,
   and expose only an approximate ZIP prefix in the rendered saved-area list.
@@ -321,40 +341,41 @@ formal certification against OWASP ASVS or WCAG.
 
 ### High launch risk
 
-1. Production is currently rendering a Clerk `pk_test_` publishable key and
-   the browser reports a Clerk development-instance warning. Clerk development
-   instances have a relaxed posture and are not suitable for production. Move
-    Workdoe to a Clerk production instance, replace the related Cloudflare
-    secrets as one consistent set, enable Open access mode, configure the
-    Workdoe custom sign-up URL and email-code-only authentication, verify the
-    production domain/proxy/webhook, and rerun the strict smoke before beta login.
+1. **Updated 2026-10-24:** the current signed-in Clerk review and strict
+   production smoke evidence show a production Clerk configuration, the
+   same-domain Workdoe proxy, Open access, email-code sign-in/sign-up, disabled
+   passwords/phone/email links, and legal-consent URLs. This removes the old
+   development-key finding, but it does not prove that the newer local release
+   candidate has been deployed. Rerun the strict smoke after that reviewed
+   release and whenever Clerk configuration changes.
 2. Production-candidate Privacy, Terms, Safety, footer-policy navigation,
    `robots.txt`, `sitemap.xml`, and `security.txt` surfaces now exist in both
-   Flask and the Cloudflare Worker. The data controller/operator, approved
-   retention/deletion schedule, staffed contact ownership, binding terms
-   acceptance, and final legal review remain unresolved. The candidate copy is
-   intentionally explicit about the controlled beta's limits. Do not open
-   unrestricted public account creation until the policy checklist is approved,
-   the monitored contact is proven, and the candidate routes are deployed.
-3. A real two-user production OTP and marketplace journey has not been proven
-   in this assessment. Automated tests verify contracts, but they do not prove
-   email delivery, Clerk configuration, D1/R2 state, or the full approved-match
-   workflow with real production identities.
+   Flask and the Cloudflare Worker. Moose Bay and Company LLC is identified as
+   the Virginia operator and `admin@workdoe.com` has an ordinary 1-to-5-business
+   day target, but an approved retention/deletion schedule, urgent incident
+   path, binding terms acceptance, and final legal review remain unresolved.
+   Do not open unrestricted public account creation until the policy checklist
+   is approved and the reviewed candidate routes are deployed.
+3. One owner-controlled consumer email-code sign-in and session refresh have
+   been proven. A separate contractor sign-in and the full two-role project,
+   photo, bid, approval, message, completion, reporting, and moderation journey
+   remain unproven. Automated tests verify contracts, not live delivery, D1/R2
+   state, or a complete approved-match workflow with real identities.
 4. Backup/restore, security incident response, credential rotation, user data
-   deletion/export, and abuse escalation are now documented in
-   `docs/workdoe-operations-runbook.md`. Named owners, response targets,
-   approved retention rules, and completed drill evidence are still missing.
-5. Every seeded DMV service-zone activation remains a candidate until a named
-   operator records qualified legal/insurance/safety review and enough eligible
-   contractor supply. This fail-closed state is correct, but it means the new
-   production gate is a launch blocker rather than evidence that any category
-   is legally or operationally approved.
+   deletion/export, and abuse escalation are documented in
+   `docs/workdoe-operations-runbook.md`. The ordinary inbox owner and response
+   target are recorded, but urgent escalation ownership, approved retention
+   rules, and completed drill evidence are still missing.
+5. The beta depends on an advisory-only service model. Counsel must approve the
+   policy wording, acknowledgements, and escalation process for all 53 curated
+   services before unrestricted registration. Service-zone review records are
+   useful evidence for a later gate but are not a substitute for that approval.
 
 ### Medium risk
 
-1. Monitoring of `admin@workdoe.com` and any security/privacy/support inbox is
-   not confirmed. Reporting and moderation are ineffective without a staffed
-   response path.
+1. `admin@workdoe.com` has an owner-stated ordinary response target of 1 to 5
+   business days. This is not yet evidence of a tested privacy/security/support
+   response process or an urgent incident path.
 2. There is no recorded independent penetration test, authenticated dynamic
    scan, or complete keyboard/screen-reader usability test.
 3. Production currently shows demonstration projects and reports zero live
@@ -379,20 +400,20 @@ formal certification against OWASP ASVS or WCAG.
    require operator reconciliation, but it fails closed instead of creating a
    duplicate. Native clients must reuse one key for every retry of the same
    logical operation.
-8. Structured lead-quality feedback can be inaccurate, retaliatory, or
+7. Structured lead-quality feedback can be inaccurate, retaliatory, or
    correlated with protected or sensitive inferences. Keep it operational,
    sample it with project context, never expose it as a public score, and do not
    automate suspension or ranking from a single signal during the pilot.
-9. Source checks remain a human operating process. A stale, compromised, or
+8. Source checks remain a human operating process. A stale, compromised, or
    incomplete registry can make a dated lookup misleading, and one credential
-   may not authorize the scope or jurisdiction of a particular project. Pilot
-   activation therefore requires an assigned reviewer, recheck cadence,
-   escalation path, and counsel-approved public wording; no source-checked
+   may not authorize the scope or jurisdiction of a particular project. Any
+   future gated rollout therefore requires an assigned reviewer, recheck
+   cadence, escalation path, and counsel-approved public wording; no source-checked
    label may be treated as a legal or safety guarantee.
    The project-level preference increases the chance that users overread the
    signal, so copy and contract tests must continue to describe it as a
    preference and prohibit any ranking, gate, or Workdoe eligibility claim.
-10. Completion-gated reviews can still be retaliatory, collusive, mistaken, or
+9. Completion-gated reviews can still be retaliatory, collusive, mistaken, or
     discriminatory. Mutual completion proves a marketplace relationship, not
     factual accuracy. Keep a staffed report/moderation process, apply the same
     publication rules to positive and negative sentiment, prohibit incentives
@@ -401,11 +422,10 @@ formal certification against OWASP ASVS or WCAG.
 
 ### Low risk and polish
 
-1. Production-candidate `sitemap.xml`, a deliberate `robots.txt`, and
-   `.well-known/security.txt` now exist locally and are preflight-gated. Live
-   availability and the security contact's monitored status remain unproven.
-   A conventional `favicon.ico` remains optional because the shipped SVG icon
-   is linked explicitly.
+1. `sitemap.xml`, a deliberate `robots.txt`, and `.well-known/security.txt`
+   are preflight-gated and passed the current live smoke check. The security
+   contact's monitored status remains unproven. A conventional `favicon.ico`
+   remains optional because the shipped SVG icon is linked explicitly.
 2. Leaflet map controls and markers satisfy the WCAG 2.2 24 CSS pixel
    target-size minimum but remain below Workdoe's preferred 44 pixel target.
    The full job list is the primary equivalent interaction path.
@@ -423,18 +443,16 @@ formal certification against OWASP ASVS or WCAG.
 - Tracked secret-pattern scan: matches were deliberate redaction fixtures in
   tests; no tracked credential value was identified.
 - Strict production smoke: DNS, HTTPS, public API, security headers, same-domain
-  Clerk proxy assets, and the social share card passed. It correctly fails
-  because the deployed health response predates the required
-  `write_rate_limiter` binding, the live sign-in page uses a Clerk development
-  key, and the required Safety, Privacy Policy, and Terms of Use routes return
-  404. Missing `robots.txt`, `sitemap.xml`, and `security.txt` are reported as
-  warnings.
+  Clerk proxy assets, trust pages, discovery files, and the social share card
+  passed in the 2026-10-24 evidence. This verifies the current deployed
+  perimeter, not the un-deployed local release candidate or the owner-controlled
+  marketplace workflow.
 
 ## Residual risk and decision
 
-The engineering baseline is suitable for a limited, supervised beta only after
-the Clerk production-instance migration, Restricted-mode release proof, and a
-real OTP/two-role production test. It is not ready for unrestricted public
-account creation until all high-risk findings are closed. Security review must
-be repeated after material auth, payments, exact-location, contractor
-verification, or data-retention changes.
+The engineering baseline is suitable for a limited, supervised beta while the
+remaining owner checklist is completed. It is not ready for unrestricted public
+account creation until all high-risk findings are closed, the reviewed local
+candidate is released, and the live two-role workflow is recorded. Security
+review must be repeated after material auth, payments, exact-location,
+contractor-verification, or data-retention changes.

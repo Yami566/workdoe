@@ -46,9 +46,9 @@ If real D1 IDs are already present, release prep preserves them instead of repla
 - Enqueue `workdoe-media-review` after each successful sanitized R2 upload and
   D1 metadata insert so moderation has an audit trail. This queue is for human
   content review and reconciliation; it is not represented as malware scanning.
-- Keep the local one-time-code auth flow as a fallback while production login moves to Clerk email-code OTP.
+- Keep the native one-time-code adapter only for isolated development tests; production login uses Clerk email-code OTP.
 - Link Clerk users to Workdoe rows through `users.auth_provider` and `users.external_subject`.
-- Move local reset links, match reminders, and admin digests to transactional email once Cloudflare Email Service is enabled for `workdoe.com`.
+- Send match reminders and admin digests through transactional email once Cloudflare Email Service is enabled for `workdoe.com`; production password reset is intentionally unavailable.
 - Add Turnstile verification server-side before accepting account creation, login, job posts, match requests, and reports.
 - Add Cron Triggers for login-code cleanup, stale match reminders, and moderation digests.
 - Add Queues for email delivery work and media review work.
@@ -90,12 +90,12 @@ It currently handles:
 - `POST /api/media/jobs/:job_id/upload` and `POST /api/media/contractors/:contractor_id/upload`, which validate Clerk-linked ownership, image type, size, R2 key scope, and D1 metadata before queueing media review.
 - `GET` and `HEAD` media routes for `/media/jobs/:photo_id` and `/media/contractors/:photo_id`, which check D1 metadata before reading the private R2 object.
 - `/static/*` asset pass-through through the `ASSETS` binding.
-- Cron cleanup for expired local fallback login/reset tokens.
+- Cron cleanup for expired development-only native login-code tokens.
 - Daily queueing for stale mini-bid reminders.
 - Weekday queueing for the moderation digest.
 - Queue-consumer audit logging into `automation_events`.
 - Admin visibility for recent `automation_events` so Cloudflare Cron and Queue activity can be reviewed inside the Workdoe moderation console.
-- Email queue consumption through Cloudflare Email Service's `EMAIL` binding for supported Workdoe transactional messages, including fallback login codes, fallback password resets, stale mini-bid reminders, repeat-provider invitation alerts, and moderation digests.
+- Email queue consumption through Cloudflare Email Service's `EMAIL` binding for supported Workdoe transactional messages, including development-only native login codes, stale mini-bid reminders, repeat-provider invitation alerts, matching-project alerts, and moderation digests. Password-reset payloads are rejected.
 - Event-driven matching-project fanout on the existing email queue. A new job ID is queued after publication; the consumer rechecks saved-view consent plus canonical service/zone fit, creates one deduplicated delivery row, and queues a privacy-safe contractor message without delaying publication.
 - `/clerk/webhook`, which verifies Clerk/Svix signatures, updates already-linked Clerk users, suspends deleted/locked users, and audits signed events.
 - `GET /api/auth/session`, which verifies a same-domain Clerk session and maps it to an already-linked Workdoe D1 user.
@@ -160,9 +160,10 @@ The Cloudflare private media routes intentionally mirror the local Flask media c
 The Cloudflare upload routes are intentionally narrow:
 
 - Accept only PNG, JPG/JPEG, GIF, and WebP with matching image MIME types.
-- Cap files at the same 12 MB local limit.
+- Cap source files at 4 MB, then accept only a sanitized WebP result below
+  1.5 MB for storage.
 - Require the `IMAGES` binding, decode the bytes, apply orientation, scale down
-  to a 2400-by-2400 bound, discard metadata, flatten animation, and transcode to
+  to a 1600-by-1600 bound, discard metadata, flatten animation, and transcode to
   WebP before storage. Invalid images and unavailable sanitization fail closed.
 - Write only the sanitized result through the `MEDIA` R2 binding, never the
   Cloudflare REST API; raw upload bytes are not persisted.
@@ -212,7 +213,7 @@ python scripts\cloudflare_production_deploy.py --execute --yes --secret-list-jso
 
 `scripts\cloudflare_launch_status.py` is the read-only status summary. It checks local artifacts, local Wrangler availability, D1 ID state, secret-name evidence, Clerk proxy proof, and the strict deploy gate, then prints the current phase and next command. If it reports `local-tooling`, install Wrangler and run `wrangler login` before attempting live Cloudflare resource creation. The helpers resolve Wrangler from `WORKDOE_WRANGLER_BIN`, repo-local `node_modules/.bin`, or PATH.
 
-`scripts\cloudflare_secret_evidence.py` is the guarded secret-name evidence helper. It is dry-run by default; with `--execute --yes`, it runs `wrangler secret list --json`, strips the result down to secret names only, writes `cloudflare-secret-list.local.json`, and fails the step if any required Workdoe production secret name is missing.
+`scripts\cloudflare_secret_evidence.py` is the guarded secret-name evidence helper. It is dry-run by default; with `--execute --yes`, it runs `wrangler secret list --format json`, strips the result down to secret names only, writes `cloudflare-secret-list.local.json`, and fails the step if any required Workdoe production secret name is missing. An owner may use an existing local Wrangler OAuth login for this read-only check. CI and non-interactive deployment automation still require the scoped `CLOUDFLARE_API_TOKEN` GitHub secret.
 
 `scripts\cloudflare_release_evidence.py` is the local evidence doctor. It checks `cloudflare-secret-list.local.json` and `clerk-proxy-proof.local.json` together before strict readiness so the operator can quickly see whether both proof files are valid.
 
@@ -237,7 +238,7 @@ reusable scope templates without location, date, media, bid, or message fields.
 Migration `0017_repeat_provider_invitations.sql` adds the private invited-back
 lifecycle. It stores only relationship IDs, canonical service, state, and
 timestamps; a fresh mini bid remains subject to the ordinary cap, deadline,
-service activation, and approval flow. The admin payload derives invitation,
+service-policy acknowledgement, and approval flow. The admin payload derives invitation,
 fresh-bid, pass, withdrawal, and invited-contractor verified-completion counts
 from these lifecycle rows without adding analytics identifiers or copying prior
 project data.
@@ -318,7 +319,7 @@ Turnstile stays disabled locally until both keys are configured. When enabled, W
 
 ## Email Sending
 
-Cloudflare Email Sending must be onboarded for `workdoe.com` before production email delivery. The Worker uses a restricted `EMAIL` binding that can send only from `no-reply@workdoe.com`. The current queue consumer supports fallback login codes, fallback password resets, client stale-match reminders, contractor matching-project and repeat-provider invitation alerts, and the admin moderation digest. Optional bid-reminder email defaults off until the consumer selects email and saves the profile; D1 stores that consent timestamp, the scheduled query requires it, opting out clears it, and each reminder links to `https://workdoe.com/client/profile#bid-reminders`. Matching-project email also defaults off and requires a contractor to save a view and choose email; fanout additionally requires exact canonical service/zone fit and links back to `https://workdoe.com/leads#saved-lead-alerts` for opt-out. A repeat-provider alert is a single transactional notice created by a consumer's explicit new-project invitation; it contains only the new title, city/state, and an HTTPS `workdoe.com/jobs/:id` link and carries no prior project/contact data. Password reset and project links must remain on Workdoe HTTPS routes; invalid email payloads are audited and acknowledged, while transient send failures are audited and retried by Cloudflare Queues.
+Cloudflare Email Sending must be onboarded for `workdoe.com` before production email delivery. The Worker uses a restricted `EMAIL` binding that can send only from `no-reply@workdoe.com`. The current queue consumer supports development-only native login codes, client stale-match reminders, contractor matching-project and repeat-provider invitation alerts, and the admin moderation digest; password-reset payloads are rejected because production authentication uses Clerk email codes only. Optional bid-reminder email defaults off until the consumer selects email and saves the profile; D1 stores that consent timestamp, the scheduled query requires it, opting out clears it, and each reminder links to `https://workdoe.com/client/profile#bid-reminders`. Matching-project email also defaults off and requires a contractor to save a view and choose email; fanout additionally requires exact canonical service/zone fit and links back to `https://workdoe.com/leads#saved-lead-alerts` for opt-out. A repeat-provider alert is a single transactional notice created by a consumer's explicit new-project invitation; it contains only the new title, city/state, and an HTTPS `workdoe.com/jobs/:id` link and carries no prior project/contact data. Project links must remain on Workdoe HTTPS routes; invalid email payloads are audited and acknowledged, while transient send failures are audited and retried by Cloudflare Queues.
 
 ## Current Cloudflare References
 

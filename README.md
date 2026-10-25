@@ -43,13 +43,20 @@ These are seeded for local testing only:
 New client and contractor accounts use `/create-account`, a local 1-2-3 email-code flow. Consumers can draft a project at `/post-project` before creating an account; the 24-hour server-side draft survives verification and prefills `/jobs/new`. Photos are added only after verification. `/start` remains a compatibility alias:
 
 1. Choose whether to post a job or find work.
-2. Enter email, name, and company/household.
+2. Enter an email and a non-identifying public business label or handle.
 3. Enter the local one-time code shown on screen.
 
 One account keeps one permanent consumer or contractor role during the beta.
 Project posts support optional whole-dollar minimum and maximum budgets.
 
-The homepage, `/login`, `/create-account`, and `/post-project` screens show the live open-job map/list so users can see current leads before creating or opening an account. These entry screens and the contractor lead board share a deterministic `00` all-work plus numbered `01`-`06` work-family filter, then category, search, and sort controls. Public map pins refresh from `/api/jobs/open`, which preserves the validated family filter and returns only approximate city/ZIP-level coordinates and lead metadata. Contractors can save the canonical family with their private lead view; opted-in alert matching rechecks it without embeddings or inferred classification.
+The local fallback exists for development and test coverage. In production,
+Clerk supplies the email-code experience on Workdoe pages, and password sign-in
+is disabled. Workdoe does not solicit legal names, home addresses, phone
+numbers, or a household field during account setup. An email address remains
+necessary personal information for authentication and transactional account
+operations; the beta must not be described as a non-PII service.
+
+The homepage, `/login`, `/create-account`, and `/post-project` screens show the live open-job map/list so users can see current leads before creating or opening an account. These entry screens and the contractor lead board share a deterministic `00` all-work plus numbered `01`-`06` work-family filter, then category, search, and sort controls. Public map pins refresh from `/api/jobs/open`, which preserves the validated family filter and returns only approximate city/ZIP-level coordinates and lead metadata. Contractors can save the canonical family with their private lead view; opted-in alert matching rechecks it without embeddings or inferred classification. The Worker receives its HTTPS tile URL and required attribution through `WORKDOE_MAP_TILE_URL` and `WORKDOE_MAP_TILE_ATTRIBUTION`; missing configuration leaves the project list usable instead of silently choosing a map provider. The beta default is the standard OpenStreetMap tile endpoint, so the operator must monitor usage and move to a reviewed supported provider before traffic exceeds that service's policy.
 
 ## Optional Turnstile
 
@@ -59,7 +66,7 @@ Set `WORKDOE_TURNSTILE_SITE_KEY` and `WORKDOE_TURNSTILE_SECRET_KEY` to enable Cl
 
 Set `WORKDOE_ENV=production` for Cloudflare deployment. Production mode requires a real `WORKDOE_SECRET_KEY`, secure cookies, disabled demo seeding, and Turnstile keys before the app starts.
 Set `WORKDOE_AUTH_PROVIDER=clerk` only when Clerk is configured; Clerk mode also requires `CLERK_FRONTEND_API_URL=https://workdoe.com/__clerk`, `CLERK_PROXY_URL=https://workdoe.com/__clerk`, `CLERK_FAPI=https://frontend-api.clerk.dev`, `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`, and `CLERK_JWT_KEY`.
-When Clerk mode is active, `/login`, `/create-account`, and `/post-project` mount Clerk's in-page email-code component on Workdoe pages and keep the local one-time-code form as the local fallback. The Cloudflare Worker proxies `/__clerk/*` so login API traffic also stays on `workdoe.com`. Clerk Access mode is Open so people can create a Workdoe account by email code, choose one permanent Workdoe role, and remain on the Workdoe domain. Clerk Legal Compliance must require express consent to `https://workdoe.com/terms` and `https://workdoe.com/privacy` before sign-up. Production deploy checks require a non-secret `clerk-proxy-proof.local.json` confirming those settings, the same-domain proxy, Open access mode, the custom sign-up URL, email-code sign-in, and disabled password sign-in.
+When Clerk mode is active, `/login`, `/create-account`, and `/post-project` mount Clerk's in-page email-code component on Workdoe pages. The local one-time-code form is available only when the local development auth provider is selected. The Cloudflare Worker proxies `/__clerk/*` so login API traffic also stays on `workdoe.com`. Clerk Access mode is Open so people can create a Workdoe account by email code, choose one permanent Workdoe role, and remain on the Workdoe domain. Clerk Legal Compliance must require express consent to `https://workdoe.com/terms` and `https://workdoe.com/privacy` before sign-up. Production deploy checks require a non-secret `clerk-proxy-proof.local.json` confirming those settings, the same-domain proxy, Open access mode, the custom sign-up URL, email-code sign-in, and disabled password sign-in.
 
 ## Test
 
@@ -69,7 +76,9 @@ python -m unittest discover -s tests
 
 ## Data Separation
 
-- Auth data lives in `users` and `password_reset_tokens`.
+- Local-development auth data lives in `users` and `password_reset_tokens`.
+  Production Clerk sessions are verified by the Worker, while Workdoe retains
+  the minimum account mapping needed for roles and marketplace operations.
 - Profile data lives in `client_profiles` and `contractor_profiles`.
 - Marketplace data lives in `jobs`, `job_drafts`, `match_requests`, `match_completions`, `threads`, and `messages`; approved-match message and two-sided completion permissions are mirrored in the Cloudflare Worker.
 - Media metadata lives in `job_photos` and `contractor_photos`.
@@ -79,7 +88,7 @@ python -m unittest discover -s tests
 ## Cloudflare Migration
 
 Start with [docs/README.md](docs/README.md) for the canonical documentation and
-the current release-status record.
+the current launch-readiness record.
 See [docs/cloudflare-migration.md](docs/cloudflare-migration.md).
 See [docs/cloudflare-automation-auth.md](docs/cloudflare-automation-auth.md) for the same-domain Clerk email-code login plan and Cloudflare automation targets.
 See [docs/workdoe-operations-runbook.md](docs/workdoe-operations-runbook.md)
@@ -110,8 +119,11 @@ with duplicate checks, client bid approval/rejection with private thread
 creation, approved-match message APIs, signed-in moderation report intake, admin
 moderation actions, and private Cloudflare Images-sanitized R2 media
 upload/serving routes. Production uploads are decoded through the `IMAGES`
-binding, resized to at most 2400 pixels per side, flattened to one frame,
-transcoded to WebP with metadata discarded, and only then written to R2. The
+binding, resized to at most 1600 pixels per side, flattened to one frame,
+transcoded to WebP with metadata discarded, and accepted for R2 only when the
+sanitized result is below 1.5 MB. Source uploads are capped at 4 MB; each
+project can hold six photos, each contractor profile eight, and each account
+can create at most 12 uploads in a rolling 24-hour period. The
 upload path fails closed when Images is unavailable; enabling a Cloudflare
 Images Paid subscription is therefore a production prerequisite.
 Authenticated Worker writes also pass through Cloudflare's `WRITE_RATE_LIMITER`

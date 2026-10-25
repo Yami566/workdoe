@@ -6,7 +6,7 @@ This is the production direction for `workdoe.com`: keep users on Workdoe pages,
 
 - Keep `/login`, `/create-account`, and `/post-project` on `workdoe.com`; do not use hosted Clerk Account Portal redirects for public login.
 - Use Clerk email-code OTP as the production login strategy.
-- Keep the current local email-code flow as the fallback strategy until Clerk is live.
+- Keep the local email-code flow only for isolated development tests; production uses Clerk and does not offer a Workdoe password or reset fallback.
 - Keep Workdoe roles, profiles, job permissions, match visibility, moderation, and audit history in Workdoe D1 tables.
 - Store Clerk user IDs in `users.external_subject` with `users.auth_provider = 'clerk'`.
 - Use Cloudflare Turnstile on the Workdoe forms that still accept unauthenticated or high-risk POSTs.
@@ -17,10 +17,13 @@ Clerk can support this without sending users away from Workdoe:
 
 1. Configure a Clerk production instance for `workdoe.com`.
 2. Enable email sign-up and sign-in with email verification code.
-3. Mount Clerk's maintained `SignIn` component inside Workdoe's `/login`, `/create-account`, or `/post-project` page with `withSignUp: true`; do not maintain a custom Clerk OTP state machine.
-4. Prefer Clerk's `signUpIfMissing` email-code flow when the selected Clerk SDK supports it, because it sends a verification step before revealing whether the account exists.
+3. Mount Clerk's maintained `SignIn` component on `/login` and its maintained `SignUp` component on `/create-account` or `/post-project`. Keep the sign-in component's `withSignUp` option `false`, so account creation is always an explicit role-aware route; do not maintain a custom Clerk OTP state machine.
+4. Use Clerk's configured email-code verification on the appropriate prebuilt component. The account-creation page must remain the only route that creates a new Workdoe profile.
 5. Configure Clerk's Frontend API proxy to `https://workdoe.com/__clerk` from the Clerk Domains page so Clerk requests stay on Workdoe's primary domain. A Clerk Frontend API CNAME is only an alternate deployment shape.
-6. Verify Clerk session tokens server-side before loading a Workdoe D1 user. Use `CLERK_JWT_KEY` for networkless JWT verification where the runtime supports it.
+6. Pin the reviewed Clerk UI and ClerkJS browser package versions in both the
+   Flask and Worker renderers. Review the package release notes, license, npm
+   integrity value, and same-domain proxy behavior before updating either pin.
+7. Verify Clerk session tokens server-side before loading a Workdoe D1 user. Use `CLERK_JWT_KEY` for networkless JWT verification where the runtime supports it.
 
 Required production environment values:
 
@@ -47,12 +50,12 @@ such as publication notifications and media review remains enabled.
 
 Use Cloudflare Queues for background jobs:
 
-- `workdoe-email`: transactional reminders, admin digests, and fallback OTP/reset emails that are not handled by Clerk.
+- `workdoe-email`: transactional reminders, admin digests, and development-only native email-code messages that are not handled by Clerk.
 - `workdoe-media-review`: photo metadata checks, moderation review tasks, and future image safety checks.
 
 Use Cloudflare Email Service for Workdoe-owned transactional email:
 
-- `no-reply@workdoe.com` for admin digests, match reminders, password reset fallback, and non-Clerk operational notices.
+- `no-reply@workdoe.com` for admin digests, match reminders, and non-auth operational notices. Password reset mail is disabled while email-code-only production authentication is active.
 - Clerk should send public auth OTP emails when Clerk is the active auth provider.
 
 ## Current Scaffold
@@ -67,7 +70,7 @@ Use Cloudflare Email Service for Workdoe-owned transactional email:
 - `/create-account` is the Workdoe onboarding page. It creates the app-owned client or contractor row only after Clerk verifies the email code and the person chooses a workspace. `/start` remains a compatibility alias.
 - `cloudflare/worker/entry.py` contains the first Python Worker handlers for health checks, scheduled jobs, queue consumption, and Clerk webhook intake.
 - `cloudflare/worker/clerk_sessions.py` prepares the same-domain Clerk session bridge: it extracts `__session` or bearer tokens, verifies RS256 signatures with Web Crypto, checks Clerk timing and authorized-party claims, and fails closed when verification is unavailable.
-- `cloudflare/worker/email_payloads.py` renders queued login-code fallback, password-reset fallback, stale-match-reminder, and moderation-digest emails with escaped HTML, plain text, normalized recipients, Workdoe-domain reset URL enforcement, and strict payload validation.
+- `cloudflare/worker/email_payloads.py` renders supported login-code, stale-match-reminder, contractor lead-alert, repeat-provider invitation, and moderation-digest emails with escaped HTML, plain text, normalized recipients, and strict payload validation. It rejects password-reset payloads.
 - `cloudflare/worker/clerk_webhooks.py` verifies Clerk/Svix webhook signatures with raw-body HMAC, timestamp tolerance, and constant-time signature comparison.
 - The Cloudflare Worker also serves authenticated post-login shells for `/dashboard`, `/client/dashboard`, `/client/jobs/:job_id`, `/contractor/dashboard`, `/contractor/profile`, `/messages`, `/messages/:thread_id`, `/admin`, `/leads`, `/jobs/new`, and contractor `/jobs/:job_id` routes so Clerk redirects land inside usable Workdoe pages instead of generic JSON.
 - `cloudflare/worker/media_access.py` keeps private R2 photo serving testable: it parses only supported Workdoe media routes, rejects unsafe object keys, and mirrors role, ownership, match, and moderation checks before `entry.py` reads from `MEDIA`.
@@ -105,7 +108,7 @@ Use Cloudflare Email Service for Workdoe-owned transactional email:
 - `users.auth_provider`: `local` for local prototype users, `clerk` for Clerk-backed users.
 - `users.external_subject`: Clerk user ID, unique per provider when present.
 - `client_profiles` and `contractor_profiles`: stay app-owned so client and contractor roles remain separate.
-- `login_codes` and `password_reset_tokens`: stay for local fallback and can be reduced after Clerk has run cleanly in beta.
+- `login_codes`: supports the isolated native-development adapter. `password_reset_tokens` remains only as a legacy schema table; Clerk production routes and the Worker email queue do not expose or use reset tokens.
 
 ## Implementation Order
 
@@ -187,7 +190,7 @@ names. Secret values are never read or printed.
 - `WORKDOE_EMAIL_FROM=no-reply@workdoe.com`.
 - `WORKDOE_ADMIN_EMAIL=admin@workdoe.com`.
 
-Before production deploy, onboard `workdoe.com` in Cloudflare Email Sending and replace `WORKDOE_ADMIN_EMAIL` with the real admin inbox. The queue consumer supports `login-code`, `password-reset`, `stale-match-reminder`, and `moderation-digest`; Clerk should continue sending public auth OTP emails while Clerk is the active auth provider.
+Before production deploy, onboard `workdoe.com` in Cloudflare Email Sending and replace `WORKDOE_ADMIN_EMAIL` with the real admin inbox. The queue consumer supports `login-code`, `contractor-new-lead`, `repeat-provider-invitation`, `stale-match-reminder`, and `moderation-digest`; it rejects `password-reset`. Clerk continues to send public authentication codes while Clerk is the active auth provider.
 
 ## References Checked
 

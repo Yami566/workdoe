@@ -31,11 +31,14 @@ from contractor_profiles import contractor_profile_readiness
 from entry_shell import (
     CLERK_CHALLENGE_ORIGIN,
     CLERK_IMAGE_ORIGIN,
+    CLERK_JS_VERSION,
     CLERK_PROTECT_ORIGIN,
     CLERK_TELEMETRY_ORIGINS,
+    CLERK_UI_VERSION,
     clerk_csp_origin,
     clerk_proxy_url,
     clerk_runtime_frontend_api_url,
+    map_tile_configuration,
 )
 from job_posts import (
     DMV_ZIPS,
@@ -653,8 +656,8 @@ def layout(
         )
         scripts.extend(
             [
-                f'<script defer crossorigin="anonymous" src="{escape(clerk_asset_base_url)}/npm/@clerk/ui@1/dist/ui.browser.js"></script>',
-                f'<script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_attribute} src="{escape(clerk_asset_base_url)}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>',
+                f'<script defer crossorigin="anonymous" src="{escape(clerk_asset_base_url)}/npm/@clerk/ui@{CLERK_UI_VERSION}/dist/ui.browser.js"></script>',
+                f'<script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_attribute} src="{escape(clerk_asset_base_url)}/npm/@clerk/clerk-js@{CLERK_JS_VERSION}/dist/clerk.browser.js"></script>',
                 '<script defer src="/clerk-account.js"></script>',
             ]
         )
@@ -1029,10 +1032,10 @@ def client_profile_html(
       <section class="profile-tool" aria-labelledby="workspace-details-title">
         <div class="section-heading"><div><p class="eyebrow">Account</p><h2 id="workspace-details-title">Workspace details</h2></div><span class="privacy-label">Private</span></div>
         <form class="form-grid consumer-profile-form" data-json-action="/api/client/profile" data-success-url-template="/client/profile" aria-label="Consumer profile" aria-describedby="client-profile-status">
-          <label class="wide" for="client-organization-name">Household or organization name <input id="client-organization-name" name="organization_name" value="{escape(profile.get('organization_name', ''))}" maxlength="{CLIENT_ORGANIZATION_MAX_LENGTH}" autocomplete="organization" autocapitalize="words" spellcheck="true" required></label>
+          <label class="wide" for="client-organization-name">Private workspace label <input id="client-organization-name" name="organization_name" value="{escape(profile.get('organization_name', ''))}" maxlength="{CLIENT_ORGANIZATION_MAX_LENGTH}" autocomplete="organization" autocapitalize="words" spellcheck="true" aria-describedby="client-organization-name-help" required><span id="client-organization-name-help" class="help-text">Private to your workspace. Do not include an address, email, or phone number.</span></label>
           <fieldset class="wide option-fieldset"><legend>Workspace type</legend><div class="choice-grid compact-choice-grid">{account_choices}</div></fieldset>
           <fieldset id="bid-reminders" class="wide option-fieldset" aria-describedby="client-notification-preference-help"><legend>Bid reminders</legend><div class="choice-grid compact-choice-grid two-column">{notification_choices}</div><span id="client-notification-preference-help" class="help-text">Email reminders are optional. Choosing email and saving this profile records your consent; switch back here at any time. Account and security emails still arrive.</span></fieldset>
-          <label class="wide" for="client-profile-note">Private workspace note <span class="optional-label">Optional</span><textarea id="client-profile-note" name="profile_note" rows="4" maxlength="{CLIENT_PROFILE_NOTE_MAX_LENGTH}" autocapitalize="sentences" spellcheck="true" aria-describedby="client-profile-note-help">{escape(profile.get('profile_note', ''))}</textarea><span id="client-profile-note-help" class="help-text">For recurring access, timing, or property-management context. Contractors cannot see this note.</span></label>
+          <label class="wide" for="client-profile-note">Private workspace note <span class="optional-label">Optional</span><textarea id="client-profile-note" name="profile_note" rows="4" maxlength="{CLIENT_PROFILE_NOTE_MAX_LENGTH}" autocapitalize="sentences" spellcheck="true" aria-describedby="client-profile-note-help">{escape(profile.get('profile_note', ''))}</textarea><span id="client-profile-note-help" class="help-text">For recurring timing or property-management context. Contractors cannot see this note. Do not include an address, email, or phone number.</span></label>
           <div class="form-actions wide"><button class="button" type="submit">Save profile</button><p id="client-profile-status" class="help-text" data-form-status aria-live="polite"></p></div>
         </form>
       </section>
@@ -1119,11 +1122,11 @@ def safety_page_html() -> str:
     <section class="content-grid two" aria-label="Workdoe safety practices">
       <article class="panel">
         <h2>Approximate locations</h2>
-        <p>Contractors see the city and a rounded ZIP area before a client approves a bid. Do not put an exact address in a public project description.</p>
+        <p>Contractors see the city and a rounded ZIP area before a client approves a bid. Workdoe rejects common email, phone, and street-address patterns, but do not put an exact address in any project text.</p>
       </article>
       <article class="panel">
         <h2>Private contact</h2>
-        <p>A private message thread opens after the client approves a contractor's mini bid. Keep access codes, payment details, and sensitive documents out of messages.</p>
+        <p>A private message thread opens after the client approves a contractor's mini bid. Keep access codes, payment details, direct contact details, and sensitive documents out of messages.</p>
       </article>
       <article class="panel">
         <h2>Review before approval</h2>
@@ -1141,7 +1144,7 @@ def safety_page_html() -> str:
     <section class="trust-contact" aria-labelledby="safety-contact-title">
       <p class="eyebrow">Contact</p>
       <h2 id="safety-contact-title">Safety and account help</h2>
-      <p>Email <a href="mailto:admin@workdoe.com">admin@workdoe.com</a> for account, privacy, or safety requests. Workdoe is not an emergency service; call 911 when anyone faces immediate danger.</p>
+      <p>Workdoe is operated by Moose Bay and Company LLC, a Virginia limited liability company. Email <a href="mailto:admin@workdoe.com">admin@workdoe.com</a> for account, privacy, or safety requests; the monitored inbox aims to respond within 1 to 5 business days. Workdoe is not an emergency service; call 911 when anyone faces immediate danger.</p>
     </section>"""
     return layout(None, "/safety", "Safety", body)
 
@@ -1154,7 +1157,8 @@ def privacy_page_html() -> str:
       <p>Effective August 17, 2026. This notice explains the information Workdoe uses to operate the local work exchange.</p>
     </section>
     <article class="legal-copy">
-      <section><h2>Information we collect</h2><p>We collect account identity and email verification details, your fixed consumer or contractor role, profile information you choose to provide, project and bid details, approximate service areas, photos, approved-match messages, reports, and security or audit records.</p><p>Workdoe does not collect payment card details, browser geolocation, or an exact project address in this beta. Do not put an address, access code, phone number, or email address in a public project description.</p></section>
+      <section><h2>Operator and contact</h2><p>Workdoe is operated by Moose Bay and Company LLC, a Virginia limited liability company.</p><p>Email <a href="mailto:admin@workdoe.com">admin@workdoe.com</a> for account, privacy, safety, or security requests. The monitored inbox aims to respond within 1 to 5 business days. Workdoe is not an emergency service.</p></section>
+      <section><h2>Information we collect</h2><p>We collect account identity and email verification details, your fixed consumer or contractor role, profile information you choose to provide, project and bid details, approximate service areas, photos, approved-match messages, reports, and security or audit records.</p><p>Workdoe does not collect payment card details, browser geolocation, or a structured exact project address in this beta. Marketplace text rejects common email, phone, and street-address patterns, but automated checks cannot identify every possible disclosure. Do not put an address, access code, phone number, or email address in Workdoe content.</p></section>
       <section><h2>How we use information</h2><p>We use information to verify accounts, publish and match local projects, show relevant contractor profiles, open messaging after a client approves a bid, prevent abuse, moderate content, send account or service messages, and maintain marketplace and security records.</p></section>
       <section><h2>Who can see it</h2><p>Public visitors receive limited project summaries and approximate map pins. Signed-in contractors can see project briefs and job photos for available work. Clients can review bids and relevant contractor profiles. Approved participants can use a private message thread. Active administrators can review records needed for moderation and security.</p><p>Service providers supporting the beta may process limited information on Workdoe's behalf. These include the identity, hosting, email, bot-protection, and map services needed to run Workdoe. We do not sell personal information or use it for third-party behavioral advertising.</p></section>
       <section><h2>Retention and choices</h2><p>We keep records only while they are reasonably needed to operate the beta, investigate abuse, meet legal obligations, and respond to requests. The controlled beta does not yet promise a fixed deletion period.</p><p>Email <a href="mailto:admin@workdoe.com">admin@workdoe.com</a> to request access, correction, or deletion. Some records may be retained when required for security, fraud prevention, dispute preservation, or legal compliance.</p></section>
@@ -1176,7 +1180,7 @@ def terms_page_html() -> str:
       <section><h2>Project and account conduct</h2><p>Post a clear and lawful scope, protect private contact and location details, communicate respectfully, and do not misrepresent identity, qualifications, availability, ownership, or authorization. Do not scrape accounts, bypass access controls, spam users, manipulate bids, or use Workdoe to commit fraud or discrimination.</p></section>
       <section><h2>Prohibited work</h2><p>Do not post or seek illegal work, emergency response, medical or personal-care services, firearms activity, hazardous-material or asbestos/mold/lead abatement, unlicensed gas or utility work, insurance-claim negotiation, illegal dumping, or work that would place an unverified minor at risk. Workdoe may restrict additional high-risk categories until the required verification and operating controls exist.</p></section>
       <section><h2>Moderation and availability</h2><p>Workdoe may hide content, limit a service area, suspend an account, preserve audit records, or report credible threats when needed for safety, policy enforcement, or legal compliance. The controlled beta may change, pause, or end without guaranteeing that a project receives bids or that a contractor receives work.</p></section>
-      <section><h2>Questions</h2><p>Email <a href="mailto:admin@workdoe.com">admin@workdoe.com</a> with account, policy, privacy, or safety questions. Call 911 for immediate danger; Workdoe is not an emergency service.</p></section>
+      <section><h2>Questions</h2><p>Workdoe is operated by Moose Bay and Company LLC, a Virginia limited liability company. Email <a href="mailto:admin@workdoe.com">admin@workdoe.com</a> with account, policy, privacy, or safety questions; the monitored inbox aims to respond within 1 to 5 business days. Call 911 for immediate danger; Workdoe is not an emergency service.</p></section>
     </article>"""
     return layout(None, "/terms", "Terms of Use", body)
 
@@ -1565,7 +1569,17 @@ def service_family_filter_html(
     return '<nav class="service-family-filter" aria-label="Filter projects by work family">' + "".join(links) + "</nav>"
 
 
-def lead_board_html(user, payload: dict) -> str:
+def lead_board_html(
+    user,
+    payload: dict,
+    *,
+    map_tile_url: str = "",
+    map_tile_attribution: str = "",
+) -> str:
+    map_tile_url, map_tile_attribution = map_tile_configuration(
+        map_tile_url,
+        map_tile_attribution,
+    )
     jobs = payload.get("jobs", [])
     filters = payload.get("filters", {})
     preferences = payload.get("preferences", {})
@@ -1767,7 +1781,11 @@ def lead_board_html(user, payload: dict) -> str:
       <section class="market-map-stage" data-market-panel="map" aria-label="Project map workspace">
         <div class="map-stage-toolbar"><div><span class="map-live-indicator" aria-hidden="true"></span><strong data-map-result-count>{len(map_jobs)} project{"" if len(map_jobs) == 1 else "s"} mapped</strong></div><span>Approximate pins</span></div>
         <div class="market-map-frame">
-          <div id="lead-map" data-map data-map-workspace data-tile-url="https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png" data-tile-attribution='&amp;copy; &lt;a href="https://www.openstreetmap.org/copyright"&gt;OpenStreetMap&lt;/a&gt;' role="region" tabindex="0" aria-label="Approximate DMV job map" aria-describedby="lead-map-status">
+          <div id="lead-map" data-map data-map-workspace data-tile-url="{escape(map_tile_url)}" data-tile-attribution='{escape(map_tile_attribution)}' role="region" tabindex="0" aria-label="Approximate DMV job map" aria-describedby="lead-map-status">
+            <div class="map-view-controls" aria-label="Map controls">
+              <button class="button compact map-view-control" type="button" data-show-map-area title="Describe the current approximate map area">Map area</button>
+              <button class="button compact map-view-control" type="button" data-reset-map-view title="Return to the default DMV map view">DMV view</button>
+            </div>
             <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Map loading. Project list is ready.</p>
             <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Map loading. Project list is ready.</p>
           </div>
@@ -2409,8 +2427,8 @@ def contractor_profile_html(
         for index, item in enumerate(readiness["items"], start=1)
     )
     photo_html = "\n".join(
-        f'<figure><img src="/media/contractors/{int(photo.get("id", 0) or 0)}" alt="Portfolio photo"><figcaption>{escape(photo.get("original_filename", ""))}</figcaption></figure>'
-        for photo in photos or []
+        f'<figure><img src="/media/contractors/{int(photo.get("id", 0) or 0)}" alt="Portfolio photo {index}"><figcaption>Portfolio photo {index}</figcaption></figure>'
+        for index, photo in enumerate(photos or [], start=1)
     )
     if not photo_html:
         photo_html = """
@@ -2507,7 +2525,7 @@ def contractor_profile_html(
       <label for="profile-insurance-status">Insurance note (self-reported) <input id="profile-insurance-status" name="insurance_status" value="{escape(profile.get('insurance_status', ''))}" maxlength="120" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="Available on request"></label>
       <label for="profile-license-number">License note (self-reported) <input id="profile-license-number" name="license_number" value="{escape(profile.get('license_number', ''))}" maxlength="80" autocapitalize="characters" spellcheck="false" enterkeyhint="next" placeholder="Optional for the local beta"></label>
       <label for="profile-website">Website <input id="profile-website" name="website" type="url" value="{escape(profile.get('website', ''))}" maxlength="200" autocomplete="url" autocapitalize="off" spellcheck="false" enterkeyhint="next" placeholder="https://example.com" aria-describedby="profile-website-help"><span id="profile-website-help" class="help-text">Visible to clients reviewing your bid. Public HTTPS websites only.</span></label>
-      <label class="wide" for="profile-intro">Intro <textarea id="profile-intro" name="intro" rows="5" minlength="20" maxlength="900" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe your crew, service style, and ideal jobs." required>{escape(profile.get('intro', ''))}</textarea></label>
+      <label class="wide" for="profile-intro">Intro <textarea id="profile-intro" name="intro" rows="5" minlength="20" maxlength="900" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe your crew, service style, and ideal jobs." required>{escape(profile.get('intro', ''))}</textarea><span class="help-text">Use the HTTPS website field for a business link. Do not include an email, phone number, or street address.</span></label>
       <div class="form-actions wide">
         <button class="button" type="submit">Save profile</button>
         <p id="profile-form-status" class="help-text" data-form-status aria-live="polite"></p>
@@ -2517,7 +2535,7 @@ def contractor_profile_html(
       <form class="panel stack-form" data-file-action="/api/media/contractors/{contractor_id}/upload" data-success-url-template="/contractor/profile" enctype="multipart/form-data" aria-label="Upload portfolio photo" aria-describedby="profile-upload-status">
         <h2>Portfolio photo</h2>
         <label for="profile-photos">Image <input id="profile-photos" name="portfolio_photo" type="file" accept="image/png,image/jpeg,image/gif,image/webp" aria-describedby="profile-photos-help" required></label>
-        <p id="profile-photos-help" class="help-text">Private uploads. PNG, JPG, GIF, or WebP.</p>
+        <p id="profile-photos-help" class="help-text">Private uploads. PNG, JPG, GIF, or WebP up to 4 MB each. Workdoe stores sanitized copies under 1.5 MB.</p>
         <button class="button secondary" type="submit" aria-label="Upload portfolio photo">Upload photo</button>
         <p id="profile-upload-status" class="help-text" data-form-status aria-live="polite"></p>
       </form>
@@ -2955,7 +2973,7 @@ def message_thread_detail_html(
     if can_reply:
         reply_html = f"""
     <form class="message-form thread-message-form" data-json-action="/api/messages/threads/{thread_id}" data-success-url-template="/messages/{thread_id}" aria-label="New message" aria-describedby="message-reply-status">
-      <label for="message-body">New message <textarea id="message-body" name="body" rows="4" maxlength="1000" placeholder="Share timing, access, or next steps." autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required></textarea></label>
+      <label for="message-body">New message <textarea id="message-body" name="body" rows="4" maxlength="1000" placeholder="Share timing, access, or next steps." autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required></textarea><span class="help-text">Keep email, phone, and exact street details out of Workdoe messages.</span></label>
       <button class="button full" type="submit" aria-label="Send message">Send</button>
       <p id="message-reply-status" class="help-text" data-form-status aria-live="polite"></p>
     </form>"""
@@ -3158,7 +3176,7 @@ def admin_dashboard_html(user, payload: dict) -> str:
         action = "restore" if int(photo.get("is_hidden", 0) or 0) else "hide"
         photo_rows.append(
             admin_row(
-                photo.get("original_filename", "Job photo"),
+                f"Job photo #{int(photo.get('id', 0) or 0)}",
                 f"{photo.get('title', '')} - {'hidden' if action == 'restore' else 'visible'}",
                 action_url=f"/api/admin/photos/job/{int(photo.get('id', 0) or 0)}/{action}",
                 action_label="Restore" if action == "restore" else "Hide",
@@ -3169,7 +3187,7 @@ def admin_dashboard_html(user, payload: dict) -> str:
         action = "restore" if int(photo.get("is_hidden", 0) or 0) else "hide"
         contractor_photo_rows.append(
             admin_row(
-                photo.get("original_filename", "Portfolio photo"),
+                f"Portfolio photo #{int(photo.get('id', 0) or 0)}",
                 f"{photo.get('business_name', '')} - {'hidden' if action == 'restore' else 'visible'}",
                 action_url=f"/api/admin/photos/contractor/{int(photo.get('id', 0) or 0)}/{action}",
                 action_label="Restore" if action == "restore" else "Hide",
@@ -3460,8 +3478,8 @@ def contractor_job_detail_html(
         else ""
     )
     photo_html = "\n".join(
-        f'<figure><img src="{escape(photo.get("url", ""))}" alt="Job photo"><figcaption>{escape(photo.get("original_filename", ""))}</figcaption></figure>'
-        for photo in photos
+        f'<figure><img src="{escape(photo.get("url", ""))}" alt="Job photo {index}"><figcaption>Project photo {index}</figcaption></figure>'
+        for index, photo in enumerate(photos, start=1)
     )
     if existing:
         feedback_options = [
@@ -3836,8 +3854,8 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
         else ""
     )
     photo_html = "\n".join(
-        f'<figure><img src="{escape(photo.get("url", ""))}" alt="Job photo"><figcaption>{escape(photo.get("original_filename", ""))}</figcaption></figure>'
-        for photo in photos
+        f'<figure><img src="{escape(photo.get("url", ""))}" alt="Job photo {index}"><figcaption>Project photo {index}</figcaption></figure>'
+        for index, photo in enumerate(photos, start=1)
     )
     request_counts = {
         "all": int(stats.get("total", 0) or 0),
@@ -4113,7 +4131,8 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
             + '</div>'
         ) if job.get('status') == 'closed' and job.get('close_reason') else ''}
         <form class="stack-form" data-file-action="/api/media/jobs/{job_id}/upload" data-success-url-template="/client/jobs/{job_id}" enctype="multipart/form-data" aria-label="Upload job photo" aria-describedby="job-photo-upload-status">
-          <label for="job-photo-upload">Job photo <input id="job-photo-upload" name="photo" type="file" accept="image/png,image/jpeg,image/gif,image/webp" required></label>
+          <label for="job-photo-upload">Job photo <input id="job-photo-upload" name="photo" type="file" accept="image/png,image/jpeg,image/gif,image/webp" aria-describedby="job-photo-upload-help" required></label>
+          <p id="job-photo-upload-help" class="help-text">PNG, JPG, GIF, or WebP up to 4 MB. Workdoe stores a sanitized copy under 1.5 MB.</p>
           <button class="button secondary full" type="submit" aria-label="Upload job photo">Upload photo</button>
           <p id="job-photo-upload-status" class="help-text" data-form-status aria-live="polite"></p>
         </form>

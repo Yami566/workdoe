@@ -4,6 +4,7 @@ import ipaddress
 import re
 from urllib.parse import urlparse, urlunparse
 
+from content_privacy import contains_disallowed_personal_data, personal_data_error
 from market_fit import (
     infer_service_slugs_from_trades,
     infer_zone_slugs_from_area,
@@ -124,6 +125,15 @@ def validate_contractor_profile_payload(form: dict) -> list[str]:
         errors.append(f"Add at least {PROFILE_INTRO_MIN_LENGTH} characters about your business.")
     elif len(form["intro"]) > PROFILE_INTRO_MAX_LENGTH:
         errors.append(f"Keep the intro under {PROFILE_INTRO_MAX_LENGTH} characters.")
+    for field, label in (
+        ("business_name", "business name"),
+        ("service_area", "service area"),
+        ("intro", "profile intro"),
+        ("insurance_status", "insurance note"),
+        ("license_number", "license note"),
+    ):
+        if contains_disallowed_personal_data((form[field],)):
+            errors.append(personal_data_error(label))
     if len(form["insurance_status"]) > PROFILE_INSURANCE_MAX_LENGTH:
         errors.append(f"Keep the insurance status under {PROFILE_INSURANCE_MAX_LENGTH} characters.")
     if len(form["license_number"]) > PROFILE_LICENSE_MAX_LENGTH:

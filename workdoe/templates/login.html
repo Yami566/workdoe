@@ -48,7 +48,7 @@
         <p class="help-text">Enable JavaScript to use Clerk email-code sign-in.</p>
       </noscript>
     </section>
-  {% else %}
+  {% elif local_password_auth_enabled() %}
     <form id="signin" class="form-panel login-form-panel" method="post" data-dialog-fragment>
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
       {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
@@ -88,6 +88,12 @@
       </details>
       <p class="account-entry-switch">New to Workdoe? <a href="{{ login_sign_up_url }}">Create account</a></p>
     </form>
+  {% else %}
+    <section id="signin" class="form-panel login-form-panel" data-dialog-fragment aria-labelledby="signin-title">
+      <p class="eyebrow">Secure sign-in</p>
+      <h1 id="signin-title">Sign-in setup unavailable</h1>
+      <p class="help-text">Secure email-code sign-in is not configured for this environment.</p>
+    </section>
   {% endif %}
 
   <div id="live-jobs" class="login-live-panel" tabindex="-1">
@@ -183,8 +189,8 @@
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
 <script src="{{ url_for('static', filename='map.js') }}?v={{ asset_release_token }}"></script>
 {% if clerk_entry_enabled() %}
-  <script defer crossorigin="anonymous" src="{{ clerk_frontend_api_url() }}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
-  <script defer crossorigin="anonymous" data-clerk-publishable-key="{{ clerk_publishable_key() }}" {% if clerk_proxy_url() %}data-clerk-proxy-url="{{ clerk_proxy_url() }}"{% endif %} src="{{ clerk_frontend_api_url() }}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
+  <script defer crossorigin="anonymous" src="{{ clerk_ui_script_url() }}"></script>
+  <script defer crossorigin="anonymous" data-clerk-publishable-key="{{ clerk_publishable_key() }}" {% if clerk_proxy_url() %}data-clerk-proxy-url="{{ clerk_proxy_url() }}"{% endif %} src="{{ clerk_js_script_url() }}"></script>
   <script defer src="{{ url_for('static', filename='clerk-entry.js') }}?v={{ asset_release_token }}"></script>
 {% endif %}
 {% endblock %}

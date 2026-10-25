@@ -137,13 +137,9 @@
         </label>
       </fieldset>
       <label for="start-display-name">
-        Name
-        <input name="display_name" id="start-display-name" autocomplete="name" maxlength="120" aria-describedby="start-name-help" data-clerk-display-name>
-        <span id="start-name-help" class="help-text">Shown on your Workdoe profile.</span>
-      </label>
-      <label for="start-company-name">
-        Business or household name <span class="optional-label">Optional</span>
-        <input name="company_name" id="start-company-name" autocomplete="organization" maxlength="120" data-clerk-company-name>
+        Public business name or handle
+        <input name="display_name" id="start-display-name" autocomplete="nickname" maxlength="120" aria-describedby="start-name-help" data-clerk-display-name required>
+        <span id="start-name-help" class="help-text">Use a non-identifying business label. Do not use a legal name, email, phone number, or street address.</span>
       </label>
       <div
         id="clerk-start"
@@ -211,13 +207,9 @@
         <input name="email" type="email" id="start-email" inputmode="email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false" value="{{ form_email }}" required>
       </label>
       <label for="start-display-name">
-        Name
-        <input name="display_name" id="start-display-name" autocomplete="name" value="{{ form_display_name }}" aria-describedby="start-name-help">
-        <span id="start-name-help" class="help-text">New accounts only.</span>
-      </label>
-      <label for="start-company-name">
-        Business or household name <span class="optional-label">Optional</span>
-        <input name="company_name" id="start-company-name" autocomplete="organization" value="{{ form_company_name }}">
+        Public business name or handle
+        <input name="display_name" id="start-display-name" autocomplete="nickname" value="{{ form_display_name }}" aria-describedby="start-name-help" required>
+        <span id="start-name-help" class="help-text">Use a non-identifying business label. Do not use a legal name, email, phone number, or street address. New accounts only.</span>
       </label>
       {% with action='start' %}{% include "_turnstile.html" %}{% endwith %}
       <button class="button" type="submit">Email code</button>
@@ -230,8 +222,8 @@
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
 <script src="{{ url_for('static', filename='map.js') }}?v={{ asset_release_token }}"></script>
 {% if clerk_entry_enabled() %}
-  <script defer crossorigin="anonymous" src="{{ clerk_frontend_api_url() }}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
-  <script defer crossorigin="anonymous" data-clerk-publishable-key="{{ clerk_publishable_key() }}" {% if clerk_proxy_url() %}data-clerk-proxy-url="{{ clerk_proxy_url() }}"{% endif %} src="{{ clerk_frontend_api_url() }}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
+  <script defer crossorigin="anonymous" src="{{ clerk_ui_script_url() }}"></script>
+  <script defer crossorigin="anonymous" data-clerk-publishable-key="{{ clerk_publishable_key() }}" {% if clerk_proxy_url() %}data-clerk-proxy-url="{{ clerk_proxy_url() }}"{% endif %} src="{{ clerk_js_script_url() }}"></script>
   <script defer src="{{ url_for('static', filename='clerk-entry.js') }}?v={{ asset_release_token }}"></script>
 {% endif %}
 {% endblock %}

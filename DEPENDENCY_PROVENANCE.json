@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "reviewed_on": "2026-08-23",
+  "reviewed_on": "2026-10-24",
   "repository_hash_policy": {
     "binary": "sha256-bytes",
     "text": "sha256-lf"
@@ -122,6 +122,22 @@
       "integrity": "sha512-lmXTF1sCDEqBaEMpreGczvg/x3AIh1d/qxc4BN7utQ4jEDwdA4YG0L6kr3ev0TtVLHRb6QLySNAOAunwn+dHeA=="
     }
   ],
+  "runtime_components": [
+    {
+      "name": "Cloudflare Python Workers runtime SDK",
+      "purpose": "Provides the documented workers module used by the deployed Python Worker entrypoint.",
+      "delivery": "bundled Cloudflare runtime component, not a repository dependency",
+      "configuration": "cloudflare/wrangler.jsonc",
+      "compatibility_date": "2026-08-23",
+      "required_flags": [
+        "python_workers",
+        "disable_python_external_sdk"
+      ],
+      "external_sdk_bundled": false,
+      "official_source": "https://developers.cloudflare.com/workers/languages/python/basics/",
+      "terms_scope": "Cloudflare platform service terms; no runtime SDK artifact is vendored or redistributed by this repository."
+    }
+  ],
   "browser_components": [
     {
       "name": "Leaflet",
@@ -165,6 +181,28 @@
       "pencil_asset_sha256": "03a842bd4a16861b0adc0e38ed7b0eb5e7cc613012006833da22e58d56f1f1fe",
       "service_icon_count": 50,
       "service_icon_manifest_sha256": "b52f6c73b3afb6b19df964190046fd51748cce40d15c090054909f7007e8fcfe"
+    }
+  ],
+  "hosted_browser_components": [
+    {
+      "name": "Clerk UI",
+      "package": "@clerk/ui",
+      "version": "1.41.2",
+      "license": "MIT",
+      "official_source": "https://www.npmjs.com/package/@clerk/ui/v/1.41.2",
+      "package_integrity": "sha512-h3q26aWOblRfC+dt+9ALPLVrHAbi5Aw3Vo7kWY2944ZMVNpnSNXwousin1qY2RcYi/gALK7+ShFpVRfoFYc4SA==",
+      "script_path": "/npm/@clerk/ui@1.41.2/dist/ui.browser.js",
+      "delivery": "same-domain Clerk Frontend API proxy"
+    },
+    {
+      "name": "ClerkJS",
+      "package": "@clerk/clerk-js",
+      "version": "6.40.1",
+      "license": "MIT",
+      "official_source": "https://www.npmjs.com/package/@clerk/clerk-js/v/6.40.1",
+      "package_integrity": "sha512-Y2Jho5IIiMEhXkpyo7UTAYA/iPJcJSTUSgqoywQNSAbyV8FZZtZVYRmi0/7Mq1LAUVaTbrvNgF3PsxZAHDmt2A==",
+      "script_path": "/npm/@clerk/clerk-js@6.40.1/dist/clerk.browser.js",
+      "delivery": "same-domain Clerk Frontend API proxy"
     }
   ],
   "hosted_services": [

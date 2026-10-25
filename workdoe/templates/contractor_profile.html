@@ -73,8 +73,9 @@
     </section>
   {% endif %}
   <label class="wide" for="profile-business-name">
-    Business name
-    <input id="profile-business-name" name="business_name" value="{{ form.business_name }}" maxlength="{{ limits.business_max }}" autocomplete="organization" autocapitalize="words" spellcheck="false" enterkeyhint="next" required {% if field_errors.business_name %}aria-invalid="true" aria-describedby="profile-business-name-error"{% endif %}>
+    Business name or handle
+    <input id="profile-business-name" name="business_name" value="{{ form.business_name }}" maxlength="{{ limits.business_max }}" autocomplete="organization" autocapitalize="words" spellcheck="false" enterkeyhint="next" aria-describedby="profile-business-name-help{% if field_errors.business_name %} profile-business-name-error{% endif %}" required {% if field_errors.business_name %}aria-invalid="true"{% endif %}>
+    <span id="profile-business-name-help" class="help-text">Use a public business label, not a legal name, contact detail, or street address.</span>
     {% if field_errors.business_name %}<span id="profile-business-name-error" class="field-error">{{ field_errors.business_name[0] }}</span>{% endif %}
   </label>
   <fieldset class="wide profile-service-selector" id="profile-trades" {% if field_errors.trades %}aria-invalid="true" aria-describedby="profile-trades-error"{% endif %}>
@@ -147,12 +148,13 @@
   <label class="wide" for="profile-intro">
     Intro
     <textarea id="profile-intro" name="intro" rows="5" minlength="{{ limits.intro_min }}" maxlength="{{ limits.intro_max }}" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe your crew, service style, and ideal jobs." required {% if field_errors.intro %}aria-invalid="true" aria-describedby="profile-intro-error"{% endif %}>{{ form.intro }}</textarea>
+    <span class="help-text">Use the HTTPS website field for a business link. Do not include an email, phone number, or street address.</span>
     {% if field_errors.intro %}<span id="profile-intro-error" class="field-error">{{ field_errors.intro[0] }}</span>{% endif %}
   </label>
   <label class="wide" for="profile-photos">
     Portfolio photos
     <input id="profile-photos" name="portfolio_photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-describedby="profile-photos-help">
-    <span id="profile-photos-help" class="help-text">Private uploads. PNG, JPG, GIF, or WebP.</span>
+    <span id="profile-photos-help" class="help-text">Private uploads. PNG, JPG, GIF, or WebP up to 4 MB each. Production stores sanitized copies under 1.5 MB.</span>
   </label>
   <div class="form-actions wide">
     <button class="button" type="submit">Save profile</button>
@@ -163,7 +165,7 @@
   {% for photo in photos %}
     <figure>
       <img src="{{ url_for('contractor_photo', photo_id=photo.id) }}" alt="Portfolio photo {{ loop.index }}">
-      <figcaption>{{ photo.original_filename }}{% if photo.is_hidden %} - hidden{% endif %}</figcaption>
+      <figcaption>Portfolio photo {{ loop.index }}{% if photo.is_hidden %} - hidden{% endif %}</figcaption>
     </figure>
   {% endfor %}
 </section>

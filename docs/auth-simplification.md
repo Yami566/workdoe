@@ -7,7 +7,7 @@ follow the same product flow:
 1. Returning users open Clerk's maintained `SignIn` component on `/login` and request a one-time code without leaving Workdoe.
 2. Consumers may draft a project at `/post-project`, then verify on
    `/create-account`; contractors start from the live project board.
-3. New users choose a Workdoe role and optional profile details around the maintained sign-in-or-up component.
+3. New users choose a Workdoe role and one public business name or non-identifying handle around the maintained sign-in-or-up component.
 4. Clerk verifies the one-time code, then Workdoe creates the role-specific profile and continues to the right dashboard or selected lead.
 5. Signed-in users manage identity and security on `/account`, which stays on
    Workdoe and mounts Clerk's maintained `UserProfile` component in production.
@@ -19,7 +19,7 @@ follow the same product flow:
 - Clerk's maintained `SignIn` component handles sign-in, sign-up transfer, bot protection, invitation tickets, and any required session tasks.
 - Workdoe does not call Clerk's low-level sign-in or sign-up attempt APIs from the browser.
 - Role and destination are inferred from the user's chosen action.
-- Role, name, and company/household choices are held in short-lived tab storage for at most 30 minutes so Clerk's verification redirect cannot discard them.
+- Role and the public business label are held in short-lived tab storage for at most 30 minutes so Clerk's verification redirect cannot discard them. Workdoe does not retain a separate household or organization value in browser storage.
 - Selected leads stay attached through `/login`, `/create-account`, and code verification.
 - A valid project draft stays attached through verification without putting
   project content in a URL or identity-provider record.
@@ -46,7 +46,7 @@ Clerk's current docs support a combined sign-in-or-up flow and email-code/passwo
   existing accounts.
 - `users.auth_provider = 'clerk'` and `users.external_subject = <Clerk user id>` after identity verification.
 - Workdoe-owned role/profile creation after Clerk identity verification.
-- Clerk's prebuilt `SignIn` with `withSignUp: true` and hash routing on Workdoe entry pages.
+- Clerk's prebuilt `SignIn` on `/login` and `SignUp` on the explicit role-aware account-creation routes, with hash routing. Sign-in keeps `withSignUp: false` so it cannot silently become an account-creation flow.
 - Clerk's `@clerk/ui` bundle loaded before ClerkJS, as required by the current JavaScript SDK integration.
 - Clerk's prebuilt `UserProfile` on `/account` with hash routing, so account and
   passkey settings remain inside `workdoe.com` without adding custom WebAuthn code.
@@ -66,7 +66,7 @@ Sources:
 
 ## Cloudflare production option
 
-For Cloudflare-first hosting, keep the app-owned role/profile tables in D1. Clerk should own public OTP login when `WORKDOE_AUTH_PROVIDER=clerk`; Cloudflare Email Service should own Workdoe transactional mail such as match reminders, admin digests, fallback OTP, and password reset fallback. Cloudflare Access OTP can protect internal/admin-only surfaces, but it is a perimeter access tool, not a full public marketplace account system.
+For Cloudflare-first hosting, keep the app-owned role/profile tables in D1. Clerk should own public OTP login when `WORKDOE_AUTH_PROVIDER=clerk`; Cloudflare Email Service should own Workdoe transactional mail such as match reminders and admin digests. The production configuration does not offer Workdoe password login or reset email. Cloudflare Access OTP can protect internal/admin-only surfaces, but it is a perimeter access tool, not a full public marketplace account system.
 
 Sources:
 

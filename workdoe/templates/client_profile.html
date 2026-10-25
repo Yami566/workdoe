@@ -28,8 +28,9 @@
     <form class="form-grid consumer-profile-form" method="post" aria-label="Consumer profile">
       <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
       <label class="wide" for="client-organization-name">
-        Household or organization name
-        <input id="client-organization-name" name="organization_name" value="{{ profile.organization_name }}" maxlength="{{ organization_max }}" autocomplete="organization" autocapitalize="words" spellcheck="true" required{% if profile_field_errors.organization_name %} aria-invalid="true" aria-describedby="client-organization-name-error"{% endif %}>
+        Private workspace label
+        <input id="client-organization-name" name="organization_name" value="{{ profile.organization_name }}" maxlength="{{ organization_max }}" autocomplete="organization" autocapitalize="words" spellcheck="true" aria-describedby="client-organization-name-help{% if profile_field_errors.organization_name %} client-organization-name-error{% endif %}" required{% if profile_field_errors.organization_name %} aria-invalid="true"{% endif %}>
+        <span id="client-organization-name-help" class="help-text">Private to your workspace. Do not include an address, email, or phone number.</span>
         {% if profile_field_errors.organization_name %}<span id="client-organization-name-error" class="field-error">{{ profile_field_errors.organization_name[0] }}</span>{% endif %}
       </label>
       <fieldset class="wide option-fieldset"{% if profile_field_errors.account_type %} aria-invalid="true" aria-describedby="client-account-type-error"{% endif %}>
@@ -54,7 +55,7 @@
       <label class="wide" for="client-profile-note">
         Private workspace note <span class="optional-label">Optional</span>
         <textarea id="client-profile-note" name="profile_note" rows="4" maxlength="{{ profile_note_max }}" autocapitalize="sentences" spellcheck="true" aria-describedby="client-profile-note-help{% if profile_field_errors.profile_note %} client-profile-note-error{% endif %}"{% if profile_field_errors.profile_note %} aria-invalid="true"{% endif %}>{{ profile.profile_note }}</textarea>
-        <span id="client-profile-note-help" class="help-text">For recurring access, timing, or property-management context. Contractors cannot see this note.</span>
+        <span id="client-profile-note-help" class="help-text">For recurring timing or property-management context. Contractors cannot see this note. Do not include an address, email, or phone number.</span>
         {% if profile_field_errors.profile_note %}<span id="client-profile-note-error" class="field-error">{{ profile_field_errors.profile_note[0] }}</span>{% endif %}
       </label>
       <div class="form-actions wide"><button class="button" type="submit">Save profile</button></div>

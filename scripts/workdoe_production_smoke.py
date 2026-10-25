@@ -29,7 +29,7 @@ REQUIRED_SECURITY_HEADERS = {
     "Referrer-Policy": ("strict-origin-when-cross-origin",),
     "Permissions-Policy": ("geolocation=(), microphone=(), camera=()",),
 }
-CLERK_ASSET_PATH = "/__clerk/npm/@clerk/clerk-js@6/dist/clerk.browser.js"
+CLERK_ASSET_PATH = "/__clerk/npm/@clerk/clerk-js@6.40.1/dist/clerk.browser.js"
 PUBLIC_TRUST_PAGES = {
     "/safety": "Share only what the job needs.",
     "/privacy": "Privacy Policy",
@@ -50,6 +50,8 @@ CLERK_INVITATION_SMOKE_PATH = (
     "/create-account?__clerk_status=sign_up&__clerk_ticket=workdoe-smoke-ticket"
 )
 HTTPS_REDIRECT_PATHS = ("/", "/styles.css")
+SAMPLE_PROJECT_SMOKE_PATH = "/?job_id=demo-01"
+SAMPLE_TIMING_MARKER = "Sample timing"
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -328,10 +330,60 @@ def public_jobs_check(base_url: str, timeout: float) -> SmokeCheck:
             status_code=result.status_code,
             elapsed_ms=result.elapsed_ms,
         )
+    dated_demo_jobs = [
+        str(job.get("id", "sample"))
+        for job in jobs
+        if isinstance(job, dict) and job.get("is_demo") and job.get("desired_date")
+    ]
+    if dated_demo_jobs:
+        return SmokeCheck(
+            name="public-jobs-api",
+            status="failed",
+            summary=(
+                "Public jobs API exposes fixed desired dates for demonstration rows: "
+                + ", ".join(dated_demo_jobs)
+            ),
+            url=url,
+            status_code=result.status_code,
+            elapsed_ms=result.elapsed_ms,
+        )
     return SmokeCheck(
         name="public-jobs-api",
         status="ready",
         summary=f"Public jobs API returned {payload['count']} visible map leads.",
+        url=url,
+        status_code=result.status_code,
+        elapsed_ms=result.elapsed_ms,
+    )
+
+
+def public_sample_presentation_check(base_url: str, timeout: float) -> SmokeCheck:
+    """Ensure demo data cannot look like a stale public project on the live UI."""
+    url = check_url(base_url, SAMPLE_PROJECT_SMOKE_PATH)
+    result = fetch_url(url, timeout=timeout, body_limit=200000)
+    if not result.ok:
+        return response_check(
+            "public-sample-presentation",
+            url,
+            result,
+            expected_summary="Sample project detail returned HTTP success.",
+        )
+    if SAMPLE_TIMING_MARKER not in result.body:
+        return SmokeCheck(
+            name="public-sample-presentation",
+            status="failed",
+            summary=(
+                "Sample project detail does not label demonstration timing; "
+                "the public site may present a fixed fixture date as a live request."
+            ),
+            url=url,
+            status_code=result.status_code,
+            elapsed_ms=result.elapsed_ms,
+        )
+    return SmokeCheck(
+        name="public-sample-presentation",
+        status="ready",
+        summary="Demonstration project timing is clearly labeled as sample data.",
         url=url,
         status_code=result.status_code,
         elapsed_ms=result.elapsed_ms,
@@ -681,6 +733,7 @@ def build_smoke_payload(
         [
             health_check(base_url, timeout),
             public_jobs_check(base_url, timeout),
+            public_sample_presentation_check(base_url, timeout),
             security_headers_check(base_url, timeout),
             static_asset_cache_check(base_url, timeout),
             public_trust_pages_check(base_url, timeout),

@@ -303,11 +303,11 @@ def run_readiness(
             "WORKDOE_AUTH_PROVIDER must be clerk and WORKDOE_LOGIN_MODE must be same_domain_email_code.",
         )
         add_requirement(
-            vars_map.get("WORKDOE_ENFORCE_SERVICE_ACTIVATION") == "true",
+            vars_map.get("WORKDOE_ENFORCE_SERVICE_ACTIVATION") == "false",
             checks,
             blockers,
-            "Service-zone launch gates are enforced",
-            "WORKDOE_ENFORCE_SERVICE_ACTIVATION must be true in production.",
+            "All curated beta services are available with advisory controls",
+            "WORKDOE_ENFORCE_SERVICE_ACTIVATION must be false for the advisory-only beta.",
         )
         add_requirement(
             vars_map.get("WORKDOE_PUBLIC_URL") == "https://workdoe.com"

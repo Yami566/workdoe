@@ -28,6 +28,20 @@ REPOSITORY_HASH_POLICY = {
     "binary": "sha256-bytes",
     "text": "sha256-lf",
 }
+PINNED_CLERK_BROWSER_COMPONENTS = {
+    "Clerk UI": {
+        "package": "@clerk/ui",
+        "version": "1.41.2",
+        "license": "MIT",
+        "script_path": "/npm/@clerk/ui@1.41.2/dist/ui.browser.js",
+    },
+    "ClerkJS": {
+        "package": "@clerk/clerk-js",
+        "version": "6.40.1",
+        "license": "MIT",
+        "script_path": "/npm/@clerk/clerk-js@6.40.1/dist/clerk.browser.js",
+    },
+}
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -111,6 +125,53 @@ def validate_node_tooling(payload: dict, errors: list[str]) -> None:
             errors.append(f"package-lock.json integrity for {name} does not match the ledger")
 
 
+def validate_runtime_components(payload: dict, errors: list[str]) -> None:
+    components = {
+        component.get("name"): component for component in payload.get("runtime_components", [])
+    }
+    runtime = components.get("Cloudflare Python Workers runtime SDK")
+    if not runtime:
+        errors.append("The Cloudflare Python Workers runtime SDK provenance record is missing")
+        return
+
+    if runtime.get("delivery") != "bundled Cloudflare runtime component, not a repository dependency":
+        errors.append("Cloudflare Python runtime SDK delivery model is not recorded accurately")
+    if runtime.get("configuration") != "cloudflare/wrangler.jsonc":
+        errors.append("Cloudflare Python runtime SDK config path is not recorded accurately")
+    if runtime.get("external_sdk_bundled") is not False:
+        errors.append("Cloudflare Python runtime SDK must not be recorded as a bundled repository dependency")
+    if not str(runtime.get("official_source", "")).startswith("https://"):
+        errors.append("Cloudflare Python runtime SDK lacks an HTTPS official source")
+    if not runtime.get("terms_scope"):
+        errors.append("Cloudflare Python runtime SDK lacks service-terms provenance")
+
+    try:
+        wrangler = json.loads(
+            (REPO_ROOT / runtime["configuration"]).read_text(encoding="utf-8")
+        )
+    except (KeyError, OSError, UnicodeError, json.JSONDecodeError) as exc:
+        errors.append(f"Cloudflare Python runtime SDK config is unreadable: {exc}")
+        return
+
+    required_flags = set(runtime.get("required_flags", []))
+    actual_flags = set(wrangler.get("compatibility_flags", []))
+    if required_flags != {"python_workers", "disable_python_external_sdk"}:
+        errors.append("Cloudflare Python runtime SDK record has unexpected compatibility flags")
+    if not required_flags.issubset(actual_flags):
+        errors.append("Wrangler config does not preserve the bundled Python runtime SDK flags")
+    if runtime.get("compatibility_date") != wrangler.get("compatibility_date"):
+        errors.append("Cloudflare Python runtime SDK compatibility date does not match Wrangler config")
+
+    entrypoint = REPO_ROOT / "cloudflare" / "worker" / "entry.py"
+    try:
+        entrypoint_source = entrypoint.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        errors.append(f"Cloudflare Python Worker entrypoint is unreadable: {exc}")
+        return
+    if "from workers import " not in entrypoint_source:
+        errors.append("Cloudflare Python Worker entrypoint no longer uses the recorded runtime SDK module")
+
+
 def validate_browser_components(payload: dict, errors: list[str]) -> None:
     components = {component["name"]: component for component in payload.get("browser_components", [])}
     for component in components.values():
@@ -156,6 +217,66 @@ def validate_browser_components(payload: dict, errors: list[str]) -> None:
         errors.append("Tabler service icon count changed")
     if manifest_hash != tabler.get("service_icon_manifest_sha256"):
         errors.append("Tabler service icon manifest hash changed")
+
+
+def validate_hosted_browser_components(payload: dict, errors: list[str]) -> None:
+    components = {
+        component.get("name"): component
+        for component in payload.get("hosted_browser_components", [])
+    }
+    if set(components) != set(PINNED_CLERK_BROWSER_COMPONENTS):
+        errors.append("Hosted Clerk browser component provenance is incomplete")
+        return
+
+    for name, expected in PINNED_CLERK_BROWSER_COMPONENTS.items():
+        component = components[name]
+        for key, value in expected.items():
+            if component.get(key) != value:
+                errors.append(f"{name} hosted-browser provenance has unexpected {key}")
+        if not str(component.get("official_source", "")).startswith("https://"):
+            errors.append(f"{name} hosted-browser provenance lacks an HTTPS official source")
+        if not str(component.get("package_integrity", "")).startswith("sha512-"):
+            errors.append(f"{name} hosted-browser provenance lacks an npm integrity hash")
+        if component.get("delivery") != "same-domain Clerk Frontend API proxy":
+            errors.append(f"{name} hosted-browser provenance has an unexpected delivery model")
+
+    source_markers = {
+        REPO_ROOT / "cloudflare" / "worker" / "entry_shell.py": (
+            'CLERK_UI_VERSION = "1.41.2"',
+            'CLERK_JS_VERSION = "6.40.1"',
+            "clerk_ui_asset_url",
+            "clerk_js_asset_url",
+        ),
+        REPO_ROOT / "cloudflare" / "worker" / "app_shell.py": (
+            "CLERK_UI_VERSION",
+            "CLERK_JS_VERSION",
+        ),
+        REPO_ROOT / "workdoe" / "__init__.py": (
+            'CLERK_UI_VERSION = "1.41.2"',
+            'CLERK_JS_VERSION = "6.40.1"',
+            "def clerk_ui_script_url",
+            "def clerk_js_script_url",
+        ),
+    }
+    for path, markers in source_markers.items():
+        try:
+            source = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            errors.append(f"Clerk asset source is unreadable: {exc}")
+            continue
+        for marker in markers:
+            if marker not in source:
+                errors.append(f"Clerk asset source is missing marker: {path.name} {marker}")
+
+    for template_name in ("account.html", "login.html", "start.html"):
+        template_path = REPO_ROOT / "workdoe" / "templates" / template_name
+        try:
+            template = template_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            errors.append(f"Clerk template is unreadable: {exc}")
+            continue
+        if "clerk_ui_script_url()" not in template or "clerk_js_script_url()" not in template:
+            errors.append(f"Clerk template does not use pinned asset helpers: {template_name}")
 
 
 def download_python_artifact(path: str) -> bytes:
@@ -222,7 +343,9 @@ def verify(ledger_path: Path, *, verify_upstream: bool = False) -> list[str]:
 
     validate_python_groups(payload, errors)
     validate_node_tooling(payload, errors)
+    validate_runtime_components(payload, errors)
     validate_browser_components(payload, errors)
+    validate_hosted_browser_components(payload, errors)
     if verify_upstream:
         validate_upstream(payload, errors)
     return errors

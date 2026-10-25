@@ -195,6 +195,19 @@
     if (kind === "library" && loadedLibraries[key]) {
       return Promise.resolve();
     }
+    var libraryAlreadyReady = (url.origin === "https://challenges.cloudflare.com" && Boolean(window.turnstile)) ||
+      (url.pathname.indexOf("/npm/@clerk/") !== -1 && Boolean(window.Clerk));
+    if (kind === "library" && libraryAlreadyReady && Array.prototype.some.call(document.querySelectorAll("script[src]"), function (script) {
+      try {
+        var existing = new URL(script.src, window.location.href);
+        return existing.origin + existing.pathname === key;
+      } catch (error) {
+        return false;
+      }
+    })) {
+      loadedLibraries[key] = true;
+      return Promise.resolve();
+    }
     loadedLibraries[key] = true;
     return new Promise(function (resolve, reject) {
       var script = document.createElement("script");
@@ -226,11 +239,12 @@
     var renderWidgets = function () {
       content.querySelectorAll(".cf-turnstile").forEach(function (widget) {
         if (!widget.querySelector("iframe") && !widget.querySelector('input[name="cf-turnstile-response"]')) {
-          window.turnstile.render(widget, {
+          var widgetId = window.turnstile.render(widget, {
             sitekey: widget.dataset.sitekey,
             action: widget.dataset.action,
             theme: widget.dataset.theme || "light"
           });
+          widget.dataset.turnstileWidgetId = String(widgetId);
         }
       });
     };
@@ -354,6 +368,15 @@
     delete dialog.dataset.dialogKind;
     dialog.removeAttribute("aria-busy");
     document.body.classList.remove("has-site-dialog");
+    if (window.turnstile && typeof window.turnstile.remove === "function") {
+      content.querySelectorAll("[data-turnstile-widget-id]").forEach(function (widget) {
+        try {
+          window.turnstile.remove(widget.dataset.turnstileWidgetId);
+        } catch (error) {
+          // A finished or already-removed challenge must not block dialog cleanup.
+        }
+      });
+    }
     content.replaceChildren();
     status.hidden = false;
     status.textContent = "Loading...";

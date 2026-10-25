@@ -1279,11 +1279,24 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             "Wrangler keeps Clerk same-domain OTP mode",
         )
         require(
-            wrangler.get("vars", {}).get("WORKDOE_ENFORCE_SERVICE_ACTIVATION") == "true",
+            wrangler.get("vars", {}).get("WORKDOE_ENFORCE_SERVICE_ACTIVATION") == "false",
             errors,
-            "Wrangler must enforce reviewed service-zone launch gates.",
+            "Wrangler must keep the beta service-zone gate disabled.",
             checks,
-            "Wrangler enforces service-zone launch gates",
+            "Wrangler keeps all curated beta services available",
+        )
+        tile_url = str(wrangler.get("vars", {}).get("WORKDOE_MAP_TILE_URL", ""))
+        tile_attribution = str(
+            wrangler.get("vars", {}).get("WORKDOE_MAP_TILE_ATTRIBUTION", "")
+        )
+        require(
+            tile_url.startswith("https://")
+            and all(token in tile_url for token in ("{z}", "{x}", "{y}"))
+            and bool(tile_attribution.strip()),
+            errors,
+            "Wrangler must configure an HTTPS map tile URL, attribution, and Leaflet placeholders.",
+            checks,
+            "Wrangler configures the reviewed map tile provider",
         )
         require(
             wrangler.get("vars", {}).get("WORKDOE_EMAIL_FROM") == "no-reply@workdoe.com"
@@ -2338,7 +2351,6 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             for marker in (
                 "build_email_message",
                 "login-code",
-                "password-reset",
                 "contractor-new-lead",
                 "contractor-lead-alert-fanout",
                 "repeat-provider-invitation",
@@ -2373,6 +2385,13 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             + ", ".join(missing_email_markers),
             checks,
             "Cloudflare Worker sends and audits queued transactional emails",
+        )
+        require(
+            '"password-reset"' not in email_payloads_source,
+            errors,
+            "Cloudflare Worker must reject legacy password-reset email payloads",
+            checks,
+            "Cloudflare Worker rejects legacy password-reset email payloads",
         )
         email_consumer_start = worker_source.find(
             "async def process_email_queue_message"
@@ -2447,10 +2466,12 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "/map.js",
                 "finishSignIn",
                 "node.dataset.signUpUrl",
-                "@clerk/ui@1/dist/ui.browser.js",
+                'CLERK_UI_VERSION = "1.41.2"',
                 "window.__internal_ClerkUICtor",
                 "window.Clerk.mountSignIn",
-                "withSignUp: true",
+                "window.Clerk.mountSignUp",
+                "withSignUp: false",
+                "signInForceRedirectUrl: returnUrl",
                 "signUpForceRedirectUrl: returnUrl",
                 "No password needed. Your one-time code arrives by email.",
                 "Content-Security-Policy",
@@ -2567,7 +2588,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "clerk-account.js",
                 "mountUserProfile",
                 'routing: "hash"',
-                "@clerk/ui@1/dist/ui.browser.js",
+                "CLERK_UI_VERSION",
                 "window.__internal_ClerkUICtor",
                 "https://*.protect.clerk.com",
                 "https://img.clerk.com",

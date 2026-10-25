@@ -114,7 +114,7 @@
       {% for photo in photos %}
         <figure>
           <img src="{{ url_for('job_photo', photo_id=photo.id) }}" alt="Job photo {{ loop.index }}">
-          <figcaption>{{ photo.original_filename }}{% if photo.is_hidden %} - hidden{% endif %}</figcaption>
+          <figcaption>Project photo {{ loop.index }}{% if photo.is_hidden %} - hidden{% endif %}</figcaption>
         </figure>
       {% endfor %}
     </div>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 
+from content_privacy import contains_disallowed_personal_data, personal_data_error
 from service_policy import service_policy_error
 from service_scope import clean_scope_answers, validate_scope_answers
 from service_taxonomy import GROUP_BY_SLUG, SERVICE_BY_SLUG, service_selection
@@ -310,6 +311,8 @@ def validate_job_payload(form: dict, today: date | None = None) -> list[str]:
         errors.append(f"Add at least {JOB_DESCRIPTION_MIN_LENGTH} characters about the work.")
     elif len(form["description"]) > JOB_DESCRIPTION_MAX_LENGTH:
         errors.append(f"Keep the description under {JOB_DESCRIPTION_MAX_LENGTH} characters.")
+    if contains_disallowed_personal_data((form["title"], form["description"])):
+        errors.append(personal_data_error("project title or description"))
     if form["desired_date"]:
         try:
             parsed_date = date.fromisoformat(form["desired_date"])

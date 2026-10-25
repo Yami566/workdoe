@@ -16,8 +16,10 @@ to the policy set from the footer.
   payment processor, emergency service, or project guarantor.
 - The controlled beta has no payment, escrow, warranty, background-check,
   license-verification, rating, or dispute-adjudication product.
-- Project location is approximate before approval and users are warned not to
-  publish exact addresses, contact details, or access codes.
+- Project location is approximate before approval. Marketplace, public-profile,
+  onboarding-label, private-workspace, and saved-area text reject common email,
+  phone, and street-address patterns, while the UI warns that no automated
+  check can identify every disclosure.
 - Contractor qualifications and project statements are self-reported unless
   Workdoe explicitly labels a fact as verified.
 - Illegal, emergency, hazardous-material, medical/personal-care, firearms,
@@ -32,8 +34,8 @@ to the policy set from the footer.
 
 | Decision | Current state | Evidence required before public approval |
 | --- | --- | --- |
-| Legal operator and data controller | Missing | Legal name, business address/jurisdiction, and approved public display format |
-| Monitored contact ownership | `admin@workdoe.com` actively routes to the account's verified owner destination; receipt and operating ownership are unverified | Received-message proof, named monitor, and response target for account, privacy, safety, and security requests |
+| Legal operator and data controller | Owner identified Moose Bay and Company LLC as the Virginia operator; a public street or mailing address and approved legal display format are still unrecorded | Confirm the public address/display format and obtain legal approval of the operator statement |
+| Monitored contact ownership | Owner confirms they monitor `admin@workdoe.com` and target a 1-5 business-day response; inbox receipt, urgent coverage, and operating evidence are unverified | Complete a received-message test, define urgent/security coverage, and record the owner operating procedure |
 | Retention and deletion schedule | Missing | Record-class schedule for accounts, projects, messages, media, reports, auth/audit records, backups, and deletion exceptions |
 | Consumer data-rights workflow | Procedure drafted only | Completed export/deletion test, identity-verification rule, denial/appeal path, and request log |
 | Terms acceptance | Clerk production express consent is enabled and evidenced for `https://workdoe.com/terms` and `https://workdoe.com/privacy`; policy approval and a versioned Workdoe acceptance record remain unverified/not implemented | Retain operator proof, approve a version/change-notice rule, and define whether Workdoe needs its own acceptance event plus when existing users must re-accept |

@@ -411,6 +411,9 @@ CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_login_codes_email ON login_codes(email, expires_at);
 CREATE INDEX IF NOT EXISTS idx_automation_events_type_target ON automation_events(event_type, target_type, target_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_automation_events_media_upload_window
+ON automation_events(event_type, created_at)
+WHERE event_type = 'media-uploaded';
 CREATE INDEX IF NOT EXISTS idx_contractor_credentials_owner ON contractor_credentials(contractor_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_contractor_credentials_review ON contractor_credentials(status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_client_project_templates_owner ON client_project_templates(client_id, updated_at DESC);

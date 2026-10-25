@@ -9,14 +9,16 @@ from urllib.parse import urlparse
 DEFAULT_FROM_EMAIL = "no-reply@workdoe.com"
 DEFAULT_PREFERENCES_URL = "https://workdoe.com/client/profile#bid-reminders"
 DEFAULT_LEAD_ALERTS_URL = "https://workdoe.com/leads#saved-lead-alerts"
+DEFAULT_MODERATION_URL = "https://workdoe.com/admin"
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 CODE_PATTERN = re.compile(r"^\d{6}$")
 JOB_PATH_PATTERN = re.compile(r"^/jobs/[1-9][0-9]*$")
+ADMIN_PATH_PATTERN = re.compile(r"^/admin$")
 SUPPORTED_EMAIL_TYPES = {
     "contractor-new-lead",
     "login-code",
     "moderation-digest",
-    "password-reset",
+    "operator-report-alert",
     "repeat-provider-invitation",
     "stale-match-reminder",
 }
@@ -75,16 +77,6 @@ def require_login_code(value: str | None) -> str:
     return code
 
 
-def require_workdoe_url(value: str | None) -> str:
-    url = compact_spaces(value)
-    parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.netloc not in {"workdoe.com", "www.workdoe.com"}:
-        raise EmailPayloadError("Reset URL must stay on workdoe.com.")
-    if not parsed.path.startswith("/reset-password/"):
-        raise EmailPayloadError("Reset URL must point to a Workdoe reset route.")
-    return url
-
-
 def require_workdoe_preferences_url(value: str | None) -> str:
     url = compact_spaces(value) or DEFAULT_PREFERENCES_URL
     parsed = urlparse(url)
@@ -115,6 +107,16 @@ def require_workdoe_lead_alerts_url(value: str | None) -> str:
     return url
 
 
+def require_workdoe_moderation_url(value: str | None) -> str:
+    url = compact_spaces(value) or DEFAULT_MODERATION_URL
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc not in {"workdoe.com", "www.workdoe.com"}:
+        raise EmailPayloadError("Moderation URL must stay on workdoe.com.")
+    if not ADMIN_PATH_PATTERN.fullmatch(parsed.path) or parsed.query or parsed.fragment:
+        raise EmailPayloadError("Moderation URL must point to the Workdoe admin console.")
+    return url
+
+
 def message_shell(to_email: str, subject: str, text: str, html_body: str, from_email: str) -> dict:
     return {
         "to": require_recipient(to_email),
@@ -140,24 +142,6 @@ def login_code_message(payload: dict, from_email: str) -> dict:
         f"<p>It expires in {expires_minutes} minutes. Use it to "
         f"{html.escape(intent)}.</p>"
         "<p>If you did not request this, you can ignore this email.</p>"
-    )
-    return message_shell(payload.get("to"), subject, text, html_body, from_email)
-
-
-def password_reset_message(payload: dict, from_email: str) -> dict:
-    reset_url = require_workdoe_url(payload.get("reset_url"))
-    expires_minutes = clean_minutes(payload.get("expires_minutes"), 30, maximum=120)
-    subject = "Reset your Workdoe password"
-    text = (
-        f"Reset your Workdoe password: {reset_url}\n\n"
-        f"This link expires in {expires_minutes} minutes. "
-        "If you did not request this, you can ignore this email."
-    )
-    html_body = (
-        "<p>Reset your Workdoe password:</p>"
-        f'<p><a href="{html.escape(reset_url)}">{html.escape(reset_url)}</a></p>'
-        f"<p>This link expires in {expires_minutes} minutes. "
-        "If you did not request this, you can ignore this email.</p>"
     )
     return message_shell(payload.get("to"), subject, text, html_body, from_email)
 
@@ -251,6 +235,33 @@ def moderation_digest_message(payload: dict, from_email: str, admin_email: str) 
     )
 
 
+def operator_report_alert_message(payload: dict, from_email: str, admin_email: str) -> dict:
+    report_id = safe_int(payload.get("report_id"))
+    target_type = clean_text(payload.get("target_type"), 24).lower()
+    target_id = safe_int(payload.get("target_id"))
+    if not report_id or target_type not in {"job", "message", "profile"} or not target_id:
+        raise EmailPayloadError("Operator report alert must identify a valid report target.")
+    moderation_url = require_workdoe_moderation_url(payload.get("moderation_url"))
+    subject = "Workdoe moderation review needed"
+    text = (
+        f"A signed-in Workdoe account submitted report #{report_id} about a {target_type}. "
+        "Review it in the moderation console. This alert intentionally omits report text, "
+        f"account details, and project details: {moderation_url}"
+    )
+    html_body = (
+        "<p>A signed-in Workdoe account submitted a moderation report.</p>"
+        "<p>This alert intentionally omits report text, account details, and project details.</p>"
+        f'<p><a href="{html.escape(moderation_url)}">Open the moderation console</a></p>'
+    )
+    return message_shell(
+        payload.get("to") or admin_email,
+        subject,
+        text,
+        html_body,
+        from_email,
+    )
+
+
 def build_email_message(
     payload: dict,
     from_email: str = DEFAULT_FROM_EMAIL,
@@ -261,8 +272,6 @@ def build_email_message(
     event_type = payload.get("type")
     if event_type == "login-code":
         return login_code_message(payload, from_email)
-    if event_type == "password-reset":
-        return password_reset_message(payload, from_email)
     if event_type == "stale-match-reminder":
         return stale_match_reminder_message(payload, from_email)
     if event_type == "repeat-provider-invitation":
@@ -271,6 +280,8 @@ def build_email_message(
         return contractor_new_lead_message(payload, from_email)
     if event_type == "moderation-digest":
         return moderation_digest_message(payload, from_email, admin_email)
+    if event_type == "operator-report-alert":
+        return operator_report_alert_message(payload, from_email, admin_email)
     raise EmailPayloadError("Unsupported email payload type.")
 
 

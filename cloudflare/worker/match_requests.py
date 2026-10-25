@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from content_privacy import contains_disallowed_personal_data, personal_data_error
+
 BID_SCOPE_MIN_LENGTH = 20
 BID_SCOPE_MAX_LENGTH = 800
 BID_PRICE_MAX_LENGTH = 80
@@ -71,6 +73,16 @@ def validate_match_request_payload(form: dict[str, str]) -> list[str]:
         errors.append("Add availability.")
     elif len(form["availability"]) > BID_AVAILABILITY_MAX_LENGTH:
         errors.append(f"Keep availability under {BID_AVAILABILITY_MAX_LENGTH} characters.")
+    for field in (
+        "scope_note",
+        "price_range",
+        "timeline",
+        "experience",
+        "questions",
+        "availability",
+    ):
+        if contains_disallowed_personal_data((form[field],)):
+            errors.append(personal_data_error(field.replace("_", " ")))
     return errors
 
 

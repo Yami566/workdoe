@@ -76,9 +76,9 @@
           </details>
         {% else %}
           <a href="{{ url_for('home') }}" {% if request.endpoint == 'home' %}aria-current="page"{% endif %}>Explore</a>
-          <a href="{{ url_for('post_project') }}" {% if request.endpoint == 'post_project' %}aria-current="page"{% endif %}>Post project</a>
-          <a href="{{ url_for('login') }}" {% if request.endpoint == 'login' %}aria-current="page"{% endif %}>Sign in</a>
-          <a class="button compact" href="{{ url_for('create_account') }}" {% if request.endpoint in ['start', 'create_account', 'verify_start'] %}aria-current="page"{% endif %}>Create account</a>
+          <a href="{{ url_for('post_project') }}" data-dialog-title="Post a project" {% if request.endpoint == 'post_project' %}aria-current="page"{% endif %}>Post project</a>
+          <a href="{{ url_for('login') }}" data-dialog-title="Sign in" {% if request.endpoint == 'login' %}aria-current="page"{% endif %}>Sign in</a>
+          <a class="button compact" href="{{ url_for('create_account') }}" data-dialog-title="Create account" {% if request.endpoint in ['start', 'create_account', 'verify_start'] %}aria-current="page"{% endif %}>Create account</a>
         {% endif %}
       </nav>
     </header>

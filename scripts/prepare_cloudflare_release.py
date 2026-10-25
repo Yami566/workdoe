@@ -28,6 +28,10 @@ REQUIRED_WORKER_SECRETS = [
     "WORKDOE_TURNSTILE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SITE_KEY",
 ]
+MAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+MAP_TILE_ATTRIBUTION = (
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+)
 IMMUTABLE_STATIC_ASSET_PATHS = [
     "/styles.css",
     "/map.js",
@@ -349,8 +353,10 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
             "WORKDOE_AUTH_PROVIDER": "clerk",
             "WORKDOE_DOMAIN": manifest["domain"],
             "WORKDOE_PUBLIC_URL": f"https://{manifest['domain']}",
+            "WORKDOE_MAP_TILE_URL": MAP_TILE_URL,
+            "WORKDOE_MAP_TILE_ATTRIBUTION": MAP_TILE_ATTRIBUTION,
             "WORKDOE_LOGIN_MODE": "same_domain_email_code",
-            "WORKDOE_ENFORCE_SERVICE_ACTIVATION": "true",
+            "WORKDOE_ENFORCE_SERVICE_ACTIVATION": "false",
             "WORKDOE_EMAIL_FROM": targets["email"]["from"],
             "WORKDOE_ADMIN_EMAIL": targets["email"]["admin_digest_to"],
         },
@@ -380,8 +386,10 @@ def build_dev_vars_example(manifest: dict) -> str:
         "WORKDOE_AUTH_PROVIDER=clerk",
         "WORKDOE_DOMAIN=workdoe.com",
         "WORKDOE_PUBLIC_URL=https://workdoe.com",
+        f"WORKDOE_MAP_TILE_URL={MAP_TILE_URL}",
+        f"WORKDOE_MAP_TILE_ATTRIBUTION={MAP_TILE_ATTRIBUTION}",
         "WORKDOE_LOGIN_MODE=same_domain_email_code",
-        "WORKDOE_ENFORCE_SERVICE_ACTIVATION=true",
+        "WORKDOE_ENFORCE_SERVICE_ACTIVATION=false",
     ]
     for key in sorted(required_env):
         if key in {

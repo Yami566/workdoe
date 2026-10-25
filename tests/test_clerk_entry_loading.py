@@ -24,7 +24,7 @@ class ClerkEntryLoadingTests(unittest.TestCase):
               await new Promise((resolve) => setTimeout(resolve, 0));
             };
 
-            function fixture(clerk, sessionResponse) {
+            function fixture(clerk, sessionResponse, clerkMode) {
               const status = { textContent: 'Loading secure email sign-in...' };
               const loading = {
                 textContent: 'Loading secure email sign-in...',
@@ -33,7 +33,7 @@ class ClerkEntryLoadingTests(unittest.TestCase):
                 setAttribute(name, value) { this.attributes[name] = value; }
               };
               const node = {
-                dataset: { sessionUrl: '/api/auth/session' },
+                dataset: Object.assign({ sessionUrl: '/api/auth/session' }, clerkMode ? { clerkMode } : {}),
                 querySelector: (selector) => selector === '.clerk-entry-loading' ? loading : null,
                 closest: () => scope
               };
@@ -80,6 +80,7 @@ class ClerkEntryLoadingTests(unittest.TestCase):
                 session: { getToken: async () => 'fresh-session-token' },
                 load: () => Promise.resolve(),
                 mountSignIn() {},
+                mountSignUp() {},
                 addListener(callback) { this.listener = callback; return () => {}; }
               };
             }
@@ -112,6 +113,12 @@ class ClerkEntryLoadingTests(unittest.TestCase):
               await settle();
               assert.equal(mounted.requests[0].url, '/api/auth/session');
               assert.equal(mounted.requests[0].options.headers.Authorization, 'Bearer fresh-session-token');
+
+              const signUpMount = fixture(signedOutClerk(), undefined, 'start');
+              await settle();
+              assert.equal(signUpMount.node.dataset.state, 'ready');
+              assert.equal(signUpMount.loading.hidden, true);
+              assert.equal(signUpMount.loading.attributes['aria-hidden'], 'true');
 
               const rejected = fixture(
                 Object.assign(signedOutClerk(), { isSignedIn: true }),

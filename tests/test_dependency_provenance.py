@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -49,6 +50,24 @@ class DependencyProvenanceTests(unittest.TestCase):
                 verifier.sha256_file(path),
                 hashlib.sha256(content).hexdigest(),
             )
+
+    def test_ledger_records_the_bundled_cloudflare_python_runtime_sdk(self):
+        verifier = load_verifier()
+        ledger = json.loads((ROOT / "DEPENDENCY_PROVENANCE.json").read_text(encoding="utf-8"))
+
+        errors: list[str] = []
+        verifier.validate_runtime_components(ledger, errors)
+
+        self.assertEqual(errors, [])
+
+    def test_ledger_pins_hosted_clerk_browser_components(self):
+        verifier = load_verifier()
+        ledger = json.loads((ROOT / "DEPENDENCY_PROVENANCE.json").read_text(encoding="utf-8"))
+
+        errors: list[str] = []
+        verifier.validate_hosted_browser_components(ledger, errors)
+
+        self.assertEqual(errors, [])
 
 
 if __name__ == "__main__":

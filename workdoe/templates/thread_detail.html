@@ -118,6 +118,7 @@
         <label for="message-body">
           New message
           <textarea id="message-body" name="body" rows="3" maxlength="{{ message_max }}" placeholder="Share timing, access, or next steps." autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required {% if message_field_errors.body %}aria-invalid="true" aria-describedby="message-body-error"{% endif %}>{{ draft_body }}</textarea>
+          <span class="help-text">Keep email, phone, and exact street details out of Workdoe messages.</span>
           {% if message_field_errors.body %}<span id="message-body-error" class="field-error">{{ message_field_errors.body[0] }}</span>{% endif %}
         </label>
         <button class="button full" type="submit" aria-label="Send message">Send</button>
