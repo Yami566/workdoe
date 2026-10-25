@@ -133,6 +133,7 @@
   }
 
   function setLoading(message) {
+    removeTurnstileWidgets(content);
     content.replaceChildren();
     status.hidden = false;
     status.textContent = message || "Loading...";
@@ -191,7 +192,9 @@
     if (!kind) {
       return Promise.resolve();
     }
-    var key = url.origin + url.pathname;
+    var key = url.origin + url.pathname + (
+      url.origin === "https://challenges.cloudflare.com" ? url.search : ""
+    );
     if (kind === "library" && loadedLibraries[key]) {
       return Promise.resolve();
     }
@@ -200,7 +203,9 @@
     if (kind === "library" && libraryAlreadyReady && Array.prototype.some.call(document.querySelectorAll("script[src]"), function (script) {
       try {
         var existing = new URL(script.src, window.location.href);
-        return existing.origin + existing.pathname === key;
+        return existing.origin + existing.pathname + (
+          existing.origin === "https://challenges.cloudflare.com" ? existing.search : ""
+        ) === key;
       } catch (error) {
         return false;
       }
@@ -237,14 +242,16 @@
       return;
     }
     var renderWidgets = function () {
-      content.querySelectorAll(".cf-turnstile").forEach(function (widget) {
-        if (!widget.querySelector("iframe") && !widget.querySelector('input[name="cf-turnstile-response"]')) {
+      content.querySelectorAll("[data-workdoe-turnstile]").forEach(function (widget) {
+        if (!widget.dataset.turnstileWidgetId) {
           var widgetId = window.turnstile.render(widget, {
             sitekey: widget.dataset.sitekey,
             action: widget.dataset.action,
             theme: widget.dataset.theme || "light"
           });
-          widget.dataset.turnstileWidgetId = String(widgetId);
+          if (typeof widgetId !== "undefined" && widgetId !== null) {
+            widget.dataset.turnstileWidgetId = String(widgetId);
+          }
         }
       });
     };
@@ -253,6 +260,24 @@
     } else {
       renderWidgets();
     }
+  }
+
+  function removeTurnstileWidgets(root) {
+    if (!root || !window.turnstile || typeof window.turnstile.remove !== "function") {
+      return;
+    }
+    root.querySelectorAll("[data-turnstile-widget-id]").forEach(function (widget) {
+      var widgetId = widget.dataset.turnstileWidgetId;
+      delete widget.dataset.turnstileWidgetId;
+      if (!widgetId) {
+        return;
+      }
+      try {
+        window.turnstile.remove(widgetId);
+      } catch (error) {
+        // A completed challenge must not block dialog navigation or cleanup.
+      }
+    });
   }
 
   function focusDialogContent() {
@@ -281,6 +306,7 @@
       if (!fragment) {
         throw new Error("This page is available in full-page mode.");
       }
+      removeTurnstileWidgets(content);
       content.replaceChildren(document.importNode(fragment, true));
       title.textContent = labelFor(responseUrl, null);
       dialog.dataset.dialogKind = kindFor(responseUrl);
@@ -326,6 +352,7 @@
       }
       status.hidden = false;
       status.textContent = error.message || "This form could not be opened.";
+      removeTurnstileWidgets(content);
       content.innerHTML = '<a class="button secondary" href="' + escapeAttribute(canonicalPath(url)) + '">Open the full page</a>';
       dialog.removeAttribute("aria-busy");
       closeButton.focus({ preventScroll: true });
@@ -368,15 +395,7 @@
     delete dialog.dataset.dialogKind;
     dialog.removeAttribute("aria-busy");
     document.body.classList.remove("has-site-dialog");
-    if (window.turnstile && typeof window.turnstile.remove === "function") {
-      content.querySelectorAll("[data-turnstile-widget-id]").forEach(function (widget) {
-        try {
-          window.turnstile.remove(widget.dataset.turnstileWidgetId);
-        } catch (error) {
-          // A finished or already-removed challenge must not block dialog cleanup.
-        }
-      });
-    }
+    removeTurnstileWidgets(content);
     content.replaceChildren();
     status.hidden = false;
     status.textContent = "Loading...";

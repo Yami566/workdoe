@@ -30,7 +30,7 @@
     <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v={{ asset_release_token }}">
     {% if turnstile_enabled() %}
-      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js{% if embedded_dialog_mode() %}?render=explicit{% endif %}" async defer></script>
     {% endif %}
     {% block head %}{% endblock %}
   </head>

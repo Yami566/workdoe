@@ -2782,7 +2782,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "job_draft_token_hash",
                 "HttpOnly; Secure; SameSite=Lax",
                 'action="/post-project"',
-                'turnstile_html(site_key, "job-draft")',
+                'turnstile_html(site_key, "job-draft"',
                 "Photos are not available during this beta.",
             )
             if marker not in combined_project_draft_source

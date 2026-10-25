@@ -691,6 +691,15 @@ class WorkdoeFlowTests(unittest.TestCase):
             "script-src 'self' https://challenges.cloudflare.com",
             login.headers["Content-Security-Policy"],
         )
+
+        embedded_login = client.get("/login?embed=1")
+        self.assertIn(
+            b"turnstile/v0/api.js?render=explicit",
+            embedded_login.data,
+        )
+        self.assertIn(b'class="workdoe-turnstile"', embedded_login.data)
+        self.assertIn(b'data-workdoe-turnstile="true"', embedded_login.data)
+        self.assertNotIn(b'class="cf-turnstile"', embedded_login.data)
         self.assertIn(
             "frame-src https://challenges.cloudflare.com",
             login.headers["Content-Security-Policy"],
@@ -6085,7 +6094,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('dialog.dataset.dialogKind = kindFor(url)', script)
         self.assertIn('delete dialog.dataset.dialogKind', script)
         self.assertIn('widget.dataset.turnstileWidgetId = String(widgetId)', script)
-        self.assertIn('window.turnstile.remove(widget.dataset.turnstileWidgetId)', script)
+        self.assertIn('content.querySelectorAll("[data-workdoe-turnstile]")', script)
+        self.assertIn('function removeTurnstileWidgets(root)', script)
+        self.assertIn('window.turnstile.remove(widgetId)', script)
+        self.assertIn('removeTurnstileWidgets(content);\n      content.replaceChildren(document.importNode(fragment, true));', script)
         self.assertIn('document.querySelectorAll("script[src]")', script)
         worker_actions = (
             ROOT / "workdoe" / "static" / "worker-actions.js"

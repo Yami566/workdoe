@@ -626,7 +626,10 @@ def layout(
     embedded = "dialog-fragment-body" in body_class.split()
     authenticated = row_value(user, "role") in {"client", "contractor", "admin"}
     if include_turnstile:
-        scripts.append('<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>')
+        turnstile_url = "https://challenges.cloudflare.com/turnstile/v0/api.js"
+        if embedded:
+            turnstile_url += "?render=explicit"
+        scripts.append(f'<script src="{turnstile_url}" async defer></script>')
     if include_map:
         scripts.extend(
             [
@@ -1806,12 +1809,14 @@ def lead_board_html(
     )
 
 
-def turnstile_html(site_key: str, action: str) -> str:
+def turnstile_html(site_key: str, action: str, *, explicit: bool = False) -> str:
     if not site_key:
         return ""
+    widget_class = "workdoe-turnstile" if explicit else "cf-turnstile"
+    explicit_marker = ' data-workdoe-turnstile="true"' if explicit else ""
     return f"""
         <div class="turnstile-field">
-          <div class="cf-turnstile" data-sitekey="{escape(site_key)}" data-action="{escape(action)}" data-theme="light"></div>
+          <div class="{widget_class}"{explicit_marker} data-sitekey="{escape(site_key)}" data-action="{escape(action)}" data-theme="light"></div>
         </div>"""
 
 
@@ -2200,7 +2205,7 @@ def job_form_html(
             include_photos=media_uploads_enabled,
             submit_label="Post project",
             cancel_url="/client/dashboard",
-            turnstile=turnstile_html(site_key, "job-post"),
+            turnstile=turnstile_html(site_key, "job-post", explicit=embedded),
         )
         location_shortcuts = "".join(
             f'<a class="button secondary compact" href="/jobs/new?{urlencode({"location": int(location.get("id", 0) or 0)})}">{escape(location.get("label", ""))}</a>'
@@ -2319,7 +2324,7 @@ def job_form_html(
       <label class="wide" for="job-description">Description <textarea id="job-description" name="description" rows="5" minlength="20" maxlength="1200" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe the {escape(edit_service_name.lower() + ' ' if edit_service_name else '')}scope, size, current condition, access, and desired outcome." aria-describedby="job-description-help" required>{escape(str(row_value(job, 'description', '') or ''))}</textarea><span id="job-description-help" class="help-text">Do not include an exact street address, email, or phone number.</span></label>
       {edit_policy_html}
       {('<label class="wide" for="job-photos">Photos <input id="job-photos" name="photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-describedby="job-photos-help"></label><p id="job-photos-help" class="help-text wide">Private uploads. PNG, JPG, GIF, or WebP.</p>') if media_uploads_enabled else '<p class="help-text wide">Photos are not available during this beta.</p>'}
-      {turnstile_html(site_key, "job-post")}
+      {turnstile_html(site_key, "job-post", explicit=embedded)}
       <div class="form-actions wide">
         <button class="button" type="submit" aria-label="{'Save project changes' if is_edit else 'Post project'}">{'Save changes' if is_edit else 'Post project'}</button>
         <p id="worker-form-status" class="help-text" data-form-status aria-live="polite"></p>
@@ -2354,7 +2359,7 @@ def public_job_draft_html(
         include_photos=False,
         submit_label="Save draft and verify email",
         cancel_url="/",
-        turnstile=turnstile_html(site_key, "job-draft"),
+        turnstile=turnstile_html(site_key, "job-draft", explicit=embedded),
     )
     posting_intro = "" if embedded else """
     <section class="page-header"><p class="eyebrow">Consumer workspace</p><h1>What needs doing?</h1><p>Start the project now. Verify your email before it goes live.</p></section>
@@ -3596,7 +3601,7 @@ def contractor_job_detail_html(
           </datalist>
           <details class="optional-field"{' open' if bid_form.get('questions') else ''}><summary>Questions (optional)</summary><label class="sr-only" for="bid-questions">Questions</label><textarea id="bid-questions" name="questions" rows="2" maxlength="500" placeholder="Optional" autocapitalize="sentences" spellcheck="true" enterkeyhint="done">{escape(bid_form.get('questions', ''))}</textarea></details>
           {bid_policy_html}
-          {turnstile_html(site_key, "match-request")}
+          {turnstile_html(site_key, "match-request", explicit=embedded)}
           <button class="button full" type="submit" aria-label="Send mini bid">Send bid</button>
           <p id="bid-form-status" class="help-text" data-form-status aria-live="polite"></p>
         </form>"""
@@ -3616,7 +3621,7 @@ def contractor_job_detail_html(
           <input type="hidden" name="target_type" value="job">
           <input type="hidden" name="target_id" value="{int(job.get('id', 0))}">
           <label for="lead-report-reason">Report this lead <input id="lead-report-reason" name="reason" maxlength="500" placeholder="Why should moderation review it?" required></label>
-          {turnstile_html(site_key, "report")}
+          {turnstile_html(site_key, "report", explicit=embedded)}
           <button class="button secondary compact" type="submit">Report</button>
           <p id="lead-report-status" class="help-text" data-form-status aria-live="polite"></p>
         </form>"""

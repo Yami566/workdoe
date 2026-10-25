@@ -5261,6 +5261,17 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('class="cf-turnstile"', form_html)
         self.assertIn('data-sitekey="turnstile-site-key"', form_html)
         self.assertIn("Post project", form_html)
+        embedded_form_html = module.job_form_html(
+            client,
+            site_key="turnstile-site-key",
+            embedded=True,
+        )
+        self.assertIn(
+            'src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"',
+            embedded_form_html,
+        )
+        self.assertIn('class="workdoe-turnstile"', embedded_form_html)
+        self.assertIn('data-workdoe-turnstile="true"', embedded_form_html)
         family_form_html = module.job_form_html(
             client,
             job={"service_group_slug": "outdoor-yard"},
@@ -6016,6 +6027,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertNotIn("data-site-dialog", embedded_detail_html)
         self.assertIn("data-dialog-fragment data-bid-flow", embedded_detail_html)
         self.assertIn('class="dialog-project-snapshot"', embedded_detail_html)
+        self.assertIn(
+            'src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"',
+            embedded_detail_html,
+        )
+        self.assertIn('class="workdoe-turnstile"', embedded_detail_html)
+        self.assertIn('data-workdoe-turnstile="true"', embedded_detail_html)
         self.assertIn("$300-$450", embedded_detail_html)
 
         client_job_html = module.client_job_detail_html(
