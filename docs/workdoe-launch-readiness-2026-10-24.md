@@ -575,6 +575,21 @@ had no observed overlap or clipped primary controls. The mobile **Post
 project** entry opened a native in-place bottom sheet; closing it restored
 focus to the initiating control and the selected map view.
 
+A separate keyboard-only production pass reached the **Skip to content** link
+first, then the **Post project** control in the expected tab order. Pressing
+Enter opened the native dialog, focused its first work-family radio option, and
+Escape returned focus to the original **Post project** link. The published
+account route also resolved a pre-existing same-domain Clerk session into the
+signed-in project workspace rather than leaving the former loading message on
+screen. A fresh email-code request/verification cannot be automated without
+an owner entering a code from their mailbox, so that remains an owner-run
+journey test.
+
+The only browser-console diagnostics observed in this pass originated from the
+Cloudflare Turnstile challenge iframe and did not include a Workdoe source URL
+or user-visible failure. They are not sufficient evidence to waive the
+owner-run fresh sign-in test.
+
 ### Remaining non-technical launch gates
 
 The deployment and automated technical acceptance are complete. Workdoe is
