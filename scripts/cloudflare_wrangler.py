@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -66,6 +67,34 @@ def cloudflare_api_token_error(action: str) -> str:
         "non-interactive environment. Set it locally without committing it, "
         "or add it as the GitHub production environment secret before dispatching deploy."
     )
+
+
+def ambient_wrangler_env() -> dict[str, str]:
+    """Preserve the operator's encrypted Wrangler OAuth profile for local commands."""
+    return os.environ.copy()
+
+
+def ambient_wrangler_oauth_ready(
+    repo_root: Path = REPO_ROOT,
+    timeout: float = 20.0,
+) -> bool:
+    """Return whether the local Wrangler OAuth profile can run non-interactive commands."""
+    try:
+        completed = subprocess.run(
+            wrangler_command(["whoami"], repo_root),
+            cwd=str(repo_root / "cloudflare"),
+            env=ambient_wrangler_env(),
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    output = "\n".join(value for value in (completed.stdout, completed.stderr) if value).lower()
+    return completed.returncode == 0 and "not authenticated" not in output
 
 
 def wrangler_env(

@@ -24,7 +24,7 @@
     "cf:release:evidence": "python scripts/cloudflare_release_evidence.py --json",
     "cf:deploy:plan": "python scripts/cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
     "cf:token:stage": "python scripts/stage_cloudflare_deploy_token.py",
-    "cf:deploy": "python scripts/cloudflare_production_deploy.py --execute --yes --use-staged-api-token-if-present --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
+    "cf:deploy": "python scripts/cloudflare_production_deploy.py --execute --yes --use-staged-api-token-if-present --allow-wrangler-oauth --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
     "github:release:plan": "python scripts/github_release_status.py",
     "github:release:status": "python scripts/github_release_status.py --live",
     "github:deploy:plan": "python scripts/github_deploy_dispatch.py",

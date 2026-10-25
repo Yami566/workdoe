@@ -19,6 +19,8 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from cloudflare_readiness import run_readiness
 from cloudflare_wrangler import (
+    ambient_wrangler_env,
+    ambient_wrangler_oauth_ready,
     cloudflare_api_token_error,
     cloudflare_api_token_from_file,
     cloudflare_api_token_present,
@@ -231,6 +233,14 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--allow-wrangler-oauth",
+        action="store_true",
+        help=(
+            "Allow this owner-run local deploy to use an already authenticated "
+            "encrypted Wrangler OAuth profile when no API token is available."
+        ),
+    )
+    parser.add_argument(
         "--clerk-proxy-proof-json",
         type=Path,
         default=DEFAULT_CLERK_PROXY_PROOF_PATH,
@@ -334,7 +344,28 @@ def main() -> int:
         return 1
 
     deploy_env = wrangler_env(REPO_ROOT, api_token=api_token)
-    if not cloudflare_api_token_present(deploy_env):
+    if not cloudflare_api_token_present(deploy_env) and args.allow_wrangler_oauth:
+        if ambient_wrangler_oauth_ready(REPO_ROOT):
+            deploy_env = ambient_wrangler_env()
+        else:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "dry_run": False,
+                        "executes_commands": False,
+                        "error": (
+                            "No Cloudflare API token is available and the local Wrangler OAuth "
+                            "profile is not authenticated for this owner-run deploy."
+                        ),
+                        "warnings": readiness["warnings"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+    if not cloudflare_api_token_present(deploy_env) and not args.allow_wrangler_oauth:
         print(
             json.dumps(
                 {

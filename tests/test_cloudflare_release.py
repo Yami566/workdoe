@@ -2398,10 +2398,53 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(captured["token"], token)
         self.assertNotIn(token, output.getvalue())
 
+    def test_cloudflare_production_deploy_allows_explicit_local_wrangler_oauth(self):
+        module = load_production_deploy_script()
+        original_argv = sys.argv
+        original_readiness_payload = module.readiness_payload
+        original_execute_steps = module.execute_steps
+        original_oauth_ready = module.ambient_wrangler_oauth_ready
+        original_token = os.environ.pop("CLOUDFLARE_API_TOKEN", None)
+        captured = {}
+        try:
+            module.readiness_payload = lambda *args, **kwargs: {
+                "ready": True,
+                "blockers": [],
+                "warnings": [],
+            }
+            module.ambient_wrangler_oauth_ready = lambda *args, **kwargs: True
+
+            def fake_execute(steps, deploy_env=None):
+                captured["has_token"] = "CLOUDFLARE_API_TOKEN" in deploy_env
+                captured["config_home"] = deploy_env.get("XDG_CONFIG_HOME")
+                return steps, [], []
+
+            module.execute_steps = fake_execute
+            sys.argv = [
+                "cloudflare_production_deploy.py",
+                "--execute",
+                "--yes",
+                "--json",
+                "--allow-wrangler-oauth",
+            ]
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(module.main(), 0)
+        finally:
+            module.execute_steps = original_execute_steps
+            module.readiness_payload = original_readiness_payload
+            module.ambient_wrangler_oauth_ready = original_oauth_ready
+            sys.argv = original_argv
+            if original_token is not None:
+                os.environ["CLOUDFLARE_API_TOKEN"] = original_token
+
+        self.assertFalse(captured["has_token"])
+        self.assertNotEqual(captured["config_home"], str(ROOT / ".wrangler-config"))
+
     def test_package_deploy_uses_a_staged_token_only_when_it_exists(self):
         scripts = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["scripts"]
         self.assertEqual(scripts["cf:token:stage"], "python scripts/stage_cloudflare_deploy_token.py")
         self.assertIn("--use-staged-api-token-if-present", scripts["cf:deploy"])
+        self.assertIn("--allow-wrangler-oauth", scripts["cf:deploy"])
 
     def test_cloudflare_clerk_proxy_proof_helper_is_confirm_gated(self):
         module = load_clerk_proxy_proof_script()
