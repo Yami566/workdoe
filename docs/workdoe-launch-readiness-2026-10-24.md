@@ -540,3 +540,55 @@ replacement for the required physical iPhone/iPad or independently emulated
 390 by 844 and 820 by 1180 acceptance captures. The existing responsive CSS
 and accessibility regression tests pass; real narrow-viewport visual evidence
 remains a post-deploy acceptance item.
+
+## 2026-10-25 production deployment and verification
+
+This section supersedes the earlier entries that described the reviewed
+candidate as local-only or the live Worker as stale. Commit `901463f` was
+released directly through the owner's encrypted local Wrangler OAuth profile;
+no API token was copied to chat, a tracked file, or a GitHub workflow. The
+release guard first verified strict readiness, then completed all required
+steps successfully:
+
+- Applied forward-only D1 migrations
+  `0035_redact_uploaded_filename_metadata.sql` and
+  `0036_media_upload_audit_window.sql`. The first replaces retained source
+  filenames with generic media labels; the second adds a bounded operational
+  index. No migration remained pending after the release.
+- Published the Worker and its reviewed static assets through Wrangler.
+- Passed the strict production smoke suite against `https://workdoe.com`:
+  DNS, HTTP-to-HTTPS redirects for apex and `www`, health, public jobs API,
+  sample-data timing labels, security headers, immutable asset caching, public
+  trust/discovery routes, social-preview asset, production Clerk key,
+  invitation entry, and the same-domain Clerk proxy all passed.
+- Passed the complete local regression suite: 267 tests in 96.962 seconds.
+  The security suite found zero known npm or Python dependency vulnerabilities,
+  no Bandit medium/high findings, passing Ruff, passing dependency provenance,
+  and no new secret detection after the baseline metadata refresh.
+
+A live browser review exercised the public marketplace without creating an
+account, submitting a project, or sending a message. At desktop, the map
+zoomed and the **Search this area** control narrowed the visible approximate
+projects while serializing only rounded viewport bounds into the URL. At
+390 by 844 and 820 by 1180, the responsive Projects, Map, and Details views
+had no observed overlap or clipped primary controls. The mobile **Post
+project** entry opened a native in-place bottom sheet; closing it restored
+focus to the initiating control and the selected map view.
+
+### Remaining non-technical launch gates
+
+The deployment and automated technical acceptance are complete. Workdoe is
+still a controlled beta rather than an unrestricted commercial launch until
+Moose Bay and Company LLC completes the separate owner responsibilities:
+
+1. Approve the public legal terms, privacy notice, safety advisory, and any
+   contractor-classification or licensing obligations with appropriate counsel.
+2. Finalize the retention/deletion schedule, identity-verification steps for
+   privacy requests, and an urgent incident escalation path separate from the
+   ordinary one-to-five-business-day inbox commitment.
+3. Complete controlled consumer and contractor email-code journey tests using
+   owner-controlled accounts, including a real project-to-message flow. Do not
+   record email codes in Workdoe documentation or source control.
+4. Keep public media uploads disabled until a separately reviewed private-media
+   retention, abuse response, metadata-sanitization, and billing-control
+   design is approved.
