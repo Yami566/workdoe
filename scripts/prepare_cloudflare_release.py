@@ -190,13 +190,15 @@ def build_manifest(
                 "migration_chain_sha256": migration_chain_sha,
             },
             "media": {
-                "service": "Cloudflare Images and R2",
+                "service": "Private R2 media (uploads disabled for beta)",
                 "binding": "MEDIA",
-                "images_binding": "IMAGES",
+                "uploads_enabled": False,
                 "bucket": "workdoe-media",
                 "private": True,
-                "sanitization": {
-                    "decode": "Cloudflare Images binding",
+                "future_sanitizer": {
+                    "service": "Cloudflare Images",
+                    "binding": "IMAGES",
+                    "required_before_uploads": True,
                     "output": "WebP",
                     "max_dimension": 2400,
                     "metadata": "discarded",
@@ -302,7 +304,7 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
     for field in D1_ID_FIELDS:
         if d1_ids and valid_d1_id(d1_ids.get(field)):
             d1_config[field] = d1_ids[field]
-    return {
+    config = {
         "$schema": "../node_modules/wrangler/config-schema.json",
         "name": "workdoe",
         "main": "worker/entry.py",
@@ -321,7 +323,6 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
                 "bucket_name": targets["media"]["bucket"],
             }
         ],
-        "images": {"binding": targets["media"]["images_binding"]},
         "send_email": [
             {
                 "name": targets["email"]["binding"],
@@ -357,6 +358,7 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
             "WORKDOE_MAP_TILE_ATTRIBUTION": MAP_TILE_ATTRIBUTION,
             "WORKDOE_LOGIN_MODE": "same_domain_email_code",
             "WORKDOE_ENFORCE_SERVICE_ACTIVATION": "false",
+            "WORKDOE_MEDIA_UPLOADS_ENABLED": "false",
             "WORKDOE_EMAIL_FROM": targets["email"]["from"],
             "WORKDOE_ADMIN_EMAIL": targets["email"]["admin_digest_to"],
         },
@@ -368,6 +370,11 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
             "traces": {"enabled": True},
         },
     }
+    if targets["media"].get("uploads_enabled"):
+        config["images"] = {
+            "binding": targets["media"]["future_sanitizer"]["binding"]
+        }
+    return config
 
 
 def build_dev_vars_example(manifest: dict) -> str:
@@ -390,6 +397,7 @@ def build_dev_vars_example(manifest: dict) -> str:
         f"WORKDOE_MAP_TILE_ATTRIBUTION={MAP_TILE_ATTRIBUTION}",
         "WORKDOE_LOGIN_MODE=same_domain_email_code",
         "WORKDOE_ENFORCE_SERVICE_ACTIVATION=false",
+        "WORKDOE_MEDIA_UPLOADS_ENABLED=false",
     ]
     for key in sorted(required_env):
         if key in {
@@ -397,6 +405,7 @@ def build_dev_vars_example(manifest: dict) -> str:
             "WORKDOE_AUTH_PROVIDER",
             "WORKDOE_LOGIN_MODE",
             "WORKDOE_ENFORCE_SERVICE_ACTIVATION",
+            "WORKDOE_MEDIA_UPLOADS_ENABLED",
         }:
             continue
         lines.append(f"{key}=replace-me")

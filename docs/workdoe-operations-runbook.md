@@ -49,8 +49,8 @@ response procedure or emergency services.
 | --- | --- | --- |
 | Cloudflare Worker | `workdoe` | Python application, API, auth enforcement, scheduled and queue handlers |
 | D1 | `workdoe` / binding `DB` | Users, profiles, projects, bids, messages, reports, moderation, and audit records |
-| Cloudflare Images | binding `IMAGES` / Images Paid | Decode, scale down, flatten, and transcode uploads before storage |
-| R2 | `workdoe-media` / binding `MEDIA` | Private project and contractor media |
+| Cloudflare Images | Not attached during beta | Future reviewed upload sanitization only; requires an owner-approved opt-in |
+| R2 | `workdoe-media` / binding `MEDIA` | Private storage reserved for a future media launch; public uploads are disabled |
 | Queues | `workdoe-email`, `workdoe-media-review` | Transactional email and media-review work |
 | Email Service | binding `EMAIL` | Email Sending is enabled for `workdoe.com`; mail is restricted to `no-reply@workdoe.com`; Cloudflare currently labels sending a Workers Paid public-beta service |
 | Clerk | Workdoe production instance | Open-access email-code identity and sessions; password sign-in is disabled |
@@ -62,10 +62,15 @@ Production sets `WORKDOE_ENFORCE_SERVICE_ACTIVATION=false` for the advisory-only
 beta. The release preflight rejects accidental service-zone gating so all 53
 curated services remain available, subject to their policy acknowledgements.
 
-Before enabling project or portfolio uploads in production:
+Public project and portfolio photo uploads are deliberately disabled for this
+beta. This avoids raw-image storage and does not attach Cloudflare Images or
+its paid plan to the Worker. A future photo launch requires all of the
+following:
 
-1. Enable Cloudflare Images Paid on the same account that owns the `workdoe`
-   Worker and confirm Wrangler reports `env.IMAGES` in a dry-run package.
+1. Approve a sanitizer/provider decision and its retention, cost, privacy, and
+   abuse controls. For Cloudflare Images, enable Images Paid on the account
+   that owns the `workdoe` Worker and add the `IMAGES` binding in a reviewed
+   release.
 2. Upload one controlled valid image and verify the R2 object is WebP, no more
    than 1600 pixels per side and below 1.5 MB, private, and readable only
    through the expected permission-checked route.

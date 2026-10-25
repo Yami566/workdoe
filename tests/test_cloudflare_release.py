@@ -1114,12 +1114,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertEqual(manifest["cloudflare_targets"]["database"]["service"], "D1")
             self.assertEqual(
                 manifest["cloudflare_targets"]["media"]["service"],
-                "Cloudflare Images and R2",
+                "Private R2 media (uploads disabled for beta)",
             )
             self.assertEqual(
-                manifest["cloudflare_targets"]["media"]["images_binding"],
+                manifest["cloudflare_targets"]["media"]["future_sanitizer"]["binding"],
                 "IMAGES",
             )
+            self.assertFalse(manifest["cloudflare_targets"]["media"]["uploads_enabled"])
             self.assertTrue(
                 manifest["cloudflare_targets"]["bot_protection"][
                     "server_side_validation_required"
@@ -1189,7 +1190,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "d1/migrations",
             )
             self.assertEqual(wrangler["r2_buckets"][0]["binding"], "MEDIA")
-            self.assertEqual(wrangler["images"], {"binding": "IMAGES"})
+            self.assertNotIn("images", wrangler)
             self.assertEqual(
                 wrangler["ratelimits"],
                 [
@@ -1220,6 +1221,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
             self.assertEqual(
                 wrangler["vars"]["WORKDOE_ENFORCE_SERVICE_ACTIVATION"],
+                "false",
+            )
+            self.assertEqual(
+                wrangler["vars"]["WORKDOE_MEDIA_UPLOADS_ENABLED"],
                 "false",
             )
             self.assertEqual(
@@ -1273,6 +1278,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertIn("WORKDOE_AUTH_PROVIDER=clerk", dev_vars_example)
             self.assertIn("WORKDOE_LOGIN_MODE=same_domain_email_code", dev_vars_example)
             self.assertIn("WORKDOE_ENFORCE_SERVICE_ACTIVATION=false", dev_vars_example)
+            self.assertIn("WORKDOE_MEDIA_UPLOADS_ENABLED=false", dev_vars_example)
             self.assertIn(
                 f"WORKDOE_MAP_TILE_URL={module.MAP_TILE_URL}",
                 dev_vars_example,
@@ -3062,6 +3068,63 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         with self.assertRaises(module.MediaUploadError):
             module.validated_media_review_payload({**payload, "stored_path": "jobs/13/bad.png"})
+
+    def test_cloudflare_beta_media_gate_hides_upload_ui_and_rejects_uploads(self):
+        entry = load_worker_entry_module()
+        self.assertFalse(entry.media_uploads_enabled(SimpleNamespace()))
+        self.assertFalse(
+            entry.media_uploads_enabled(
+                SimpleNamespace(WORKDOE_MEDIA_UPLOADS_ENABLED="false")
+            )
+        )
+        self.assertTrue(
+            entry.media_uploads_enabled(
+                SimpleNamespace(WORKDOE_MEDIA_UPLOADS_ENABLED="true")
+            )
+        )
+
+        worker = entry.Default()
+        worker.env = SimpleNamespace(WORKDOE_MEDIA_UPLOADS_ENABLED="false")
+        upload = worker.upload_private_media(
+            SimpleNamespace(method="POST"),
+            "/api/media/jobs/12/upload",
+        )
+        with self.assertRaises(StopIteration) as completed:
+            upload.send(None)
+        response = completed.exception.value
+        self.assertEqual(response.status, 503)
+        self.assertIn("Photo uploads are not available during this beta.", response.body)
+
+        shell = load_app_shell_module()
+        client = {"id": 2, "role": "client", "status": "active"}
+        contractor = {"id": 7, "role": "contractor", "status": "active"}
+        composer_html = shell.job_form_html(client, media_uploads_enabled=False)
+        profile_html = shell.contractor_profile_html(
+            contractor,
+            {},
+            media_uploads_enabled=False,
+        )
+        job_html = shell.client_job_detail_html(
+            client,
+            {
+                "job": {
+                    "id": 12,
+                    "title": "Power wash steps",
+                    "category": "Power washing",
+                    "area_label": "Arlington, VA 22201",
+                    "description": "Townhouse steps.",
+                    "status": "open",
+                },
+                "photos": [],
+            },
+            {"requests": [], "stats": {}},
+            media_uploads_enabled=False,
+        )
+        for html in (composer_html, profile_html, job_html):
+            self.assertIn("Photos are not available during this beta.", html)
+            self.assertNotIn('name="photos"', html)
+            self.assertNotIn('data-file-action="/api/media/', html)
+        self.assertNotIn("data-upload-after-json-template", composer_html)
 
     def test_cloudflare_media_upload_rollback_cleans_d1_and_r2(self):
         module = load_worker_entry_module()
@@ -8805,6 +8868,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertTrue(result.ok, result.errors)
         self.assertIn("Wrangler enables Python Workers", result.checks)
         self.assertIn(
+            "Wrangler disables public media uploads without attaching Cloudflare Images",
+            result.checks,
+        )
+        self.assertIn(
             "D1 unread-navigation queries are indexed for both marketplace roles",
             result.checks,
         )
@@ -9034,6 +9101,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         local = module.run_readiness(ROOT)
         self.assertTrue(local.ready, local.blockers)
         self.assertIn("Wrangler config is present", local.checks)
+        self.assertIn(
+            "Public media uploads are disabled without attaching Cloudflare Images",
+            local.checks,
+        )
         self.assertIn("Same-domain Clerk email-code mode is configured", local.checks)
         self.assertIn("Worker has email-code request endpoint", local.checks)
         self.assertIn("Worker has email-code verification endpoint", local.checks)
@@ -9106,7 +9177,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 + "\nCLERK_FAPI=https://frontend-api.clerk.dev"
                 + "\nWORKDOE_AUTH_PROVIDER=clerk"
                 + "\nWORKDOE_LOGIN_MODE=same_domain_email_code"
-                + "\nWORKDOE_ENFORCE_SERVICE_ACTIVATION=false",
+                + "\nWORKDOE_ENFORCE_SERVICE_ACTIVATION=false"
+                + "\nWORKDOE_MEDIA_UPLOADS_ENABLED=false",
                 encoding="utf-8",
             )
             secret_list_path = tmp_path / "secret-list.json"
@@ -9257,7 +9329,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 + "\nCLERK_FAPI=https://frontend-api.clerk.dev"
                 + "\nWORKDOE_AUTH_PROVIDER=clerk"
                 + "\nWORKDOE_LOGIN_MODE=same_domain_email_code"
-                + "\nWORKDOE_ENFORCE_SERVICE_ACTIVATION=false",
+                + "\nWORKDOE_ENFORCE_SERVICE_ACTIVATION=false"
+                + "\nWORKDOE_MEDIA_UPLOADS_ENABLED=false",
                 encoding="utf-8",
             )
             off_domain = module.run_readiness(
@@ -11003,7 +11076,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "CLOUDFLARE_API_TOKEN is not set; local Cloudflare resource bootstrap, secret evidence, and deploy execute commands cannot run.",
             status["blockers"],
         )
-        self.assertIn(
+        self.assertNotIn(
             "Confirm Cloudflare Images Paid is active and complete one live valid-image plus invalid-image upload test before enabling public uploads.",
             status["warnings"],
         )

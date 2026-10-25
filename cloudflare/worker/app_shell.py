@@ -2062,7 +2062,7 @@ def project_composer_fields_html(
         <span id="job-photos-help" class="help-text">Private uploads. PNG, JPG, GIF, or WebP.</span>
       </label>"""
         if include_photos
-        else '<p class="help-text">Photos stay private and can be added after email verification.</p>'
+        else '<p class="help-text">Photos are not available during this beta.</p>'
     )
     policy_hidden = (
         ""
@@ -2170,6 +2170,7 @@ def job_form_html(
     embedded: bool = False,
     saved_locations: list[dict] | None = None,
     repeat_invitation: dict | None = None,
+    media_uploads_enabled: bool = True,
 ) -> str:
     is_edit = mode == "edit" and job is not None
     job_id = int(row_value(job, "id", 0) or 0) if is_edit else 0
@@ -2196,7 +2197,7 @@ def job_form_html(
         }
         composer = project_composer_fields_html(
             form,
-            include_photos=True,
+            include_photos=media_uploads_enabled,
             submit_label="Post project",
             cancel_url="/client/dashboard",
             turnstile=turnstile_html(site_key, "job-post"),
@@ -2227,12 +2228,12 @@ def job_form_html(
       <input type="hidden" name="repeat_match_request_id" value="{int(repeat_invitation.get('source_match_request_id', 0) or 0)}">"""
         posting_intro = "" if embedded else """
     <section class="dashboard-header"><div><p class="eyebrow">Consumer workspace</p><h1>Post a project</h1></div><a class="button secondary" href="/client/dashboard">Projects</a></section>
-    <ul class="form-checklist" aria-label="Posting safeguards"><li>City/ZIP pin</li><li>Private photos</li><li>Approve before chat</li></ul>"""
+    <ul class="form-checklist" aria-label="Posting safeguards"><li>City/ZIP pin</li><li>Privacy-first project details</li><li>Approve before chat</li></ul>"""
         body = f"""
     {posting_intro}
     {invitation_banner}
     {location_launcher}
-    <form class="form-grid" data-dialog-fragment data-project-composer data-project-initial-step="{'3' if form.get('service_slug') else ('2' if form.get('service_group_slug') else '1')}" data-json-action="/api/jobs" data-upload-after-json-template="/api/media/jobs/{{job_id}}/upload" data-success-url-template="/client/jobs/{{id}}" aria-label="Post a project." aria-describedby="worker-form-status">
+    <form class="form-grid" data-dialog-fragment data-project-composer data-project-initial-step="{'3' if form.get('service_slug') else ('2' if form.get('service_group_slug') else '1')}" data-json-action="/api/jobs"{' data-upload-after-json-template="/api/media/jobs/{job_id}/upload"' if media_uploads_enabled else ''} data-success-url-template="/client/jobs/{{id}}" aria-label="Post a project." aria-describedby="worker-form-status">
       {invitation_fields}
       {composer}
       <p id="worker-form-status" class="help-text wide" data-form-status aria-live="polite"></p>
@@ -2291,10 +2292,10 @@ def job_form_html(
     </section>
     <ul class="form-checklist" aria-label="Posting safeguards">
       <li>City/ZIP pin</li>
-      <li>Private photos</li>
+      <li>Privacy-first project details</li>
       <li>Approve before chat</li>
     </ul>
-    <form class="form-grid" data-dialog-fragment data-json-action="{'/api/jobs/' + str(job_id) + '/update' if is_edit else '/api/jobs'}" data-upload-after-json-template="/api/media/jobs/{{job_id}}/upload" data-success-url-template="/client/jobs/{{id}}" aria-label="{'Edit project' if is_edit else 'Post a project.'}" aria-describedby="worker-form-status">
+    <form class="form-grid" data-dialog-fragment data-json-action="{'/api/jobs/' + str(job_id) + '/update' if is_edit else '/api/jobs'}"{' data-upload-after-json-template="/api/media/jobs/{job_id}/upload"' if media_uploads_enabled else ''} data-success-url-template="/client/jobs/{{id}}" aria-label="{'Edit project' if is_edit else 'Post a project.'}" aria-describedby="worker-form-status">
       <label class="wide" for="job-title">Project title <input id="job-title" name="title" value="{escape(str(row_value(job, 'title', '') or ''))}" maxlength="90" autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="next" placeholder="{escape(edit_service_name + ' project' if edit_service_name else 'Name the project')}" required></label>
       <div class="service-family-context"><span><small>Service</small><strong>{escape(edit_service_name)}</strong><small>Post a new project to change the service bucket.</small></span></div>
       <input type="hidden" name="category" value="{escape(edit_category)}">
@@ -2317,8 +2318,7 @@ def job_form_html(
       <label class="license-preference-option wide" for="job-license-preference"><input id="job-license-preference" name="license_preference" type="checkbox" value="1"{edit_license_checked}><img src="/vendor/tabler-icons/home-check.svg" alt="" width="22" height="22"><span><strong>Prefer a current license record</strong><small>Workdoe source check only. Confirm that the license covers this project and location.</small></span></label>
       <label class="wide" for="job-description">Description <textarea id="job-description" name="description" rows="5" minlength="20" maxlength="1200" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe the {escape(edit_service_name.lower() + ' ' if edit_service_name else '')}scope, size, current condition, access, and desired outcome." aria-describedby="job-description-help" required>{escape(str(row_value(job, 'description', '') or ''))}</textarea><span id="job-description-help" class="help-text">Do not include an exact street address, email, or phone number.</span></label>
       {edit_policy_html}
-      <label class="wide" for="job-photos">Photos <input id="job-photos" name="photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-describedby="job-photos-help"></label>
-      <p id="job-photos-help" class="help-text wide">Private uploads. PNG, JPG, GIF, or WebP.</p>
+      {('<label class="wide" for="job-photos">Photos <input id="job-photos" name="photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-describedby="job-photos-help"></label><p id="job-photos-help" class="help-text wide">Private uploads. PNG, JPG, GIF, or WebP.</p>') if media_uploads_enabled else '<p class="help-text wide">Photos are not available during this beta.</p>'}
       {turnstile_html(site_key, "job-post")}
       <div class="form-actions wide">
         <button class="button" type="submit" aria-label="{'Save project changes' if is_edit else 'Post project'}">{'Save changes' if is_edit else 'Post project'}</button>
@@ -2381,6 +2381,7 @@ def contractor_profile_html(
     photos: list[dict] | None = None,
     credentials: list[dict] | None = None,
     preferences: dict | None = None,
+    media_uploads_enabled: bool = True,
 ) -> str:
     preferences = preferences or {}
     selected_services = set(normalize_service_slugs(profile.get("service_slugs")))
@@ -2434,7 +2435,7 @@ def contractor_profile_html(
         photo_html = """
         <div class="empty-state">
           <h2>No portfolio photos yet</h2>
-          <p class="help-text">Add one clear example of recent work when R2 uploads are configured.</p>
+          <p class="help-text">Portfolio photos are not available during this beta.</p>
         </div>"""
     credential_type_options = "".join(
         f'<option value="{escape(value)}">{escape(label)}</option>'
@@ -2532,13 +2533,13 @@ def contractor_profile_html(
       </div>
     </form>
     <section class="detail-grid">
-      <form class="panel stack-form" data-file-action="/api/media/contractors/{contractor_id}/upload" data-success-url-template="/contractor/profile" enctype="multipart/form-data" aria-label="Upload portfolio photo" aria-describedby="profile-upload-status">
+      {f'''<form class="panel stack-form" data-file-action="/api/media/contractors/{contractor_id}/upload" data-success-url-template="/contractor/profile" enctype="multipart/form-data" aria-label="Upload portfolio photo" aria-describedby="profile-upload-status">
         <h2>Portfolio photo</h2>
         <label for="profile-photos">Image <input id="profile-photos" name="portfolio_photo" type="file" accept="image/png,image/jpeg,image/gif,image/webp" aria-describedby="profile-photos-help" required></label>
         <p id="profile-photos-help" class="help-text">Private uploads. PNG, JPG, GIF, or WebP up to 4 MB each. Workdoe stores sanitized copies under 1.5 MB.</p>
         <button class="button secondary" type="submit" aria-label="Upload portfolio photo">Upload photo</button>
         <p id="profile-upload-status" class="help-text" data-form-status aria-live="polite"></p>
-      </form>
+      </form>''' if media_uploads_enabled else '<section class="panel"><h2>Portfolio photos</h2><p class="help-text">Photos are not available during this beta.</p></section>'}
       <section class="photo-grid profile-photos" aria-label="Portfolio photos">
 {photo_html}
       </section>
@@ -3829,7 +3830,12 @@ def bid_comparison_html(
     </section>"""
 
 
-def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -> str:
+def client_job_detail_html(
+    user,
+    detail_payload: dict,
+    requests_payload: dict,
+    media_uploads_enabled: bool = True,
+) -> str:
     job = detail_payload.get("job", {})
     repeat_invitation = detail_payload.get("repeat_invitation")
     requests = requests_payload.get("requests", [])
@@ -4130,12 +4136,12 @@ def client_job_detail_html(user, detail_payload: dict, requests_payload: dict) -
             + (('<p>' + escape(job.get('close_note', '')) + '</p>') if job.get('close_note') else '')
             + '</div>'
         ) if job.get('status') == 'closed' and job.get('close_reason') else ''}
-        <form class="stack-form" data-file-action="/api/media/jobs/{job_id}/upload" data-success-url-template="/client/jobs/{job_id}" enctype="multipart/form-data" aria-label="Upload job photo" aria-describedby="job-photo-upload-status">
+        {f'''<form class="stack-form" data-file-action="/api/media/jobs/{job_id}/upload" data-success-url-template="/client/jobs/{job_id}" enctype="multipart/form-data" aria-label="Upload job photo" aria-describedby="job-photo-upload-status">
           <label for="job-photo-upload">Job photo <input id="job-photo-upload" name="photo" type="file" accept="image/png,image/jpeg,image/gif,image/webp" aria-describedby="job-photo-upload-help" required></label>
           <p id="job-photo-upload-help" class="help-text">PNG, JPG, GIF, or WebP up to 4 MB. Workdoe stores a sanitized copy under 1.5 MB.</p>
           <button class="button secondary full" type="submit" aria-label="Upload job photo">Upload photo</button>
           <p id="job-photo-upload-status" class="help-text" data-form-status aria-live="polite"></p>
-        </form>
+        </form>''' if media_uploads_enabled else '<p class="help-text">Photos are not available during this beta.</p>'}
       </aside>
     </section>
     {close_dialog}

@@ -1236,11 +1236,15 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             "Wrangler R2 media bucket is configured",
         )
         require(
-            wrangler.get("images") == {"binding": "IMAGES"},
+            wrangler.get("vars", {}).get("WORKDOE_MEDIA_UPLOADS_ENABLED") == "false"
+            and "images" not in wrangler,
             errors,
-            "Wrangler Images binding must be configured as IMAGES.",
+            (
+                "Beta uploads must remain disabled and must not attach a Cloudflare "
+                "Images binding."
+            ),
             checks,
-            "Wrangler Cloudflare Images sanitizer binding is configured",
+            "Wrangler disables public media uploads without attaching Cloudflare Images",
         )
         require(
             wrangler.get("ratelimits") == REQUIRED_RATE_LIMIT_BINDINGS,
@@ -2779,7 +2783,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "HttpOnly; Secure; SameSite=Lax",
                 'action="/post-project"',
                 'turnstile_html(site_key, "job-draft")',
-                "Photos stay private and can be added after email verification.",
+                "Photos are not available during this beta.",
             )
             if marker not in combined_project_draft_source
         ]

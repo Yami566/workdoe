@@ -6,9 +6,10 @@ This local prototype is intentionally shaped so it can move to `workdoe.com` on 
 
 - Cloudflare Workers Python: app and API logic.
 - D1: structured relational data now stored in SQLite.
-- Cloudflare Images: decode and transcode user uploads before storage; requires
-  an Images Paid subscription for the production binding.
-- R2: private job photos and contractor portfolio files.
+- Cloudflare Images: not attached during the beta; a future reviewed media
+  release may use it to decode and transcode user uploads before storage.
+- R2: private-media storage reserved for a future photo launch; public uploads
+  are disabled during the beta.
 - Clerk: same-domain public login mounted on `workdoe.com` with email-code OTP.
 - Clerk Frontend API proxy: `https://workdoe.com/__clerk`, served by the Workdoe Worker so auth requests stay on the primary domain.
 - Cloudflare Email Service: Workdoe-owned transactional email from `workdoe.com`.
@@ -37,8 +38,9 @@ If real D1 IDs are already present, release prep preserves them instead of repla
 - Keep `0001_initial.sql` immutable. Every schema change is a new sequentially
   numbered migration; release prep hashes the entire migration chain, and
   strict preflight applies all migrations to a blank database before deploy.
-- Replace local upload writes with Workdoe Worker upload routes that sanitize
-  through the `IMAGES` binding and write WebP output to R2 using scoped keys:
+- Keep public media uploads disabled for the beta. A future reviewed media
+  release may use Workdoe Worker upload routes that sanitize through an
+  `IMAGES` binding and write WebP output to R2 using scoped keys:
   - `jobs/{job_id}/{uuid}.webp`
   - `contractors/{contractor_id}/{uuid}.webp`
 - Keep photo buckets private. Serve files through app routes that check role, ownership, match status, and moderation status.
@@ -157,7 +159,9 @@ The Cloudflare private media routes intentionally mirror the local Flask media c
 - R2 object keys must stay under the D1-owned prefix, such as `jobs/{job_id}/...` or `contractors/{contractor_id}/...`; traversal, absolute paths, backslashes, and owner-prefix mismatches are rejected.
 - Responses use `Cache-Control: private, no-store` and never expose bucket listing routes or raw storage keys.
 
-The Cloudflare upload routes are intentionally narrow:
+The future Cloudflare upload routes are intentionally narrow. They remain
+disabled for the beta, and the beta Wrangler configuration intentionally omits
+the `IMAGES` binding:
 
 - Accept only PNG, JPG/JPEG, GIF, and WebP with matching image MIME types.
 - Cap source files at 4 MB, then accept only a sanitized WebP result below
@@ -170,11 +174,11 @@ The Cloudflare upload routes are intentionally narrow:
 - Store only metadata in D1.
 - Send a small `media-review` payload to `MEDIA_QUEUE`; the queue consumer validates/audits the task before acknowledging it.
 
-Before the first production upload test, enable Cloudflare Images Paid for the
-account and confirm `wrangler.jsonc` contains `"images": {"binding": "IMAGES"}`.
-The binding's local low-fidelity implementation is sufficient for contract
-tests; final acceptance must exercise a real transformed upload through the
-deployed Worker.
+Before the first production upload test, approve the media provider, enable
+Cloudflare Images Paid if that provider is selected, and add
+`"images": {"binding": "IMAGES"}` through a reviewed release. The binding's
+local low-fidelity implementation is sufficient for contract tests; final
+acceptance must exercise a real transformed upload through the deployed Worker.
 
 Before deploy:
 

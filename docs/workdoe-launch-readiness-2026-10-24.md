@@ -264,12 +264,13 @@ beta beyond its controlled cohort.
   heavy use. Review traffic before expanding the cohort and move to a provider
   with suitable terms before the map becomes a sustained commercial dependency:
   <https://operations.osmfoundation.org/policies/tiles/>.
-- Workdoe uses the Cloudflare Images Worker binding to decode, resize, strip
-  metadata, and transcode an upload before placing the sanitized result in R2.
-  Cloudflare's current R2-upload transformation tutorial lists an Images Paid
-  subscription as a prerequisite for that binding. Do not enable public media
-  uploads until the account owner has approved that subscription, configured
-  usage alerts, and completed the valid/invalid/oversize acceptance checks:
+- Public media uploads are disabled for this beta, and the Worker does not
+  attach a Cloudflare Images binding. This avoids raw-image storage and an
+  Images Paid dependency while the product is validated. Cloudflare's
+  R2-upload transformation tutorial lists an Images Paid subscription as a
+  prerequisite for its Worker binding; a future photo launch must be an
+  owner-approved release with usage alerts and valid/invalid/oversize
+  acceptance checks:
   <https://developers.cloudflare.com/images/tutorials/optimize-user-uploaded-image/>.
 
 ## Launch gates still open
@@ -290,14 +291,14 @@ beta beyond its controlled cohort.
    monitored inbox with a 1 to 5 business-day target is appropriate for ordinary
    requests, not for time-sensitive incident response.
 5. **Live marketplace acceptance:** Complete a contractor email-code test and
-   one controlled two-account journey: post a city/ZIP-only project, upload a
-   valid image, submit and approve a mini bid, exchange a message, complete the
-   project, then verify visibility, audit, and deletion behavior. The owner
-   should enter all one-time codes and use test content only.
-6. **Media acceptance:** Exercise production Cloudflare Images/R2 with both a
-   valid photo and intentionally invalid/oversize inputs; verify resizing,
-   metadata stripping, private authorization, quota/rate-limit behavior, and
-   cleanup according to the approved retention policy.
+   one controlled two-account journey: post a city/ZIP-only project, submit
+   and approve a mini bid, exchange a message, complete the project, then
+   verify visibility, audit, and deletion behavior. The owner should enter all
+   one-time codes and use test content only.
+6. **Future media acceptance:** Before any future photo launch, exercise the
+   approved sanitizer/storage path with valid, invalid, and oversize inputs;
+   verify private authorization, quota/rate-limit behavior, and cleanup under
+   the approved retention policy.
 7. **Release acceptance:** After the preceding gates are approved, deploy the
    locally prepared dialog/policy/provenance, responsive-workspace, map-control,
    tile-provider configuration, and demonstration-timing corrections through

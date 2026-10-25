@@ -88,20 +88,22 @@
     "media": {
       "binding": "MEDIA",
       "bucket": "workdoe-media",
-      "images_binding": "IMAGES",
+      "future_sanitizer": {
+        "animation": "flattened",
+        "binding": "IMAGES",
+        "max_dimension": 2400,
+        "metadata": "discarded",
+        "output": "WebP",
+        "required_before_uploads": true,
+        "service": "Cloudflare Images"
+      },
       "key_prefixes": [
         "jobs/{job_id}/",
         "contractors/{contractor_id}/"
       ],
       "private": true,
-      "sanitization": {
-        "animation": "flattened",
-        "decode": "Cloudflare Images binding",
-        "max_dimension": 2400,
-        "metadata": "discarded",
-        "output": "WebP"
-      },
-      "service": "Cloudflare Images and R2"
+      "service": "Private R2 media (uploads disabled for beta)",
+      "uploads_enabled": false
     },
     "rate_limiting": {
       "bindings": [

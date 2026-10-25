@@ -734,6 +734,11 @@ def enforce_service_activation(env) -> bool:
     return enabled_flag(getattr(env, "WORKDOE_ENFORCE_SERVICE_ACTIVATION", ""))
 
 
+def media_uploads_enabled(env) -> bool:
+    """Keep public uploads off unless the reviewed sanitizer is explicitly enabled."""
+    return enabled_flag(getattr(env, "WORKDOE_MEDIA_UPLOADS_ENABLED", ""))
+
+
 async def service_activation_record(env, service_slug: str, zone_slug: str):
     if not service_slug or not zone_slug:
         return None
@@ -1952,6 +1957,7 @@ class Default(WorkerEntrypoint):
                 getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", ""),
                 job=new_job_source,
                 embedded=embedded,
+                media_uploads_enabled=media_uploads_enabled(self.env),
                 saved_locations=[
                     saved_location_response(location) for location in saved_locations
                 ],
@@ -1970,6 +1976,7 @@ class Default(WorkerEntrypoint):
                 getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", ""),
                 job=job,
                 mode="edit",
+                media_uploads_enabled=media_uploads_enabled(self.env),
             )
         elif path.startswith("/client/jobs/") and role in {"client", "admin"}:
             job_id = parse_app_client_job_id(path)
@@ -2013,6 +2020,7 @@ class Default(WorkerEntrypoint):
                 user,
                 detail_payload,
                 requests_payload,
+                media_uploads_enabled=media_uploads_enabled(self.env),
             )
         elif path.startswith("/jobs/") and role in {"contractor", "admin"}:
             job_id = parse_app_job_id(path)
@@ -2148,6 +2156,7 @@ class Default(WorkerEntrypoint):
                     for item in credentials
                 ],
                 preferences,
+                media_uploads_enabled=media_uploads_enabled(self.env),
             )
         elif path == "/messages" and role in {"client", "contractor"}:
             rows = await message_threads_for_user(
@@ -6018,6 +6027,12 @@ class Default(WorkerEntrypoint):
                 "Method not allowed",
                 status=405,
                 headers={"Allow": "POST", "Cache-Control": "no-store"},
+            )
+        if not media_uploads_enabled(self.env):
+            return json_response(
+                {"ok": False, "error": "Photo uploads are not available during this beta."},
+                status=503,
+                headers={"Cache-Control": "no-store"},
             )
         if (
             not hasattr(self.env, "DB")
