@@ -432,6 +432,24 @@ expected ignored token file was not present at
 `cloudflare/.deploy-token`. The fresh smoke result above continues to prove
 that the deployed public revision is not yet the reviewed candidate.
 
+## 2026-10-25 current local verification
+
+The current local candidate passed all 263 unit and integration tests in
+95.141 seconds. A focused Clerk session-verification regression test also
+passed independently. The complete security command reported zero known npm
+and Python dependency vulnerabilities, no Bandit medium/high findings, a
+passing Ruff check, a passing secret gate across 702 non-ignored files, and
+passing dependency provenance verification. Cloudflare preflight regenerated
+and checked the Worker/D1/static release artifacts with no errors or warnings.
+
+The non-deploying production plan has no strict technical blockers and includes
+the required remote D1 migration, Worker deploy, and six-attempt post-deploy
+production smoke sequence. It does not prove the reviewed candidate is live.
+At this verification time, the ignored local deployment token file was still
+absent, so no migration, deployment, or external marketplace write was
+performed. The user must place a valid token at `cloudflare/.deploy-token`
+before the approved direct deployment path can execute.
+
 ## Decision
 
 The deployed production site is operating for a controlled owner-supervised
