@@ -13,7 +13,9 @@ Privacy Policy and it does not establish retention periods.
 - Keep public location at city/ZIP area and rounded-map-pin level.
 - Keep authentication secrets, reset links, OTP values, exact email addresses,
   and private message bodies out of operational audit payloads and logs.
-- Keep job photos private behind role, ownership, match, and moderation checks.
+- Keep any legacy or demonstration job photos private behind role, ownership,
+  match, and moderation checks. New public photo uploads are disabled for the
+  current beta.
 - Treat contractor insurance, license, experience, and profile statements as
   self-reported unless a specific record is marked with a dated source check.
   A source check is not a legal-eligibility, scope, safety, or warranty decision.
@@ -29,7 +31,7 @@ Privacy Policy and it does not establish retention periods.
 | Saved project area | Owner-defined label, city, state, ZIP, timestamps | Prefill the approximate-location step for recurring work | D1 `client_saved_locations` | Owning consumer and active administrators; project composer shows only the owner's records and no street address is collected |
 | Project template | Owner-defined name plus service family/task, category, title, description, coarse project setting, optional budget, optional license-record preference, source-project ID, timestamps | Reuse recurring scope without silently carrying stale or sensitive project state | D1 `client_project_templates` | Owning consumer and active administrators through controlled operations. The schema excludes city, state, ZIP, desired date, photos/media paths, bids, messages, close outcomes, and completion state; use opens the six-step composer with location/date blank |
 | Repeat-provider invitation | New project ID, prior project and approved-match IDs, consumer and contractor IDs, canonical service, pending/bid-sent/declined/withdrawn state, timestamps | Let a consumer ask a contractor from mutually verified work to consider a new same-service project without silently recreating prior terms; measure invitation, fresh-bid, and verified-repeat outcomes | D1 `repeat_provider_invitations`; one immediate Cloudflare email queue job in production | Owning consumer sees status; invited contractor sees the new project and may pass or submit a fresh ordinary mini bid; active administrators receive aggregate funnel counts and a recent project-level queue. The table contains no address, ZIP, media, message, contact, prior bid, price, schedule, or ranking fields. The email carries only recipient, new-project title, city/state, and a same-domain `/jobs/:id` URL; its D1 audit record replaces recipient with a keyed hash and omits message content |
-| Contractor profile | Business name, legacy trade/area summary, introduction, insurance statement, license number, years in business, optional HTTPS website | Help consumers evaluate a bidder and preserve compatibility with earlier profiles | D1 `contractor_profiles` | General public sees profile facts and portfolio; the owner, active administrators, and a consumer who received that contractor's bid may see the normalized website; phone is not collected by the current profile form |
+| Contractor profile | Business name, legacy trade/area summary, introduction, insurance statement, license number, years in business, optional HTTPS website | Help consumers evaluate a bidder and preserve compatibility with earlier profiles | D1 `contractor_profiles` | General public sees profile facts; portfolio media is a future feature and new uploads are disabled in the current beta. The owner, active administrators, and a consumer who received that contractor's bid may see the normalized website; phone is not collected by the current profile form |
 | Contractor credential claim | Contractor ID, credential type, jurisdiction, claimed identifier/name, review status, public HTTPS source, checked/expiry timestamps, reviewer ID, private review note, creation/update timestamps | Preserve claim and human-review provenance without manufacturing a generic trust badge | D1 `contractor_credentials` | Contractor owner and active administrators see the full claim; public profiles receive only current source-checked type/jurisdiction, checked/expiry dates, and public source. Rejected, pending, self-reported, and expired records are not public; public payloads exclude identifier and review note |
 | Contractor market fit | Canonical service slugs and practical DMV zone slugs selected by the contractor | Deterministic, explainable service/area fit on the lead board | D1 `contractor_service_capabilities`, `service_zones`, and `contractor_service_zones` | Contractor owner can update selections; public profiles show service and area labels; lead payloads expose a fit label but not the saved selection records or project ZIP |
 | Contractor work preferences | Self-reported availability state, optional next-available date, saved canonical work-family slug, saved canonical task slug, saved legacy category for compatibility, saved search text, saved deterministic sort, matching-project alert preference and consent timestamp, timestamps | Let a contractor communicate coarse capacity, restore one useful deterministic lead view, and explicitly opt into new matching project email | D1 `contractor_lead_preferences` | Public profiles receive only the coarse availability label/date and a self-reported qualifier; saved filters and alert consent are returned only to the owning active contractor and active administrators through controlled operations. Family and task values are allow-listed taxonomy slugs, not free text or embeddings. Opting out clears consent |
@@ -41,8 +43,8 @@ Privacy Policy and it does not establish retention periods.
 | Service-zone pulse projection | Monday week, canonical service, coarse DMV zone, aggregate published/brief-ready/with-bid/matched/verified counts, median project-to-first-bid time, desired-date count, controlled close-out buckets, open-project-report count, total bid count, and current eligible/minimum contractor counts | Let an administrator detect thin demand, slow response, poor close outcomes, open review load, and supply gaps before expansion or monetization | Computed from existing D1 marketplace and activation records in Python; not stored as a separate analytics table | Active administrators only. First-bid timestamps are reduced to a project-level duration and then a cell median; raw timestamps are not returned. Open reports are counted once per project without reason text. Output contains no project/account ID, name, email, phone, street address, ZIP, coordinates, narrative, media, message, bid terms, close note, report reason, or private feedback. Local `.local` demo accounts are excluded. Current supply is a review-time snapshot, not the historical count at first bid, and the projection never changes ranking, moderation, account status, or eligibility |
 | Pre-verification draft | Project fields above except email and photos, including the optional license-record preference; random token hash and expiry | Let a consumer begin before email verification | D1 `job_drafts`; HttpOnly draft cookie | Token holder until consumed or expired; not publicly listed; the coarse setting and neutral preference follow the same restrictions as the published project |
 | Draft scope answers | Draft ID, scope schema version, controlled question key, controlled answer code, timestamps | Preserve optional quote-readiness choices through same-domain email verification | D1 `job_draft_scope_answers` | Available only through the valid draft token, then copied from the submitted form into the published project's normalized answer rows. The table has the same location/contact exclusions as project scope answers |
-| Project media | Cloudflare Images-sanitized single-frame WebP bytes below 1.5 MB, generic photo label, sanitized content type/size, generic storage key, uploader/owner IDs, moderation state | Show project conditions to eligible contractors while discarding embedded metadata and user-controlled source filenames; never persist raw upload bytes | Cloudflare Images transform, private R2 `workdoe-media`, D1 `job_photos`, and redacted `media-uploaded` audit events | Owning consumer, active contractors for open jobs or approved matches, and active administrators; never publicly listable. Source files are capped at 4 MB, each project at six photos, and every account shares the 12-successful-upload rolling 24-hour allowance. |
-| Contractor media | Cloudflare Images-sanitized single-frame WebP bytes below 1.5 MB and the same metadata categories | Portfolio display and moderation while discarding embedded metadata and never persisting raw upload bytes | Cloudflare Images transform, private R2, D1 `contractor_photos`, and redacted `media-uploaded` audit events | Active public profile unless hidden; owner and active administrators retain management access. Source files are capped at 4 MB, each profile at eight photos, and every account at 12 successful uploads per rolling 24 hours. Removing a photo does not reset that rolling allowance. |
+| Project media | Future approved-media path: Cloudflare Images-sanitized single-frame WebP bytes below 1.5 MB, generic photo label, sanitized content type/size, generic storage key, uploader/owner IDs, moderation state | Show project conditions to eligible contractors while discarding embedded metadata and user-controlled source filenames; never persist raw upload bytes | Future Cloudflare Images transform, private R2 `workdoe-media`, D1 `job_photos`, and redacted `media-uploaded` audit events | New uploads are disabled for the current beta. Any retained legacy or demonstration media stays private to the owning consumer, eligible contractors, and active administrators; it is never publicly listable. The future design caps sources at 4 MB, each project at six photos, and every account at 12 successful uploads per rolling 24 hours. |
+| Contractor media | Future approved-media path: Cloudflare Images-sanitized single-frame WebP bytes below 1.5 MB and the same metadata categories | Portfolio display and moderation while discarding embedded metadata and never persisting raw upload bytes | Future Cloudflare Images transform, private R2, D1 `contractor_photos`, and redacted `media-uploaded` audit events | New uploads are disabled for the current beta. Any retained legacy or demonstration media follows its existing authorization state; the future design caps each profile at eight photos and each account at 12 successful uploads per rolling 24 hours. Removing a photo does not reset that future rolling allowance. |
 | Mini bid | Scope note, price/range, timeline, experience, questions, availability, status | Let a contractor request a match | D1 `match_requests` | Submitting contractor, project owner, and active administrators |
 | Contractor proposal template | Owner-defined name, source mini-bid ID, reusable scope note, timeline, experience, questions, availability, timestamps | Reduce repeat typing while forcing a new commercial estimate for each project | D1 `contractor_proposal_templates` | Owning contractor and active administrators through controlled operations. The schema has no price, project ID, client identity, email, phone, location, address, ZIP, media, message, ranking, or outcome field. Applying a template prefills only reusable wording and leaves price blank |
 | Consumer bid comparison projection | Up to four pending bid IDs, contractor ID/display name/trades, latest visible contractor-photo ID, price range, timeline, availability, received-order position, self-reported years/insurance presence, current source-checked credential count, and mutually verified Workdoe project count | Let the owning consumer compare like-for-like offer and provider facts before opening a profile or approving a match | Computed in shared local/Worker Python code from existing bid/profile/credential/completion/media records; not stored separately | Owning consumer and active administrators through the protected project view. The media projection emits only `/media/contractors/:id` for a non-hidden active-profile photo and never emits the R2 key or original filename. It also excludes email, phone, address, ZIP, coordinates, website, license/credential identifier, review narrative, private messages, fit score, recommendation, and paid placement. Source checks, completion history, and self-reported fields remain separately labeled and never become a composite score |
@@ -60,8 +62,9 @@ Privacy Policy and it does not establish retention periods.
 ### Anonymous visitors
 
 Anonymous visitors can see open-project titles, curated categories, city/state,
-desired date, budget label, photo count, approximate rounded pins, and whether
-the consumer prefers a current license record. The preference is a project
+desired date, budget label, approximate rounded pins, and whether the consumer
+prefers a current license record. Demonstration records may show a photo count,
+but the current beta does not accept new public photo uploads. The preference is a project
 brief signal only and never changes order, bidding access, or contractor
 eligibility. Workdoe's
 Cloudflare public payload now substitutes `Project details are available after
@@ -73,8 +76,9 @@ the response. A regression test covers script-shaped marketplace content so
 stored text cannot become executable markup in those views.
 
 Public contractor profiles can show business name, trades, service area,
-introduction, self-reported insurance/license/experience fields, portfolio
-photos, coarse self-reported availability, and update date. Phone, email,
+introduction, self-reported insurance/license/experience fields, coarse
+self-reported availability, and update date. Portfolio media is not a current
+beta feature because new uploads are disabled. Phone, email,
 account subject, saved lead filters, and storage keys are
 excluded. A contractor-provided HTTPS website is additionally available to the
 profile owner, active administrators, and a consumer who has received a bid
@@ -92,8 +96,9 @@ star score, recommendation order, or paid placement.
 ### Signed-in contractors
 
 An active contractor can see open project descriptions, ZIP prefix, budget,
-desired date, and job photos so they can prepare a mini bid. Exact street
-address is not a structured Workdoe field. Project-entry forms warn consumers
+and desired date so they can prepare a mini bid. Retained legacy or
+demonstration job photos remain permission-checked, but the current beta does
+not accept new uploads. Exact street address is not a structured Workdoe field. Project-entry forms warn consumers
 not to place an exact address, email, or phone in free text. The current
 application also rejects common email-address, US phone-number, street-address,
 and PO Box patterns before it stores project titles/descriptions, mini bids,
@@ -219,9 +224,10 @@ operator-identity, contact-ownership, and legal decisions tracked in
   descriptions; sample descriptions remain available for the controlled demo.
 - Public contractor portfolios and inline media response headers use generic
   photo labels instead of exposing original upload filenames.
-- Uploads require matching allow-listed extension, MIME type, and file header;
-  failed metadata or queue handoffs trigger scoped D1/R2 cleanup and an audit
-  event so private orphaned objects can be reconciled.
+- If future uploads are enabled, they must require matching allow-listed
+  extension, MIME type, and file header; failed metadata or queue handoffs must
+  trigger scoped D1/R2 cleanup and an audit event so private orphaned objects
+  can be reconciled.
 - Project forms warn against exact street addresses, email addresses, and phone
   numbers. The shared application guard also rejects common email-address, US
   phone-number, street-address, and PO Box patterns in user-authored project,

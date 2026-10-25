@@ -5,9 +5,10 @@ commercial launch**.
 
 This checklist is for the owner of the controlled DMV beta. It separates
 technical smoke evidence from the live workflow, data-operations, and legal
-decisions that automated checks cannot prove. Use controlled test content only.
-Never enter a street address, phone number, email address, legal name, or other
-personal details in a public project, contractor profile, bid, or message.
+decisions that automated checks cannot prove. Public photo uploads are disabled
+for this beta. Use controlled test content only. Never enter a street address,
+phone number, email address, legal name, or other personal details in a public
+project, contractor profile, bid, or message.
 
 ## Before inviting public users
 
@@ -22,9 +23,11 @@ personal details in a public project, contractor profile, bid, or message.
 - [ ] Obtain counsel approval for the Terms, Privacy, Safety, service-advisory,
   contractor-classification, and dispute language, including the approved
   public legal or mailing-address format for Moose Bay and Company LLC.
-- [ ] Confirm Cloudflare Images billing/availability and set usage alerts before
-  enabling public media uploads. Application limits reduce cost exposure but
-  cannot impose an absolute Cloudflare billing ceiling.
+- [ ] Confirm public photo controls remain unavailable for this beta. A future
+  media release requires an owner-approved storage/sanitization decision,
+  documented cost controls, usage alerts, and a separate valid/invalid/oversize
+  acceptance run. Application limits cannot impose an absolute Cloudflare
+  billing ceiling.
 
 ## Owner-controlled account acceptance
 
@@ -56,10 +59,9 @@ the approved retention policy afterwards.
 
 - [ ] Consumer posts one city/ZIP-only project. Confirm no exact address is
   requested or shown on the public map, job detail, or public jobs API.
-- [ ] Consumer uploads one valid test image and checks that it remains private
-  to signed-in eligible participants.
-- [ ] Consumer attempts one invalid or oversize image and confirms it is
-  rejected before storage.
+- [ ] Confirm project and contractor-profile photo controls state that photos
+  are unavailable during this beta. Do not use external image hosts or add
+  private project material to a workaround URL.
 - [ ] Contractor finds the project through the list and map, submits one mini
   bid without contact details, and confirms a duplicate bid is prevented.
 - [ ] Consumer approves that bid; contractor and consumer exchange one
@@ -73,6 +75,8 @@ the approved retention policy afterwards.
 
 - [ ] On the reviewed release commit, rerun the strict production smoke check
   and record the deployed SHA and timestamp.
+- [ ] Confirm the public map and API label every demonstration record as sample
+  content and do not expose its fixed fixture date as a live requested date.
 - [ ] Check `http://workdoe.com` and `http://www.workdoe.com` redirect to HTTPS,
   and that `https://workdoe.com` and `https://www.workdoe.com` resolve as
   intended.
