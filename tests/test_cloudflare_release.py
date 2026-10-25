@@ -2276,6 +2276,49 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("CLOUDFLARE_API_TOKEN is required", payload["error"])
         self.assertIn("deploy the Cloudflare Worker", payload["error"])
 
+    def test_cloudflare_production_deploy_accepts_ignored_token_file_without_output(self):
+        module = load_production_deploy_script()
+        original_argv = sys.argv
+        original_readiness_payload = module.readiness_payload
+        original_execute_steps = module.execute_steps
+        token = "local-cloudflare-token-not-for-output"
+        captured = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            token_path = Path(tmp) / ".deploy-token"
+            token_path.write_text(f"{token}\n", encoding="utf-8")
+            try:
+                module.readiness_payload = lambda *args, **kwargs: {
+                    "ready": True,
+                    "blockers": [],
+                    "warnings": [],
+                }
+
+                def fake_execute(steps, deploy_env=None):
+                    captured["token"] = deploy_env["CLOUDFLARE_API_TOKEN"]
+                    return steps, [], []
+
+                module.execute_steps = fake_execute
+                sys.argv = [
+                    "cloudflare_production_deploy.py",
+                    "--execute",
+                    "--yes",
+                    "--json",
+                    "--api-token-file",
+                    str(token_path),
+                ]
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.assertEqual(module.main(), 0)
+                payload = json.loads(output.getvalue())
+            finally:
+                module.execute_steps = original_execute_steps
+                module.readiness_payload = original_readiness_payload
+                sys.argv = original_argv
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(captured["token"], token)
+        self.assertNotIn(token, output.getvalue())
+
     def test_cloudflare_clerk_proxy_proof_helper_is_confirm_gated(self):
         module = load_clerk_proxy_proof_script()
         readiness = load_readiness_script()

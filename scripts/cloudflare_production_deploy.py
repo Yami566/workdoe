@@ -19,6 +19,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from cloudflare_readiness import run_readiness
 from cloudflare_wrangler import (
     cloudflare_api_token_error,
+    cloudflare_api_token_from_file,
     cloudflare_api_token_present,
     wrangler_command,
     wrangler_env,
@@ -117,11 +118,14 @@ def plan_payload(
     }
 
 
-def run_external(step: DeployStep) -> subprocess.CompletedProcess:
+def run_external(
+    step: DeployStep,
+    deploy_env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         step.command,
         cwd=step.cwd,
-        env=wrangler_env(REPO_ROOT),
+        env=deploy_env or wrangler_env(REPO_ROOT),
         check=False,
         capture_output=True,
         text=True,
@@ -145,12 +149,17 @@ def smoke_output_excerpt(completed: subprocess.CompletedProcess) -> str:
 
 def execute_steps(
     steps: list[DeployStep],
+    deploy_env: dict[str, str] | None = None,
 ) -> tuple[list[DeployStep], list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     for step in steps:
         try:
-            completed = run_external(step)
+            completed = (
+                run_external(step, deploy_env=deploy_env)
+                if deploy_env is not None
+                else run_external(step)
+            )
         except OSError as exc:  # pragma: no cover - depends on operator machine PATH
             step.status = "failed"
             message = f"{step.name}: {exc}"
@@ -203,6 +212,14 @@ def main() -> int:
         "--env-file",
         type=Path,
         help="Optional .dev.vars-style file to include in strict readiness.",
+    )
+    parser.add_argument(
+        "--api-token-file",
+        type=Path,
+        help=(
+            "Optional ignored local file containing exactly one Cloudflare API token. "
+            "Its value is never printed or written to release evidence."
+        ),
     )
     parser.add_argument(
         "--clerk-proxy-proof-json",
@@ -284,7 +301,30 @@ def main() -> int:
         )
         return 1
 
-    if not cloudflare_api_token_present():
+    try:
+        api_token = (
+            cloudflare_api_token_from_file(args.api_token_file)
+            if args.api_token_file is not None
+            else None
+        )
+    except ValueError as exc:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "dry_run": False,
+                    "executes_commands": False,
+                    "error": str(exc),
+                    "warnings": readiness["warnings"],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 1
+
+    deploy_env = wrangler_env(REPO_ROOT, api_token=api_token)
+    if not cloudflare_api_token_present(deploy_env):
         print(
             json.dumps(
                 {
@@ -304,6 +344,7 @@ def main() -> int:
 
     steps, errors, warnings = execute_steps(
         build_deploy_steps(include_smoke=include_smoke),
+        deploy_env=deploy_env,
     )
     payload = {
         "ok": not errors,

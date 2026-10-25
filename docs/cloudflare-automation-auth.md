@@ -169,6 +169,22 @@ python scripts\cloudflare_production_deploy.py --json --secret-list-json cloudfl
 python scripts\cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
 ```
 
+For a direct local deploy from Codex without GitHub, the operator may instead
+create the ignored file `cloudflare/.deploy-token` in a local editor. It must
+contain exactly one Cloudflare API token and no other text. Do not paste that
+token into chat, commit it, or add it to a tracked configuration file. The
+guarded deploy command can then receive only the file path; it reads the token
+in-process and never includes its value in output or release evidence:
+
+```powershell
+python scripts\cloudflare_production_deploy.py --execute --yes --api-token-file cloudflare\.deploy-token --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
+```
+
+The token must be scoped to the Workdoe Cloudflare account and its `workdoe.com`
+zone. The deployment needs permission to apply D1 migrations and edit the
+existing Worker; add zone route write only if the command changes Worker routes
+or custom domains. Delete the local token file when the release is complete.
+
 This verifies the required secret names without exposing secret values, and verifies that Clerk was explicitly checked for the same-domain Frontend API proxy, Open access mode, email-code-only access, and Legal Compliance express consent to Workdoe's Terms and Privacy URLs. Clerk's maintained sign-up component owns the checkbox; Workdoe does not implement a parallel custom consent control.
 `cloudflare_launch_status.py` is read-only and safe to rerun between each step; it reports the current phase and the next command without touching Cloudflare.
 

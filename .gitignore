@@ -14,5 +14,6 @@ uploads/
 *.local.txt
 *.local.md
 cloudflare/.dev.vars
+cloudflare/.deploy-token
 .wrangler/
 .wrangler-config/
