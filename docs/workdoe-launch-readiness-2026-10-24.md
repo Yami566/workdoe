@@ -522,3 +522,21 @@ entry pages, required by Clerk's prebuilt components; it is paired with
 explicit Clerk, Turnstile, and OpenStreetMap origin allowlists. This is a
 documented third-party compatibility residual, not a claim that CSP alone
 eliminates XSS risk.
+
+### Local visual workflow review
+
+The release candidate was rendered locally at 1280 by 720 using a clean,
+demo-seeded database. The public marketplace displayed the six work-family
+filter, privacy-safe approximate map, map-area and DMV-reset controls, and
+open-project list without visible overlap. The **Post project** control opened
+the native dialog over the map rather than navigating away; closing it restored
+keyboard focus to the original control. Inside the dialog, choosing a family
+advanced to its service choices, then to the project-details step. The direct
+composer route likewise kept its action bar reachable at this desktop height
+and displayed the address/email/phone disclosure guard before free-text entry.
+
+The in-app audit browser cannot set a smaller viewport, so this is not a
+replacement for the required physical iPhone/iPad or independently emulated
+390 by 844 and 820 by 1180 acceptance captures. The existing responsive CSS
+and accessibility regression tests pass; real narrow-viewport visual evidence
+remains a post-deploy acceptance item.
