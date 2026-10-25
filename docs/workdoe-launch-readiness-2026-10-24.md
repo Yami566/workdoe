@@ -158,14 +158,16 @@ These corrections are verified locally but are **not deployed** by this review.
   covers onboarding labels, contractor profile text, private consumer workspace
   labels/notes, and saved project-area labels. This reduces accidental contact
   and address storage but cannot prove arbitrary text or images are PII-free.
-- Production-media intake now limits source files to 4 MB, stores only
-  sanitized 1600-pixel WebP output below 1.5 MB, limits projects to six photos,
+- A future production-media intake path, which is disabled for the current
+  beta, is prepared to limit source files to 4 MB, store only sanitized
+  1600-pixel WebP output below 1.5 MB, limit projects to six photos,
   contractor profiles to eight, and accounts to 12 uploads per rolling 24
-  hours before costly image processing begins. It now discards user-provided
-  source filenames before D1, R2 metadata, headers, or UI; a forward-only D1
-  migration redacts existing filename metadata at release time. The rolling
-  allowance counts successful upload audit events, so deleting a photo does not
-  reset it; its D1 query has a dedicated partial index.
+  hours before costly image processing begins. If it is re-enabled, it must
+  discard user-provided source filenames before D1, R2 metadata, headers, or
+  UI; its forward-only D1 migration redacts existing filename metadata at
+  release time. The rolling allowance counts successful upload audit events,
+  so deleting a photo does not reset it; its D1 query has a dedicated partial
+  index.
 - The public map now supports mouse-wheel zoom, a privacy-safe current-map-area
   description that never requests browser geolocation, and a DMV-view reset
   control. On compact phones, the decorative map badge is suppressed so it
@@ -449,6 +451,17 @@ At this verification time, the ignored local deployment token file was still
 absent, so no migration, deployment, or external marketplace write was
 performed. The user must place a valid token at `cloudflare/.deploy-token`
 before the approved direct deployment path can execute.
+
+A fresh live-browser check on 2026-10-25 reconfirmed that the deployed
+marketplace is the older revision: it shows `0 live / 15 sample`, renders a
+fixed August 2026 desired date for a demonstration project, and the signed-in
+composer still advertises `Private photos`. The older composer also emitted
+Turnstile console errors during the audit. The current local candidate's
+focused public-sample, map-control, native-dialog, and explicit-Turnstile
+lifecycle tests pass; this observed production drift is therefore a release
+acceptance gate, not evidence that the candidate regressed. The in-app audit
+browser did not honor its requested narrow viewport override, so this follow-up
+does not add new handheld visual-acceptance evidence.
 
 ## Decision
 
