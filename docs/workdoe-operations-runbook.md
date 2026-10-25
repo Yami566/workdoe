@@ -2,7 +2,8 @@
 
 Status: Draft for the controlled beta. The isolated local D1 export/import drill
 is complete; no production recovery, rotation, deletion/export, or incident
-drill is recorded as complete.
+drill is recorded as complete. Operator details below reflect owner-provided
+decisions as of 2026-10-25; they do not replace legal or operational approval.
 
 This runbook covers Workdoe's Cloudflare-hosted service and Clerk identity
 provider. It is an operating procedure, not evidence that a drill occurred.
@@ -15,12 +16,12 @@ or public beta invitations are opened.
 
 | Responsibility | Named owner | Monitored contact | Response target |
 | --- | --- | --- | --- |
-| Incident commander | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED |
-| Cloudflare/release operator | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED |
-| Clerk/auth operator | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED |
-| Privacy and deletion requests | Owner-designated operator | `admin@workdoe.com` | 1-5 business days for ordinary requests |
-| Safety and abuse reports | Owner-designated operator | `admin@workdoe.com` | 1-5 business days for ordinary requests; urgent path still required |
-| Legal notification decision | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED | OWNER DECISION REQUIRED |
+| Incident commander | Moose Bay and Company LLC owner-designated operator | `admin@workdoe.com` | Urgent escalation target not yet approved |
+| Cloudflare/release operator | Moose Bay and Company LLC owner-designated operator | `admin@workdoe.com` | Before each manual production release |
+| Clerk/auth operator | Moose Bay and Company LLC owner-designated operator | `admin@workdoe.com` | Urgent identity/security escalation target not yet approved |
+| Privacy and deletion requests | Moose Bay and Company LLC owner-designated operator | `admin@workdoe.com` | 1-5 business days for ordinary requests |
+| Safety and abuse reports | Moose Bay and Company LLC owner-designated operator | `admin@workdoe.com` | 1-5 business days for ordinary requests; urgent path still required |
+| Legal notification decision | Moose Bay and Company LLC with qualified counsel | `admin@workdoe.com` | Legal notification timetable not yet approved |
 
 Do not publish an inbox until a person owns and monitors it. Do not put secrets,
 email codes, session tokens, exact addresses, or private message bodies in an
