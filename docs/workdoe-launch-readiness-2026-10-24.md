@@ -508,3 +508,17 @@ The direct deployment gate still reports only one technical execute blocker:
 `CLOUDFLARE_API_TOKEN` is absent. The ignored token file was not present at
 `cloudflare/.deploy-token` during this rerun, so the reviewed candidate remains
 local and the live production revision remains unchanged.
+
+### Source-boundary review
+
+A focused manual source review found no new critical browser-sink, command
+execution, dynamic-SQL, or unbounded external-origin issue in the release
+candidate. The reviewed map and dialog `innerHTML` paths escape text and
+attribute values before insertion; deployment helpers pass fixed argument lists
+to `subprocess.run` without a shell; and Worker routes use prepared D1
+statements with bound values. The CSP does not permit `unsafe-eval` or inline
+scripts. Its only deliberate relaxation is `unsafe-inline` for styles on Clerk
+entry pages, required by Clerk's prebuilt components; it is paired with
+explicit Clerk, Turnstile, and OpenStreetMap origin allowlists. This is a
+documented third-party compatibility residual, not a claim that CSP alone
+eliminates XSS risk.
