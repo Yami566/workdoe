@@ -493,8 +493,10 @@ re-ran the following checks against local commit `6b36110`:
   `test_cloudflare_release` session-verification test: after importing that
   large test module, even `asyncio.run(asyncio.sleep(0))` stalls. The same
   verifier completed normally when loaded without the test harness. This is a
-  test-host limitation, not a passing full-suite result; the prior complete
-  suite evidence above remains historical evidence only.
+  sandbox test-host limitation, not a Worker failure. A subsequent host-side
+  sliced run executed all 263 tests in nine deterministic groups and every
+  group passed (89.159 seconds of test time total). This is fresh complete
+  unit and integration evidence for this release candidate.
 - The read-only strict production smoke was rerun outside the sandbox because
   its sandbox DNS resolver cannot resolve public names. Live DNS, HTTPS
   redirects, health, headers, cache policy, trust/discovery pages, social
