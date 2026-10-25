@@ -51,6 +51,7 @@
     var activeViewport = readViewportFromUrl();
     var ignoreNextMoveEnd = false;
     var requestSequence = 0;
+    var mapResizeTimer = null;
 
     mapElement.classList.add("map-ready");
     window.L.tileLayer(tileUrl, {
@@ -62,6 +63,7 @@
     bindMobileTabs();
     bindMapSearch();
     bindPopupOverlayState();
+    bindMapViewport();
     if (activeViewport) {
       moveMap(function () {
         map.fitBounds(viewportBounds(activeViewport), { padding: [28, 28], maxZoom: 13 });
@@ -202,6 +204,18 @@
           setMapStatus("DMV map view restored. Project locations remain approximate.");
         });
       }
+    }
+
+    function bindMapViewport() {
+      window.addEventListener("resize", function () {
+        if (mapResizeTimer) {
+          window.clearTimeout(mapResizeTimer);
+        }
+        mapResizeTimer = window.setTimeout(function () {
+          map.invalidateSize({ pan: false, debounceMoveend: true });
+          mapResizeTimer = null;
+        }, 150);
+      });
     }
 
     function loadJobs(viewport, fitMap) {

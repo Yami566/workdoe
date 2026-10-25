@@ -120,7 +120,7 @@
       "service": "Cloudflare Workers Rate Limiting"
     },
     "worker": {
-      "asset_release_token": "asset-0abf21c1b544432a",
+      "asset_release_token": "asset-96c771a32d972298",
       "compatibility_date": "2026-08-23",
       "compatibility_flags": [
         "python_workers",

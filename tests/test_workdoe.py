@@ -4527,6 +4527,11 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn("data-show-map-area", map_script)
         self.assertIn("data-reset-map-view", map_script)
         self.assertIn("Workdoe does not access your device location.", map_script)
+        self.assertIn('window.addEventListener("resize"', map_script)
+        self.assertIn(
+            "map.invalidateSize({ pan: false, debounceMoveend: true })",
+            map_script,
+        )
 
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
         self.assertRegex(
