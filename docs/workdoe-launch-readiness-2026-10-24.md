@@ -621,6 +621,11 @@ message was created by this recheck.
   pip-audit found no known vulnerabilities; Bandit, Ruff, the secret gate, and
   dependency-provenance verification passed. Bandit's retained `nosec` notices
   are reviewed test-fixture or parameterized-query suppressions, not failures.
+- A separate upstream provenance pass downloaded the recorded official Python
+  source archives and verified every SHA-256 value in
+  `DEPENDENCY_PROVENANCE.json`. Workdoe's own source remains proprietary; this
+  is evidence for the pinned third-party dependencies and retained notices, not
+  a claim that the first-party repository is open source.
 - Wrangler 4.152.0 successfully built a no-deploy Worker bundle of 50 Python
   modules and 88 static assets. Its optional `check startup` profiler then
   failed in local workerd with a duplicate-module runtime error. Because the
