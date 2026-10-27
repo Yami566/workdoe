@@ -609,14 +609,21 @@ message was created by this recheck.
   sheet with only step 1 of 6 shown, six labeled family choices, and visible
   Cancel and Continue actions. Closing it restored the selected map route and
   keyboard focus to the initiating control. This check did not submit a draft.
+- The narrow-screen stylesheet keeps text, select, and textarea controls at a
+  16px font size so iOS Safari does not auto-zoom when a person focuses a
+  field. The viewport, safe-area bottom padding, sticky composer actions, and
+  native-dialog contract are covered by three focused regression tests. This
+  is browser-level responsive evidence, not a substitute for testing on owned
+  iPhone and iPad hardware or with assistive technology.
 - Thirteen focused regression tests passed for same-origin API-write markers,
   rate-limit policy, beta media disablement, private R2 access, public map
   query/index telemetry, local/Worker public-query contract parity, exact-address
   redaction, and address-free dashboard history. The full Cloudflare preflight
   also passed with no errors or warnings.
-- The complete local `unittest` suite also completed cleanly across all 267
-  current test methods. It uses isolated local databases and fixtures, so this
-  confirms application regressions without creating production marketplace data.
+- The complete local `unittest` suite passed again after the narrow-screen
+  safeguard across all 267 current test methods. It uses isolated local
+  databases and fixtures, so this confirms application regressions without
+  creating production marketplace data.
 - The complete security command passed: npm audit found zero vulnerabilities;
   pip-audit found no known vulnerabilities; Bandit, Ruff, the secret gate, and
   dependency-provenance verification passed. Bandit's retained `nosec` notices

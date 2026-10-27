@@ -6636,6 +6636,12 @@ textarea:focus {
 }
 
 @media (max-width: 520px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
   .home-map.map-panel::after {
     display: none;
   }

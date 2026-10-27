@@ -3656,6 +3656,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn("input:focus-visible", styles)
         self.assertIn("textarea:focus-visible", styles)
         self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
+        self.assertRegex(
+            styles,
+            r'(?s)@media \(max-width: 520px\) \{.*?'
+            r'input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\),\s*'
+            r'select,\s*textarea\s*\{\s*font-size: 16px;',
+        )
 
     def test_map_and_policy_controls_use_accessible_touch_targets(self):
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
