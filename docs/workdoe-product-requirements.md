@@ -2,7 +2,7 @@
 
 Status: launch-candidate requirements baseline
 
-Last reviewed: 2026-10-24
+Last reviewed: 2026-10-27
 
 ## Product statement
 
@@ -51,9 +51,10 @@ the relevant workflow through a same-domain email-code sign-in.
   from the narrative; it does not infer, embed, or rewrite the project.
 - See a transparent `Brief n of 6` projection based only on canonical service,
   a substantive description, at least two controlled scope answers, project
-  setting, desired timing, and either a budget signal or photo. It never uses
-  identity, contact, exact-location, paid-placement, or contractor-fit fields
-  and does not change ordering or eligibility.
+  setting, desired timing, and either a budget signal or a retained
+  legacy/demonstration photo. The current beta does not offer a new-photo action.
+  The projection never uses identity, contact, exact-location, paid-placement,
+  or contractor-fit fields and does not change ordering or eligibility.
 - Close an owned project with a controlled outcome and optional private note;
   reopen it until either participant confirms completion, which clears the
   active close outcome while preserving its audit event.
@@ -350,7 +351,8 @@ available with its applicable policy acknowledgement and public disclaimer.
   Workdoe-owned and are not changed by the Clerk component.
 - `Post project` is a first-class public action at `/post-project`. A valid
   24-hour server-side draft survives account verification and prefills the
-  protected project form; photos are accepted only after verification.
+  protected project form; drafts and the verified beta composer do not accept
+  new photo uploads.
 - Mobile users can switch among Projects, Map, and Details/Account without
   horizontal scrolling or obscured controls.
 - Demo projects are visibly identified and must never be represented as live
@@ -393,10 +395,12 @@ available with its applicable policy acknowledgement and public disclaimer.
   open-jobs API pass production smoke tests.
 - Non-secret release evidence confirms Clerk Open access mode, the
   Workdoe custom sign-up URL, email-code sign-in, and disabled password sign-in.
-- A real test consumer can receive an email code, create a job with a photo,
-  review a bid, approve it, and exchange messages.
+- A real test consumer can receive an email code, create a city/ZIP-only job
+  without a photo, review a bid, approve it, and exchange messages.
 - A separate real test contractor can receive an email code, create a profile,
-  find that job, submit a bid, and access only authorized photos/messages.
+  find that job, submit a bid, and access only authorized messages. Any
+  retained legacy or demonstration media remains separately permission-scoped;
+  it is not a current-beta upload acceptance criterion.
 - A contractor can save reusable wording from their own bid, apply it to a
   different project with the price field empty, and cannot inspect or remove
   another contractor's template.
