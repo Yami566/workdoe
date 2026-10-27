@@ -642,6 +642,17 @@ message was created by this recheck.
   pinned Wrangler upgrade; do not treat the profiler result as an acceptance
   substitute or silently waive it.
 
+### 2026-10-27 direct deployment record
+
+The reviewed mobile-form safeguard was deployed directly from local source
+commit `23915ec610a55e4573d4f10a4517257eed63b15c`; no GitHub push or pull
+request was used. The controlled deploy completed the existing forward-only D1
+migration step, Worker deploy, and strict production smoke successfully.
+Cloudflare reports deployment `6062b307-699f-46e0-aebb-8e6d813e8b9f` serving
+Worker version `b7455b37-73d3-446d-828d-ea83248e8900` at 100 percent. The
+deployment uses the already authenticated local Wrangler profile; no token is
+recorded in this repository or this evidence file.
+
 ### Remaining non-technical launch gates
 
 The deployment and automated technical acceptance are complete. Workdoe is
