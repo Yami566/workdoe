@@ -1,7 +1,7 @@
 # Workdoe Security Impact Assessment
 
 Assessment date: 2026-08-17; source-license finding reviewed 2026-08-23;
-status-specific production evidence refreshed 2026-10-25.
+status-specific production evidence refreshed 2026-10-27.
 
 The current deployment and Clerk findings in
 `workdoe-launch-readiness-2026-10-24.md` supersede this document's original

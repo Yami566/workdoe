@@ -1,6 +1,6 @@
 # Workdoe Launch Readiness Review
 
-Date: 2026-10-24
+Date: 2026-10-24; evidence refreshed 2026-10-27
 
 Status: **controlled beta operating; not approved for unrestricted public commercial launch**.
 
@@ -48,14 +48,13 @@ or a real two-account marketplace acceptance run.
   consent is enabled, and its Terms and Privacy URLs point to Workdoe's public
   routes. The resulting local Clerk proof records configuration decisions only,
   without any secret values.
-- The currently deployed public marketplace was inspected at 390x844, 820x1180,
-  and 1280x720. Its phone map/list/detail tabs were coherent, but the 820px
-  deployment still carries an older desktop-width workspace and clips the
-  selected detail/action. The current local release candidate was rechecked at
-  all three sizes: it changes to the compact workspace before that point, keeps
-  the task controls visible, and has no observed horizontal clipping. The direct
-  `/jobs/new` page remains the no-JavaScript fallback; its initial action is
-  below the first viewport on a short phone.
+- Before the 2026-10-25 release, the then-deployed marketplace still carried an
+  older desktop-width workspace at 820px and clipped the selected detail/action.
+  The release candidate corrected that breakpoint behavior at 390x844,
+  820x1180, and 1280x720. The current production recheck in the 2026-10-27
+  section below supersedes this historical observation. The direct `/jobs/new`
+  page remains the no-JavaScript fallback; its initial action is below the first
+  viewport on a short phone.
 - A fresh local browser check opened `Post project` from the map as a native
   same-page dialog, selected a work family and a service through steps 1 to 3,
   and then closed the dialog. Each selection advanced without exposing later
@@ -535,11 +534,10 @@ advanced to its service choices, then to the project-details step. The direct
 composer route likewise kept its action bar reachable at this desktop height
 and displayed the address/email/phone disclosure guard before free-text entry.
 
-The in-app audit browser cannot set a smaller viewport, so this is not a
-replacement for the required physical iPhone/iPad or independently emulated
-390 by 844 and 820 by 1180 acceptance captures. The existing responsive CSS
-and accessibility regression tests pass; real narrow-viewport visual evidence
-remains a post-deploy acceptance item.
+That early local inspection did not include reliable narrow-viewport captures.
+It was subsequently supplemented by the current production-browser checks at
+390 by 844 and 820 by 1180 recorded below. Those captures still do not replace
+physical-device or assistive-technology acceptance testing.
 
 ## 2026-10-25 production deployment and verification
 
@@ -589,6 +587,48 @@ The only browser-console diagnostics observed in this pass originated from the
 Cloudflare Turnstile challenge iframe and did not include a Workdoe source URL
 or user-visible failure. They are not sufficient evidence to waive the
 owner-run fresh sign-in test.
+
+## 2026-10-27 production recheck
+
+The deployed Worker and the locally reviewed release tree were rechecked after
+the media-scope documentation correction. No GitHub push, pull request, D1
+migration, Cloudflare configuration change, user account, project, bid, or
+message was created by this recheck.
+
+- The strict production smoke passed again against `https://workdoe.com`:
+  apex and `www` HTTP-to-HTTPS redirects, health, public jobs API, sample-data
+  presentation, entry security headers, immutable static-cache behavior,
+  public trust/discovery pages, social metadata, production Clerk key,
+  invitation entry, and same-domain Clerk proxy all reported ready.
+- Live visual checks at 390 by 844, 820 by 1180, and 1280 by 720 found the
+  public marketplace coherent without clipped primary controls. The map retained
+  browser-friendly zoom controls, visible OpenStreetMap attribution, and a
+  `Search this area` control. Public project detail showed only city-level
+  location and the approximate-location disclosure.
+- On the phone-sized view, `Post project` loaded as a native in-place bottom
+  sheet with only step 1 of 6 shown, six labeled family choices, and visible
+  Cancel and Continue actions. Closing it restored the selected map route and
+  keyboard focus to the initiating control. This check did not submit a draft.
+- Thirteen focused regression tests passed for same-origin API-write markers,
+  rate-limit policy, beta media disablement, private R2 access, public map
+  query/index telemetry, local/Worker public-query contract parity, exact-address
+  redaction, and address-free dashboard history. The full Cloudflare preflight
+  also passed with no errors or warnings.
+- The complete local `unittest` suite also completed cleanly across all 267
+  current test methods. It uses isolated local databases and fixtures, so this
+  confirms application regressions without creating production marketplace data.
+- The complete security command passed: npm audit found zero vulnerabilities;
+  pip-audit found no known vulnerabilities; Bandit, Ruff, the secret gate, and
+  dependency-provenance verification passed. Bandit's retained `nosec` notices
+  are reviewed test-fixture or parameterized-query suppressions, not failures.
+- Wrangler 4.152.0 successfully built a no-deploy Worker bundle of 50 Python
+  modules and 88 static assets. Its optional `check startup` profiler then
+  failed in local workerd with a duplicate-module runtime error. Because the
+  regular production bundle validation and the live Worker both succeed, this
+  is recorded as a Wrangler-profiler compatibility limitation, not evidence of
+  a deployed Worker failure. Re-run the profiler after separately reviewing a
+  pinned Wrangler upgrade; do not treat the profiler result as an acceptance
+  substitute or silently waive it.
 
 ### Remaining non-technical launch gates
 

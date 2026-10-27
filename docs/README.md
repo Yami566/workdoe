@@ -1,6 +1,6 @@
 # Workdoe Documentation Index
 
-Last reviewed: 2026-10-25
+Last reviewed: 2026-10-27
 
 This index identifies the current product and release documents. Dated studies,
 screenshots, and earlier audits remain useful evidence, but they do not override
