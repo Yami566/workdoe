@@ -10545,6 +10545,37 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(check.status, "failed")
         self.assertIn("demo-01", check.summary)
 
+    def test_workdoe_production_smoke_rejects_private_fields_in_public_jobs(self):
+        module = load_workdoe_production_smoke_script()
+        original_fetch_url = module.fetch_url
+        try:
+            module.fetch_url = lambda *args, **kwargs: module.FetchResult(
+                ok=True,
+                status_code=200,
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                body=json.dumps(
+                    {
+                        "count": 1,
+                        "jobs": [
+                            {
+                                "id": "demo-01",
+                                "email": "private@example.com",
+                                "exact_address": "100 Private Street",
+                            }
+                        ],
+                        "location_privacy": "Approximate city or ZIP-level pins only.",
+                    }
+                ),
+                elapsed_ms=6,
+            )
+            check = module.public_jobs_check("https://workdoe.com", 8.0)
+        finally:
+            module.fetch_url = original_fetch_url
+
+        self.assertEqual(check.status, "failed")
+        self.assertIn("email", check.summary)
+        self.assertIn("exact_address", check.summary)
+
     def test_workdoe_production_smoke_rejects_unversioned_or_revalidated_stylesheet(self):
         module = load_workdoe_production_smoke_script()
         original_fetch_url = module.fetch_url

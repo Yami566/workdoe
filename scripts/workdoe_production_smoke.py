@@ -52,6 +52,24 @@ CLERK_INVITATION_SMOKE_PATH = (
 HTTPS_REDIRECT_PATHS = ("/", "/styles.css")
 SAMPLE_PROJECT_SMOKE_PATH = "/?job_id=demo-01"
 SAMPLE_TIMING_MARKER = "Sample timing"
+PUBLIC_JOB_PRIVATE_FIELDS = frozenset(
+    {
+        "address",
+        "client_email",
+        "client_id",
+        "contractor_email",
+        "contractor_id",
+        "email",
+        "exact_address",
+        "external_subject",
+        "original_filename",
+        "password_hash",
+        "phone",
+        "phone_number",
+        "stored_path",
+        "street_address",
+    }
+)
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -321,15 +339,39 @@ def public_jobs_check(base_url: str, timeout: float) -> SmokeCheck:
             status_code=result.status_code,
             elapsed_ms=result.elapsed_ms,
         )
-    if "location_privacy" not in payload:
+    location_privacy = str(payload.get("location_privacy") or "")
+    if "approximate" not in location_privacy.casefold():
         return SmokeCheck(
             name="public-jobs-api",
             status="failed",
-            summary="Public jobs API is missing the location privacy notice.",
+            summary="Public jobs API is missing an approximate-location privacy notice.",
             url=url,
             status_code=result.status_code,
             elapsed_ms=result.elapsed_ms,
         )
+    for job in jobs:
+        if not isinstance(job, dict):
+            return SmokeCheck(
+                name="public-jobs-api",
+                status="failed",
+                summary="Public jobs API contains a non-object job record.",
+                url=url,
+                status_code=result.status_code,
+                elapsed_ms=result.elapsed_ms,
+            )
+        private_fields = sorted(set(job).intersection(PUBLIC_JOB_PRIVATE_FIELDS))
+        if private_fields:
+            return SmokeCheck(
+                name="public-jobs-api",
+                status="failed",
+                summary=(
+                    "Public jobs API exposes private job fields: "
+                    + ", ".join(private_fields)
+                ),
+                url=url,
+                status_code=result.status_code,
+                elapsed_ms=result.elapsed_ms,
+            )
     dated_demo_jobs = [
         str(job.get("id", "sample"))
         for job in jobs
