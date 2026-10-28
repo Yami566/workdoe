@@ -18,9 +18,9 @@
         <a class="button secondary" href="{{ url_for('new_job') }}">Post project</a>
       {% endif %}
     {% else %}
-      <a class="button" href="{{ url_for('login') }}">Sign in</a>
-      <a class="button secondary" href="{{ url_for('create_account', intent='find-work') }}">Find work</a>
-      <a class="button secondary" href="{{ url_for('post_project') }}">Post project</a>
+      <a class="button" href="{{ url_for('login') }}" data-dialog-title="Sign in">Sign in</a>
+      <a class="button secondary" href="{{ url_for('create_account', intent='find-work') }}" data-dialog-title="Create account">Find work</a>
+      <a class="button secondary" href="{{ url_for('post_project') }}" data-dialog-title="Post a project">Post project</a>
     {% endif %}
   </div>
 </section>

@@ -12,13 +12,17 @@ REPO_ROOT = SCRIPT_DIR.parent
 CLOUDFLARE_DIR = REPO_ROOT / "cloudflare"
 DEFAULT_SECRET_LIST_PATH = REPO_ROOT / "cloudflare-secret-list.local.json"
 DEFAULT_CLERK_PROXY_PROOF_PATH = REPO_ROOT / "clerk-proxy-proof.local.json"
+DEFAULT_STAGED_API_TOKEN_PATH = REPO_ROOT / "cloudflare" / ".deploy-token"
 
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from cloudflare_readiness import run_readiness
 from cloudflare_wrangler import (
+    ambient_wrangler_env,
+    ambient_wrangler_oauth_ready,
     cloudflare_api_token_error,
+    cloudflare_api_token_from_file,
     cloudflare_api_token_present,
     wrangler_command,
     wrangler_env,
@@ -117,11 +121,14 @@ def plan_payload(
     }
 
 
-def run_external(step: DeployStep) -> subprocess.CompletedProcess:
+def run_external(
+    step: DeployStep,
+    deploy_env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         step.command,
         cwd=step.cwd,
-        env=wrangler_env(REPO_ROOT),
+        env=deploy_env or wrangler_env(REPO_ROOT),
         check=False,
         capture_output=True,
         text=True,
@@ -145,12 +152,17 @@ def smoke_output_excerpt(completed: subprocess.CompletedProcess) -> str:
 
 def execute_steps(
     steps: list[DeployStep],
+    deploy_env: dict[str, str] | None = None,
 ) -> tuple[list[DeployStep], list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     for step in steps:
         try:
-            completed = run_external(step)
+            completed = (
+                run_external(step, deploy_env=deploy_env)
+                if deploy_env is not None
+                else run_external(step)
+            )
         except OSError as exc:  # pragma: no cover - depends on operator machine PATH
             step.status = "failed"
             message = f"{step.name}: {exc}"
@@ -203,6 +215,30 @@ def main() -> int:
         "--env-file",
         type=Path,
         help="Optional .dev.vars-style file to include in strict readiness.",
+    )
+    parser.add_argument(
+        "--api-token-file",
+        type=Path,
+        help=(
+            "Optional ignored local file containing exactly one Cloudflare API token. "
+            "Its value is never printed or written to release evidence."
+        ),
+    )
+    parser.add_argument(
+        "--use-staged-api-token-if-present",
+        action="store_true",
+        help=(
+            "Use cloudflare/.deploy-token when it is present; otherwise preserve "
+            "the current CLOUDFLARE_API_TOKEN environment behavior."
+        ),
+    )
+    parser.add_argument(
+        "--allow-wrangler-oauth",
+        action="store_true",
+        help=(
+            "Allow this owner-run local deploy to use an already authenticated "
+            "encrypted Wrangler OAuth profile when no API token is available."
+        ),
     )
     parser.add_argument(
         "--clerk-proxy-proof-json",
@@ -284,7 +320,52 @@ def main() -> int:
         )
         return 1
 
-    if not cloudflare_api_token_present():
+    try:
+        if args.api_token_file is not None:
+            api_token = cloudflare_api_token_from_file(args.api_token_file)
+        elif args.use_staged_api_token_if_present and DEFAULT_STAGED_API_TOKEN_PATH.is_file():
+            api_token = cloudflare_api_token_from_file(DEFAULT_STAGED_API_TOKEN_PATH)
+        else:
+            api_token = None
+    except ValueError as exc:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "dry_run": False,
+                    "executes_commands": False,
+                    "error": str(exc),
+                    "warnings": readiness["warnings"],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 1
+
+    deploy_env = wrangler_env(REPO_ROOT, api_token=api_token)
+    if not cloudflare_api_token_present(deploy_env) and args.allow_wrangler_oauth:
+        if ambient_wrangler_oauth_ready(REPO_ROOT):
+            deploy_env = ambient_wrangler_env()
+        else:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "dry_run": False,
+                        "executes_commands": False,
+                        "error": (
+                            "No Cloudflare API token is available and the local Wrangler OAuth "
+                            "profile is not authenticated for this owner-run deploy."
+                        ),
+                        "warnings": readiness["warnings"],
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+    if not cloudflare_api_token_present(deploy_env) and not args.allow_wrangler_oauth:
         print(
             json.dumps(
                 {
@@ -304,6 +385,7 @@ def main() -> int:
 
     steps, errors, warnings = execute_steps(
         build_deploy_steps(include_smoke=include_smoke),
+        deploy_env=deploy_env,
     )
     payload = {
         "ok": not errors,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from content_privacy import contains_disallowed_personal_data
+
 MAX_ONBOARDING_BODY_BYTES = 8192
 ONBOARDING_ROLES = {"client", "contractor"}
 ONBOARDING_TEXT_MAX_LENGTH = 120
@@ -78,9 +80,11 @@ def onboarding_payload(claims: dict, body: dict) -> dict[str, str]:
     display_name = compact_spaces(body.get("display_name"))[:ONBOARDING_TEXT_MAX_LENGTH]
     company_name = compact_spaces(body.get("company_name"))[:ONBOARDING_TEXT_MAX_LENGTH]
     if not display_name:
-        display_name = compact_spaces(claims.get("name"))[:ONBOARDING_TEXT_MAX_LENGTH]
-    if not display_name:
-        display_name = claim_email(claims).split("@", 1)[0]
+        raise OnboardingError("Choose a public business name or non-identifying handle to create a Workdoe account.")
+    if contains_disallowed_personal_data((display_name, company_name)):
+        raise OnboardingError(
+            "Do not include email addresses, phone numbers, or exact street addresses in a public business name or handle."
+        )
     if not company_name:
         company_name = display_name
 

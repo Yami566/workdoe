@@ -15,6 +15,7 @@ if str(WORKER_DIR) not in sys.path:
 from public_job_query import build_public_open_jobs_query
 
 EXPECTED_INDEXES = {
+    "idx_automation_events_media_upload_window",
     "idx_contractor_photos_public_contractor",
     "idx_jobs_open_geo",
     "idx_job_photos_public_job",
@@ -84,6 +85,14 @@ def seed_planner_data(connection: sqlite3.Connection, count: int = 600) -> None:
                 """,
                 (item_id, f"contractors/{item_id}/portfolio.webp", timestamp),
             )
+        connection.execute(
+            """
+            INSERT INTO automation_events
+                (event_type, target_type, target_id, payload_json, status, created_at)
+            VALUES ('media-uploaded', 'job_photo', ?, ?, 'processed', ?)
+            """,
+            (item_id, f'{{"uploaded_by":{item_id}}}', timestamp),
+        )
     connection.execute("ANALYZE")
 
 
@@ -133,13 +142,30 @@ def explain_contractor_photo_query(connection: sqlite3.Connection) -> list[str]:
     return [str(row[3]) for row in rows]
 
 
+def explain_media_upload_window_query(connection: sqlite3.Connection) -> list[str]:
+    rows = connection.execute(
+        """
+        EXPLAIN QUERY PLAN
+        SELECT COUNT(*)
+        FROM automation_events
+        WHERE event_type = 'media-uploaded'
+          AND created_at >= ?
+          AND json_extract(payload_json, '$.uploaded_by') = ?
+        """,
+        ("2026-08-22T00:00:00+00:00", 4),
+    ).fetchall()
+    return [str(row[3]) for row in rows]
+
+
 def verify_query_plan() -> dict:
     connection = sqlite3.connect(":memory:")
     try:
         migrations = apply_migrations(connection)
         seed_planner_data(connection)
-        plan = explain_public_query(connection) + explain_contractor_photo_query(
-            connection
+        plan = (
+            explain_public_query(connection)
+            + explain_contractor_photo_query(connection)
+            + explain_media_upload_window_query(connection)
         )
     finally:
         connection.close()
@@ -152,7 +178,9 @@ def verify_query_plan() -> dict:
     scans = [
         detail
         for detail in plan
-        if detail.startswith(("SCAN jobs", "SCAN job_photos", "SCAN contractor_photos"))
+        if detail.startswith(
+            ("SCAN jobs", "SCAN job_photos", "SCAN contractor_photos", "SCAN automation_events")
+        )
     ]
     return {
         "ok": used_indexes == EXPECTED_INDEXES and not scans,
@@ -167,7 +195,7 @@ def verify_query_plan() -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Verify the indexed D1 public-project viewport query plan."
+        description="Verify indexed D1 project, media, and upload-window query plans."
     )
     parser.parse_args()
     result = verify_query_plan()

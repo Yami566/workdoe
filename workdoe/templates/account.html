@@ -50,8 +50,8 @@
 
 {% block scripts %}
   {% if clerk_entry_enabled() %}
-    <script defer crossorigin="anonymous" src="{{ clerk_frontend_api_url() }}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
-    <script defer crossorigin="anonymous" data-clerk-publishable-key="{{ clerk_publishable_key() }}" {% if clerk_proxy_url() %}data-clerk-proxy-url="{{ clerk_proxy_url() }}"{% endif %} src="{{ clerk_frontend_api_url() }}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
+    <script defer crossorigin="anonymous" src="{{ clerk_ui_script_url() }}"></script>
+    <script defer crossorigin="anonymous" data-clerk-publishable-key="{{ clerk_publishable_key() }}" {% if clerk_proxy_url() %}data-clerk-proxy-url="{{ clerk_proxy_url() }}"{% endif %} src="{{ clerk_js_script_url() }}"></script>
     <script defer src="{{ url_for('static', filename='clerk-account.js') }}"></script>
   {% endif %}
 {% endblock %}

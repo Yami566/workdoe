@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -10,6 +11,7 @@ REPO_ROOT = SCRIPT_DIR.parent
 WRANGLER_ENV_VAR = "WORKDOE_WRANGLER_BIN"
 WRANGLER_CONFIG_DIR = ".wrangler-config"
 CLOUDFLARE_API_TOKEN_ENV_VAR = "CLOUDFLARE_API_TOKEN"
+MAX_API_TOKEN_FILE_BYTES = 4096
 
 
 def local_wrangler_candidates(repo_root: Path = REPO_ROOT) -> list[Path]:
@@ -44,6 +46,21 @@ def cloudflare_api_token_present(env: Mapping[str, str] | None = None) -> bool:
     return bool((values.get(CLOUDFLARE_API_TOKEN_ENV_VAR) or "").strip())
 
 
+def cloudflare_api_token_from_file(path: Path) -> str:
+    """Read one local-only deploy token without exposing its value in output."""
+    try:
+        if not path.is_file() or path.stat().st_size > MAX_API_TOKEN_FILE_BYTES:
+            raise ValueError
+        lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise ValueError("Cloudflare API token file is unavailable or invalid.") from exc
+
+    values = [line for line in lines if line]
+    if len(values) != 1 or any(character.isspace() for character in values[0]):
+        raise ValueError("Cloudflare API token file is unavailable or invalid.")
+    return values[0]
+
+
 def cloudflare_api_token_error(action: str) -> str:
     return (
         f"{CLOUDFLARE_API_TOKEN_ENV_VAR} is required to {action} in this "
@@ -52,7 +69,40 @@ def cloudflare_api_token_error(action: str) -> str:
     )
 
 
-def wrangler_env(repo_root: Path = REPO_ROOT) -> dict[str, str]:
+def ambient_wrangler_env() -> dict[str, str]:
+    """Preserve the operator's encrypted Wrangler OAuth profile for local commands."""
+    return os.environ.copy()
+
+
+def ambient_wrangler_oauth_ready(
+    repo_root: Path = REPO_ROOT,
+    timeout: float = 20.0,
+) -> bool:
+    """Return whether the local Wrangler OAuth profile can run non-interactive commands."""
+    try:
+        completed = subprocess.run(
+            wrangler_command(["whoami"], repo_root),
+            cwd=str(repo_root / "cloudflare"),
+            env=ambient_wrangler_env(),
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    output = "\n".join(value for value in (completed.stdout, completed.stderr) if value).lower()
+    return completed.returncode == 0 and "not authenticated" not in output
+
+
+def wrangler_env(
+    repo_root: Path = REPO_ROOT,
+    api_token: str | None = None,
+) -> dict[str, str]:
     env = os.environ.copy()
     env["XDG_CONFIG_HOME"] = str(repo_root / WRANGLER_CONFIG_DIR)
+    if api_token:
+        env[CLOUDFLARE_API_TOKEN_ENV_VAR] = api_token
     return env

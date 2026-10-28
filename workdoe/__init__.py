@@ -64,6 +64,7 @@ from .client_project_templates import (
     project_template_response,
     project_template_values,
 )
+from .content_privacy import contains_disallowed_personal_data, personal_data_error
 from .contractor_credentials import (
     CREDENTIAL_IDENTIFIER_MAX_LENGTH,
     CREDENTIAL_JURISDICTIONS,
@@ -357,6 +358,8 @@ CLERK_LOGIN_MODES = {"same_domain_email_code"}
 CLERK_ONBOARDING_TEXT_MAX_LENGTH = 120
 WORKDOE_PUBLIC_DOMAIN = "workdoe.com"
 CLERK_PROXY_PATH = "/__clerk"
+CLERK_UI_VERSION = "1.41.2"
+CLERK_JS_VERSION = "6.40.1"
 CLERK_CHALLENGE_ORIGIN = "https://challenges.cloudflare.com"
 CLERK_PROTECT_ORIGIN = "https://*.protect.clerk.com"
 CLERK_IMAGE_ORIGIN = "https://img.clerk.com"
@@ -415,7 +418,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         ),
         DATABASE=str(Path(app.instance_path) / "workdoe.sqlite3"),
         UPLOAD_ROOT=str(Path(app.instance_path) / "private_uploads"),
-        MAX_CONTENT_LENGTH=12 * 1024 * 1024,
+        # Keep the local reference app aligned with production source-file intake.
+        MAX_CONTENT_LENGTH=4 * 1024 * 1024,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=is_production
@@ -435,8 +439,12 @@ def create_app(test_config: dict | None = None) -> Flask:
             '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         ),
         SHOW_LOCAL_LOGIN_CODE=not is_production,
-        ENFORCE_SERVICE_ACTIVATION=is_production
-        or enabled_flag(os.environ.get("WORKDOE_ENFORCE_SERVICE_ACTIVATION")),
+        # The controlled beta keeps all curated services available with their
+        # corresponding advisories. Operators can explicitly enable the
+        # service-zone gate later, after completing the separate review process.
+        ENFORCE_SERVICE_ACTIVATION=enabled_flag(
+            os.environ.get("WORKDOE_ENFORCE_SERVICE_ACTIVATION")
+        ),
     )
     if test_config:
         app.config.update(test_config)
@@ -470,9 +478,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.jinja_env.globals["turnstile_enabled"] = turnstile_enabled
     app.jinja_env.globals["turnstile_site_key"] = turnstile_site_key
     app.jinja_env.globals["clerk_entry_enabled"] = clerk_entry_enabled
+    app.jinja_env.globals["local_password_auth_enabled"] = local_password_auth_enabled
     app.jinja_env.globals["clerk_publishable_key"] = clerk_publishable_key
     app.jinja_env.globals["clerk_frontend_api_url"] = clerk_frontend_api_url
     app.jinja_env.globals["clerk_proxy_url"] = clerk_proxy_url
+    app.jinja_env.globals["clerk_ui_script_url"] = clerk_ui_script_url
+    app.jinja_env.globals["clerk_js_script_url"] = clerk_js_script_url
     app.jinja_env.globals["embedded_dialog_mode"] = embedded_dialog_mode
     app.jinja_env.globals["project_settings"] = PROJECT_SETTINGS
     app.jinja_env.filters["money"] = money_filter
@@ -525,7 +536,9 @@ def validate_production_config(app: Flask) -> None:
         missing.append("WORKDOE_TURNSTILE_SECRET_KEY")
     if app.config.get("TURNSTILE_VERIFY_URL") != TURNSTILE_VERIFY_URL:
         missing.append(f"WORKDOE_TURNSTILE_VERIFY_URL={TURNSTILE_VERIFY_URL}")
-    if auth_provider == "clerk":
+    if auth_provider != "clerk":
+        missing.append("WORKDOE_AUTH_PROVIDER=clerk")
+    else:
         for env_name, config_name in (
             ("CLERK_PUBLISHABLE_KEY", "CLERK_PUBLISHABLE_KEY"),
             ("CLERK_SECRET_KEY", "CLERK_SECRET_KEY"),
@@ -1896,11 +1909,6 @@ def register_routes(app: Flask) -> None:
                 {"ok": False, "error": "Role must be client or contractor."},
                 status=400,
             )
-        if not display_name:
-            display_name = email.split("@", 1)[0][:CLERK_ONBOARDING_TEXT_MAX_LENGTH]
-        if not company_name:
-            company_name = display_name
-
         db = get_db()
         external_subject = local_clerk_subject_for_email(email)
         linked_user = db.execute(
@@ -1937,6 +1945,25 @@ def register_routes(app: Flask) -> None:
                 {"ok": False, "error": "A Workdoe account already uses this email."},
                 status=409,
             )
+
+        if not display_name:
+            return no_store_json(
+                {
+                    "ok": False,
+                    "error": "Choose a public business name or non-identifying handle to create a Workdoe account.",
+                },
+                status=400,
+            )
+        if contains_disallowed_personal_data((display_name, company_name)):
+            return no_store_json(
+                {
+                    "ok": False,
+                    "error": "Do not include email addresses, phone numbers, or exact street addresses in a public business name or handle.",
+                },
+                status=400,
+            )
+        if not company_name:
+            company_name = display_name
 
         created_at = now_iso()
         try:
@@ -2059,7 +2086,9 @@ def register_routes(app: Flask) -> None:
             if not email or "@" not in email:
                 flash("Enter a valid email address.", "error")
             elif not existing_user and not display_name:
-                flash("Add your name to create a Workdoe workspace.", "error")
+                flash("Add a public business name or non-identifying handle to create a Workdoe workspace.", "error")
+            elif not existing_user and contains_disallowed_personal_data((display_name, company_name)):
+                flash("Do not include an email address, phone number, or exact street address in your public business name or handle.", "error")
             else:
                 issue_login_code(
                     email,
@@ -2289,7 +2318,9 @@ def register_routes(app: Flask) -> None:
         elif not email or "@" not in email:
             flash("Enter a valid email address.", "error")
         elif not existing_user and not display_name:
-            flash("Add your name to create a Workdoe workspace.", "error")
+            flash("Add a public business name or non-identifying handle to create a Workdoe workspace.", "error")
+        elif not existing_user and contains_disallowed_personal_data((display_name, company_name)):
+            flash("Do not include an email address, phone number, or exact street address in your public business name or handle.", "error")
         else:
             issue_login_code(email, role, display_name, company_name, intent, None)
             flash("Use the one-time email code to finish starting.", "success")
@@ -2311,6 +2342,10 @@ def register_routes(app: Flask) -> None:
         next_url = lead_next_url_with_filters(next_url, filters)
         selected_job = selected_next_job(next_url)
         if request.method == "POST":
+            # Clerk owns production authentication. Do not leave the legacy
+            # local password handler reachable through a direct POST.
+            if not local_password_auth_enabled():
+                abort(404)
             auth_action = request.form.get("auth_action") or (
                 "password" if request.form.get("password") else "code"
             )
@@ -2380,6 +2415,8 @@ def register_routes(app: Flask) -> None:
 
     @app.route("/forgot-password", methods=("GET", "POST"))
     def forgot_password():
+        if not local_password_auth_enabled():
+            abort(404)
         reset_link = None
         if request.method == "POST":
             email = (request.form.get("email") or "").strip().lower()
@@ -2407,6 +2444,8 @@ def register_routes(app: Flask) -> None:
 
     @app.route("/reset-password/<token>", methods=("GET", "POST"))
     def reset_password(token: str):
+        if not local_password_auth_enabled():
+            abort(404)
         token_hash = hash_token(token)
         reset = get_db().execute(
             """
@@ -4776,10 +4815,7 @@ def register_routes(app: Flask) -> None:
             if is_admin:
                 abort(403)
             draft_body = (request.form.get("body") or "").strip()
-            if not draft_body:
-                message_errors.append("Write a message before sending.")
-            elif len(draft_body) > MESSAGE_BODY_MAX_LENGTH:
-                message_errors.append(f"Keep messages under {MESSAGE_BODY_MAX_LENGTH} characters.")
+            message_errors.extend(validate_message_body(draft_body))
             try:
                 idempotency_key = request_idempotency_key()
             except IdempotencyError as exc:
@@ -5956,6 +5992,14 @@ def clerk_frontend_api_url() -> str:
     return normalized_clerk_frontend_api_url()
 
 
+def clerk_ui_script_url() -> str:
+    return f"{clerk_frontend_api_url()}/npm/@clerk/ui@{CLERK_UI_VERSION}/dist/ui.browser.js"
+
+
+def clerk_js_script_url() -> str:
+    return f"{clerk_frontend_api_url()}/npm/@clerk/clerk-js@{CLERK_JS_VERSION}/dist/clerk.browser.js"
+
+
 def clerk_proxy_url() -> str:
     frontend_api_url = normalized_clerk_frontend_api_url()
     if frontend_api_url.startswith(CLERK_PROXY_PATH):
@@ -5981,6 +6025,11 @@ def clerk_entry_enabled() -> bool:
         and clerk_publishable_key()
         and normalized_clerk_frontend_api_url()
     )
+
+
+def local_password_auth_enabled() -> bool:
+    """Keep legacy password fixtures isolated to the local development adapter."""
+    return current_app.config.get("AUTH_PROVIDER") == "local"
 
 
 def verify_turnstile_submission() -> bool:
@@ -6989,6 +7038,15 @@ def validate_contractor_profile_form(form: dict) -> list[str]:
         errors.append(f"Add at least {PROFILE_INTRO_MIN_LENGTH} characters about your business.")
     elif len(form["intro"]) > PROFILE_INTRO_MAX_LENGTH:
         errors.append(f"Keep the intro under {PROFILE_INTRO_MAX_LENGTH} characters.")
+    for field, label in (
+        ("business_name", "business name"),
+        ("service_area", "service area"),
+        ("intro", "profile intro"),
+        ("insurance_status", "insurance note"),
+        ("license_number", "license note"),
+    ):
+        if contains_disallowed_personal_data((form[field],)):
+            errors.append(personal_data_error(label))
     if len(form["insurance_status"]) > PROFILE_INSURANCE_MAX_LENGTH:
         errors.append(f"Keep the insurance status under {PROFILE_INSURANCE_MAX_LENGTH} characters.")
     if len(form["license_number"]) > PROFILE_LICENSE_MAX_LENGTH:
@@ -7238,6 +7296,8 @@ def validate_job_form(form: dict) -> list[str]:
         errors.append(f"Add at least {JOB_DESCRIPTION_MIN_LENGTH} characters about the work.")
     elif len(form["description"]) > JOB_DESCRIPTION_MAX_LENGTH:
         errors.append(f"Keep the description under {JOB_DESCRIPTION_MAX_LENGTH} characters.")
+    if contains_disallowed_personal_data((form["title"], form["description"])):
+        errors.append(personal_data_error("project title or description"))
     if form["desired_date"]:
         try:
             desired_date = date.fromisoformat(form["desired_date"])
@@ -7312,6 +7372,16 @@ def validate_bid_form(form: dict[str, str]) -> list[str]:
         errors.append("Add availability.")
     elif len(form["availability"]) > BID_AVAILABILITY_MAX_LENGTH:
         errors.append(f"Keep availability under {BID_AVAILABILITY_MAX_LENGTH} characters.")
+    for field in (
+        "scope_note",
+        "price_range",
+        "timeline",
+        "experience",
+        "questions",
+        "availability",
+    ):
+        if contains_disallowed_personal_data((form[field],)):
+            errors.append(personal_data_error(field.replace("_", " ")))
     return errors
 
 
@@ -7393,6 +7463,16 @@ def message_error_field(message: str) -> str:
     if "message" in message or "1000" in message:
         return "body"
     return ""
+
+
+def validate_message_body(body: str) -> list[str]:
+    if not body:
+        return ["Write a message before sending."]
+    if len(body) > MESSAGE_BODY_MAX_LENGTH:
+        return [f"Keep messages under {MESSAGE_BODY_MAX_LENGTH} characters."]
+    if contains_disallowed_personal_data((body,)):
+        return [personal_data_error("message")]
+    return []
 
 
 def bid_limits() -> dict[str, int]:
@@ -8635,7 +8715,9 @@ def save_upload(file, prefix: str) -> dict | None:
     target = target_dir / stored_name
     file.save(target)
     return {
-        "original_filename": original,
+        # Filenames can contain personal data. The source name is used only to
+        # validate the extension and is never retained or presented.
+        "original_filename": f"workdoe-photo.{ext}",
         "stored_path": stored_path,
         "content_type": content_type,
         "size_bytes": target.stat().st_size,

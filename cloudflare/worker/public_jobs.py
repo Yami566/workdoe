@@ -131,7 +131,10 @@ def public_job_payload(row, target: str = "start") -> dict:
         "city": row_value(row, "city", ""),
         "state": row_value(row, "state", ""),
         "budget": budget_label(row),
-        "desired_date": row_value(row, "desired_date", "") or "",
+        # Demonstration fixtures are not scheduled work. Do not expose their
+        # static fixture dates through the public map API, where another
+        # renderer could mistake them for a live consumer request.
+        "desired_date": "" if is_demo else row_value(row, "desired_date", "") or "",
         "photo_count": int(row_value(row, "photo_count", 0) or 0),
         "lat": row_value(row, "approx_lat"),
         "lng": row_value(row, "approx_lng"),

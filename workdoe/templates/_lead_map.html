@@ -11,6 +11,10 @@
   aria-describedby="lead-map-status"
 >
   <button class="button compact map-search-area" type="button" data-search-map-area hidden>Search this area</button>
+  <div class="map-view-controls" aria-label="Map controls">
+    <button class="button compact map-view-control" type="button" data-show-map-area title="Describe the current approximate map area">Map area</button>
+    <button class="button compact map-view-control" type="button" data-reset-map-view title="Return to the default DMV map view">DMV view</button>
+  </div>
   <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Map loading. Job list is ready.</p>
   <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Map loading. Job list is ready.</p>
 </div>

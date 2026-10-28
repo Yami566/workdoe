@@ -25,36 +25,6 @@
     return input ? input.value.trim() : "";
   }
 
-  function clerkUserEmail() {
-    var user = window.Clerk && window.Clerk.user;
-    if (!user) {
-      return "";
-    }
-    if (user.primaryEmailAddress && user.primaryEmailAddress.emailAddress) {
-      return String(user.primaryEmailAddress.emailAddress).trim().toLowerCase();
-    }
-    var emailAddresses = user.emailAddresses || [];
-    for (var index = 0; index < emailAddresses.length; index += 1) {
-      if (emailAddresses[index] && emailAddresses[index].emailAddress) {
-        return String(emailAddresses[index].emailAddress).trim().toLowerCase();
-      }
-    }
-    return "";
-  }
-
-  function clerkUserDisplayName() {
-    var user = window.Clerk && window.Clerk.user;
-    if (!user) {
-      return "";
-    }
-    var name = String(user.fullName || user.firstName || "").trim();
-    if (name) {
-      return name.slice(0, 120);
-    }
-    var email = clerkUserEmail();
-    return email ? email.split("@", 1)[0].slice(0, 120) : "";
-  }
-
   function entryScope(node) {
     return node.closest(".clerk-entry-panel") || document;
   }
@@ -162,7 +132,6 @@
     var state = {
       intent: selectedIntent(scope),
       displayName: inputValue(scope, "[data-clerk-display-name]").slice(0, 120),
-      companyName: inputValue(scope, "[data-clerk-company-name]").slice(0, 120),
       savedAt: Date.now()
     };
     try {
@@ -183,15 +152,11 @@
     var scope = entryScope(node);
     var roleChoice = scope.querySelector('input[name="intent"][value="' + state.intent + '"]');
     var displayName = scope.querySelector("[data-clerk-display-name]");
-    var companyName = scope.querySelector("[data-clerk-company-name]");
     if (roleChoice) {
       roleChoice.checked = true;
     }
     if (displayName && !displayName.value) {
       displayName.value = String(state.displayName || "").slice(0, 120);
-    }
-    if (companyName && !companyName.value) {
-      companyName.value = String(state.companyName || "").slice(0, 120);
     }
   }
 
@@ -210,7 +175,7 @@
     var scope = entryScope(node);
     restoreProfileState(node);
     scope.addEventListener("input", function (event) {
-      if (event.target.matches('[name="intent"], [data-clerk-display-name], [data-clerk-company-name]')) {
+      if (event.target.matches('[name="intent"], [data-clerk-display-name]')) {
         writeProfileState(node);
       }
     });
@@ -306,16 +271,22 @@
         return true;
       }
 
+      var displayName = inputValue(scope, "[data-clerk-display-name]");
+      if (!displayName) {
+        setMessage(node, "Choose a public business name or non-identifying handle before continuing.");
+        var displayNameInput = scope.querySelector("[data-clerk-display-name]");
+        if (displayNameInput && typeof displayNameInput.focus === "function") {
+          displayNameInput.focus();
+        }
+        delete node.dataset.clerkOnboarding;
+        return false;
+      }
+
       setMessage(node, "Creating your Workdoe workspace...");
       var onboardPayload = {
         role: role,
-        display_name: inputValue(scope, "[data-clerk-display-name]") || clerkUserDisplayName(),
-        company_name: inputValue(scope, "[data-clerk-company-name]")
+        display_name: displayName
       };
-      var email = clerkUserEmail();
-      if (email) {
-        onboardPayload.email = email;
-      }
       var onboard = await fetchJson(node.dataset.onboardUrl || "/api/auth/onboard", {
         method: "POST",
         headers: {
@@ -408,17 +379,30 @@
     return window.location.pathname + window.location.search;
   }
 
-  function mountClerkSignIn(node) {
-    if (typeof window.Clerk.mountSignIn !== "function") {
-      throw new Error("Clerk sign-in is temporarily unavailable.");
-    }
+  function mountClerkEntry(node) {
     var returnUrl = clerkReturnUrl();
-    window.Clerk.mountSignIn(node, {
-      routing: "hash",
-      withSignUp: true,
-      forceRedirectUrl: returnUrl,
-      signUpForceRedirectUrl: returnUrl
-    });
+    if (node.dataset.clerkMode === "start") {
+      if (typeof window.Clerk.mountSignUp !== "function") {
+        throw new Error("Clerk account creation is temporarily unavailable.");
+      }
+      window.Clerk.mountSignUp(node, {
+        routing: "hash",
+        forceRedirectUrl: returnUrl,
+        signInUrl: "/login",
+        signInForceRedirectUrl: returnUrl
+      });
+    } else {
+      if (typeof window.Clerk.mountSignIn !== "function") {
+        throw new Error("Clerk sign-in is temporarily unavailable.");
+      }
+      window.Clerk.mountSignIn(node, {
+        routing: "hash",
+        withSignUp: false,
+        forceRedirectUrl: returnUrl,
+        signUpUrl: node.dataset.signUpUrl || "/create-account",
+        signUpForceRedirectUrl: returnUrl
+      });
+    }
     node.dataset.state = "ready";
     setMessage(node, "");
     hideEntryLoading(node);
@@ -488,7 +472,7 @@
       return;
     }
 
-    mountClerkSignIn(node);
+    mountClerkEntry(node);
   }
 
   function boot() {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from base64 import urlsafe_b64decode
 from binascii import Error as Base64Error
+from datetime import date
 from html import escape
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -24,6 +25,8 @@ ENTRY_JOB_LIMIT = 50
 DEFAULT_CLERK_FRONTEND_API_URL = "https://workdoe.com/__clerk"
 CLERK_SIGNIN_MODE = "signin"
 CLERK_START_MODE = "start"
+CLERK_UI_VERSION = "1.41.2"
+CLERK_JS_VERSION = "6.40.1"
 WORKDOE_PUBLIC_DOMAIN = "workdoe.com"
 CLERK_PROXY_PATH = "/__clerk"
 CLERK_DEVELOPMENT_SUFFIX = ".clerk.accounts.dev"
@@ -33,6 +36,10 @@ CLERK_IMAGE_ORIGIN = "https://img.clerk.com"
 CLERK_TELEMETRY_ORIGINS = (
     "https://clerk-telemetry.com",
     "https://*.clerk-telemetry.com",
+)
+DEFAULT_MAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+DEFAULT_MAP_TILE_ATTRIBUTION = (
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 )
 
 
@@ -47,6 +54,23 @@ def first_query_value(params: dict, key: str, default: str = "") -> str:
     if isinstance(value, list):
         value = value[0] if value else default
     return str(value or default)
+
+
+def map_tile_configuration(
+    tile_url: str | None = None,
+    tile_attribution: str | None = None,
+) -> tuple[str, str]:
+    """Return a complete HTTPS Leaflet tile configuration from reviewed env vars."""
+    candidate_url = str(tile_url or "").strip()
+    required_tokens = ("{z}", "{x}", "{y}")
+    if not candidate_url.startswith("https://") or not all(
+        token in candidate_url for token in required_tokens
+    ):
+        candidate_url = DEFAULT_MAP_TILE_URL
+    candidate_attribution = str(tile_attribution or "").strip()
+    if not candidate_attribution:
+        candidate_attribution = DEFAULT_MAP_TILE_ATTRIBUTION
+    return candidate_url, candidate_attribution
 
 
 def safe_entry_next(value: str | None, fallback: str = "") -> str:
@@ -180,6 +204,14 @@ def clerk_proxy_url(frontend_api_url: str) -> str:
     return ""
 
 
+def clerk_ui_asset_url(frontend_api_url: str) -> str:
+    return f"{frontend_api_url}/npm/@clerk/ui@{CLERK_UI_VERSION}/dist/ui.browser.js"
+
+
+def clerk_js_asset_url(frontend_api_url: str) -> str:
+    return f"{frontend_api_url}/npm/@clerk/clerk-js@{CLERK_JS_VERSION}/dist/clerk.browser.js"
+
+
 def clerk_development_frontend_api_url(publishable_key: str | None) -> str:
     value = str(publishable_key or "").strip()
     if not value.startswith("pk_test_"):
@@ -250,6 +282,18 @@ def photo_count_label(value) -> str:
     except (TypeError, ValueError):
         count = 0
     return f"{count} {'photo' if count == 1 else 'photos'}"
+
+
+def calendar_date_label(value) -> str:
+    """Present an ISO calendar date without applying a browser timezone."""
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = date.fromisoformat(raw)
+    except ValueError:
+        return raw
+    return parsed.strftime("%b %d").replace(" 0", " ")
 
 
 def public_jobs_api_url(params: dict, target: str) -> str:
@@ -338,7 +382,7 @@ def selected_lane_action_html(filters: dict[str, str], project_count: int) -> st
           <img src="/vendor/tabler-icons/{escape(selected['icon'])}" alt="" width="28" height="28">
           <div><small>Lane selected</small><strong>{escape(selected['name'])}</strong><span>{project_count} open {noun}</span></div>
         </div>
-        <a class="button primary compact" href="{escape(post_url)}">{'Post this task' if selected_service else 'Post in this lane'}</a>
+        <a class="button primary compact" href="{escape(post_url)}" data-dialog-title="Post a project">{'Post this task' if selected_service else 'Post in this lane'}</a>
       </section>"""
 
 
@@ -470,11 +514,12 @@ def project_detail_html(row, target: str) -> str:
         </div>"""
     project = public_job_payload(row, target=target)
     sample = '<span class="sample-badge">Demonstration project</span>' if project["is_demo"] else '<span class="live-badge">Open project</span>'
-    date_html = (
-        f'<time datetime="{escape(project["desired_date"])}">{escape(project["desired_date"])}</time>'
+    date_label = "Sample timing" if project["is_demo"] else (
+        f'<time datetime="{escape(project["desired_date"])}">{escape(calendar_date_label(project["desired_date"]))}</time>'
         if project["desired_date"]
         else "Flexible"
     )
+    date_heading = "Timing" if project["is_demo"] else "Desired date"
     return f"""
         <article class="market-project-detail" data-project-detail-content data-job-id="{escape(str(project['id']))}">
           <div class="project-detail-heading">
@@ -485,7 +530,7 @@ def project_detail_html(row, target: str) -> str:
           <p class="project-detail-location">{escape(project['city'])}, {escape(project['state'])}</p>
           <dl class="project-facts">
             <div><dt>Estimated budget</dt><dd>{escape(project['budget'])}</dd></div>
-            <div><dt>Desired date</dt><dd>{date_html}</dd></div>
+            <div><dt>{date_heading}</dt><dd>{date_label}</dd></div>
           </dl>
           <div class="project-description">
             <h3>Field brief</h3>
@@ -615,7 +660,13 @@ def build_entry_shell_html(
     clerk_frontend_api_url: str,
     auth_provider: str = "clerk",
     turnstile_site_key: str = "",
+    map_tile_url: str = "",
+    map_tile_attribution: str = "",
 ) -> str:
+    map_tile_url, map_tile_attribution = map_tile_configuration(
+        map_tile_url,
+        map_tile_attribution,
+    )
     embedded = first_query_value(params, "embed") == "1"
     native_email_code = auth_provider == "workdoe_email_code"
     development_frontend_api_url = clerk_development_frontend_api_url(
@@ -715,13 +766,9 @@ def build_entry_shell_html(
         f"""
 {role_segment(intent)}
         <label>
-          Name
-          <input name="display_name" autocomplete="name" maxlength="120" aria-describedby="entry-name-help" data-clerk-display-name data-email-code-display-name>
-          <span id="entry-name-help" class="help-text">Shown on your Workdoe profile.</span>
-        </label>
-        <label>
-          Business or household name <span class="optional-label">Optional</span>
-          <input name="company_name" autocomplete="organization" maxlength="120" data-clerk-company-name data-email-code-company-name>
+          Public business name or handle
+          <input name="display_name" autocomplete="nickname" maxlength="120" aria-describedby="entry-name-help" data-clerk-display-name data-email-code-display-name required>
+          <span id="entry-name-help" class="help-text">Use a non-identifying business label. Do not use a legal name, email, phone number, or street address.</span>
         </label>"""
         if path != "/login"
         else ""
@@ -805,8 +852,8 @@ def build_entry_shell_html(
           <button class="button secondary" type="button" data-clerk-session-retry>Use a new email code</button>
         </div>
         <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>"""
-        auth_scripts_html = f"""  <script defer crossorigin="anonymous" src="{escape(clerk_asset_base_url)}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
-  <script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_script_attr} src="{escape(clerk_asset_base_url)}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
+        auth_scripts_html = f"""  <script defer crossorigin="anonymous" src="{escape(clerk_ui_asset_url(clerk_asset_base_url))}"></script>
+  <script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_script_attr} src="{escape(clerk_js_asset_url(clerk_asset_base_url))}"></script>
   <script defer src="/clerk-entry.js?v={ASSET_RELEASE_TOKEN}"></script>"""
     if path == "/":
         auth_scripts_html = ""
@@ -884,9 +931,9 @@ def build_entry_shell_html(
     <div class="market-area-label"><span aria-hidden="true"></span>DC, Maryland &amp; Virginia</div>
     <nav class="market-nav" aria-label="Primary">
       <a href="/"{browse_current}>Browse projects</a>
-      <a href="/post-project"{post_current}>Post project</a>
-      <a href="/create-account?intent=post-job"{start_current}>Create account</a>
-      <a href="/login"{login_current}>Sign in</a>
+      <a href="/post-project" data-dialog-title="Post a project"{post_current}>Post project</a>
+      <a href="/create-account?intent=post-job" data-dialog-title="Create account"{start_current}>Create account</a>
+      <a href="/login" data-dialog-title="Sign in"{login_current}>Sign in</a>
     </nav>
   </header>
   <div class="market-mobile-tabs" role="tablist" aria-label="Marketplace view">
@@ -934,7 +981,7 @@ def build_entry_shell_html(
         <span>{map_payload['live_count']} live / {map_payload['demo_count']} sample</span>
       </div>
       <div class="market-map-frame">
-        <div id="lead-map" data-map data-map-workspace data-jobs-api="{escape(jobs_api_url)}" data-tile-url="https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png" data-tile-attribution='&amp;copy; &lt;a href="https://www.openstreetmap.org/copyright"&gt;OpenStreetMap&lt;/a&gt;' role="region" tabindex="0" aria-label="Interactive map of approximate DMV project locations" aria-describedby="lead-map-status">
+        <div id="lead-map" data-map data-map-workspace data-jobs-api="{escape(jobs_api_url)}" data-tile-url="{escape(map_tile_url)}" data-tile-attribution='{escape(map_tile_attribution)}' role="region" tabindex="0" aria-label="Interactive map of approximate DMV project locations" aria-describedby="lead-map-status">
           <button class="button compact map-search-area" type="button" data-search-map-area hidden>Search this area</button>
           <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Loading the project map. The project list is ready.</p>
           <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Loading the project map. The project list is ready.</p>

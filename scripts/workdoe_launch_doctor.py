@@ -248,7 +248,7 @@ def next_actions(
     github_path_ready = github_release_path_ready(github)
     release_credentials_ready = not token_missing or github_path_ready
     blockers = "\n".join(cloudflare["blockers"])
-    if not local_ok:
+    if not local_ok and not live:
         actions.append("python run.py")
 
     if not live:
@@ -343,14 +343,24 @@ def build_doctor(
                     "Cloudflare is missing required secret bindings: "
                     + ", ".join(missing_secret_names)
                 )
+    sanitized_secret_evidence_ready = any(
+        phase.get("name") == "identity-and-secrets"
+        and phase.get("status") == "ready"
+        for phase in cloudflare.get("phases", [])
+        if isinstance(phase, dict)
+    )
     evidence_missing_secret_names = missing_worker_secret_names(cloudflare["blockers"])
     effective_missing_secret_names = (
         missing_secret_names
         if secret_bindings_checked and missing_secret_names is not None
+        else []
+        if sanitized_secret_evidence_ready
         else evidence_missing_secret_names
     )
     binding_evidence_source = "live-wrangler" if secret_bindings_checked else "unavailable"
-    if not secret_bindings_checked and evidence_missing_secret_names:
+    if not secret_bindings_checked and (
+        sanitized_secret_evidence_ready or evidence_missing_secret_names
+    ):
         binding_evidence_source = "sanitized-evidence"
         secret_bindings_summary = (
             "Live Wrangler secret-name probing requires a local API token; sanitized "
@@ -401,8 +411,17 @@ def build_doctor(
     phases = [
         DoctorPhase(
             name="local-prototype",
-            status="ready" if local_ok else "pending",
-            summary=f"{local_url} returned {local_detail}." if local_ok else f"{local_url} is not reachable: {local_detail}",
+            status="ready" if local_ok else ("not-running" if live else "pending"),
+            summary=(
+                f"{local_url} returned {local_detail}."
+                if local_ok
+                else (
+                    f"{local_url} is not reachable: {local_detail}. "
+                    "A local development server is not a production release blocker."
+                    if live
+                    else f"{local_url} is not reachable: {local_detail}"
+                )
+            ),
             next_command="python run.py" if not local_ok else "",
         ),
         DoctorPhase(
@@ -449,7 +468,11 @@ def build_doctor(
                     + (
                         f"Worker secret evidence: {len(WORKER_SECRET_NAMES) - len(effective_missing_secret_names)}/{len(WORKER_SECRET_NAMES)} required present."
                         if effective_missing_secret_names
-                        else "Direct non-interactive secret-name probing requires CLOUDFLARE_API_TOKEN; the release gate uses sanitized local evidence when present."
+                        else (
+                            "Worker secret names are proven by sanitized local evidence."
+                            if binding_evidence_source == "sanitized-evidence"
+                            else "Direct non-interactive secret-name probing requires CLOUDFLARE_API_TOKEN; the release gate uses sanitized local evidence when present."
+                        )
                     )
                 )
             ),
@@ -470,11 +493,11 @@ def build_doctor(
         blockers.append("Wrangler is not authenticated for live Cloudflare operations.")
     if live and not dns_ready:
         blockers.extend(f"DNS: {blocker}" for blocker in dns_blockers)
-    if not local_ok:
+    if not local_ok and not live:
         blockers.append(f"Local prototype is not reachable at {local_url}.")
 
     ready = (
-        local_ok
+        (local_ok or live)
         and (github.ready if github else True)
         and (wrangler_authenticated if live else True)
         and cloudflare_release_ready
@@ -498,6 +521,13 @@ def build_doctor(
                     if github_path_ready and token_missing
                     else []
                 )
+                + (
+                    [
+                        "This is a pre-deployment readiness report; public acceptance still requires the post-deploy production smoke check."
+                    ]
+                    if live
+                    else []
+                )
             )
         ),
         "dns_addresses": dns_addresses,
@@ -510,7 +540,7 @@ def build_doctor(
                 len(present_secret_names)
                 if secret_bindings_checked
                 else len(WORKER_SECRET_NAMES) - len(effective_missing_secret_names)
-                if evidence_missing_secret_names
+                if binding_evidence_source == "sanitized-evidence"
                 else 0
             ),
             "missing": effective_missing_secret_names,
@@ -535,7 +565,7 @@ def render_text(payload: dict) -> str:
         "Workdoe launch doctor",
         f"Domain: {payload['domain']}",
         f"Live checks: {payload['live']}",
-        f"Ready: {payload['ready']}",
+        f"Ready to deploy: {payload['ready']}",
         "",
         "Phases:",
     ]

@@ -19,9 +19,6 @@
       "preview_database_id": "ba816597-68ba-40a9-830e-751f44e4f54b"
     }
   ],
-  "images": {
-    "binding": "IMAGES"
-  },
   "main": "worker/entry.py",
   "name": "workdoe",
   "observability": {
@@ -100,9 +97,12 @@
     "WORKDOE_AUTH_PROVIDER": "clerk",
     "WORKDOE_DOMAIN": "workdoe.com",
     "WORKDOE_EMAIL_FROM": "no-reply@workdoe.com",
-    "WORKDOE_ENFORCE_SERVICE_ACTIVATION": "true",
+    "WORKDOE_ENFORCE_SERVICE_ACTIVATION": "false",
     "WORKDOE_ENV": "production",
     "WORKDOE_LOGIN_MODE": "same_domain_email_code",
+    "WORKDOE_MAP_TILE_ATTRIBUTION": "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a>",
+    "WORKDOE_MAP_TILE_URL": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "WORKDOE_MEDIA_UPLOADS_ENABLED": "false",
     "WORKDOE_PUBLIC_URL": "https://workdoe.com"
   },
   "workers_dev": false

@@ -2,6 +2,7 @@
   "use strict";
 
   document.addEventListener("DOMContentLoaded", function () {
+    var defaultDmvView = { center: [38.9072, -77.0369], zoom: 9 };
     var mapElement = document.getElementById("lead-map");
     if (!mapElement || !window.L) {
       return;
@@ -17,18 +18,31 @@
     var filterForm = document.querySelector("[data-market-filters]");
     var clearButton = document.querySelector("[data-clear-market-filters]");
     var searchAreaButton = document.querySelector("[data-search-map-area]");
+    var showMapAreaButton = document.querySelector("[data-show-map-area]");
+    var resetMapViewButton = document.querySelector("[data-reset-map-view]");
     var resultCount = document.querySelector("[data-project-result-count]");
     var mapResultCount = document.querySelector("[data-map-result-count]");
     var detailContent = document.querySelector("[data-project-detail-content]");
     var jobsApi = mapElement.getAttribute("data-jobs-api") || "";
     var assetRoot = (mapElement.getAttribute("data-asset-root") || "").replace(/\/+$/, "");
-    var tileUrl = mapElement.getAttribute("data-tile-url") || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-    var tileAttribution = mapElement.getAttribute("data-tile-attribution") || '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+    var tileUrl = mapElement.getAttribute("data-tile-url") || "";
+    var tileAttribution = mapElement.getAttribute("data-tile-attribution") || "";
+    if (!tileUrl || !tileAttribution) {
+      if (statusElement) {
+        statusElement.textContent = "Map configuration is unavailable. Project list is ready.";
+      }
+      var loadingMessage = document.getElementById("lead-map-loading");
+      if (loadingMessage) {
+        loadingMessage.textContent = "Map configuration is unavailable. Project list is ready.";
+        loadingMessage.removeAttribute("aria-hidden");
+      }
+      return;
+    }
     var map = window.L.map(mapElement, {
-      scrollWheelZoom: false,
+      scrollWheelZoom: true,
       zoomControl: true,
       maxZoom: 18
-    }).setView([38.9072, -77.0369], 9);
+    }).setView(defaultDmvView.center, defaultDmvView.zoom);
     var markerLayer = createMarkerLayer(map);
     var markerByJobId = {};
     var allJobs = readSeedJobs();
@@ -37,6 +51,7 @@
     var activeViewport = readViewportFromUrl();
     var ignoreNextMoveEnd = false;
     var requestSequence = 0;
+    var mapResizeTimer = null;
 
     mapElement.classList.add("map-ready");
     window.L.tileLayer(tileUrl, {
@@ -48,6 +63,7 @@
     bindMobileTabs();
     bindMapSearch();
     bindPopupOverlayState();
+    bindMapViewport();
     if (activeViewport) {
       moveMap(function () {
         map.fitBounds(viewportBounds(activeViewport), { padding: [28, 28], maxZoom: 13 });
@@ -161,6 +177,45 @@
           loadJobs(viewportFromBounds(map.getBounds()), false);
         });
       }
+      if (showMapAreaButton) {
+        showMapAreaButton.addEventListener("click", function () {
+          var center = map.getCenter();
+          setMapStatus(
+            "Current map area is approximately " +
+              center.lat.toFixed(2) + " north, " +
+              Math.abs(center.lng).toFixed(2) +
+              (center.lng < 0 ? " west" : " east") +
+              ". Workdoe does not access your device location."
+          );
+        });
+      }
+      if (resetMapViewButton) {
+        resetMapViewButton.addEventListener("click", function () {
+          activeViewport = null;
+          moveMap(function () {
+            map.setView(defaultDmvView.center, defaultDmvView.zoom);
+          });
+          updateUrlState();
+          if (jobsApi && window.fetch) {
+            loadJobs(null, false);
+          } else {
+            applyFilters(false);
+          }
+          setMapStatus("DMV map view restored. Project locations remain approximate.");
+        });
+      }
+    }
+
+    function bindMapViewport() {
+      window.addEventListener("resize", function () {
+        if (mapResizeTimer) {
+          window.clearTimeout(mapResizeTimer);
+        }
+        mapResizeTimer = window.setTimeout(function () {
+          map.invalidateSize({ pan: false, debounceMoveend: true });
+          mapResizeTimer = null;
+        }, 150);
+      });
     }
 
     function loadJobs(viewport, fitMap) {
@@ -448,6 +503,8 @@
       var bidding = job.bid_window || {};
       var biddingFact = bidding.usage_label ? "<div><dt>Mini bids</dt><dd>" + escapeHtml(bidding.usage_label) + "</dd></div>" : "";
       var actionLabel = job.action_label || "Review and bid";
+      var timingLabel = job.is_demo ? "Sample timing" : projectDateLabel(job.desired_date);
+      var timingHeading = job.is_demo ? "Timing" : "Desired date";
       var licensePreference = job.license_preference
         ? '<p class="license-preference-note"><img src="' + assetRoot + '/vendor/tabler-icons/home-check.svg" alt=""><span><strong>Current license record preferred</strong><small>Preference only. Confirm scope and legal eligibility directly.</small></span></p>'
         : "";
@@ -457,7 +514,7 @@
           "<h2>" + escapeHtml(job.title || "Open project") + "</h2>" +
           '<p class="project-detail-location">' + escapeHtml(placeLabel(job)) + "</p>" +
           '<dl class="project-facts"><div><dt>Estimated budget</dt><dd>' + escapeHtml(job.budget || "Budget not provided") + "</dd></div>" +
-          "<div><dt>Desired date</dt><dd>" + escapeHtml(job.desired_date || "Flexible") + "</dd></div>" + biddingFact + "</dl>" +
+          "<div><dt>" + escapeHtml(timingHeading) + "</dt><dd>" + escapeHtml(timingLabel) + "</dd></div>" + biddingFact + "</dl>" +
           licensePreference +
           '<div class="project-description"><h3>Project overview</h3><p>' + escapeHtml(job.description || "Project details are available after sign-in.") + "</p></div>" +
           '<p class="project-privacy-note">Location is intentionally approximate until a match is approved.</p>' +
@@ -465,6 +522,26 @@
         "</article>"
       );
       detailContent = document.querySelector("[data-project-detail-content]");
+    }
+
+    function projectDateLabel(value) {
+      if (typeof value !== "string" || !value) {
+        return "Flexible";
+      }
+      var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+      if (!match) {
+        return value;
+      }
+      var monthNames = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+      ];
+      var month = Number(match[2]);
+      var day = Number(match[3]);
+      if (month < 1 || month > 12 || day < 1 || day > 31) {
+        return value;
+      }
+      return monthNames[month - 1] + " " + day;
     }
 
     function updateCounts() {

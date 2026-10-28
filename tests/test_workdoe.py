@@ -14,6 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from werkzeug.datastructures import FileStorage
 from werkzeug.security import generate_password_hash
 
 import workdoe
@@ -26,10 +27,12 @@ from workdoe import (
     normalize_clerk_frontend_api_url,
     normalize_login_code_submission,
     photo_count_label,
+    save_upload,
     uploaded_file_signature_matches,
 )
 from workdoe.asset_release import ASSET_RELEASE_TOKEN
 from workdoe.bid_comparison import bid_comparison
+from workdoe.content_privacy import contains_disallowed_personal_data
 from workdoe.contractor_proposal_templates import PROPOSAL_TEMPLATE_LIMIT
 from workdoe.pilot_metrics import pilot_cell_metrics
 from workdoe.project_readiness import project_brief_readiness
@@ -46,6 +49,7 @@ from workdoe.service_scope import (
     scope_readiness,
     validate_scope_answers,
 )
+from workdoe.service_taxonomy import SERVICE_BY_SLUG
 
 ROOT = Path(__file__).resolve().parents[1]
 FUTURE_DESIRED_DATE = (datetime.now(tz=UTC).date() + timedelta(days=30)).isoformat()
@@ -77,6 +81,18 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(png.stream.tell(), 0)
         disguised_html = SimpleNamespace(stream=BytesIO(b"<html>not an image"))
         self.assertFalse(uploaded_file_signature_matches(disguised_html, "png"))
+
+    def test_local_upload_discards_the_source_filename(self):
+        uploaded = FileStorage(
+            stream=BytesIO(b"\xff\xd8\xffexample image"),
+            filename="123-Main-Street-backyard.jpg",
+            content_type="image/jpeg",
+        )
+        with self.app.app_context():
+            saved = save_upload(uploaded, "jobs/1")
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved["original_filename"], "workdoe-photo.jpg")
+        self.assertNotIn("Main", saved["original_filename"])
 
     def test_core_marketplace_creates_replay_from_hashed_idempotency_keys(self):
         self.login("client@workdoe.local", "workdoe-client")
@@ -339,6 +355,36 @@ class WorkdoeFlowTests(unittest.TestCase):
             )
         )
 
+    def test_advisory_only_beta_keeps_all_curated_services_postable(self):
+        self.assertFalse(self.app.config["ENFORCE_SERVICE_ACTIVATION"])
+        self.assertEqual(len(SERVICE_BY_SLUG), 53)
+        self.assertEqual(len(SERVICE_POLICY_REGISTRY), len(SERVICE_BY_SLUG))
+        self.login("client@workdoe.local", "workdoe-client")
+        payload = {
+            "idempotency_key": "test-advisory-plumbing-repeat",
+            "title": "Replace a bathroom faucet",
+            "category": "Plumbing",
+            "service_group_slug": "home-systems",
+            "service_slug": "plumbing",
+            "project_setting": "house",
+            "city": "Washington",
+            "state": "DC",
+            "zip_code": "20003",
+            "desired_date": FUTURE_DESIRED_DATE,
+            "description": "Replace a leaking bathroom faucet with a compatible new fixture.",
+            "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
+        }
+
+        posted = self.client.post("/jobs/new", data=payload, follow_redirects=True)
+        self.assertIn(b"Job posted", posted.data)
+        job = self.one("SELECT * FROM jobs WHERE title = ?", (payload["title"],))
+        self.assertEqual(job["service_slug"], "plumbing")
+        acknowledgement = self.one(
+            "SELECT policy_version FROM service_policy_acknowledgements WHERE job_id = ?",
+            (job["id"],),
+        )
+        self.assertEqual(acknowledgement["policy_version"], SERVICE_POLICY_VERSION)
+
     def login(self, email, password):
         return self.client.post(
             "/login",
@@ -453,7 +499,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         clerk_account = self.client.get("/account")
         self.assertEqual(clerk_account.status_code, 200)
         self.assertIn(b"data-clerk-account", clerk_account.data)
-        self.assertIn(b"/__clerk/npm/@clerk/clerk-js@6/dist/clerk.browser.js", clerk_account.data)
+        self.assertIn(b"/__clerk/npm/@clerk/clerk-js@6.40.1/dist/clerk.browser.js", clerk_account.data)
         self.assertIn(b"clerk-account.js", clerk_account.data)
         csp = clerk_account.headers["Content-Security-Policy"]
         self.assertIn("https://*.protect.clerk.com", csp)
@@ -645,6 +691,15 @@ class WorkdoeFlowTests(unittest.TestCase):
             "script-src 'self' https://challenges.cloudflare.com",
             login.headers["Content-Security-Policy"],
         )
+
+        embedded_login = client.get("/login?embed=1")
+        self.assertIn(
+            b"turnstile/v0/api.js?render=explicit",
+            embedded_login.data,
+        )
+        self.assertIn(b'class="workdoe-turnstile"', embedded_login.data)
+        self.assertIn(b'data-workdoe-turnstile="true"', embedded_login.data)
+        self.assertNotIn(b'class="cf-turnstile"', embedded_login.data)
         self.assertIn(
             "frame-src https://challenges.cloudflare.com",
             login.headers["Content-Security-Policy"],
@@ -727,6 +782,103 @@ class WorkdoeFlowTests(unittest.TestCase):
         blocked = self.client.get(f"/media/jobs/{photo['id']}")
         self.assertEqual(blocked.status_code, 403)
         self.assert_no_store(blocked)
+
+    def test_marketplace_text_rejects_common_contact_and_street_details(self):
+        self.assertFalse(
+            contains_disallowed_personal_data(
+                ("Clean 12 windows across two stories before Friday.",)
+            )
+        )
+        for disallowed in (
+            "Contact homeowner@example.com to coordinate.",
+            "Call (202) 555-0180 before arrival.",
+            "The work is at 100 Private Street.",
+        ):
+            with self.subTest(disallowed=disallowed):
+                self.assertTrue(contains_disallowed_personal_data((disallowed,)))
+
+        self.login("client@workdoe.local", "workdoe-client")
+        rejected = self.client.post(
+            "/jobs/new",
+            data={
+                "title": "Clean storefront windows",
+                "category": "Window cleaning",
+                "city": "Alexandria",
+                "state": "VA",
+                "zip_code": "22314",
+                "desired_date": FUTURE_DESIRED_DATE,
+                "description": "Call (202) 555-0180 before cleaning the storefront windows.",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
+            },
+        )
+        self.assertEqual(rejected.status_code, 200)
+        self.assertIn(
+            b"Remove email addresses, phone numbers, or exact street addresses from the project title or description.",
+            rejected.data,
+        )
+        self.assertIsNone(
+            self.one("SELECT id FROM jobs WHERE title = ?", ("Clean storefront windows",))
+        )
+
+        bid_errors = workdoe.validate_bid_form(
+            {
+                "scope_note": "I will clean the windows and protect the nearby surfaces.",
+                "price_range": "$450-$650",
+                "timeline": "Two business days",
+                "experience": "Five years of exterior cleaning work in the DMV.",
+                "questions": "Please email contractor@example.com about parking.",
+                "availability": "Tuesday afternoon",
+                "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
+            }
+        )
+        self.assertIn(
+            "Remove email addresses, phone numbers, or exact street addresses from the questions.",
+            bid_errors,
+        )
+        self.assertEqual(
+            workdoe.validate_message_body("Meet at 100 Private Street after approval."),
+            [
+                "Remove email addresses, phone numbers, or exact street addresses from the message."
+            ],
+        )
+        profile_errors = workdoe.validate_contractor_profile_form(
+            {
+                "business_name": "100 Private Street Services",
+                "trades": "Window cleaning",
+                "service_area": "DMV area",
+                "intro": "We clean windows for local homes and small businesses.",
+                "insurance_status": "Available on request",
+                "license_number": "",
+                "years_in_business": "5",
+                "website": "",
+            }
+        )
+        self.assertIn(
+            "Remove email addresses, phone numbers, or exact street addresses from the business name.",
+            profile_errors,
+        )
+
+        safe_bid = {
+            "scope_note": "I will clean the windows and protect the nearby surfaces.",
+            "price_range": "$450-$650",
+            "timeline": "Two business days",
+            "experience": "Five years of exterior cleaning work in the DMV.",
+            "questions": "Is hose access available?",
+            "availability": "Tuesday afternoon",
+            "service_policy_acknowledgement": SERVICE_POLICY_VERSION,
+        }
+        for field, disclosure in (
+            ("price_range", "Call (202) 555-0180 for a final quote."),
+            ("timeline", "Meet at 100 Private Street before the work starts."),
+        ):
+            with self.subTest(field=field):
+                unsafe_bid = {**safe_bid, field: disclosure}
+                self.assertIn(
+                    "Remove email addresses, phone numbers, or exact street addresses from the "
+                    + field.replace("_", " ")
+                    + ".",
+                    workdoe.validate_bid_form(unsafe_bid),
+                )
 
     def test_client_edits_job_details_and_adds_photo(self):
         self.login("client@workdoe.local", "workdoe-client")
@@ -893,8 +1045,17 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(safety.status_code, 200)
         self.assertIn(b"Privacy Policy", privacy.data)
         self.assertIn(b"We do not sell personal information", privacy.data)
+        self.assertIn(b"Moose Bay and Company LLC", privacy.data)
+        self.assertIn(
+            b"New photo uploads are unavailable during this beta;", privacy.data
+        )
+        self.assertIn(
+            b"retained legacy or demonstration photos", privacy.data
+        )
         self.assertIn(b"Terms of Use", terms.data)
         self.assertIn(b"Prohibited work", terms.data)
+        self.assertIn(b"Moose Bay and Company LLC", terms.data)
+        self.assertIn(b"Moose Bay and Company LLC", safety.data)
         self.assertIn(b"Workdoe is not an emergency service", safety.data)
         for response in (privacy, terms, safety):
             self.assertIn(b'href="/privacy"', response.data)
@@ -1994,9 +2155,24 @@ class WorkdoeFlowTests(unittest.TestCase):
             },
         )
         self.assertEqual(invalid.status_code, 200)
-        self.assertIn(b"Add a household or organization name.", invalid.data)
+        self.assertIn(b"Add a private workspace label.", invalid.data)
         self.assertIn(b"Choose the kind of consumer workspace", invalid.data)
         self.assertIn(b"Choose where Workdoe should send bid reminders", invalid.data)
+
+        private_contact = self.client.post(
+            "/client/profile",
+            data={
+                "organization_name": "Meridian Corner Store",
+                "account_type": "small_business",
+                "notification_preference": "workdoe",
+                "profile_note": "Meet at 100 Private Street before opening.",
+            },
+        )
+        self.assertEqual(private_contact.status_code, 200)
+        self.assertIn(
+            b"Remove email addresses, phone numbers, or exact street addresses from the private workspace note.",
+            private_contact.data,
+        )
 
         updated = self.client.post(
             "/client/profile",
@@ -2059,6 +2235,21 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(bad_area.status_code, 200)
         self.assertIn(b"Add a short name for this project area.", bad_area.data)
         self.assertIn(b"Use a 5-digit ZIP code", bad_area.data)
+
+        private_area = self.client.post(
+            "/client/profile/locations",
+            data={
+                "label": "Call (202) 555-0180",
+                "city": "Washington",
+                "state": "DC",
+                "zip_code": "20003",
+            },
+        )
+        self.assertEqual(private_area.status_code, 200)
+        self.assertIn(
+            b"Remove email addresses, phone numbers, or exact street addresses from the project area label.",
+            private_area.data,
+        )
 
         saved = self.client.post(
             "/client/profile/locations",
@@ -3412,12 +3603,15 @@ class WorkdoeFlowTests(unittest.TestCase):
     def test_navigation_exposes_current_page_for_screen_readers(self):
         login = self.client.get("/login")
         self.assertEqual(login.status_code, 200)
-        self.assertIn(b'href="/login" aria-current="page">Sign in</a>', login.data)
+        self.assertIn(
+            b'href="/login" data-dialog-title="Sign in" aria-current="page">Sign in</a>',
+            login.data,
+        )
 
         create_account = self.client.get("/create-account")
         self.assertEqual(create_account.status_code, 200)
         self.assertIn(
-            b'href="/create-account" aria-current="page">Create account</a>',
+            b'href="/create-account" data-dialog-title="Create account" aria-current="page">Create account</a>',
             create_account.data,
         )
 
@@ -3425,9 +3619,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(post_project.status_code, 200)
         self.assertIn(b"<title>Post Project - Workdoe</title>", post_project.data)
         self.assertIn(b"<h1>What needs doing?</h1>", post_project.data)
+        self.assertIn(b"Review before posting", post_project.data)
         self.assertIn(b'aria-label="Project draft"', post_project.data)
         self.assertIn(
-            b'href="/post-project" aria-current="page">Post project</a>',
+            b'href="/post-project" data-dialog-title="Post a project" aria-current="page">Post project</a>',
             post_project.data,
         )
 
@@ -3461,6 +3656,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn("input:focus-visible", styles)
         self.assertIn("textarea:focus-visible", styles)
         self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
+        self.assertRegex(
+            styles,
+            r'(?s)@media \(max-width: 520px\) \{.*?'
+            r'input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\),\s*'
+            r'select,\s*textarea\s*\{\s*font-size: 16px;',
+        )
 
     def test_map_and_policy_controls_use_accessible_touch_targets(self):
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
@@ -3523,6 +3724,14 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertRegex(
             body,
             r"body:not\(\.dialog-fragment-body\)\s*\{[^}]*padding-bottom: calc\(68px \+ env\(safe-area-inset-bottom\)\);",
+        )
+
+    def test_compact_home_map_hides_decorative_badge_behind_map_controls(self):
+        styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
+        compact_mobile = styles.split("@media (max-width: 520px) {", 1)[1]
+        self.assertRegex(
+            compact_mobile,
+            r"\.home-map\.map-panel::after\s*\{[^}]*display: none;",
         )
 
     def test_login_returns_to_safe_next_after_permission_gate(self):
@@ -3685,27 +3894,20 @@ class WorkdoeFlowTests(unittest.TestCase):
                 }
             )
 
-        production_app = create_app(
-            {
-                "TESTING": True,
-                "DATABASE": str(self.root / "production.sqlite3"),
-                "UPLOAD_ROOT": str(self.root / "production-uploads"),
-                "PRODUCTION": True,
-                "SECRET_KEY": "production-secret-for-test",
-                "SEED_DEMO_DATA": False,
-                "SESSION_COOKIE_SECURE": True,
-                "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
-                "TURNSTILE_SECRET_KEY": "production-turnstile-secret",
-            }
-        )
-        self.assertTrue(production_app.config["SESSION_COOKIE_SECURE"])
-        self.assertFalse(production_app.config["SEED_DEMO_DATA"])
-        with production_app.app_context():
-            demo = get_db().execute(
-                "SELECT id FROM users WHERE email = ?",
-                ("client@workdoe.local",),
-            ).fetchone()
-        self.assertIsNone(demo)
+        with self.assertRaisesRegex(RuntimeError, "WORKDOE_AUTH_PROVIDER=clerk"):
+            create_app(
+                {
+                    "TESTING": True,
+                    "DATABASE": str(self.root / "production.sqlite3"),
+                    "UPLOAD_ROOT": str(self.root / "production-uploads"),
+                    "PRODUCTION": True,
+                    "SECRET_KEY": "production-secret-for-test",
+                    "SEED_DEMO_DATA": False,
+                    "SESSION_COOKIE_SECURE": True,
+                    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
+                    "TURNSTILE_SECRET_KEY": "production-turnstile-secret",
+                }
+            )
 
         with self.assertRaisesRegex(RuntimeError, "CLERK_PUBLISHABLE_KEY"):
             create_app(
@@ -3786,6 +3988,14 @@ class WorkdoeFlowTests(unittest.TestCase):
         )
         self.assertEqual(clerk_app.config["AUTH_PROVIDER"], "clerk")
         self.assertEqual(clerk_app.config["CLERK_LOGIN_MODE"], "same_domain_email_code")
+        self.assertTrue(clerk_app.config["SESSION_COOKIE_SECURE"])
+        self.assertFalse(clerk_app.config["SEED_DEMO_DATA"])
+        with clerk_app.app_context():
+            demo = get_db().execute(
+                "SELECT id FROM users WHERE email = ?",
+                ("client@workdoe.local",),
+            ).fetchone()
+        self.assertIsNone(demo)
 
     def test_clerk_mode_renders_same_domain_entry_mounts(self):
         app = create_app(
@@ -3815,12 +4025,21 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"No password needed. Your one-time code arrives by email.", login.data)
         self.assertIn(b"New to Workdoe?", login.data)
         self.assertIn(b">Create account</a>", login.data)
+        self.assertEqual(
+            client.post(
+                "/login",
+                data={"email": "client@workdoe.local", "password": "not-used"},
+            ).status_code,
+            404,
+        )
+        self.assertEqual(client.get("/forgot-password").status_code, 404)
+        self.assertEqual(client.get("/reset-password/not-a-token").status_code, 404)
         self.assertIn(
             b'class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message',
             login.data,
         )
-        self.assertIn(b"https://clerk.workdoe.com/npm/@clerk/ui@1", login.data)
-        self.assertIn(b"https://clerk.workdoe.com/npm/@clerk/clerk-js@6", login.data)
+        self.assertIn(b"https://clerk.workdoe.com/npm/@clerk/ui@1.41.2", login.data)
+        self.assertIn(b"https://clerk.workdoe.com/npm/@clerk/clerk-js@6.40.1", login.data)
         self.assertIn(b"/static/clerk-entry.js", login.data)
         self.assertNotIn(b'name="auth_action" value="code"', login.data)
 
@@ -3910,7 +4129,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         login = client.get("/login")
         self.assertEqual(login.status_code, 200)
         self.assertIn(b'data-clerk-proxy-url="https://workdoe.com/__clerk"', login.data)
-        self.assertIn(b"https://workdoe.com/__clerk/npm/@clerk/clerk-js@6", login.data)
+        self.assertIn(b"https://workdoe.com/__clerk/npm/@clerk/clerk-js@6.40.1", login.data)
         self.assertIn(
             "script-src 'self' https://workdoe.com",
             login.headers["Content-Security-Policy"],
@@ -3944,6 +4163,17 @@ class WorkdoeFlowTests(unittest.TestCase):
             json={"email": "casey@example.com", "role": "installer"},
         )
         self.assertEqual(invalid.status_code, 400)
+
+        unsafe_label = client.post(
+            "/api/auth/onboard",
+            json={
+                "email": "unsafe-label@example.com",
+                "role": "client",
+                "display_name": "Call (202) 555-0180",
+            },
+        )
+        self.assertEqual(unsafe_label.status_code, 400)
+        self.assertIn(b"Do not include email addresses", unsafe_label.data)
 
         created = client.post(
             "/api/auth/onboard",
@@ -4308,9 +4538,34 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'id="lead-sort" name="sort"', board.data)
         self.assertIn(b'role="region"', board.data)
         self.assertIn(b'aria-describedby="lead-map-status"', board.data)
+        self.assertIn(b'data-show-map-area', board.data)
+        self.assertIn(b'data-reset-map-view', board.data)
         self.assertIn(b'id="lead-map-loading"', board.data)
         self.assertIn(b'id="lead-map-status" class="sr-only" aria-live="polite"', board.data)
         self.assertIn(b"Map loading. Job list is ready.", board.data)
+
+        map_script = (ROOT / "workdoe" / "static" / "map.js").read_text(encoding="utf-8")
+        self.assertIn("scrollWheelZoom: true", map_script)
+        self.assertIn("data-show-map-area", map_script)
+        self.assertIn("data-reset-map-view", map_script)
+        self.assertIn("Workdoe does not access your device location.", map_script)
+        self.assertIn('window.addEventListener("resize"', map_script)
+        self.assertIn(
+            "map.invalidateSize({ pan: false, debounceMoveend: true })",
+            map_script,
+        )
+
+        styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
+        self.assertRegex(
+            styles,
+            r"#lead-map\.has-open-popup \.map-search-area,\s*"
+            r"#lead-map\.has-open-popup \.map-view-controls\s*\{[^}]*"
+            r"visibility: hidden;",
+        )
+        self.assertRegex(
+            styles,
+            r"\.map-view-controls\s*\{[^}]*top: 58px;",
+        )
 
         outdoor_board = self.client.get("/leads?family=outdoor-yard")
         self.assertEqual(outdoor_board.status_code, 200)
@@ -4563,7 +4818,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Open projects near you", home.data)
         self.assertIn(b"Choose work", home.data)
         self.assertNotIn(b"Pick a role, find the work, make contact.", home.data)
-        self.assertIn(b'href="/post-project">Post project</a>', home.data)
+        self.assertIn(
+            b'href="/post-project" data-dialog-title="Post a project">Post project</a>',
+            home.data,
+        )
         self.assertIn(b'>Find work</a>', home.data)
         self.assertIn(b"Approximate DMV job map", home.data)
         self.assertIn(b"compact-filter", home.data)
@@ -4855,12 +5113,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         )
         self.assertNotIn(b"Same site", start.data)
         self.assertIn(b'for="start-display-name"', start.data)
-        self.assertIn(b'name="display_name" id="start-display-name" autocomplete="name"', start.data)
+        self.assertIn(b'Public business name or handle', start.data)
+        self.assertIn(b'name="display_name" id="start-display-name" autocomplete="nickname"', start.data)
         self.assertIn(b'aria-describedby="start-name-help"', start.data)
-        self.assertIn(b'for="start-company-name"', start.data)
-        self.assertIn(b'name="company_name" id="start-company-name" autocomplete="organization"', start.data)
+        self.assertIn(b"non-identifying business label", start.data)
         self.assertIn(b"New accounts only.", start.data)
-        self.assertNotIn(b'name="display_name" autocomplete="name" required', start.data)
+        self.assertIn(b'name="display_name" id="start-display-name" autocomplete="nickname" value="" aria-describedby="start-name-help" required', start.data)
         self.assertIn(b"Email code", start.data)
         self.assertNotIn(b"Use password instead", start.data)
         self.assertNotIn(b"Use demo password", start.data)
@@ -5085,12 +5343,20 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('event.key === "ArrowRight"', script)
         self.assertIn('event.key === "ArrowLeft"', script)
         self.assertIn("buttons[nextIndex].focus()", script)
-        self.assertIn("https://tile.openstreetmap.org/{z}/{x}/{y}.png", script)
+        self.assertIn('getAttribute("data-tile-url")', script)
+        self.assertIn('getAttribute("data-tile-attribution")', script)
+        self.assertIn("Map configuration is unavailable. Project list is ready.", script)
+        self.assertNotIn('|| "https://tile.openstreetmap.org/{z}/{x}/{y}.png"', script)
         self.assertIn('getAttribute("data-asset-root")', script)
         self.assertIn("assetRoot + '/vendor/tabler-icons/home-check.svg\"", script)
         self.assertIn("if (!detailContent)", script)
         home = self.client.get("/")
         self.assertIn(b'data-asset-root="/static/"', home.data)
+        self.assertIn(
+            b'data-tile-url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"',
+            home.data,
+        )
+        self.assertIn(b"data-tile-attribution='&amp;copy;", home.data)
         self.assertIn(
             f'/static/map.js?v={ASSET_RELEASE_TOKEN}'.encode(),
             home.data,
@@ -5135,9 +5401,9 @@ class WorkdoeFlowTests(unittest.TestCase):
             },
             follow_redirects=True,
         )
-        self.assertIn(b"Add your name to create a Workdoe workspace.", missing_name.data)
+        self.assertIn(b"Add a public business name or non-identifying handle to create a Workdoe workspace.", missing_name.data)
         self.assertIn(b'value="new-client@example.com"', missing_name.data)
-        self.assertIn(b'value="New Client Household"', missing_name.data)
+        self.assertNotIn(b'for="start-company-name"', missing_name.data)
 
         start = self.client.post(
             "/create-account",
@@ -5232,6 +5498,9 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(drafted.request.path, "/create-account")
         self.assertIn(b"Draft saved", drafted.data)
         self.assertNotIn(b'name="photos"', drafted.data)
+        draft_form = self.client.get("/post-project")
+        self.assertIn(b"Photos cannot be added to an unverified draft.", draft_form.data)
+        self.assertNotIn(b'name="photos"', draft_form.data)
         draft = self.one("SELECT * FROM job_drafts WHERE consumed_at IS NULL")
         self.assertEqual(draft["service_group_slug"], "outdoor-yard")
         self.assertEqual(draft["service_slug"], "pressure-washing")
@@ -5775,6 +6044,24 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertNotIn(b'data-site-dialog-frame', home.data)
         self.assertNotIn(b'<iframe class="site-dialog-frame"', home.data)
         self.assertIn(b'src="/static/site-dialogs.js?v=workdoe-bid-dialog"', home.data)
+        self.assertIn(
+            b'href="/post-project" data-dialog-title="Post a project"', home.data
+        )
+        self.assertIn(b'href="/login" data-dialog-title="Sign in"', home.data)
+        self.assertIn(
+            b'href="/create-account" data-dialog-title="Create account"', home.data
+        )
+        self.assertIn(
+            b'<a class="button" href="/login" data-dialog-title="Sign in">Sign in</a>',
+            home.data,
+        )
+        self.assertIn(
+            b'href="/create-account?intent=find-work" data-dialog-title="Create account">Find work</a>',
+            home.data,
+        )
+        self.assertIn(
+            b'<a href="/post-project" data-dialog-title="Post a project" ', home.data
+        )
 
         direct_login = self.client.get("/login")
         self.assertEqual(direct_login.headers["X-Frame-Options"], "DENY")
@@ -5822,6 +6109,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('document.addEventListener("workdoe:dialog-navigate"', script)
         self.assertIn('dialog.dataset.dialogKind = kindFor(url)', script)
         self.assertIn('delete dialog.dataset.dialogKind', script)
+        self.assertIn('widget.dataset.turnstileWidgetId = String(widgetId)', script)
+        self.assertIn('content.querySelectorAll("[data-workdoe-turnstile]")', script)
+        self.assertIn('function removeTurnstileWidgets(root)', script)
+        self.assertIn('window.turnstile.remove(widgetId)', script)
+        self.assertIn('removeTurnstileWidgets(content);\n      content.replaceChildren(document.importNode(fragment, true));', script)
+        self.assertIn('document.querySelectorAll("script[src]")', script)
         worker_actions = (
             ROOT / "workdoe" / "static" / "worker-actions.js"
         ).read_text(encoding="utf-8")
@@ -5842,7 +6135,15 @@ class WorkdoeFlowTests(unittest.TestCase):
         )
         self.assertRegex(
             styles,
-            r"\.project-step-actions\s*\{[^}]*position: sticky;[^}]*bottom: 0;",
+            r"body:not\(\.dialog-fragment-body\) \.form-grid\[data-project-composer\] \.project-step-actions\s*\{[^}]*position: fixed;[^}]*bottom: 16px;",
+        )
+        self.assertRegex(
+            styles,
+            r"(?s)@media \(max-height: 760px\) and \(min-width: 1121px\) \{.*?body:not\(\.dialog-fragment-body\) \.form-grid\[data-project-composer\] \.project-step-actions\s*\{[^}]*position: fixed;[^}]*bottom: 16px;",
+        )
+        self.assertRegex(
+            styles,
+            r"(?s)@media \(max-width: 720px\) \{.*?body:not\(\.dialog-fragment-body\) \.form-grid\[data-project-composer\] \.project-step-actions\s*\{[^}]*bottom: calc\(68px \+ env\(safe-area-inset-bottom\)\);",
         )
         self.assertIn(
             '.site-dialog[data-dialog-kind="project"] .project-step-actions',
@@ -5851,6 +6152,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(
             'bottom: max(18px, calc((100dvh - 820px) / 2));',
             styles,
+        )
+        self.assertRegex(
+            styles,
+            r'(?s)@media \(max-width: 520px\) \{.*?\.site-dialog\[data-dialog-kind="project"\] \.project-step-actions\s*\{[^}]*position: sticky;[^}]*safe-area-inset-bottom[^}]*transform: none;',
         )
         self.assertIn(
             '.project-composer-step[hidden] .project-step-actions',

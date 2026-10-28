@@ -11,12 +11,18 @@ ALLOWED_IMAGE_MIME = {
     "png": "image/png",
     "webp": "image/webp",
 }
-MAX_UPLOAD_BYTES = 12 * 1024 * 1024
+# Reject large source files before Cloudflare Images is invoked. The transformed
+# object is held to a stricter storage limit below.
+MAX_UPLOAD_BYTES = 4 * 1024 * 1024
+MAX_SANITIZED_IMAGE_BYTES = 1_500_000
+MAX_JOB_PHOTOS_PER_PROJECT = 6
+MAX_CONTRACTOR_PHOTOS_PER_PROFILE = 8
+MAX_MEDIA_UPLOADS_PER_USER_PER_DAY = 12
 IMAGE_SIGNATURE_BYTES = 12
 SANITIZED_IMAGE_EXTENSION = "webp"
 SANITIZED_IMAGE_MIME = "image/webp"
-SANITIZED_IMAGE_MAX_DIMENSION = 2400
-SANITIZED_IMAGE_QUALITY = 82
+SANITIZED_IMAGE_MAX_DIMENSION = 1600
+SANITIZED_IMAGE_QUALITY = 76
 MEDIA_UPLOAD_PATH_RE = re.compile(
     r"^/api/media/(?P<kind>jobs|contractors)/(?P<owner_id>[1-9][0-9]*)/upload/?$"
 )
@@ -54,8 +60,26 @@ def normalize_upload_filename(original_filename: str) -> tuple[str, str]:
     return cleaned[:160] or f"workdoe-upload.{ext}", ext
 
 
-def safe_upload_metadata(original_filename: str, content_type: str, size_bytes: int | str) -> dict:
-    filename, ext = normalize_upload_filename(original_filename)
+def generic_media_filename(extension: str = SANITIZED_IMAGE_EXTENSION) -> str:
+    """Return the only filename Workdoe retains or presents for uploaded media.
+
+    A user-controlled filename may contain an address, a name, or other private
+    information. It is useful only for extension validation, so discard it
+    before the metadata reaches D1, R2, an audit screen, or a browser.
+    """
+    normalized = str(extension or "").strip().lower().lstrip(".")
+    if normalized not in ALLOWED_IMAGE_EXTENSIONS:
+        normalized = SANITIZED_IMAGE_EXTENSION
+    return f"workdoe-photo.{normalized}"
+
+
+def safe_upload_metadata(
+    original_filename: str,
+    content_type: str,
+    size_bytes: int | str,
+    maximum_bytes: int = MAX_UPLOAD_BYTES,
+) -> dict:
+    _, ext = normalize_upload_filename(original_filename)
     expected_type = ALLOWED_IMAGE_MIME[ext]
     actual_type = str(content_type or "").split(";", 1)[0].strip().lower()
     if actual_type != expected_type:
@@ -66,10 +90,10 @@ def safe_upload_metadata(original_filename: str, content_type: str, size_bytes: 
         raise MediaUploadError("Image size is required.") from exc
     if parsed_size <= 0:
         raise MediaUploadError("Image file is empty.")
-    if parsed_size > MAX_UPLOAD_BYTES:
+    if parsed_size > maximum_bytes:
         raise MediaUploadError("Image file is too large.")
     return {
-        "original_filename": filename,
+        "original_filename": generic_media_filename(ext),
         "extension": ext,
         "content_type": expected_type,
         "size_bytes": parsed_size,
@@ -147,7 +171,7 @@ async def sanitize_uploaded_image(images_binding, file, js_object) -> dict:
         raise
     except Exception as exc:
         raise RuntimeError("Cloudflare Images could not sanitize the upload.") from exc
-    if size_bytes <= 0 or size_bytes > MAX_UPLOAD_BYTES:
+    if size_bytes <= 0 or size_bytes > MAX_SANITIZED_IMAGE_BYTES:
         raise RuntimeError("Sanitized image size is invalid.")
     return {
         "body": body,
@@ -162,6 +186,7 @@ async def sanitize_uploaded_image(images_binding, file, js_object) -> dict:
 def sanitized_upload_details(source_details: dict, sanitized: dict) -> dict:
     return {
         **source_details,
+        "original_filename": generic_media_filename(SANITIZED_IMAGE_EXTENSION),
         "extension": SANITIZED_IMAGE_EXTENSION,
         "content_type": SANITIZED_IMAGE_MIME,
         "size_bytes": int(sanitized["size_bytes"]),
@@ -169,6 +194,21 @@ def sanitized_upload_details(source_details: dict, sanitized: dict) -> dict:
         "source_height": int(sanitized["source_height"]),
         "sanitization": "cloudflare-images-webp",
     }
+
+
+def media_upload_quota_error(
+    scope: str,
+    resource_count: int,
+    recent_upload_count: int,
+) -> str | None:
+    """Return a stable user-facing quota error before image processing begins."""
+    if scope == "job" and resource_count >= MAX_JOB_PHOTOS_PER_PROJECT:
+        return "This project already has the maximum of 6 photos."
+    if scope == "contractor" and resource_count >= MAX_CONTRACTOR_PHOTOS_PER_PROFILE:
+        return "Your contractor profile already has the maximum of 8 photos."
+    if recent_upload_count >= MAX_MEDIA_UPLOADS_PER_USER_PER_DAY:
+        return "You have reached the daily upload limit. Try again tomorrow."
+    return None
 
 
 def build_r2_upload_key(scope: str, owner_id: int, extension: str) -> str:
@@ -273,6 +313,7 @@ def validated_media_review_payload(body: dict) -> dict:
         f"review.{str(body.get('content_type', '')).rsplit('/', 1)[-1]}",
         body.get("content_type", ""),
         body.get("size_bytes", 0),
+        MAX_SANITIZED_IMAGE_BYTES,
     )
     return {
         "type": "media-review",

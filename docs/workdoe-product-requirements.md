@@ -2,7 +2,7 @@
 
 Status: launch-candidate requirements baseline
 
-Last reviewed: 2026-08-21
+Last reviewed: 2026-10-27
 
 ## Product statement
 
@@ -24,7 +24,8 @@ the relevant workflow through a same-domain email-code sign-in.
 - Create an account with an email code without leaving `workdoe.com`.
 - Draft a project before account verification, then post it with title, curated
   category, coarse project setting, city/ZIP, short description, desired date,
-  optional budget range, and optional private photos.
+  and optional budget range. Public photo uploads are disabled for the current
+  beta.
 - Choose one of six numbered work families, then choose a canonical task from
   numbered family-scoped tiles. Each family presents six common tasks first
   and keeps the remaining canonical services behind a plainly labeled
@@ -50,9 +51,10 @@ the relevant workflow through a same-domain email-code sign-in.
   from the narrative; it does not infer, embed, or rewrite the project.
 - See a transparent `Brief n of 6` projection based only on canonical service,
   a substantive description, at least two controlled scope answers, project
-  setting, desired timing, and either a budget signal or photo. It never uses
-  identity, contact, exact-location, paid-placement, or contractor-fit fields
-  and does not change ordering or eligibility.
+  setting, desired timing, and either a budget signal or a retained
+  legacy/demonstration photo. The current beta does not offer a new-photo action.
+  The projection never uses identity, contact, exact-location, paid-placement,
+  or contractor-fit fields and does not change ordering or eligibility.
 - Close an owned project with a controlled outcome and optional private note;
   reopen it until either participant confirms completion, which clears the
   active close outcome while preserving its audit event.
@@ -116,7 +118,8 @@ the relevant workflow through a same-domain email-code sign-in.
   account.
 - Create a contractor account and profile.
 - Complete a seven-item storefront-readiness checklist covering business name,
-  description, services, zones, experience, HTTPS website, and portfolio work.
+  description, services, zones, experience, HTTPS website, and portfolio
+  readiness. Public portfolio-photo uploads are disabled for the current beta.
 - Select canonical service capabilities and practical DMV service zones on the
   profile instead of relying only on free text.
 - Search and filter available work by one of the six canonical work families,
@@ -203,8 +206,9 @@ Quote-readiness question sets are currently implemented for house, deep, and
 move cleaning; packing/unpacking; in-home lifting; freestanding furniture
 assembly; lawn mowing; gardening; landscaping; local moving; pressure washing;
 window cleaning; interior painting; and kitchen remodeling. A question set in
-code is not permission to launch that service-zone pair: activation still
-requires the reviewed legal, safety, evidence, supply, and operator gates below.
+code supports a clearer brief; it is not a legal, credential, or safety
+determination. During the advisory-only beta, every curated service remains
+available with its applicable policy acknowledgement and public disclaimer.
 
 ### Included
 
@@ -216,9 +220,10 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
 - Same-domain account and security management using Clerk's maintained profile
   component; optional passkeys may be enabled only after production-domain validation.
 - D1 marketplace and moderation records.
-- Cloudflare Images decode/re-encode before private R2 storage: accepted PNG,
-  JPEG, GIF, and WebP uploads become metadata-free, single-frame WebP output
-  bounded to 2400 pixels per side before permission-checked delivery.
+- Retained legacy or demonstration media, if present, remains private and
+  permission-scoped. New project and portfolio photo uploads are disabled for
+  this beta; enabling the separately designed Cloudflare Images/R2 pipeline
+  requires a new release decision.
 - Deterministic six-signal project brief readiness in the composer, consumer
   workspace, contractor lead board, and both project-detail views.
 - Contractor-owned storefront profiles with deterministic readiness feedback,
@@ -248,14 +253,14 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
   a Workdoe-match close eligible for completion confirmation.
 - Normalized contractor service capabilities and DMV coverage zones with
   legacy-profile inference during migration.
-- Jurisdiction-specific service activation records that fail closed when the
-  allowed scope, required evidence, verification status, minimum eligible
-  supply, or escalation owner is missing or expired.
-- An initial controlled lane limited to interior cleaning, move cleaning,
-  packing/unpacking, in-home heavy lifting, and freestanding furniture assembly;
-  exterior work, vehicle transport, disposal, wall attachment, real-property
-  alteration, and licensed trades remain inactive until their service-zone gate
-  is approved.
+- Every curated service remains visible and bid-enabled in the advisory-only
+  beta. Each service has a versioned policy record; elevated and regulated
+  services require the relevant client or contractor acknowledgement before a
+  project is posted or a mini bid is submitted.
+- Jurisdiction-specific service activation records remain an internal review
+  and future rollout tool. They do not change posting, bidding, discovery, or
+  ranking during this beta; enabling that separate gate requires an explicitly
+  reviewed configuration change and legal/operational approval.
 - Repeat-project prefilling from consumer project history.
 - A privacy-safe project-setting choice for house, apartment/condo, business
   space, shared building area, outdoor area, or other; no property listing,
@@ -285,6 +290,9 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
   guarantees. A source-checked record is a dated human lookup, not an
   endorsement of skill, safety, coverage, or legal eligibility.
 - Expansion outside DC, Maryland, and Virginia.
+- New project and contractor portfolio photo uploads. The future private-media
+  design is deliberately deferred pending separate retention, abuse,
+  metadata-sanitization, and billing approval.
 - Automatic rebooking, recurring schedules, contractor reservation, automatic
   bid or approval, and any paid advantage in an invited project.
 
@@ -297,8 +305,10 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
   or a consumer with a bid relationship and are labeled as self-reported.
 - Each protected route re-verifies identity, active status, role, ownership,
   and match state rather than trusting browser state.
-- Job and profile photos are uploaded only through allow-listed MIME/extension
-  combinations, a 12 MB limit, scoped object keys, and D1 ownership metadata.
+- New job and profile photo uploads are disabled. Any retained legacy or
+  demonstration media remains behind scoped object keys, D1 ownership metadata,
+  and permission-checked delivery. The future upload path must be re-approved
+  before it can accept user content.
 - Suspended users cannot continue protected marketplace actions.
 - All moderation actions create audit records.
 - The first release uses Clerk Open access mode. Account creation uses email
@@ -341,7 +351,8 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
   Workdoe-owned and are not changed by the Clerk component.
 - `Post project` is a first-class public action at `/post-project`. A valid
   24-hour server-side draft survives account verification and prefills the
-  protected project form; photos are accepted only after verification.
+  protected project form; drafts and the verified beta composer do not accept
+  new photo uploads.
 - Mobile users can switch among Projects, Map, and Details/Account without
   horizontal scrolling or obscured controls.
 - Demo projects are visibly identified and must never be represented as live
@@ -384,10 +395,12 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
   open-jobs API pass production smoke tests.
 - Non-secret release evidence confirms Clerk Open access mode, the
   Workdoe custom sign-up URL, email-code sign-in, and disabled password sign-in.
-- A real test consumer can receive an email code, create a job with a photo,
-  review a bid, approve it, and exchange messages.
+- A real test consumer can receive an email code, create a city/ZIP-only job
+  without a photo, review a bid, approve it, and exchange messages.
 - A separate real test contractor can receive an email code, create a profile,
-  find that job, submit a bid, and access only authorized photos/messages.
+  find that job, submit a bid, and access only authorized messages. Any
+  retained legacy or demonstration media remains separately permission-scoped;
+  it is not a current-beta upload acceptance criterion.
 - A contractor can save reusable wording from their own bid, apply it to a
   different project with the price field empty, and cannot inspect or remove
   another contractor's template.
@@ -411,9 +424,10 @@ requires the reviewed legal, safety, evidence, supply, and operator gates below.
   contrast, and zoom/reflow pass.
 - Privacy Policy, Terms, Safety, security contact, retention/deletion policy,
   and contractor disclaimers are approved and linked from public pages.
-- Every live service-zone pair has an approved allowed/excluded scope, evidence
-  path, at least three eligible contractors plus an operational backup, tested
-  intake questions, and a monitored safety escalation owner.
+- The advisory-only service-policy wording, acknowledgement paths, and incident
+  escalation process have counsel and operator approval before unrestricted
+  public registration. Service-zone review records may inform a future gated
+  rollout, but they do not limit the 53-service beta catalogue.
 - Qualified-match, time-to-first-eligible-bid, approved-match, verified-
   completion, and safety metrics are reviewed by service, zone, and week rather
   than only as a regional aggregate.

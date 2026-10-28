@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from content_privacy import contains_disallowed_personal_data, personal_data_error
+
 CLIENT_ACCOUNT_TYPES = (
     ("household", "Home or household"),
     ("small_business", "Small business"),
@@ -62,11 +64,13 @@ def cleaned_client_profile_payload(payload) -> dict[str, str]:
 def validate_client_profile_payload(form: dict[str, str]) -> list[str]:
     errors: list[str] = []
     if not form["organization_name"]:
-        errors.append("Add a household or organization name.")
+        errors.append("Add a private workspace label.")
     elif len(form["organization_name"]) > CLIENT_ORGANIZATION_MAX_LENGTH:
         errors.append(
-            f"Keep the household or organization name under {CLIENT_ORGANIZATION_MAX_LENGTH} characters."
+            f"Keep the private workspace label under {CLIENT_ORGANIZATION_MAX_LENGTH} characters."
         )
+    if contains_disallowed_personal_data((form["organization_name"],)):
+        errors.append(personal_data_error("private workspace label"))
     if form["account_type"] not in CLIENT_ACCOUNT_TYPE_VALUES:
         errors.append("Choose the kind of consumer workspace this is.")
     if form["notification_preference"] not in CLIENT_NOTIFICATION_VALUES:
@@ -75,13 +79,15 @@ def validate_client_profile_payload(form: dict[str, str]) -> list[str]:
         errors.append(
             f"Keep the private workspace note under {CLIENT_PROFILE_NOTE_MAX_LENGTH} characters."
         )
+    if contains_disallowed_personal_data((form["profile_note"],)):
+        errors.append(personal_data_error("private workspace note"))
     return errors
 
 
 def client_profile_field_errors(errors: list[str]) -> dict[str, list[str]]:
     field_errors: dict[str, list[str]] = {}
     for message in errors:
-        if "household or organization name" in message:
+        if "private workspace label" in message:
             field = "organization_name"
         elif "consumer workspace" in message:
             field = "account_type"
@@ -122,6 +128,8 @@ def validate_saved_location_payload(form: dict[str, str]) -> list[str]:
         errors.append(
             f"Keep the project area name under {SAVED_LOCATION_LABEL_MAX_LENGTH} characters."
         )
+    if contains_disallowed_personal_data((form["label"],)):
+        errors.append(personal_data_error("project area label"))
     if not form["city"]:
         errors.append("Add the city for this project area.")
     elif len(form["city"]) > SAVED_LOCATION_CITY_MAX_LENGTH:
@@ -138,7 +146,7 @@ def validate_saved_location_payload(form: dict[str, str]) -> list[str]:
 def saved_location_field_errors(errors: list[str]) -> dict[str, list[str]]:
     field_errors: dict[str, list[str]] = {}
     for message in errors:
-        if "short name" in message or "area name" in message:
+        if "short name" in message or "area name" in message or "project area label" in message:
             field = "label"
         elif "city" in message:
             field = "city"

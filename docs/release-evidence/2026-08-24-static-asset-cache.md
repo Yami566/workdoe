@@ -14,9 +14,10 @@ The release now uses Cloudflare's native `workdoe/static/_headers` contract to
 apply one-year immutable browser caching only to assets with a safe release
 boundary:
 
-- `/styles.css`, `/map.js`, and `/project-composer.js` are requested with the
-  current release token in Flask and Worker HTML. The expected token is a
-  deterministic SHA-256 projection of those three reviewed files.
+- `/styles.css`, `/map.js`, `/project-composer.js`, and `/clerk-entry.js` are
+  requested with the current release token in Flask and Worker HTML. The
+  expected token is a deterministic SHA-256 projection of those four reviewed
+  files.
 - `/vendor/*` is pinned by path and integrity hash in
   `DEPENDENCY_PROVENANCE.json`.
 - `/deer.svg` is the provenance-checked Tabler-derived home mark.
@@ -40,6 +41,7 @@ local Worker returned:
 | `/styles.css?v=asset-d79a44369f1c857e` | `public, max-age=31556952, immutable` | `nosniff` |
 | `/map.js?v=asset-d79a44369f1c857e` | `public, max-age=31556952, immutable` | `nosniff` |
 | `/project-composer.js?v=asset-d79a44369f1c857e` | `public, max-age=31556952, immutable` | `nosniff` |
+| `/clerk-entry.js?v=asset-d79a44369f1c857e` | `public, max-age=31556952, immutable` | `nosniff` |
 | `/vendor/leaflet/leaflet.js` | `public, max-age=31556952, immutable` | `nosniff` |
 | `/deer.svg` | `public, max-age=31556952, immutable` | `nosniff` |
 | `/worker-actions.js` | `public, must-revalidate, max-age=0` | `nosniff` |
@@ -51,8 +53,8 @@ is consumed as deployment metadata rather than exposed as a public asset.
 
 ## Guardrails
 
-- The generated Cloudflare manifest records the `_headers` path, exact five
-  immutable route patterns, deterministic token, and three byte-hashed
+- The generated Cloudflare manifest records the `_headers` path, exact six
+  immutable route patterns, deterministic token, and four byte-hashed
   first-party assets.
 - Preflight fails if any expected route loses the policy or if an unreviewed
   route gains the immutable policy.

@@ -30,7 +30,7 @@
     <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v={{ asset_release_token }}">
     {% if turnstile_enabled() %}
-      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js{% if embedded_dialog_mode() %}?render=explicit{% endif %}" async defer></script>
     {% endif %}
     {% block head %}{% endblock %}
   </head>
@@ -76,9 +76,9 @@
           </details>
         {% else %}
           <a href="{{ url_for('home') }}" {% if request.endpoint == 'home' %}aria-current="page"{% endif %}>Explore</a>
-          <a href="{{ url_for('post_project') }}" {% if request.endpoint == 'post_project' %}aria-current="page"{% endif %}>Post project</a>
-          <a href="{{ url_for('login') }}" {% if request.endpoint == 'login' %}aria-current="page"{% endif %}>Sign in</a>
-          <a class="button compact" href="{{ url_for('create_account') }}" {% if request.endpoint in ['start', 'create_account', 'verify_start'] %}aria-current="page"{% endif %}>Create account</a>
+          <a href="{{ url_for('post_project') }}" data-dialog-title="Post a project" {% if request.endpoint == 'post_project' %}aria-current="page"{% endif %}>Post project</a>
+          <a href="{{ url_for('login') }}" data-dialog-title="Sign in" {% if request.endpoint == 'login' %}aria-current="page"{% endif %}>Sign in</a>
+          <a class="button compact" href="{{ url_for('create_account') }}" data-dialog-title="Create account" {% if request.endpoint in ['start', 'create_account', 'verify_start'] %}aria-current="page"{% endif %}>Create account</a>
         {% endif %}
       </nav>
     </header>

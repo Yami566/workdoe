@@ -15,8 +15,8 @@
     <a href="{{ url_for('account') }}" {% if request.endpoint == 'account' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt=""><span>Account</span></a>
   {% else %}
     <a href="{{ url_for('home') }}" {% if request.endpoint == 'home' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/layout-board-split.svg') }}" alt=""><span>Explore</span></a>
-    <a href="{{ url_for('post_project') }}" {% if request.endpoint == 'post_project' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/home-up.svg') }}" alt=""><span>Post</span></a>
-    <a href="{{ url_for('login') }}" {% if request.endpoint == 'login' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/lock.svg') }}" alt=""><span>Sign in</span></a>
-    <a href="{{ url_for('create_account') }}" {% if request.endpoint in ['start', 'create_account', 'verify_start'] %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/sparkles.svg') }}" alt=""><span>Join</span></a>
+    <a href="{{ url_for('post_project') }}" data-dialog-title="Post a project" {% if request.endpoint == 'post_project' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/home-up.svg') }}" alt=""><span>Post</span></a>
+    <a href="{{ url_for('login') }}" data-dialog-title="Sign in" {% if request.endpoint == 'login' %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/lock.svg') }}" alt=""><span>Sign in</span></a>
+    <a href="{{ url_for('create_account') }}" data-dialog-title="Create account" {% if request.endpoint in ['start', 'create_account', 'verify_start'] %}aria-current="page"{% endif %}><img src="{{ url_for('static', filename='vendor/tabler-icons/sparkles.svg') }}" alt=""><span>Join</span></a>
   {% endif %}
 </nav>

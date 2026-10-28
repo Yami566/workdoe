@@ -1,6 +1,6 @@
 # Workdoe Documentation Index
 
-Last reviewed: 2026-08-23
+Last reviewed: 2026-10-27
 
 This index identifies the current product and release documents. Dated studies,
 screenshots, and earlier audits remain useful evidence, but they do not override
@@ -8,14 +8,23 @@ the current requirements, policy gates, or release status.
 
 ## Current authority
 
-- `workdoe-stabilization-release-status-2026-08-23.md`: current implementation,
-  verification, and remaining production gates.
+- `workdoe-launch-readiness-2026-10-24.md`: current production review,
+  verification evidence, locally prepared corrections, and remaining launch
+  gates. This is the controlling release-readiness record.
+- `workdoe-owner-live-acceptance-checklist.md`: owner-controlled sign-in,
+  marketplace, media, public-view, legal, and operating checks required before
+  an unrestricted launch claim.
+- `workdoe-stabilization-release-status-2026-08-23.md`: historical
+  implementation and stabilization evidence. Its deployment-status statements
+  are superseded by the 2026-10-24 readiness review.
 - `workdoe-product-requirements.md`: product scope, roles, user journeys,
   launch criteria, and owner decisions.
 - `workdoe-data-inventory.md`: data classes, storage, visibility, providers,
   and unresolved retention decisions.
 - `workdoe-security-impact-assessment.md`: security boundaries, implemented
-  controls, residual risks, and required live verification.
+  controls, residual risks, and required live verification. Its historical
+  Cloudflare Images references are superseded by the current no-public-media
+  beta decision in the readiness record.
 - `workdoe-policy-review-checklist.md`: public-policy content and owner/legal
   approval gates.
 - `workdoe-operations-runbook.md`: incident, moderation, recovery, credential,
@@ -28,6 +37,9 @@ the current requirements, policy gates, or release status.
 
 ## Current design evidence
 
+- `ux-audit/2026-10-24-public-surface/`: current local release-candidate
+  desktop, tablet, and phone public-map, dialog, focus-restoration, map-control,
+  and console evidence. It records its live-acceptance limits explicitly.
 - `ux-audit/2026-08-23-task-navigation/`: accepted desktop, tablet, and mobile
   navigation/dashboard captures plus the editable Figma reference board.
 - `ux-audit/2026-08-22-service-policy/`: advisory acknowledgement evidence.

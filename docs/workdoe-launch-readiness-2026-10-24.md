@@ -1,0 +1,675 @@
+# Workdoe Launch Readiness Review
+
+Date: 2026-10-24; evidence refreshed 2026-10-27
+
+Status: **controlled beta operating; not approved for unrestricted public commercial launch**.
+
+This record supersedes the deployment-status statements in
+`workdoe-stabilization-release-status-2026-08-23.md`. That earlier document is
+retained as historical implementation evidence.
+
+## Scope and method
+
+This review checked the live `https://workdoe.com` public surface, the current
+Cloudflare Worker and Flask source adapters, dependency provenance, local
+automated tests, production configuration checks, and responsive browser
+layouts. It does not substitute for legal advice, an incident-response drill,
+or a real two-account marketplace acceptance run.
+
+## Evidence completed
+
+- The strict production smoke check passed for DNS, HTTP-to-HTTPS redirects on
+  pages and assets, HTTPS entry, health, public jobs API, security headers,
+  static cache policy, public trust pages, social-card asset, discovery files,
+  Clerk production key, invitation path, and the same-origin Clerk proxy.
+- A subsequent read-only live launch-doctor check reported the local smoke,
+  GitHub production environment, deploy-secret readiness, ambient Wrangler
+  authentication, Cloudflare release gate, DNS delegation, apex, `www`, and
+  Worker custom-domain policy as ready. The subsequent strict production smoke
+  again passed. This verifies the currently deployed perimeter; it does not
+  deploy the local candidate or replace the workflow and operating gates below.
+- A human owner completed a production consumer email-code sign-in without
+  sharing the code. A subsequent browser check confirmed the same signed-in
+  consumer session reached the client dashboard. A direct protected-page
+  refresh briefly entered the same-domain Clerk recovery screen, then returned
+  to the consumer composer without another code. This confirms the code-receipt
+  and same-device consumer-session portion of the Clerk flow, but not every
+  role and marketplace journey.
+- A separate production browser-tab check navigated directly to `/login` with
+  the existing owner-authenticated consumer session. It briefly reported
+  **Checking Workdoe access...**, then reached the consumer Projects workspace
+  without a second code request. This confirms the same-browser Clerk handoff
+  without extracting or entering an email code; the fresh-device and
+  contractor cases remain acceptance gates.
+- A signed-in Clerk dashboard review confirmed that the verified
+  `workdoe.com / __clerk` Frontend API proxy is enabled; email sign-up and
+  sign-in use verification codes while email links are disabled; and password
+  and phone sign-up/sign-in are disabled. Access mode is Open, express legal
+  consent is enabled, and its Terms and Privacy URLs point to Workdoe's public
+  routes. The resulting local Clerk proof records configuration decisions only,
+  without any secret values.
+- Before the 2026-10-25 release, the then-deployed marketplace still carried an
+  older desktop-width workspace at 820px and clipped the selected detail/action.
+  The release candidate corrected that breakpoint behavior at 390x844,
+  820x1180, and 1280x720. The current production recheck in the 2026-10-27
+  section below supersedes this historical observation. The direct `/jobs/new`
+  page remains the no-JavaScript fallback; its initial action is below the first
+  viewport on a short phone.
+- A fresh local browser check opened `Post project` from the map as a native
+  same-page dialog, selected a work family and a service through steps 1 to 3,
+  and then closed the dialog. Each selection advanced without exposing later
+  steps, and close returned focus to the Post project control with the map
+  workspace preserved. At 390x844, the project bottom sheet keeps Back and
+  Continue visible in its safe-area-aware sticky action bar. The direct
+  `/jobs/new` route remained available as the non-JavaScript fallback.
+- A repeat local release-candidate check of the direct, JavaScript-enhanced
+  `/jobs/new` route at 390x844 showed only step 1 at load. Selecting a work
+  family moved directly to step 2, selecting a listed service moved directly
+  to step 3, and focus moved to the new step heading each time. The consumer
+  dashboard also exposed its active, responses, paused, and history views as
+  status tabs without displaying an exact project address.
+- A fresh public-surface browser audit at `390x844`, `820x1180`, and
+  `1280x720` found no observed overlap or clipping in the local release
+  candidate. It also exercised map controls, the native post-project dialog,
+  step advancement, and focus restoration, with no browser console warnings
+  or errors. Its explicit scope and live-acceptance limits are recorded in
+  `ux-audit/2026-10-24-public-surface/AUDIT.md`.
+- Current candidate quality evidence: all 259 unit and integration tests passed
+  after the production-auth guard, map date presentation,
+  static-asset cache-manifest, short-desktop composer-action, and public
+  dialog-entry corrections.
+  JavaScript syntax checks and
+  Ruff passed; Node and Python dependency vulnerability checks reported no
+  known vulnerabilities; Bandit reported no medium or high findings; secret
+  and dependency-provenance checks passed.
+- A fresh release-candidate quality pass repeated the complete unit and
+  integration suite, npm and Python dependency advisory checks, Bandit, Ruff,
+  the reviewed secret baseline, and dependency provenance verification. The
+  checks passed. The secret baseline now explicitly records the two official
+  Clerk npm integrity values and one test-fixture key label as reviewed
+  non-secrets; it remains fail-closed for any other finding.
+- The repository has static accessibility-contract coverage for semantic
+  controls, labels, focus styles, reduced motion, dialogs, and mobile layout
+  rules. It does not currently include a browser automation or automated WCAG
+  scanner, so those checks are not represented as automated visual or
+  assistive-technology acceptance evidence.
+- Cloudflare preflight passed without errors or warnings. The D1 plan check
+  examined 36 migrations and confirmed the expected open-job geographic,
+  public-media, and rolling-upload-window indexes without table scans.
+- The current read-only launch diagnostic confirmed Cloudflare DNS delegation,
+  the `workdoe.com` and `www` Worker route policy, the GitHub production
+  environment, and the local encrypted Wrangler OAuth session. A separate
+  authenticated Wrangler check generated sanitized evidence that all seven
+  required Worker secret *names* are bound; it did not reveal or attest to any
+  secret values. After recording the local non-secret Clerk proof, the final
+  diagnostic reported no technical deployment blockers.
+- The public jobs API currently exposes only sample leads and city/ZIP-level
+  approximate coordinates. It did not return exact address or contact fields.
+- A subsequent public browser and API audit found that the deployed
+  demonstration detail still rendered a fixed August 2026 date as a requested
+  date and its public API still exposed those fixture dates. The local candidate
+  renders `Sample timing` and omits demo dates from public payloads; production
+  smoke now requires both conditions and correctly fails on the deployed
+  revision until the reviewed release is live. This is a public-presentation
+  and public-contract release gate, not a perimeter failure.
+
+## Corrections prepared locally
+
+This is a preserved pre-deployment snapshot. Statements below that a correction
+was **not deployed** were accurate when this section was written; the dated
+production deployment records later in this document are the current source of
+truth for release status.
+
+- The route-backed dialog controller now avoids reinjecting an already-ready
+  Clerk or Turnstile library and removes each explicitly rendered Turnstile
+  widget before clearing dialog content. This follows Cloudflare's documented
+  explicit-render lifecycle and addresses the observed close-time Turnstile
+  warning.
+- The same-domain Clerk entry now mounts Clerk's documented `SignUp` component
+  on an explicit create-account route and the documented `SignIn` component on
+  an explicit sign-in route. Sign-in no longer relies on an implicit
+  sign-in-or-up transfer; the existing 15-second bounded loading state and
+  session-recovery action remain in place. Public checks confirm the deployed
+  same-domain proxy resolves both Clerk UI and SDK assets, but the corrected
+  component choice remains a local candidate until it is reviewed and deployed.
+- The Clerk browser assets used by the entry and account shells are now pinned to
+  reviewed `@clerk/ui` `1.41.2` and `@clerk/clerk-js` `6.40.1` packages. Their
+  MIT licenses, npm integrity hashes, same-domain proxy delivery, and renderer
+  use are enforced by the dependency-provenance verifier rather than trusting a
+  moving major-version alias.
+- The Flask adapter now returns `404` for direct password-login and
+  password-reset requests whenever the Clerk provider is selected. The Worker
+  email queue also rejects `password-reset` payloads. The legacy password code
+  remains isolated to the local development adapter and test fixtures; the
+  production auth boundary is Clerk email codes only.
+- Flask and Worker public policy pages now identify Moose Bay and Company LLC,
+  a Virginia limited liability company, and accurately state the owner's stated
+  `admin@workdoe.com` response target of 1 to 5 business days.
+- Third-party notices now match the checked dependency provenance ledger for
+  Leaflet CSS, Werkzeug, and Wrangler.
+- Marketplace text now rejects common email, phone, and street-address patterns
+  before project, mini-bid, message, and contractor-intro storage. This is a
+  local, deterministic prevention control rather than a claim that free text
+  can be made universally free of personal information. The current Flask and
+  Worker mini-bid guards cover scope, price range, timeline, experience,
+  questions, and availability; regression tests now exercise the otherwise
+  easy-to-miss price-range and timeline fields.
+- Onboarding now requests one public business name or non-identifying handle,
+  never derives that label from an email local-part, and does not solicit a
+  separate household or organization field. The same common-disclosure guard
+  covers onboarding labels, contractor profile text, private consumer workspace
+  labels/notes, and saved project-area labels. This reduces accidental contact
+  and address storage but cannot prove arbitrary text or images are PII-free.
+- A future production-media intake path, which is disabled for the current
+  beta, is prepared to limit source files to 4 MB, store only sanitized
+  1600-pixel WebP output below 1.5 MB, limit projects to six photos,
+  contractor profiles to eight, and accounts to 12 uploads per rolling 24
+  hours before costly image processing begins. If it is re-enabled, it must
+  discard user-provided source filenames before D1, R2 metadata, headers, or
+  UI; its forward-only D1 migration redacts existing filename metadata at
+  release time. The rolling allowance counts successful upload audit events,
+  so deleting a photo does not reset it; its D1 query has a dedicated partial
+  index.
+- The public map now supports mouse-wheel zoom, a privacy-safe current-map-area
+  description that never requests browser geolocation, and a DMV-view reset
+  control. On compact phones, the decorative map badge is suppressed so it
+  cannot overlap those controls. The static-asset release token was regenerated
+  from the reviewed asset bytes.
+- On direct narrow-screen composer routes, the current step's Back/Continue
+  bar now remains fixed above the mobile task navigation instead of appearing
+  only after the task choices. The responsive layout reserves space for that
+  action bar, while the native-dialog composer keeps its existing bottom-sheet
+  controls. This addresses the observed reachable-action gap without removing
+  the direct no-JavaScript route.
+- On short desktop windows wider than the compact breakpoint, the same
+  Back/Continue bar now becomes fixed with reserved form padding. A current
+  read-only 1280x720 production capture showed the old full-page route's only
+  `Continue` action below the first viewport; the candidate has a regression
+  assertion for that height-specific layout rule. This correction is local
+  until the reviewed release is deployed and captured.
+- The public marketplace header, hero, selected-work-lane action, and anonymous
+  mobile navigation now mark Post project, Create account, and Sign in as
+  native-dialog actions. From the map they preserve the marketplace behind the
+  interaction; their ordinary canonical links remain intact for direct visits,
+  browser history, and no-JavaScript fallback. Flask and Worker rendering have
+  focused parity coverage for those controls.
+- Worker-rendered maps no longer hard-code a tile endpoint in either the public
+  or signed-in shell. `WORKDOE_MAP_TILE_URL` and
+  `WORKDOE_MAP_TILE_ATTRIBUTION` are generated and preflight-validated as an
+  HTTPS Leaflet template with attribution; the browser map fails safely to the
+  usable project list if either value is missing. The standard OpenStreetMap
+  endpoint is retained only for the controlled beta and requires operator
+  traffic monitoring and a reviewed provider decision before sustained growth.
+- Public demonstration records now render `Sample timing` instead of their
+  fixed demonstration date, and the public API omits the fixture date from demo
+  payloads; real projects retain their requested date. This prevents an old
+  sample fixture from appearing to be an overdue live project in either the UI
+  or an API consumer.
+- Public project cards now render valid real calendar dates as readable month
+  and day labels while retaining their ISO `datetime` value for machines. The
+  browser map uses the same timezone-neutral formatting after filters or map
+  movement refresh the selected project.
+- The live launch doctor now recognizes complete sanitized secret-name evidence
+  and reports `7/7` required Worker names without demanding a local API token
+  that is unnecessary for that read-only evidence path.
+- The deployed Worker entry-shell regression coverage now forbids a password
+  field, password prompt, and reset link in the Clerk email-code entry flow.
+- Clerk entry loading is bounded locally: after 15 seconds, or when the Clerk
+  client cannot load, the former indefinite `Loading secure email sign-in...`
+  placeholder is replaced with a clear retry message. A rejected session also
+  exposes the `Use a new email code` recovery control. This correction is not
+  deployed until the reviewed release gate is completed.
+- The Clerk loading regression test now exercises both the returning-user
+  sign-in mount and the new-account sign-up mount, requiring each to hide the
+  loading placeholder once the documented Clerk component is ready.
+- The controlled-beta configuration now explicitly keeps
+  `WORKDOE_ENFORCE_SERVICE_ACTIVATION=false`. This aligns the runtime with the
+  53-service advisory-only launch scope: policy acknowledgements still protect
+  elevated and regulated services, while the retained service-zone records are
+  evidence for a future approved gated rollout rather than an accidental beta
+  discovery or bidding gate.
+- The Flask production guard now rejects the local authentication provider and
+  requires Clerk with same-domain email-code configuration. This makes the
+  production identity boundary fail closed even if a future configuration
+  change would otherwise re-enable the local password-capable fallback.
+- Runtime provenance now separately records the Cloudflare-supplied Python
+  Workers SDK used by the `workers` import. The release config deliberately
+  disables any external SDK bundle, and provenance verification now fails if
+  that bundled-runtime configuration or compatibility date drifts.
+- A final read-only live launch diagnostic reports no technical deployment
+  blockers. It confirms DNS delegation, apex and `www` resolution, custom
+  domain policy, GitHub release readiness, the sanitized `7/7` secret-name
+  evidence, and the completed Clerk configuration proof.
+- On 2026-10-24, a fresh local Cloudflare preflight passed without warnings,
+  including the migration chain, Worker compilation, production bindings,
+  static-asset policy, auth boundary, media authorization, and release-script
+  contract checks. The D1 query-plan check inspected 36 migrations and showed
+  the expected open-job geography, public-media, and rolling-upload-window
+  indexes with no table scans. A separate read-only live launch-doctor and
+  strict production-smoke pass reported the deployed DNS, HTTPS redirects,
+  entry security headers, public API, trust/discovery pages, static cache
+  policy, Clerk production key, invitation entry, and same-domain Clerk proxy
+  as ready. Those live checks do not deploy the local candidate or replace the
+  workflow, media, legal, and operating gates below.
+
+These are application safeguards, not a Cloudflare billing hard stop: accepted
+or concurrent requests can still create billable operations. The owner must
+retain Cloudflare usage alerts and review R2/Images usage before opening the
+beta beyond its controlled cohort.
+
+## External-service operating constraints
+
+- The current map shell uses the OpenStreetMap standard tile endpoint with
+  visible attribution, an ordinary browser referrer policy, and no tile
+  prefetch or offline-download feature. This is appropriate for supervised
+  interactive beta use, not an availability guarantee or a sustained-growth
+  provider decision. The OSM tile policy requires attribution, normal caching,
+  and an accurate web referrer, and permits the service to block harmful or
+  heavy use. Review traffic before expanding the cohort and move to a provider
+  with suitable terms before the map becomes a sustained commercial dependency:
+  <https://operations.osmfoundation.org/policies/tiles/>.
+- Public media uploads are disabled for this beta, and the Worker does not
+  attach a Cloudflare Images binding. This avoids raw-image storage and an
+  Images Paid dependency while the product is validated. Cloudflare's
+  R2-upload transformation tutorial lists an Images Paid subscription as a
+  prerequisite for its Worker binding; a future photo launch must be an
+  owner-approved release with usage alerts and valid/invalid/oversize
+  acceptance checks:
+  <https://developers.cloudflare.com/images/tutorials/optimize-user-uploaded-image/>.
+
+## Launch gates still open
+
+1. **Data-minimization decision:** Email-code authentication necessarily
+   processes an email address. Clerk is the primary identity provider, and the
+   current D1 user mirror retains the verified email for account lookup and
+   transactional operations. Do not market the beta as non-PII. Either accept
+   and document that narrow PII boundary or fund a separate, forward-only
+   pseudonymous-account migration with replacement operational-email flows.
+2. **Legal and policy approval:** Record an approved public legal/mailing
+   address and display format; obtain counsel approval for the Terms, Privacy,
+   Safety, service-policy, contractor-classification, and dispute language.
+3. **Data operations:** Approve a retention/deletion schedule for accounts,
+   projects, messages, media, reports, audit records, and backups; perform an
+   export/deletion request test; define identity verification and request logs.
+4. **Incident coverage:** Document urgent safety/security escalation. A single
+   monitored inbox with a 1 to 5 business-day target is appropriate for ordinary
+   requests, not for time-sensitive incident response.
+5. **Live marketplace acceptance:** Complete a contractor email-code test and
+   one controlled two-account journey: post a city/ZIP-only project, submit
+   and approve a mini bid, exchange a message, complete the project, then
+   verify visibility, audit, and deletion behavior. The owner should enter all
+   one-time codes and use test content only.
+6. **Future media acceptance:** Before any future photo launch, exercise the
+   approved sanitizer/storage path with valid, invalid, and oversize inputs;
+   verify private authorization, quota/rate-limit behavior, and cleanup under
+   the approved retention policy.
+7. **Release acceptance:** After the preceding gates are approved, deploy the
+   locally prepared dialog/policy/provenance, responsive-workspace, map-control,
+   tile-provider configuration, and demonstration-timing corrections through
+   the normal reviewed release process, record the deployed SHA, and rerun the
+   production smoke, responsive browser, and browser-console checks. Capture
+   the direct composer at 1280x720 as well as the map workspace viewports.
+8. **Browser accessibility acceptance:** At the deployed release, record
+   keyboard-only, reduced-motion, and screen-reader-label checks plus visual
+   captures at 390x844, 820x1180, and 1280x720. The current source-level
+   accessibility contract tests are useful regression coverage, but do not
+   replace a browser/assistive-technology acceptance run.
+## Licensing and provenance
+
+## 2026-10-25 verification addendum
+
+This follow-up did not deploy, push, commit, authenticate as a user, or create
+marketplace data. The current local release candidate passed all 259 unit and
+integration tests in 90.7 seconds. Cloudflare preflight completed with no
+errors or warnings. The complete security command reported no known Node or
+Python dependency vulnerabilities, no Bandit medium or high findings, a
+passing secret gate across 702 non-ignored files, and passing dependency
+provenance verification.
+
+The read-only strict production smoke check still fails only for the two
+demonstration-timing safeguards: the deployed public API returns fixed
+`desired_date` values for `demo-01`, `demo-02`, and `demo-03`, and the deployed
+sample detail does not display `Sample timing`. DNS, HTTPS redirects, health,
+security headers, asset caching, public trust and discovery pages, social
+preview, production Clerk key, invitation entry, and same-domain Clerk proxy
+remain ready. This confirms the local correction is not yet the deployed
+revision; it does not weaken or replace any open owner-controlled launch gate.
+
+Workdoe's first-party source and assets remain proprietary. The checked
+third-party dependencies are pinned with licenses, official sources, and
+integrity hashes in `DEPENDENCY_PROVENANCE.json`; retained notices are in
+`THIRD_PARTY_NOTICES.md`. No PTOwl or NuTs source was copied into Workdoe.
+Cloudflare, Clerk, and OpenStreetMap are operational providers whose current
+terms and configuration requirements remain separate from open-source
+dependency licensing.
+
+## 2026-10-25 beta-media and production-smoke addendum
+
+Local release commit `5523e6d` deliberately keeps
+`WORKDOE_MEDIA_UPLOADS_ENABLED=false`. The generated Wrangler configuration
+omits the Cloudflare Images binding, the signed-in UI hides project and
+portfolio upload controls, and upload routes reject requests before reading a
+body or invoking any storage binding. This is a no-paid-media beta posture,
+not a claim that Workdoe has a production photo feature. A future media launch
+requires a separately reviewed provider, retention, quota, authorization, and
+valid/invalid/oversize acceptance decision.
+
+The local release candidate passed 262 unit and integration tests in 89.622
+seconds. Cloudflare preflight passed with no errors or warnings. The complete
+security and provenance gate reported no known Node or Python dependency
+vulnerabilities, no Bandit medium/high findings, a passing secret gate across
+702 non-ignored files, and passing dependency provenance verification.
+
+### Media alternatives reviewed
+
+The controlled beta's no-upload posture remains the selected release decision.
+It avoids taking raw property images, enables no Cloudflare Images binding, and
+does not depend on a billing threshold to protect a privacy-sensitive workflow.
+It is therefore the only media posture included in the current production
+acceptance scope.
+
+The following alternatives were reviewed against the current [Cloudflare Images
+pricing documentation](https://developers.cloudflare.com/images/pricing/) and
+the [Worker upload-transform guide](https://developers.cloudflare.com/images/tutorials/optimize-user-uploaded-image/), and deliberately deferred:
+
+1. **Direct private R2 originals without transformation.** This could avoid
+   Cloudflare Images Paid by accepting only pre-sized images and enforcing
+   file type, byte, per-account, and rate limits. It would still retain raw
+   image bytes and embedded metadata unless clients reliably remove them, so
+   it needs a separate privacy, deletion, abuse, and authorization review.
+2. **Cloudflare Images Free URL transformations.** Images Free supports up to
+   5,000 unique transformations each month for images stored outside Images,
+   including R2. New transformations fail with error 9422 above that limit;
+   the limit is not a private-media authorization model or a replacement for
+   an upload sanitizer. The URL interface also requires a safely reachable
+   source URL, which is not an accepted route for private Workdoe project
+   photos without further design and live authorization tests.
+3. **Cloudflare Images binding.** Cloudflare's Worker upload-transform guide
+   requires Images Paid for the binding used to resize, strip metadata, and
+   store a sanitized derivative. It remains the reviewed option for a future
+   private-photo feature, provided the operator separately approves its
+   billing and media-retention controls.
+4. **Third-party public image hosts.** These are rejected for the beta. They
+   weaken Workdoe's control over property-photo access, deletion, retention,
+   availability, and provider terms, and are inconsistent with the
+   privacy-minimizing marketplace design.
+
+Cloudflare's free tier and budget alerts are useful monitoring tools, but they
+are not application-level hard spend caps. Workdoe must not describe a
+best-effort quota or a provider free tier as a guarantee that an account will
+never be charged.
+
+The read-only production smoke check against `https://workdoe.com` confirmed
+DNS, HTTP-to-HTTPS redirects, health, security headers, static cache headers,
+trust/discovery pages, social-preview asset, production Clerk key, invitation
+entry, and same-domain Clerk proxy. It remains not-ready because the deployed
+site predates the local candidate: `demo-01`, `demo-02`, and `demo-03` expose
+fixed requested dates in the public API, while their detail view lacks a
+visible sample-timing label. No Cloudflare deployment was attempted during this
+verification because no local deployment token was available.
+
+## 2026-10-25 map and release-reporting addendum
+
+Local commit `53bad0f` adds a debounced Leaflet `invalidateSize` call after a
+browser resize. This keeps the map canvas correctly sized after iPad rotation,
+tablet resizing, and desktop-window changes without changing map bounds,
+search results, or the location-privacy model. Its asset release token and
+Cloudflare manifest were regenerated from the reviewed static bytes.
+
+The map candidate passed 262 unit and integration tests in 90.394 seconds;
+the current candidate, including the release-reporting correction, passed all
+263 tests in 89.732 seconds. Cloudflare preflight, Ruff, and
+dependency-provenance verification also passed. There was no GitHub push,
+Cloudflare deployment, sign-in, or marketplace write during this follow-up.
+
+The live launch doctor now distinguishes **ready to deploy** from public
+acceptance. A stopped local development server is reported as `not-running`
+when live Cloudflare, DNS, and release-credential checks are being evaluated;
+it is not a production deploy blocker. The report explicitly warns that a
+successful post-deploy production smoke check is still required for public
+acceptance. Its ready-to-deploy result currently reflects an available GitHub
+deployment path, not authorization to use it and not evidence that the local
+candidate is live.
+
+The direct Cloudflare deployment path remains deliberately unexecuted: the
+expected ignored token file was not present at
+`cloudflare/.deploy-token`. The fresh smoke result above continues to prove
+that the deployed public revision is not yet the reviewed candidate.
+
+## 2026-10-25 current local verification
+
+The current local candidate passed all 263 unit and integration tests in
+95.141 seconds. A focused Clerk session-verification regression test also
+passed independently. The complete security command reported zero known npm
+and Python dependency vulnerabilities, no Bandit medium/high findings, a
+passing Ruff check, a passing secret gate across 702 non-ignored files, and
+passing dependency provenance verification. Cloudflare preflight regenerated
+and checked the Worker/D1/static release artifacts with no errors or warnings.
+
+The non-deploying production plan has no strict technical blockers and includes
+the required remote D1 migration, Worker deploy, and six-attempt post-deploy
+production smoke sequence. It does not prove the reviewed candidate is live.
+At this verification time, the ignored local deployment token file was still
+absent, so no migration, deployment, or external marketplace write was
+performed. The user must place a valid token at `cloudflare/.deploy-token`
+before the approved direct deployment path can execute.
+
+A fresh live-browser check on 2026-10-25 reconfirmed that the deployed
+marketplace is the older revision: it shows `0 live / 15 sample`, renders a
+fixed August 2026 desired date for a demonstration project, and the signed-in
+composer still advertises `Private photos`. The older composer also emitted
+Turnstile console errors during the audit. The current local candidate's
+focused public-sample, map-control, native-dialog, and explicit-Turnstile
+lifecycle tests pass; this observed production drift is therefore a release
+acceptance gate, not evidence that the candidate regressed. The in-app audit
+browser did not honor its requested narrow viewport override, so this follow-up
+does not add new handheld visual-acceptance evidence.
+
+## Decision
+
+The deployed production site is operating for a controlled owner-supervised
+beta, but its currently live public marketplace predates the local responsive
+and map polish fixes. Its strengthened production smoke currently fails the
+demonstration-timing detail and public-API checks, so the deployed public UI
+and public contract are not ready to represent as the reviewed candidate. The
+local candidate has no remaining automated technical failure, but it cannot be
+called ready until the reviewed release is deployed and the smoke check passes.
+It is also not ready to be represented as an unrestricted commercial launch
+because the legal, data-operations, incident-response, live two-role workflow,
+media-acceptance, and reviewed-release gates above remain open.
+
+## 2026-10-25 independent release-gate rerun
+
+This follow-up did not push to GitHub, deploy a Worker, read a deployment
+token, authenticate as a marketplace user, or create marketplace data. It
+re-ran the following checks against local commit `6b36110`:
+
+- Ten focused public-surface, responsive-layout, Clerk entry-shell, private
+  media-access, demonstration-data, and onboarding tests passed in 5.013
+  seconds. A standalone Clerk session-verification probe separately passed
+  the signed-session, current-JWKS fallback, and invalid-signature paths.
+- `npm run provenance:verify` passed. `npm run cf:d1:query-plan` confirmed the
+  required geo, visible-photo, and media-window indexes with no table scans.
+  `npm run cf:preflight` completed all 186 checks with no errors or warnings.
+- The local Python 3.13 sandbox cannot complete the full imported
+  `test_cloudflare_release` session-verification test: after importing that
+  large test module, even `asyncio.run(asyncio.sleep(0))` stalls. The same
+  verifier completed normally when loaded without the test harness. This is a
+  sandbox test-host limitation, not a Worker failure. A subsequent host-side
+  sliced run executed all 263 tests in nine deterministic groups and every
+  group passed (89.159 seconds of test time total). This is fresh complete
+  unit and integration evidence for this release candidate.
+- The read-only strict production smoke was rerun outside the sandbox because
+  its sandbox DNS resolver cannot resolve public names. Live DNS, HTTPS
+  redirects, health, headers, cache policy, trust/discovery pages, social
+  metadata, production Clerk, invitation entry, and same-domain Clerk proxy
+  passed. The only failures remain the deployed fixture dates for `demo-01`,
+  `demo-02`, and `demo-03` and the missing public `Sample timing` label.
+
+The direct deployment gate still reports only one technical execute blocker:
+`CLOUDFLARE_API_TOKEN` is absent. The ignored token file was not present at
+`cloudflare/.deploy-token` during this rerun, so the reviewed candidate remains
+local and the live production revision remains unchanged.
+
+### Source-boundary review
+
+A focused manual source review found no new critical browser-sink, command
+execution, dynamic-SQL, or unbounded external-origin issue in the release
+candidate. The reviewed map and dialog `innerHTML` paths escape text and
+attribute values before insertion; deployment helpers pass fixed argument lists
+to `subprocess.run` without a shell; and Worker routes use prepared D1
+statements with bound values. The CSP does not permit `unsafe-eval` or inline
+scripts. Its only deliberate relaxation is `unsafe-inline` for styles on Clerk
+entry pages, required by Clerk's prebuilt components; it is paired with
+explicit Clerk, Turnstile, and OpenStreetMap origin allowlists. This is a
+documented third-party compatibility residual, not a claim that CSP alone
+eliminates XSS risk.
+
+### Local visual workflow review
+
+The release candidate was rendered locally at 1280 by 720 using a clean,
+demo-seeded database. The public marketplace displayed the six work-family
+filter, privacy-safe approximate map, map-area and DMV-reset controls, and
+open-project list without visible overlap. The **Post project** control opened
+the native dialog over the map rather than navigating away; closing it restored
+keyboard focus to the original control. Inside the dialog, choosing a family
+advanced to its service choices, then to the project-details step. The direct
+composer route likewise kept its action bar reachable at this desktop height
+and displayed the address/email/phone disclosure guard before free-text entry.
+
+That early local inspection did not include reliable narrow-viewport captures.
+It was subsequently supplemented by the current production-browser checks at
+390 by 844 and 820 by 1180 recorded below. Those captures still do not replace
+physical-device or assistive-technology acceptance testing.
+
+## 2026-10-25 production deployment and verification
+
+This section supersedes the earlier entries that described the reviewed
+candidate as local-only or the live Worker as stale. Commit `901463f` was
+released directly through the owner's encrypted local Wrangler OAuth profile;
+no API token was copied to chat, a tracked file, or a GitHub workflow. The
+release guard first verified strict readiness, then completed all required
+steps successfully:
+
+- Applied forward-only D1 migrations
+  `0035_redact_uploaded_filename_metadata.sql` and
+  `0036_media_upload_audit_window.sql`. The first replaces retained source
+  filenames with generic media labels; the second adds a bounded operational
+  index. No migration remained pending after the release.
+- Published the Worker and its reviewed static assets through Wrangler.
+- Passed the strict production smoke suite against `https://workdoe.com`:
+  DNS, HTTP-to-HTTPS redirects for apex and `www`, health, public jobs API,
+  sample-data timing labels, security headers, immutable asset caching, public
+  trust/discovery routes, social-preview asset, production Clerk key,
+  invitation entry, and the same-domain Clerk proxy all passed.
+- Passed the complete local regression suite: 267 tests in 96.962 seconds.
+  The security suite found zero known npm or Python dependency vulnerabilities,
+  no Bandit medium/high findings, passing Ruff, passing dependency provenance,
+  and no new secret detection after the baseline metadata refresh.
+
+A live browser review exercised the public marketplace without creating an
+account, submitting a project, or sending a message. At desktop, the map
+zoomed and the **Search this area** control narrowed the visible approximate
+projects while serializing only rounded viewport bounds into the URL. At
+390 by 844 and 820 by 1180, the responsive Projects, Map, and Details views
+had no observed overlap or clipped primary controls. The mobile **Post
+project** entry opened a native in-place bottom sheet; closing it restored
+focus to the initiating control and the selected map view.
+
+A separate keyboard-only production pass reached the **Skip to content** link
+first, then the **Post project** control in the expected tab order. Pressing
+Enter opened the native dialog, focused its first work-family radio option, and
+Escape returned focus to the original **Post project** link. The published
+account route also resolved a pre-existing same-domain Clerk session into the
+signed-in project workspace rather than leaving the former loading message on
+screen. A fresh email-code request/verification cannot be automated without
+an owner entering a code from their mailbox, so that remains an owner-run
+journey test.
+
+The only browser-console diagnostics observed in this pass originated from the
+Cloudflare Turnstile challenge iframe and did not include a Workdoe source URL
+or user-visible failure. They are not sufficient evidence to waive the
+owner-run fresh sign-in test.
+
+## 2026-10-27 production recheck
+
+The deployed Worker and the locally reviewed release tree were rechecked after
+the media-scope documentation correction. No GitHub push, pull request, D1
+migration, Cloudflare configuration change, user account, project, bid, or
+message was created by this recheck.
+
+- The strict production smoke passed again against `https://workdoe.com`:
+  apex and `www` HTTP-to-HTTPS redirects, health, public jobs API, sample-data
+  presentation, entry security headers, immutable static-cache behavior,
+  public trust/discovery pages, social metadata, production Clerk key,
+  invitation entry, and same-domain Clerk proxy all reported ready.
+- Live visual checks at 390 by 844, 820 by 1180, and 1280 by 720 found the
+  public marketplace coherent without clipped primary controls. The map retained
+  browser-friendly zoom controls, visible OpenStreetMap attribution, and a
+  `Search this area` control. Public project detail showed only city-level
+  location and the approximate-location disclosure.
+- On the phone-sized view, `Post project` loaded as a native in-place bottom
+  sheet with only step 1 of 6 shown, six labeled family choices, and visible
+  Cancel and Continue actions. Closing it restored the selected map route and
+  keyboard focus to the initiating control. This check did not submit a draft.
+- The narrow-screen stylesheet keeps text, select, and textarea controls at a
+  16px font size so iOS Safari does not auto-zoom when a person focuses a
+  field. The viewport, safe-area bottom padding, sticky composer actions, and
+  native-dialog contract are covered by three focused regression tests. This
+  is browser-level responsive evidence, not a substitute for testing on owned
+  iPhone and iPad hardware or with assistive technology.
+- Thirteen focused regression tests passed for same-origin API-write markers,
+  rate-limit policy, beta media disablement, private R2 access, public map
+  query/index telemetry, local/Worker public-query contract parity, exact-address
+  redaction, and address-free dashboard history. The full Cloudflare preflight
+  also passed with no errors or warnings.
+- The complete local `unittest` suite passed again after the narrow-screen
+  safeguard across all 267 current test methods. It uses isolated local
+  databases and fixtures, so this confirms application regressions without
+  creating production marketplace data.
+- The complete security command passed: npm audit found zero vulnerabilities;
+  pip-audit found no known vulnerabilities; Bandit, Ruff, the secret gate, and
+  dependency-provenance verification passed. Bandit's retained `nosec` notices
+  are reviewed test-fixture or parameterized-query suppressions, not failures.
+- A separate upstream provenance pass downloaded the recorded official Python
+  source archives and verified every SHA-256 value in
+  `DEPENDENCY_PROVENANCE.json`. Workdoe's own source remains proprietary; this
+  is evidence for the pinned third-party dependencies and retained notices, not
+  a claim that the first-party repository is open source.
+- Wrangler 4.152.0 successfully built a no-deploy Worker bundle of 50 Python
+  modules and 88 static assets. Its optional `check startup` profiler then
+  failed in local workerd with a duplicate-module runtime error. Because the
+  regular production bundle validation and the live Worker both succeed, this
+  is recorded as a Wrangler-profiler compatibility limitation, not evidence of
+  a deployed Worker failure. Re-run the profiler after separately reviewing a
+  pinned Wrangler upgrade; do not treat the profiler result as an acceptance
+  substitute or silently waive it.
+
+### 2026-10-27 direct deployment record
+
+The reviewed mobile-form safeguard was deployed directly from local source
+commit `23915ec610a55e4573d4f10a4517257eed63b15c`; no GitHub push or pull
+request was used. The controlled deploy completed the existing forward-only D1
+migration step, Worker deploy, and strict production smoke successfully.
+Cloudflare reports deployment `6062b307-699f-46e0-aebb-8e6d813e8b9f` serving
+Worker version `b7455b37-73d3-446d-828d-ea83248e8900` at 100 percent. The
+deployment uses the already authenticated local Wrangler profile; no token is
+recorded in this repository or this evidence file.
+
+### Remaining non-technical launch gates
+
+The deployment and automated technical acceptance are complete. Workdoe is
+still a controlled beta rather than an unrestricted commercial launch until
+Moose Bay and Company LLC completes the separate owner responsibilities:
+
+1. Approve the public legal terms, privacy notice, safety advisory, and any
+   contractor-classification or licensing obligations with appropriate counsel.
+2. Finalize the retention/deletion schedule, identity-verification steps for
+   privacy requests, and an urgent incident escalation path separate from the
+   ordinary one-to-five-business-day inbox commitment.
+3. Complete controlled consumer and contractor email-code journey tests using
+   owner-controlled accounts, including a real project-to-message flow. Do not
+   record email codes in Workdoe documentation or source control.
+4. Keep public media uploads disabled until a separately reviewed private-media
+   retention, abuse response, metadata-sanitization, and billing-control
+   design is approved.

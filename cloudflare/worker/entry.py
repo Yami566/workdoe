@@ -102,6 +102,7 @@ from client_requests import (
     normalize_client_request_view,
     parse_client_job_requests_path,
 )
+from content_privacy import contains_disallowed_personal_data
 from contractor_bids import (
     CONTRACTOR_BID_LIMIT,
     can_view_contractor_bids,
@@ -200,6 +201,7 @@ from entry_shell import (
     build_entry_shell_html,
     entry_job_filters,
     is_production_clerk_publishable_key,
+    map_tile_configuration,
     shell_headers,
 )
 from idempotency import (
@@ -310,6 +312,7 @@ from media_uploads import (
     form_file_value,
     media_metadata_delete_statement,
     media_review_payload,
+    media_upload_quota_error,
     media_upload_scope_from_path,
     sanitize_uploaded_image,
     sanitized_upload_details,
@@ -729,6 +732,11 @@ def row_value(row, key: str, default=None):
 
 def enforce_service_activation(env) -> bool:
     return enabled_flag(getattr(env, "WORKDOE_ENFORCE_SERVICE_ACTIVATION", ""))
+
+
+def media_uploads_enabled(env) -> bool:
+    """Keep public uploads off unless the reviewed sanitizer is explicitly enabled."""
+    return enabled_flag(getattr(env, "WORKDOE_MEDIA_UPLOADS_ENABLED", ""))
 
 
 async def service_activation_record(env, service_slug: str, zone_slug: str):
@@ -1431,6 +1439,10 @@ class Default(WorkerEntrypoint):
             )
         )
         clerk_publishable_key = getattr(self.env, "CLERK_PUBLISHABLE_KEY", "")
+        map_tile_url, map_tile_attribution = map_tile_configuration(
+            getattr(self.env, "WORKDOE_MAP_TILE_URL", ""),
+            getattr(self.env, "WORKDOE_MAP_TILE_ATTRIBUTION", ""),
+        )
         if (
             path in {"/login", "/start", "/create-account"}
             and not clerk_production_configuration_ready(self.env)
@@ -1450,6 +1462,8 @@ class Default(WorkerEntrypoint):
             clerk_frontend_api_url,
             auth_provider=auth_provider,
             turnstile_site_key=getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", ""),
+            map_tile_url=map_tile_url,
+            map_tile_attribution=map_tile_attribution,
         )
         body = "" if request.method == "HEAD" else html
         return Response(
@@ -1819,7 +1833,16 @@ class Default(WorkerEntrypoint):
             )
             lead_payload["preferences"] = contractor_preferences_response(preferences_row)
             lead_payload["saved_lead_view_url"] = saved_lead_view_url(preferences_row)
-            html = lead_board_html(user, lead_payload)
+            map_tile_url, map_tile_attribution = map_tile_configuration(
+                getattr(self.env, "WORKDOE_MAP_TILE_URL", ""),
+                getattr(self.env, "WORKDOE_MAP_TILE_ATTRIBUTION", ""),
+            )
+            html = lead_board_html(
+                user,
+                lead_payload,
+                map_tile_url=map_tile_url,
+                map_tile_attribution=map_tile_attribution,
+            )
             include_map = True
         elif path == "/jobs/new" and role == "client":
             include_turnstile = bool(getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", ""))
@@ -1934,6 +1957,7 @@ class Default(WorkerEntrypoint):
                 getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", ""),
                 job=new_job_source,
                 embedded=embedded,
+                media_uploads_enabled=media_uploads_enabled(self.env),
                 saved_locations=[
                     saved_location_response(location) for location in saved_locations
                 ],
@@ -1952,6 +1976,7 @@ class Default(WorkerEntrypoint):
                 getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", ""),
                 job=job,
                 mode="edit",
+                media_uploads_enabled=media_uploads_enabled(self.env),
             )
         elif path.startswith("/client/jobs/") and role in {"client", "admin"}:
             job_id = parse_app_client_job_id(path)
@@ -1995,6 +2020,7 @@ class Default(WorkerEntrypoint):
                 user,
                 detail_payload,
                 requests_payload,
+                media_uploads_enabled=media_uploads_enabled(self.env),
             )
         elif path.startswith("/jobs/") and role in {"contractor", "admin"}:
             job_id = parse_app_job_id(path)
@@ -2130,6 +2156,7 @@ class Default(WorkerEntrypoint):
                     for item in credentials
                 ],
                 preferences,
+                media_uploads_enabled=media_uploads_enabled(self.env),
             )
         elif path == "/messages" and role in {"client", "contractor"}:
             rows = await message_threads_for_user(
@@ -4590,6 +4617,12 @@ class Default(WorkerEntrypoint):
             },
             status="processed",
         )
+        await queue_operator_report_alert(
+            self.env,
+            report_id=report_id,
+            target_type=report["target_type"],
+            target_id=report["target_id"],
+        )
         response_payload = report_response(report_id, report)
         response_payload["replayed"] = False
         return json_response(
@@ -5995,6 +6028,12 @@ class Default(WorkerEntrypoint):
                 status=405,
                 headers={"Allow": "POST", "Cache-Control": "no-store"},
             )
+        if not media_uploads_enabled(self.env):
+            return json_response(
+                {"ok": False, "error": "Photo uploads are not available during this beta."},
+                status=503,
+                headers={"Cache-Control": "no-store"},
+            )
         if (
             not hasattr(self.env, "DB")
             or not hasattr(self.env, "MEDIA")
@@ -6013,7 +6052,8 @@ class Default(WorkerEntrypoint):
                 status=411,
                 headers={"Cache-Control": "no-store"},
             )
-        if content_length > MAX_UPLOAD_BYTES + 4096:
+        # Multipart framing is small compared with the bounded source file.
+        if content_length > MAX_UPLOAD_BYTES + (16 * 1024):
             return json_response(
                 {"ok": False, "error": "Image upload is too large."},
                 status=413,
@@ -6040,6 +6080,13 @@ class Default(WorkerEntrypoint):
             return json_response(
                 {"ok": False, "error": "You cannot upload media for this record."},
                 status=403,
+                headers={"Cache-Control": "no-store"},
+            )
+        quota_error = await self.media_upload_quota_error(scope, owner_id, user)
+        if quota_error:
+            return json_response(
+                {"ok": False, "error": quota_error},
+                status=400,
                 headers={"Cache-Control": "no-store"},
             )
 
@@ -6253,6 +6300,44 @@ class Default(WorkerEntrypoint):
         )
         return bool(contractor) and can_upload_contractor_photo(user, contractor)
 
+    async def media_upload_quota_error(self, scope: str, owner_id: int, user) -> str | None:
+        """Check bounded per-resource and per-user media quotas before decoding."""
+        if scope == "job":
+            resource_result = await db_run(
+                self.env,
+                "SELECT COUNT(*) AS count FROM job_photos WHERE job_id = ?",
+                owner_id,
+            )
+        else:
+            resource_result = await db_run(
+                self.env,
+                "SELECT COUNT(*) AS count FROM contractor_photos WHERE contractor_id = ?",
+                owner_id,
+            )
+        resource_row = first_row(resource_result) or {}
+        recent_since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(
+            timespec="seconds"
+        )
+        user_id = row_value(user, "id")
+        recent_result = await db_run(
+            self.env,
+            """
+            SELECT COUNT(*) AS count
+            FROM automation_events
+            WHERE event_type = 'media-uploaded'
+              AND created_at >= ?
+              AND json_extract(payload_json, '$.uploaded_by') = ?
+            """,
+            recent_since,
+            user_id,
+        )
+        recent_row = first_row(recent_result) or {}
+        return media_upload_quota_error(
+            scope,
+            int(row_value(resource_row, "count", 0) or 0),
+            int(row_value(recent_row, "count", 0) or 0),
+        )
+
     async def insert_media_metadata(self, scope: str, owner_id: int, user, key: str, details: dict) -> int:
         if scope == "job":
             await db_run(
@@ -6404,7 +6489,15 @@ class Default(WorkerEntrypoint):
             if existing and row_value(existing, "role") == "admin":
                 raise EmailCodeAuthError("Administrator email-code access is disabled.", 403)
             if not existing and not display_name:
-                raise EmailCodeAuthError("Add your name to create a Workdoe account.")
+                raise EmailCodeAuthError(
+                    "Add a public business name or non-identifying handle to create a Workdoe account."
+                )
+            if not existing and contains_disallowed_personal_data(
+                (display_name, company_name)
+            ):
+                raise EmailCodeAuthError(
+                    "Do not include an email address, phone number, or exact street address in your public business name or handle."
+                )
 
             role = fixed_account_role(
                 row_value(existing, "role") if existing else None,
@@ -7340,6 +7433,48 @@ async def queue_repeat_provider_invitation_email(
             payload,
             getattr(env, "WORKDOE_SECRET_KEY", ""),
         ),
+        status="queued",
+    )
+    return True
+
+
+async def queue_operator_report_alert(
+    env,
+    *,
+    report_id: int,
+    target_type: str,
+    target_id: int,
+) -> bool:
+    """Queue a generic operator alert without report content or account details."""
+    payload = {
+        "type": "operator-report-alert",
+        "to": getattr(env, "WORKDOE_ADMIN_EMAIL", ""),
+        "report_id": report_id,
+        "target_type": target_type,
+        "target_id": target_id,
+        "moderation_url": "https://workdoe.com/admin",
+    }
+    try:
+        await env.EMAIL_QUEUE.send(payload)
+    except Exception as exc:  # noqa: BLE001 - Queue binding errors are JS-backed.
+        await record_event_best_effort(
+            env,
+            "operator-report-alert-queue-failed",
+            target_type=target_type,
+            target_id=target_id,
+            payload={"report_id": report_id, "error_type": type(exc).__name__},
+            status="failed",
+        )
+        return False
+    await record_event_best_effort(
+        env,
+        "operator-report-alert",
+        target_type=target_type,
+        target_id=target_id,
+        payload={
+            **email_audit_metadata(payload, getattr(env, "WORKDOE_SECRET_KEY", "")),
+            "report_id": report_id,
+        },
         status="queued",
     )
     return True

@@ -2,9 +2,12 @@
 
 Review opened: 2026-08-16 EDT
 
-Status: In progress. The local functional and technical candidate has completed
-its full walkthrough. Owner policy decisions and production-only evidence remain
-open, so this record does not approve unrestricted public launch.
+Status: Historical evidence, superseded by
+`../workdoe-launch-readiness-2026-10-24.md` and the current product
+requirements. The local functional and technical candidate had completed its
+full walkthrough at the time of this review; owner policy decisions and
+production-only evidence remained open. This record does not approve
+unrestricted public launch.
 
 ## Review method
 

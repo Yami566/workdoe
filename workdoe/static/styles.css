@@ -4068,9 +4068,37 @@ textarea:focus {
   margin: 16px 48px 16px 18px;
 }
 
-#lead-map.has-open-popup .map-search-area {
+#lead-map.has-open-popup .map-search-area,
+#lead-map.has-open-popup .map-view-controls {
   visibility: hidden;
   pointer-events: none;
+}
+
+.map-view-controls {
+  position: absolute;
+  z-index: 720;
+  top: 58px;
+  right: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+}
+
+.map-view-control {
+  width: auto;
+  min-height: 38px;
+  border-color: var(--accent-dark);
+  background: #fff;
+  color: var(--accent-dark);
+  box-shadow: 0 5px 16px rgba(18, 38, 24, 0.18);
+}
+
+.map-view-control:hover,
+.map-view-control:focus-visible {
+  background: var(--accent-dark);
+  color: #fff;
 }
 
 .map-search-area {
@@ -6418,10 +6446,20 @@ textarea:focus {
     min-height: 92px;
   }
 
-  .project-step-actions {
-    position: sticky;
-    bottom: 0;
+  body:not(.dialog-fragment-body) .form-grid[data-project-composer] .project-composer-step {
+    padding-bottom: 104px;
+  }
+
+  body:not(.dialog-fragment-body) .form-grid[data-project-composer] .project-step-actions {
+    position: fixed;
+    right: max(16px, calc((100vw - 860px) / 2));
+    bottom: 16px;
+    left: max(16px, calc((100vw - 860px) / 2));
+    z-index: 840;
+    margin: 0;
+    padding: 12px 4px;
     background: var(--surface);
+    box-shadow: 0 -10px 18px rgba(17, 24, 19, 0.08);
   }
 
   .project-review > div {
@@ -6598,6 +6636,16 @@ textarea:focus {
 }
 
 @media (max-width: 520px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .home-map.map-panel::after {
+    display: none;
+  }
+
   .market-entry h1 {
     font-size: 1.5rem;
     line-height: 1.1;
@@ -6947,10 +6995,20 @@ textarea:focus {
     padding: 12px;
   }
 
+  .site-dialog[data-dialog-kind="project"] .project-composer-step {
+    padding-bottom: 16px;
+  }
+
   .site-dialog[data-dialog-kind="project"] .project-step-actions {
+    position: sticky;
     bottom: 0;
-    width: calc(100vw - 24px);
-    padding: 10px 0;
+    left: auto;
+    width: auto;
+    margin-top: auto;
+    padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
+    background: var(--surface);
+    box-shadow: 0 -10px 18px rgba(17, 24, 19, 0.08);
+    transform: none;
   }
 
   .site-dialog[data-dialog-kind="bid"] .site-dialog-surface {
@@ -8405,9 +8463,37 @@ textarea:focus {
   }
 }
 
+/* Keep the next action in view on short desktop browser windows. */
+@media (max-height: 760px) and (min-width: 1121px) {
+  body:not(.dialog-fragment-body) .form-grid[data-project-composer] .project-composer-step {
+    padding-bottom: 104px;
+  }
+
+  body:not(.dialog-fragment-body) .form-grid[data-project-composer] .project-step-actions {
+    position: fixed;
+    right: max(16px, calc((100vw - 860px) / 2));
+    bottom: 16px;
+    left: max(16px, calc((100vw - 860px) / 2));
+    z-index: 840;
+    margin: 0;
+    padding: 12px 4px;
+    background: var(--surface);
+    box-shadow: 0 -10px 18px rgba(17, 24, 19, 0.08);
+  }
+}
+
 @media (max-width: 720px) {
   body:not(.dialog-fragment-body) {
     padding-bottom: calc(68px + env(safe-area-inset-bottom));
+  }
+
+  body:not(.dialog-fragment-body) .form-grid[data-project-composer] .project-composer-step {
+    padding-bottom: 148px;
+  }
+
+  body:not(.dialog-fragment-body) .form-grid[data-project-composer] .project-step-actions {
+    bottom: calc(68px + env(safe-area-inset-bottom));
+    padding-block: 10px;
   }
 
   .market-entry .market-actions {

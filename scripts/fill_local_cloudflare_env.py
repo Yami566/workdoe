@@ -36,7 +36,7 @@ DEFAULTS = {
     "WORKDOE_DOMAIN": "workdoe.com",
     "WORKDOE_PUBLIC_URL": "https://workdoe.com",
     "WORKDOE_LOGIN_MODE": "same_domain_email_code",
-    "WORKDOE_ENFORCE_SERVICE_ACTIVATION": "true",
+    "WORKDOE_ENFORCE_SERVICE_ACTIVATION": "false",
     "CLERK_FRONTEND_API_URL": "https://workdoe.com/__clerk",
     "CLERK_PROXY_URL": "https://workdoe.com/__clerk",
     "CLERK_FAPI": "https://frontend-api.clerk.dev",

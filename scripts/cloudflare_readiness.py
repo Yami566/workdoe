@@ -22,6 +22,7 @@ REQUIRED_PUBLIC_VARS = {
     "WORKDOE_AUTH_PROVIDER",
     "WORKDOE_LOGIN_MODE",
     "WORKDOE_ENFORCE_SERVICE_ACTIVATION",
+    "WORKDOE_MEDIA_UPLOADS_ENABLED",
 }
 REQUIRED_QUEUES = {
     "EMAIL_QUEUE": "workdoe-email",
@@ -303,11 +304,11 @@ def run_readiness(
             "WORKDOE_AUTH_PROVIDER must be clerk and WORKDOE_LOGIN_MODE must be same_domain_email_code.",
         )
         add_requirement(
-            vars_map.get("WORKDOE_ENFORCE_SERVICE_ACTIVATION") == "true",
+            vars_map.get("WORKDOE_ENFORCE_SERVICE_ACTIVATION") == "false",
             checks,
             blockers,
-            "Service-zone launch gates are enforced",
-            "WORKDOE_ENFORCE_SERVICE_ACTIVATION must be true in production.",
+            "All curated beta services are available with advisory controls",
+            "WORKDOE_ENFORCE_SERVICE_ACTIVATION must be false for the advisory-only beta.",
         )
         add_requirement(
             vars_map.get("WORKDOE_PUBLIC_URL") == "https://workdoe.com"
@@ -325,16 +326,30 @@ def run_readiness(
             "Private R2 media bucket binding is configured",
             "R2 binding must be MEDIA for the workdoe-media bucket.",
         )
-        add_requirement(
-            wrangler.get("images") == {"binding": "IMAGES"},
-            checks,
-            blockers,
-            "Cloudflare Images upload sanitizer binding is configured",
-            "Images binding must be configured as IMAGES before production uploads.",
-        )
-        warnings.append(
-            "Confirm Cloudflare Images Paid is active and complete one live valid-image plus invalid-image upload test before enabling public uploads."
-        )
+        media_uploads = vars_map.get("WORKDOE_MEDIA_UPLOADS_ENABLED") == "true"
+        if media_uploads:
+            add_requirement(
+                wrangler.get("images") == {"binding": "IMAGES"},
+                checks,
+                blockers,
+                "Cloudflare Images upload sanitizer binding is configured",
+                "Images binding must be configured as IMAGES before production uploads.",
+            )
+            warnings.append(
+                "Confirm Cloudflare Images Paid is active and complete one live valid-image plus invalid-image upload test before enabling public uploads."
+            )
+        else:
+            add_requirement(
+                vars_map.get("WORKDOE_MEDIA_UPLOADS_ENABLED") == "false"
+                and "images" not in wrangler,
+                checks,
+                blockers,
+                "Public media uploads are disabled without attaching Cloudflare Images",
+                (
+                    "WORKDOE_MEDIA_UPLOADS_ENABLED must be false and the Images binding "
+                    "must stay absent until the reviewed image sanitizer is enabled."
+                ),
+            )
         producers = {
             producer.get("binding"): producer.get("queue")
             for producer in wrangler.get("queues", {}).get("producers", [])

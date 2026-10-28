@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from content_privacy import contains_disallowed_personal_data, personal_data_error
 from contractor_reputation import contractor_match_provider
 
 MESSAGE_BODY_MAX_LENGTH = 1000
@@ -74,6 +75,8 @@ def message_body_payload(payload: dict) -> str:
         raise MessageThreadError(["Write a message before sending."])
     if len(body) > MESSAGE_BODY_MAX_LENGTH:
         raise MessageThreadError([MESSAGE_BODY_TOO_LONG])
+    if contains_disallowed_personal_data((body,)):
+        raise MessageThreadError([personal_data_error("message")])
     return body
 
 
@@ -82,7 +85,7 @@ def message_thread_field_errors(errors: list[str]) -> dict[str, list[str]]:
 
 
 def message_thread_error_field(message: str) -> str:
-    if "message" in message or "1000" in message:
+    if "message" in message or "1000" in message or "email addresses" in message:
         return "body"
     return ""
 

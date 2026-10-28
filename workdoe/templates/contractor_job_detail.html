@@ -70,7 +70,7 @@
       {% for photo in photos %}
         <figure>
           <img src="{{ url_for('job_photo', photo_id=photo.id) }}" alt="Job photo {{ loop.index }}">
-          <figcaption>{{ photo.original_filename }}</figcaption>
+          <figcaption>Project photo {{ loop.index }}</figcaption>
         </figure>
       {% endfor %}
     </div>

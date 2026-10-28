@@ -243,7 +243,7 @@
       <span id="job-photos-help" class="help-text">Private uploads. PNG, JPG, GIF, or WebP.</span>
     </label>
   {% else %}
-    <p class="help-text">Photos stay private and can be added after email verification.</p>
+    <p class="help-text">Photos cannot be added to an unverified draft.</p>
   {% endif %}
   {% if composer_turnstile_action %}<div>{% with action=composer_turnstile_action %}{% include "_turnstile.html" %}{% endwith %}</div>{% endif %}
   <div class="project-step-actions">

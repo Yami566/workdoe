@@ -305,7 +305,7 @@
     <h2>Job photos</h2>
     {% for photo in photos %}
       <div class="admin-row">
-        <span><strong>{{ photo.original_filename }}</strong><small>{{ photo.title }} - {{ 'hidden' if photo.is_hidden else 'visible' }}</small></span>
+        <span><strong>Job photo #{{ photo.id }}</strong><small>{{ photo.title }} - {{ 'hidden' if photo.is_hidden else 'visible' }}</small></span>
         <form method="post" action="{{ url_for('admin_job_photo_action', photo_id=photo.id, action='hide' if not photo.is_hidden else 'restore') }}">
           <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
           <button class="button secondary compact" type="submit">{{ 'Hide' if not photo.is_hidden else 'Restore' }}</button>
@@ -320,7 +320,7 @@
     <h2>Portfolio photos</h2>
     {% for photo in contractor_photos %}
       <div class="admin-row">
-        <span><strong>{{ photo.original_filename }}</strong><small>{{ photo.business_name }} - {{ 'hidden' if photo.is_hidden else 'visible' }}</small></span>
+        <span><strong>Portfolio photo #{{ photo.id }}</strong><small>{{ photo.business_name }} - {{ 'hidden' if photo.is_hidden else 'visible' }}</small></span>
         <form method="post" action="{{ url_for('admin_contractor_photo_action', photo_id=photo.id, action='hide' if not photo.is_hidden else 'restore') }}">
           <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
           <button class="button secondary compact" type="submit">{{ 'Hide' if not photo.is_hidden else 'Restore' }}</button>

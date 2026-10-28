@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -15,12 +16,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from cloudflare_readiness import REQUIRED_SECRETS, secret_names_from_json
-from cloudflare_wrangler import (
-    cloudflare_api_token_error,
-    cloudflare_api_token_present,
-    wrangler_command,
-    wrangler_env,
-)
+from cloudflare_wrangler import wrangler_command
 
 
 class SecretEvidenceError(ValueError):
@@ -28,10 +24,13 @@ class SecretEvidenceError(ValueError):
 
 
 def run_external() -> subprocess.CompletedProcess:
+    # This is an owner-run, read-only command. Preserve the ambient Wrangler
+    # profile so an interactive OAuth login can authorize it locally. CI and
+    # non-interactive deployment scripts still use CLOUDFLARE_API_TOKEN.
     return subprocess.run(
         wrangler_command(["secret", "list", "--format", "json"], REPO_ROOT),
         cwd=str(CLOUDFLARE_DIR),
-        env=wrangler_env(REPO_ROOT),
+        env=os.environ.copy(),
         check=False,
         capture_output=True,
         text=True,
@@ -132,7 +131,10 @@ def main() -> int:
     parser.add_argument(
         "--execute",
         action="store_true",
-        help="Run `wrangler secret list --format json` and write sanitized evidence.",
+        help=(
+            "Run `wrangler secret list --format json` through the local Wrangler "
+            "OAuth profile or API token and write sanitized evidence."
+        ),
     )
     parser.add_argument(
         "--yes",
@@ -169,19 +171,6 @@ def main() -> int:
         }
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 2
-
-    if not cloudflare_api_token_present():
-        payload = {
-            "ok": False,
-            "dry_run": False,
-            "executes_commands": False,
-            "writes": "",
-            "error": cloudflare_api_token_error(
-                "capture sanitized Workdoe Cloudflare secret-name evidence"
-            ),
-        }
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 1
 
     payload = capture_secret_evidence(args.output, allow_missing=args.allow_missing)
     print(json.dumps(payload, indent=2, sort_keys=True))

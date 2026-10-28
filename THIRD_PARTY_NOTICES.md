@@ -55,7 +55,7 @@ artifacts on 2026-08-16. The test suite enforces the same values locally.
 | Artifact | SHA-256 |
 | --- | --- |
 | Leaflet `leaflet.js` | `db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a` |
-| Leaflet `leaflet.css` | `a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6` |
+| Leaflet `leaflet.css` | `337bfca5cabd03b39815b2700febe2b3b7edf55921c59cd49f88ecb328212303` |
 | Markercluster `leaflet.markercluster.js` | `1e4e1d22972a3926f48598e0caf14e3fe7049835d428a344fed4f9e3665b3508` |
 | Markercluster `MarkerCluster.css` | `614dea0a98ff3f4ead74f04918f6b1d1b9ba435c25b5fc23b21a394d1e3e4d87` |
 | Markercluster `MarkerCluster.Default.css` | `61258232d98d64dc2a7b1e02130d67421bc5b9bda5994eef70228ff97570c170` |
@@ -73,8 +73,14 @@ artifacts on 2026-08-16. The test suite enforces the same values locally.
 ### Clerk JavaScript SDK and UI
 
 - Purpose: maintained same-domain authentication and account components in the production shell.
-- License: MIT for the open-source JavaScript SDK and UI packages.
-- Source: https://github.com/clerk/javascript
+- Reviewed packages: `@clerk/ui` 1.41.2 and `@clerk/clerk-js` 6.40.1.
+- License: MIT for both open-source browser packages.
+- Sources: https://www.npmjs.com/package/@clerk/ui/v/1.41.2 and
+  https://www.npmjs.com/package/@clerk/clerk-js/v/6.40.1.
+- Delivery: pinned script paths are loaded through Workdoe's same-domain Clerk
+  Frontend API proxy. Their npm package integrity values are recorded in the
+  dependency provenance ledger and verified against the version constants in
+  both Flask and Cloudflare renderers.
 - The Clerk hosted service is a third-party SaaS dependency governed by the
   account's service agreement and privacy/data-processing terms, not by the
   SDK's MIT license.
@@ -87,7 +93,7 @@ artifacts on 2026-08-16. The test suite enforces the same values locally.
 - License: BSD 3-Clause.
 - Source: https://github.com/pallets/flask/releases/tag/3.1.3
 - Flask and its complete local runtime dependency set are exactly pinned in
-  `requirements.txt`: Werkzeug 3.1.8, Jinja2 3.1.6, itsdangerous 2.2.0,
+  `requirements.txt`: Werkzeug 3.1.9, Jinja2 3.1.6, itsdangerous 2.2.0,
   click 8.4.2, blinker 1.9.0, and MarkupSafe 3.0.3.
 - These packages are installed from PyPI; they are not vendored into this
   repository and are not part of the Cloudflare production Worker bundle.
@@ -95,7 +101,7 @@ artifacts on 2026-08-16. The test suite enforces the same values locally.
   Source-archive SHA-256 values and official PyPI pages are recorded in the
   dependency provenance ledger.
 
-### Wrangler 4.125.0
+### Wrangler 4.152.0
 
 - Purpose: Cloudflare Worker validation and deployment tooling.
 - License: MIT OR Apache-2.0.
@@ -103,6 +109,22 @@ artifacts on 2026-08-16. The test suite enforces the same values locally.
 - Wrangler is a development dependency. `node_modules` is ignored and is not
   served to Workdoe visitors. Package-specific license and integrity metadata
   is retained in `package-lock.json` and the dependency provenance ledger.
+
+### Cloudflare Python Workers runtime SDK
+
+- Purpose: provides the documented `workers` module used by the deployed
+  Python Worker entrypoint.
+- Source: https://developers.cloudflare.com/workers/languages/python/basics/
+- Delivery: Cloudflare supplies this runtime component at execution time.
+  Workdoe does not vendor, redistribute, or declare `workers-runtime-sdk` as a
+  repository dependency. `python_workers` enables Python Workers and
+  `disable_python_external_sdk` keeps the Worker on the bundled runtime SDK.
+- Provenance: `DEPENDENCY_PROVENANCE.json` records the Worker compatibility
+  date and required flags; `scripts/verify_dependency_provenance.py` fails when
+  the ledger, entrypoint, or Wrangler configuration drifts.
+- Terms: this is a Cloudflare platform component governed by the applicable
+  Cloudflare service terms, rather than a third-party package license shipped
+  in this repository.
 
 ### Local security audit tools
 
