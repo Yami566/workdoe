@@ -115,7 +115,10 @@ or a real two-account marketplace acceptance run.
 
 ## Corrections prepared locally
 
-These corrections are verified locally but are **not deployed** by this review.
+This is a preserved pre-deployment snapshot. Statements below that a correction
+was **not deployed** were accurate when this section was written; the dated
+production deployment records later in this document are the current source of
+truth for release status.
 
 - The route-backed dialog controller now avoids reinjecting an already-ready
   Clerk or Turnstile library and removes each explicitly rendered Turnstile
