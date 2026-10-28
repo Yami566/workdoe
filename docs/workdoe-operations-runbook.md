@@ -9,6 +9,11 @@ This runbook covers Workdoe's Cloudflare-hosted service and Clerk identity
 provider. It is an operating procedure, not evidence that a drill occurred.
 Production changes remain manual and must use the guarded release path.
 
+The proposed retention and incident decisions are collected in
+`docs/workdoe-beta-retention-incident-decision-proposal.md`. That document is
+not effective until owner and counsel approval; this runbook does not authorize
+automated deletion or publication of a fixed retention promise.
+
 ## Required owners and contacts
 
 The following decisions must be filled before unrestricted public registration

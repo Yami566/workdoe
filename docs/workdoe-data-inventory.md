@@ -253,6 +253,9 @@ operator-identity, contact-ownership, and legal decisions tracked in
    documented false positives from the current deterministic text guard.
 3. Set retention/deletion periods for accounts, identity links, projects,
    drafts, media, bids, messages, reports, moderation/audit records, and logs.
+   A non-effective owner/counsel decision proposal is available in
+   `docs/workdoe-beta-retention-incident-decision-proposal.md`; it does not
+   authorize deletion or replace approval of the public policy.
 4. Name the privacy-request owner, identity-verification method, export format,
    deletion exceptions, and response target.
 5. Approve Clerk session settings, Workers Logs sampling/review, R2 backup
