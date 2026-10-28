@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +48,50 @@ def baseline_audit_error(baseline: Path) -> str:
             f"`detect-secrets audit {baseline}` and review every item."
         )
     return ""
+
+
+def baseline_fingerprints(payload: dict) -> set[tuple[str, str, str]]:
+    """Return portable identities for reviewed detect-secrets findings."""
+    results = payload.get("results")
+    if not isinstance(results, dict):
+        return set()
+
+    fingerprints: set[tuple[str, str, str]] = set()
+    for result_path, findings in results.items():
+        if not isinstance(result_path, str) or not isinstance(findings, list):
+            continue
+        for finding in findings:
+            if not isinstance(finding, dict):
+                continue
+            filename = finding.get("filename", result_path)
+            finding_type = finding.get("type")
+            hashed_secret = finding.get("hashed_secret")
+            if not all(isinstance(value, str) for value in (filename, finding_type, hashed_secret)):
+                continue
+            fingerprints.add(
+                (
+                    filename.replace("\\", "/"),
+                    finding_type,
+                    hashed_secret,
+                )
+            )
+    return fingerprints
+
+
+def read_baseline_payload(baseline: Path) -> dict:
+    return json.loads(baseline.read_text(encoding="utf-8"))
+
+
+def unexpected_finding_error(fingerprints: set[tuple[str, str, str]]) -> str:
+    examples = ", ".join(
+        f"{filename} ({finding_type})"
+        for filename, finding_type, _ in sorted(fingerprints)[:5]
+    )
+    suffix = "" if len(fingerprints) <= 5 else f", plus {len(fingerprints) - 5} more"
+    return (
+        "detect-secrets found unreviewed candidate secret finding(s): "
+        f"{examples}{suffix}. Review and remove real secrets, or audit documented false positives."
+    )
 
 
 def repository_files(repo_root: Path) -> list[str]:
@@ -119,24 +164,51 @@ def run_gate(repo_root: Path, baseline: Path) -> dict:
         }
 
     files = repository_files(repo_root)
-    baseline_argument = command_path(baseline, repo_root)
+    source_bytes = baseline.read_bytes()
+    source_payload = read_baseline_payload(baseline)
     outputs: list[str] = []
-    ok = True
-    for batch in file_argument_batches(files):
-        completed = subprocess.run(
-            [hook, "--baseline", baseline_argument, *batch],
-            cwd=repo_root,
-            check=False,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            text=True,
-        )
-        batch_output = (completed.stdout + completed.stderr).strip()
-        if batch_output:
-            outputs.append(batch_output)
-        ok = completed.returncode == 0 and ok
+    raw_ok = True
+    with tempfile.TemporaryDirectory(prefix=".workdoe-secret-gate-", dir=repo_root) as temp_dir:
+        scan_baseline = Path(temp_dir) / baseline.name
+        shutil.copyfile(baseline, scan_baseline)
+        scan_baseline_before = scan_baseline.read_bytes()
+        baseline_argument = command_path(scan_baseline, repo_root)
+        for batch in file_argument_batches(files):
+            completed = subprocess.run(
+                [hook, "--baseline", baseline_argument, *batch],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                text=True,
+            )
+            batch_output = (completed.stdout + completed.stderr).strip()
+            if batch_output:
+                outputs.append(batch_output)
+            raw_ok = completed.returncode == 0 and raw_ok
+        scan_payload = read_baseline_payload(scan_baseline)
+        baseline_changed = scan_baseline.read_bytes() != scan_baseline_before
+
+    if baseline.read_bytes() != source_bytes:
+        return {
+            "ok": False,
+            "error": "The reviewed secret baseline changed while the read-only scan was running.",
+            "file_count": len(files),
+        }
+
+    unexpected = baseline_fingerprints(scan_payload) - baseline_fingerprints(source_payload)
+    if unexpected:
+        return {
+            "ok": False,
+            "error": unexpected_finding_error(unexpected),
+            "file_count": len(files),
+        }
+
     output = "\n".join(outputs)
+    # detect-secrets exits nonzero when it adjusts only line locations of already
+    # reviewed findings. The actual baseline is never passed to the scanner.
+    ok = raw_ok or baseline_changed
     return {
         "ok": ok,
         "error": "" if ok else output,

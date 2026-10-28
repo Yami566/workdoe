@@ -85,6 +85,113 @@ class WorkdoeSecretGateTests(unittest.TestCase):
                 str(root.parent / "external.json"),
             )
 
+    def test_baseline_fingerprints_normalize_repository_path_separators(self):
+        fingerprints = self.module.baseline_fingerprints(
+            {
+                "results": {
+                    "tests\\example.py": [
+                        {
+                            "filename": "tests\\example.py",
+                            "type": "Secret Keyword",
+                            "hashed_secret": "reviewed-hash",  # pragma: allowlist secret
+                        }
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(
+            fingerprints,
+            {("tests/example.py", "Secret Keyword", "reviewed-hash")},
+        )
+
+    def test_secret_scan_never_mutates_the_reviewed_baseline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            baseline = self.write_baseline(
+                root,
+                {
+                    "type": "Secret Keyword",
+                    "filename": "example.py",
+                    "hashed_secret": "reviewed-hash",  # pragma: allowlist secret
+                    "line_number": 1,
+                    "is_secret": False,
+                },
+            )
+            original = baseline.read_text(encoding="utf-8")
+
+            def move_reviewed_finding(command, **_kwargs):
+                scan_baseline = root / command[2]
+                payload = json.loads(scan_baseline.read_text(encoding="utf-8"))
+                payload["results"]["example.py"][0]["line_number"] = 2
+                scan_baseline.write_text(json.dumps(payload), encoding="utf-8")
+                return mock.Mock(returncode=1, stdout="", stderr="baseline updated")
+
+            with (
+                mock.patch.object(
+                    self.module.shutil,
+                    "which",
+                    return_value="detect-secrets-hook",
+                ),
+                mock.patch.object(
+                    self.module,
+                    "repository_files",
+                    return_value=["example.py"],
+                ),
+                mock.patch.object(self.module.subprocess, "run", side_effect=move_reviewed_finding),
+            ):
+                payload = self.module.run_gate(root, baseline)
+
+            self.assertTrue(payload["ok"])
+            self.assertEqual(baseline.read_text(encoding="utf-8"), original)
+
+    def test_secret_scan_rejects_a_new_candidate_without_mutating_baseline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            baseline = self.write_baseline(
+                root,
+                {
+                    "type": "Secret Keyword",
+                    "filename": "example.py",
+                    "hashed_secret": "reviewed-hash",  # pragma: allowlist secret
+                    "line_number": 1,
+                    "is_secret": False,
+                },
+            )
+            original = baseline.read_text(encoding="utf-8")
+
+            def add_candidate(command, **_kwargs):
+                scan_baseline = root / command[2]
+                payload = json.loads(scan_baseline.read_text(encoding="utf-8"))
+                payload["results"]["new.py"] = [
+                    {
+                        "type": "Secret Keyword",
+                        "filename": "new.py",
+                        "hashed_secret": "new-hash",  # pragma: allowlist secret
+                    }
+                ]
+                scan_baseline.write_text(json.dumps(payload), encoding="utf-8")
+                return mock.Mock(returncode=1, stdout="", stderr="candidate found")
+
+            with (
+                mock.patch.object(
+                    self.module.shutil,
+                    "which",
+                    return_value="detect-secrets-hook",
+                ),
+                mock.patch.object(
+                    self.module,
+                    "repository_files",
+                    return_value=["new.py"],
+                ),
+                mock.patch.object(self.module.subprocess, "run", side_effect=add_candidate),
+            ):
+                payload = self.module.run_gate(root, baseline)
+
+            self.assertFalse(payload["ok"])
+            self.assertIn("new.py", payload["error"])
+            self.assertEqual(baseline.read_text(encoding="utf-8"), original)
+
     def test_secret_scan_fails_when_any_batch_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
