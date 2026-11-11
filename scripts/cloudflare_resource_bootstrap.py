@@ -24,7 +24,7 @@ from cloudflare_wrangler import (
     wrangler_command,
     wrangler_env,
 )
-from prepare_cloudflare_release import ZERO_UUID, existing_d1_ids
+from prepare_cloudflare_release import ZERO_UUID, existing_d1_ids, production_d1_ids
 
 IDEMPOTENT_RESOURCE_STEPS = {
     "create-r2-media-bucket",
@@ -37,6 +37,10 @@ EXISTS_ERROR_MARKERS = (
     "exists already",
     "name already in use",
 )
+
+
+class BootstrapConfigurationError(ValueError):
+    pass
 
 
 @dataclass
@@ -54,8 +58,11 @@ def wrangler_json_path(repo_root: Path = REPO_ROOT) -> Path:
 
 
 def d1_ready(repo_root: Path = REPO_ROOT) -> bool:
-    ids = existing_d1_ids(wrangler_json_path(repo_root))
-    return bool(ids.get("database_id") and ids.get("preview_database_id"))
+    try:
+        production_d1_ids(json.loads(wrangler_json_path(repo_root).read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError):
+        return False
+    return True
 
 
 def build_bootstrap_steps(
@@ -68,7 +75,12 @@ def build_bootstrap_steps(
     secret_list = repo_root / "cloudflare-secret-list.local.json"
     steps: list[BootstrapStep] = []
 
-    if not d1_ready(repo_root):
+    configured = d1_ready(repo_root)
+    if existing_d1_ids(wrangler_json_path(repo_root)).get("database_id") and not configured:
+        raise BootstrapConfigurationError(
+            "Existing production D1 configuration is unsafe; refusing resource creation or ID replacement."
+        )
+    if not configured:
         steps.extend(
             [
                 BootstrapStep(
@@ -235,14 +247,14 @@ def plan_payload(
         "executes_commands": not dry_run,
         "service": "workdoe",
         "domain": "workdoe.com",
-        "d1_ids_configured": bool(ids.get("database_id") and ids.get("preview_database_id")),
+        "d1_ids_configured": d1_ready(repo_root),
         "d1_database_id": ids.get("database_id", ZERO_UUID),
         "d1_preview_database_id": ids.get("preview_database_id", ZERO_UUID),
         "steps": [asdict(step) for step in steps],
     }
 
 
-def main() -> int:
+def _main() -> int:
     parser = argparse.ArgumentParser(
         description="Bootstrap Workdoe Cloudflare resources with a dry-run default."
     )
@@ -324,6 +336,14 @@ def main() -> int:
     }
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0 if not errors else 1
+
+
+def main() -> int:
+    try:
+        return _main()
+    except BootstrapConfigurationError as error:
+        print(json.dumps({"ok": False, "executes_commands": False, "error": str(error)}, sort_keys=True))
+        return 1
 
 
 if __name__ == "__main__":

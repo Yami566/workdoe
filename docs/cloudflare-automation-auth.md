@@ -79,7 +79,7 @@ Use Cloudflare Email Service for Workdoe-owned transactional email:
 - The admin console shows recent automation events beside moderation audit rows so cron, queue, email, media review, Clerk onboarding, and webhook activity can be checked from `workdoe.com`.
 - `cloudflare/.dev.vars.example` lists the Clerk, Turnstile, and Workdoe secret values needed for local Wrangler previews.
 - The Clerk webhook endpoint rejects unsigned or stale events, updates already-linked Clerk user rows, blocks email conflicts, and suspends deleted/locked users.
-- `GET /api/auth/session` verifies a Clerk session and maps it to an already-linked D1 `users` row. If the Clerk identity is valid but no Workdoe row exists yet, it returns `onboarding_required` so `/create-account` can finish role/profile setup on Workdoe.
+- `GET /api/auth/session` verifies a Clerk session and maps it to an already-linked D1 `users` row. The `no-store` navigation response includes the linked role, not provider IDs or profile data. If the Clerk identity is valid but no Workdoe row exists yet, it returns `onboarding_required` so `/create-account` can finish role/profile setup on Workdoe.
 - `POST /api/auth/onboard` verifies the Clerk session again, requires a verified Clerk email claim, then creates the app-owned `users`, `client_profiles`, or `contractor_profiles` rows after the person chooses client or contractor.
 - `GET /api/client/jobs` verifies the Clerk session, requires an active client account, lists only that client's jobs, and returns open/review/closed dashboard counts from D1.
 - `GET /api/client/jobs/:job_id/requests` verifies the Clerk session, requires the owning client or active admin, lists contractor mini bids for one job, and returns review counts plus profile/message links without contractor contact fields.
@@ -135,6 +135,10 @@ flow.
 Release decision: the non-secret Clerk proof is invalid unless an operator
 confirms express consent is enabled for `https://workdoe.com/terms` and
 `https://workdoe.com/privacy`. This proves configuration, not legal approval.
+Strict production readiness requires a proof timestamp within 24 hours.
+It does not independently timestamp the operator's observation. The manual
+GitHub job writes its proof when the job runs; do not reuse an old dashboard
+confirmation after a queue delay. See the [dashboard checklist and traffic-switch recheck](workdoe-public-launch-gates.md#internal-records).
 Workdoe still needs an owner-approved policy version, change-notice rule, and a
 decision about when existing users must re-accept revised documents.
 
@@ -165,8 +169,7 @@ cd ..
 python scripts\cloudflare_clerk_proxy_proof.py --confirm --confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent
 python scripts\cloudflare_release_evidence.py --json
 python scripts\cloudflare_readiness.py --strict-production --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
-python scripts\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
-python scripts\cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
+npm run cf:deploy:plan
 ```
 
 For a direct local deploy from Codex without GitHub, the operator may instead
@@ -188,8 +191,15 @@ require their scoped API token. A direct command can instead receive only the
 file path; it never includes the token in output or release evidence:
 
 ```powershell
-python scripts\cloudflare_production_deploy.py --execute --yes --api-token-file cloudflare\.deploy-token --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
+npm run cf:deploy:plan -- --expected-commit "$reviewedCommit" --expected-worker-version "$reviewedWorkerVersion" --migrations skip
 ```
+
+Set the two values from the approved full Git commit and the reviewed Worker
+currently at 100% traffic. The plan does not use the staged token. Only for a
+separately approved deployment, use `cf:deploy` in place of `cf:deploy:plan`
+with the same reviewed arguments. A migration requires separate approval
+and a new private recovery receipt; do not substitute `apply` to bypass a
+schema mismatch.
 
 The token must be scoped to the Workdoe Cloudflare account and its `workdoe.com`
 zone. The deployment needs permission to apply D1 migrations and edit the

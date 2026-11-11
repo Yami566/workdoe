@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from request_security import parse_url_record_id
+
 PROJECT_TEMPLATE_LIMIT = 12
 PROJECT_TEMPLATE_NAME_MAX_LENGTH = 60
 PROJECT_TEMPLATE_PATH_RE = re.compile(r"^/api/client/templates/([1-9][0-9]*)/delete$")
@@ -110,6 +112,7 @@ def project_template_job_form(row) -> dict[str, str]:
 
 def parse_project_template_delete_path(path: str) -> int:
     match = PROJECT_TEMPLATE_PATH_RE.fullmatch(path or "")
-    if not match:
+    record_id = parse_url_record_id(match.group(1)) if match else 0
+    if not record_id:
         raise ProjectTemplateError(["Unsupported project template route."])
-    return int(match.group(1))
+    return record_id

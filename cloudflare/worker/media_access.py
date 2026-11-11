@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import re
 
+from project_access import contractor_can_view_project
+from request_security import parse_url_record_id
+
 PRIVATE_MEDIA_NOTICE = (
     "Private Workdoe media is served only after role, ownership, match, "
     "and moderation checks."
@@ -22,10 +25,11 @@ def row_value(row, key: str, default=None):
 
 def media_scope_from_path(path: str) -> tuple[str, int]:
     match = MEDIA_PATH_RE.match(path or "")
-    if not match:
+    record_id = parse_url_record_id(match.group("photo_id")) if match else 0
+    if not record_id:
         raise MediaAccessError("Unsupported media route.")
     scope = "job" if match.group("kind") == "jobs" else "contractor"
-    return scope, int(match.group("photo_id"))
+    return scope, record_id
 
 
 def safe_media_key(stored_path: str, expected_prefix: str) -> str:
@@ -68,14 +72,16 @@ def can_view_job_photo(user, photo) -> bool:
         return True
     if role != "contractor":
         return False
-    if row_value(photo, "client_status") != "active":
-        return False
-    if row_value(photo, "status") == "open":
-        return True
-    return truthy(row_value(photo, "has_approved_match"))
+    return contractor_can_view_project(
+        row_value(photo, "status"), row_value(photo, "client_status"),
+        has_approved_match=truthy(row_value(photo, "has_any_approved_match")),
+        participates=truthy(row_value(photo, "has_approved_match")),
+    )
 
 
 def can_view_contractor_photo(user, photo) -> bool:
+    if not is_active_user(user):
+        return False
     owner_or_admin = bool(user) and (
         is_admin(user) or row_value(photo, "contractor_id") == row_value(user, "id")
     )

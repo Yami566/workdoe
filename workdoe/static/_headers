@@ -9,15 +9,32 @@
 /map.js
   Cache-Control: public, max-age=31556952, immutable
 
+/dmv-area-50fe6cd3.geojson
+  Content-Type: application/geo+json
+  Cache-Control: public, max-age=31556952, immutable
+
 /project-composer.js
   Cache-Control: public, max-age=31556952, immutable
 
 /clerk-entry.js
   Cache-Control: public, max-age=31556952, immutable
 
-# Vendored assets and the Tabler-derived home mark are integrity-pinned.
-/vendor/*
+# Pinned map and icon packages keep their browser cache policy.
+/vendor/leaflet/*
   Cache-Control: public, max-age=31556952, immutable
+
+/vendor/leaflet-markercluster/*
+  Cache-Control: public, max-age=31556952, immutable
+
+/vendor/tabler-icons/*
+  Cache-Control: public, max-age=31556952, immutable
+
+# Notice responses, including misses, must not pin an unavailable notice.
+/vendor/clerk-notices/*
+  Cache-Control: no-store
+
+/vendor/clerk-notices-v2/*
+  Cache-Control: no-store
 
 /deer.svg
   Cache-Control: public, max-age=31556952, immutable

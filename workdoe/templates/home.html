@@ -1,8 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Workdoe - Local projects and contractors{% endblock %}
-{% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
-{% endblock %}
 {% block content %}
 <section class="market-entry">
   <div>
@@ -51,13 +48,15 @@
 </section>
 
 <section class="home-board priority-board">
+  {% if project_map_enabled() %}
   <div class="map-panel home-map">
     {% with map_jobs_api_url=map_jobs_api_url(filters, home_job_limit, target='login'), map_label="Approximate DMV job map" %}
       {% include "_lead_map.html" %}
     {% endwith %}
   </div>
+  {% endif %}
   <div id="home-open-jobs" class="job-list">
-    <form class="filter-bar compact-filter" method="get" role="search" aria-label="Filter open jobs" aria-controls="home-open-job-results lead-map" data-market-filters>
+    <form class="filter-bar compact-filter" method="get" role="search" aria-label="Filter open jobs" aria-controls="home-open-job-results{% if project_map_enabled() %} lead-map{% endif %}" data-market-filters>
       {% if filters.family %}<input type="hidden" name="family" value="{{ filters.family }}">{% endif %}
       {% if selected_family %}
       <label for="home-service">
@@ -72,7 +71,7 @@
       {% endif %}
       <label for="home-search">
         Search
-        <input name="q" type="search" id="home-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}" data-market-search>
+        <input name="q" type="search" id="home-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}" pattern="{{ project_search_input_pattern }}" title="{{ project_search_input_hint }}" data-market-search>
       </label>
       <label for="home-sort">
         Sort
@@ -131,7 +130,5 @@
   </div>
 </section>
 
-<script id="map-jobs-data" type="application/json">{{ map_jobs|tojson }}</script>
-<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
-<script src="{{ url_for('static', filename='map.js') }}?v={{ asset_release_token }}"></script>
+{% include "_lead_map_scripts.html" %}
 {% endblock %}

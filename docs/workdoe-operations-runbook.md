@@ -1,9 +1,9 @@
 # Workdoe Operations Runbook
 
-Status: Draft for the controlled beta. The isolated local D1 export/import drill
-is complete; no production recovery, rotation, deletion/export, or incident
+Status: Draft for the controlled beta. The current-schema isolated local D1/R2
+recovery drill is complete; no production recovery, rotation, deletion/export, or incident
 drill is recorded as complete. Operator details below reflect owner-provided
-decisions as of 2026-10-25; they do not replace legal or operational approval.
+decisions as of 2026-10-28; they do not replace legal or operational approval.
 
 This runbook covers Workdoe's Cloudflare-hosted service and Clerk identity
 provider. It is an operating procedure, not evidence that a drill occurred.
@@ -39,15 +39,22 @@ goes to `WORKDOE_ADMIN_EMAIL` (`admin@workdoe.com` in the reviewed release),
 links only to the private `/admin` console, and intentionally omits report
 text, reporter identity, project details, message content, and media.
 
-Before enabling this alert in production, configure Cloudflare Email Routing to
-forward `admin@workdoe.com` to the owner-controlled `moosebay@gmail.com`
-destination. Cloudflare will require the destination owner to verify that
-forwarding address. Keep `admin@workdoe.com` as the public contact so the
-application configuration does not contain a personal mailbox. Test one
-controlled report after the verification: confirm that the alert arrives, its
-link requires an administrator session, and no report content appears in the
-email. This alert is a notification, not a substitute for the P0/P1 incident
-response procedure or emergency services.
+Before relying on this alert in production, confirm the current owner-controlled
+destination using the restricted incident-contact record, not an address copied
+from source control or an older instruction. The local operator record is
+`docs/workdoe-incident-contacts.local.md` and is intentionally ignored by Git.
+The owner has supplied a proposed primary mailbox, but a backup contact, urgent
+response target, destination verification, and tested forwarding are not yet
+recorded as complete.
+
+Configure Cloudflare Email Routing to forward `admin@workdoe.com` only after the
+destination owner verifies the approved address. Keep `admin@workdoe.com` as the
+public contact so application configuration does not contain a personal mailbox.
+Test one controlled report after verification: confirm that the alert arrives,
+its link requires an administrator session, and no report content appears in the
+email. This document does not configure forwarding or certify mail delivery.
+The alert is a notification, not a substitute for the P0/P1 incident response
+procedure or emergency services.
 
 ## Service inventory
 
@@ -58,7 +65,7 @@ response procedure or emergency services.
 | Cloudflare Images | Not attached during beta | Future reviewed upload sanitization only; requires an owner-approved opt-in |
 | R2 | `workdoe-media` / binding `MEDIA` | Private storage reserved for a future media launch; public uploads are disabled |
 | Queues | `workdoe-email`, `workdoe-media-review` | Transactional email and media-review work |
-| Email Service | binding `EMAIL` | Email Sending is enabled for `workdoe.com`; mail is restricted to `no-reply@workdoe.com`; Cloudflare currently labels sending a Workers Paid public-beta service |
+| Email Service | binding `EMAIL` | Sender restriction is configured for `no-reply@workdoe.com`; current onboarding cannot be confirmed with the existing read credential and actual delivery remains unverified. No paid activation is authorized by this inventory. |
 | Clerk | Workdoe production instance | Open-access email-code identity and sessions; password sign-in is disabled |
 | Turnstile | Workdoe production widget | Bot checks for protected writes |
 | Workers Rate Limiting | binding `WRITE_RATE_LIMITER` | Per-user authenticated write protection |
@@ -288,41 +295,76 @@ diagnostic command.
 
 1. Run the strict readiness and migration plan without deploying.
 2. Confirm the target database is `workdoe` and record D1 database information.
-3. Record a current Time Travel bookmark and release identifier in the private
-   release record. The guarded GitHub deployment captures this bookmark, the
-   active Worker deployment, its highest-traffic version ID, and a ready-to-use
-   rollback command before applying migrations.
-4. Create a D1 SQL export in restricted temporary runner storage and transfer it
-   to a private backup location. Prefer an automated D1-to-R2 Workflow once the
-   backup bucket, retention period, and access owner are approved.
-5. Validate that the export is non-empty and contains expected schema markers.
-   Do not attach the export to a public issue or build artifact.
+3. Record the active Worker deployment and the exact version serving 100% of
+   traffic. Confirm the version remains in the rollback window and review its
+   bindings, security behavior and schema compatibility. An ID alone is not
+   permission or proof that switching traffic back is safe.
+4. For a separately approved migration, capture a fresh Time Travel bookmark
+   in the required private receipt and verify the independent backup plan.
+   Never include a bookmark, database export, or marketplace data in an issue
+   or GitHub artifact. An export remains blocked until the backup location,
+   access owner, and retention period are approved.
+5. For an approved export, validate its expected schema and restore it in an
+   isolated environment before relying on it. A nonempty export alone is not
+   a recovery test.
 
-The GitHub recovery artifact intentionally contains only the Time Travel
-bookmark, Worker deployment metadata, release SHA/timestamps, checksums, and
-rollback command. It does not contain a D1 export or marketplace user data. A
-full export remains blocked until the private backup bucket, access owner, and
-retention period are approved.
+The guarded GitHub workflow is manual and uses `--migrations skip`. It does not
+capture a D1 bookmark, export D1, or provide a rollback command. Its before/after
+Worker snapshots contain only deployment ID, serving version ID and traffic
+share; the artifact also contains release identifiers, timestamps, checksums,
+the rollback review note and the release report. Do not include raw Cloudflare
+deployment metadata: it can include the operator's email and free-form notes.
 
 ### Recovery
 
-1. Pause writes and record the current Time Travel bookmark so the restore can
-   itself be reversed if required.
-2. Identify the last-known-good bookmark from audit events, release records,
-   and user reports. Record the affected table counts before changing data.
-3. Obtain incident-commander approval and a second confirmation for an in-place
-   production restore.
-4. Restore to the approved bookmark through D1 Time Travel. Do not run an
-   unreviewed `d1 execute` file against production.
-5. Verify schema migrations, user/job/bid/thread/message/report counts, foreign
-   key relationships, and recent moderation audit rows.
-6. Run negative authorization tests, strict smoke, and one controlled two-role
-   workflow before reopening writes.
-7. Record recovery point, operator, approver, validation output, and any data
-   interval that could not be recovered.
+1. With incident approval, seal the reviewed production Worker and pause
+   delivery on both `workdoe-email` and `workdoe-media-review` in Cloudflare.
+   Application retry deferrals consume attempts and do not replace a
+   [provider delivery pause](https://developers.cloudflare.com/queues/configuration/pause-purge/).
+   Do not purge. Already-running work, other writers and queue expiry still
+   require separate review. Paused queues can still receive messages.
+2. Verify the exact sealed deployment with the [read-only recovery check](workdoe-public-launch-gates.md#internal-records).
+   Confirm other Workers and external writers are stopped, allow in-flight
+   work to finish, and record a private current Time Travel bookmark.
+3. Identify the last-known-good bookmark from audit events, release records
+   and user reports. Record approved aggregate counts and the affected time
+   interval. Obtain incident-commander approval and a second confirmation
+   before any in-place production restore.
+4. Restore only to the approved bookmark. Keep the Worker sealed and queues
+   paused. Verify schema, aggregate counts, constraints, and audit integrity
+   through approved read-only checks. Reconcile account restrictions,
+   approved erasures, holds, pending messages and R2 objects before reopening.
+   The [synthetic restriction drill](workdoe-public-launch-gates.md#internal-records)
+   shows why a recyclable row number or a matching backup hash is not enough.
+5. Verify authorization and the two-role workflow on isolated staging with
+   synthetic data. In production, repeat the seal check and review all
+   reconciliation evidence before authorizing a controlled reopen. Do not
+   use a live marketplace write to test a sealed system.
+6. After explicit approval, reopen the reviewed Worker and run the production
+   smoke and owner-controlled workflow. Resume queue delivery separately after
+   checking stale events against the restored state. Recontain on failure;
+   the read-only check never changes traffic or delivery.
+7. Record the recovery point, operator, approver, validation output and any
+   data interval that could not be recovered.
 
 The safe drill is an export/import into a separate non-production D1 database.
 Do not use production Time Travel merely to prove that it works.
+
+### Repeatable local qualification
+
+Run `npm run test:worker:recovery` with the pinned development dependencies.
+This uses synthetic local data only and refuses remote storage flags and an
+existing restore destination. It verifies all 40 application/migration tables,
+89 schema objects, 36 migration records, integrity checks, exact data/ID
+sequences, two synthetic R2 images and restored Worker authorization. See
+`release-evidence/2026-10-30-local-recovery-drill.md` for evidence and limits.
+
+Do not assume a non-empty SQL dump is restore-ready. The current local fixture
+required schema-first import, statistics initialization, exact sequence repair
+and preserved line endings. The harness consumes structured schema metadata and
+the untouched data export; it is not a general-purpose production restore tool.
+Remote restoration still requires a separately reviewed plan, restricted backup
+custody and approval. Never point this fixture harness at customer data.
 
 ## R2 media backup and recovery
 
@@ -354,6 +396,15 @@ not assume a deleted object can be recovered from the primary
 No deletion request should be completed until Workdoe's identity, retention,
 legal-hold, and moderation-record policies are approved. For a controlled test,
 use a synthetic account and synthetic content.
+
+The [local account-scope rehearsal](workdoe-public-launch-gates.md#internal-records)
+shows why a direct user-row delete and an unchecked backup restore are unsafe.
+The [Clerk deletion gate](workdoe-public-launch-gates.md#internal-records)
+separates the anonymous instance setting from the per-account and hosted
+workflow checks. Do not change the setting before the replacement intake
+is approved and accessible.
+The steps below are gates for the future approved procedure, not instructions
+to carry out an unapproved request or evidence of a hosted drill.
 
 1. Verify the requester's identity through the production Clerk account and a
    second operator check. Suspend sign-in if compromise is suspected.
@@ -444,32 +495,64 @@ exact addresses, or private-message bodies in the evidence record.
    session without exposing the code in the URL or page source.
 2. Post one project using a service-family and service selection, a city and ZIP
    only, and neutral test scope text. Confirm the form rejects an email address,
-   phone number, or street address in its free-text fields. Upload one valid
-   synthetic image.
+   phone number, or street address in its free-text fields. In the current
+   no-upload beta, confirm photo controls explain that uploads are unavailable
+   and the authenticated upload route denies the operation. Do not enable
+   uploads to complete this drill. A future upload-enabled release needs its
+   own approval and separate media acceptance.
 3. Sign in as the contractor test account with its own email code. Confirm the
    map/list shows only an approximate location, the service filters return the
-   project, and the contractor can open the authorized photo without learning a
-   street address, contact detail, raw storage key, or source filename.
+   project. If an owner-approved retained synthetic photo is available, confirm
+   the authorized contractor can open it without learning a street address,
+   contact detail, raw storage key, or source filename. Otherwise record real
+   retained-media acceptance as unverified, not passed or replaced by a local
+   fixture result.
 4. Submit a synthetic mini bid. From the consumer account, review and approve
    it; confirm that a private message thread opens only for those two matched
    accounts. Send a neutral test message and confirm the text guard rejects
    contact or street details.
 5. Mark the test project complete, then confirm each account's history shows
    the appropriate project/work result without an exact address. Confirm a
-   third, unmatched account cannot retrieve the project photo or message.
+   third, unmatched account cannot retrieve the private message or any retained
+   project photo restricted to match participants at this project state.
 6. Record pass/fail for every assertion, a redacted timestamp, application
    release SHA, and the operator/approver in private operating evidence. A
    failure leaves the drill pending; it is not fixed by editing this document.
 
 Run the media-specific valid, invalid, oversize, quota, rate-limit, and cleanup
-checks separately under the media drill. Run an export/deletion test only after
-the retention, legal-hold, and identity-verification rules are approved.
+checks separately only for an approved upload-enabled release. The current
+disabled-upload and retained-photo authorization checks do not qualify image
+transforms, upload quotas or cleanup for future activation. Run an export/deletion
+test only after the retention, legal-hold, and identity-verification rules are
+approved.
+
+### Email qualification boundaries
+
+`npm run test:worker:journey` exercises the local marketplace and D1/R2 journey;
+it does not qualify native email sending or delivery. The separate
+`npm run test:worker:email` adds a restricted local Email simulator and must
+fail when that binding cannot be exercised. It explicitly sets `remote: false`,
+strips provider credentials, and uses synthetic `.invalid` addresses only. Do
+not switch it to a remote binding or real customer recipient to bypass a local
+runtime error. See
+`release-evidence/2026-10-30-email-qualification.md` for the observed SDK lookup
+failure and the distinction between configuration, mocked control flow, native
+simulation and actual provider delivery.
+
+Production queue producer/consumer attachment is configuration evidence only.
+Email Sending onboarding, a provider-accepted notification, retry/dead-letter
+handling, and receipt by the approved operator still require controlled live
+evidence. Clerk's email-code delivery is a separate provider path and is not
+validated by Workdoe notification tests. Do not broaden credentials, enable a
+paid plan or publish a fabricated incident to obtain a green delivery check.
 
 | Drill | Environment | Date | Operator/approver | Evidence | Result |
 | --- | --- | --- | --- | --- | --- |
-| D1 export and import into separate test D1 | Isolated local D1 | 2026-08-16 | Codex / N/A for local isolation | `docs/launch-readiness-2026-08-16/D1_LOCAL_RECOVERY_DRILL.md` | Pass locally; production recovery remains unproved |
+| Current-schema D1 export and independent import; restored Worker reads and permissions | Synthetic local D1/workerd | 2026-10-30 | Codex / local test isolation | `docs/release-evidence/2026-10-30-local-recovery-drill.md` | Pass locally for 40 tables and 36 migrations; production recovery remains unproved |
+| D1 bookmark and Worker rollback prerequisites | Hosted, read-only | 2026-11-09 | Codex / read-only | [Recovery readback](workdoe-public-launch-gates.md#internal-records) | Bookmarks and prior version available; prior version is not qualified, no restore or traffic change tested |
 | D1 recovery tabletop using bookmarks | Tabletop | Not run | Not assigned | None | Pending |
-| R2 manifest, sampled backup, and restore | Non-production | Not run | Not assigned | None | Pending |
+| Synthetic R2 backup and independent restore; byte hashes and private routes | Synthetic local R2/workerd | 2026-10-30 | Codex / local test isolation | `docs/release-evidence/2026-10-30-local-recovery-drill.md` | Pass for two synthetic objects only |
+| Remote R2 backup custody, sampled backup and restore | Restricted non-production bucket | Not run | Not assigned | None | Pending |
 | Clerk production credential rotation | Production-safe rotation | Not run | Not assigned | None | Pending |
 | Cloudflare/GitHub token rotation | Production-safe rotation | Not run | Not assigned | None | Pending |
 | Two-account marketplace journey and authorization boundary | Production | Not run | Owner / Not assigned | Private redacted acceptance record | Pending |

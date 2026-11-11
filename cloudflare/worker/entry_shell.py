@@ -8,11 +8,24 @@ from html import escape
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from asset_release import ASSET_RELEASE_TOKEN
+from clerk_proxy import CLERK_JS_PACKAGE_PATH, CLERK_UI_PACKAGE_PATH
+from content_privacy import (
+    PROJECT_SEARCH_INPUT_HINT,
+    PROJECT_SEARCH_INPUT_PATTERN,
+    public_project_visible,
+)
+from map_tiles import (
+    DEFAULT_MAP_TILE_URL,
+    area_map_attributes,
+    map_tile_configuration,
+    map_tile_origin,
+)
 from public_jobs import (
     public_job_filters_from_query,
     public_job_payload,
     public_jobs_payload,
 )
+from request_security import parse_url_record_id
 from service_taxonomy import (
     GROUP_BY_SLUG,
     SERVICE_BY_SLUG,
@@ -22,11 +35,12 @@ from service_taxonomy import (
 
 ENTRY_ROUTES = {"/", "/login", "/start", "/create-account", "/post-project"}
 ENTRY_JOB_LIMIT = 50
+ACCOUNT_DATA_REQUEST_LINK = '<a class="entry-shortcut" href="/privacy#privacy-choices">Account data requests</a>'
 DEFAULT_CLERK_FRONTEND_API_URL = "https://workdoe.com/__clerk"
 CLERK_SIGNIN_MODE = "signin"
 CLERK_START_MODE = "start"
-CLERK_UI_VERSION = "1.41.2"
-CLERK_JS_VERSION = "6.40.1"
+CLERK_UI_INTEGRITY = "sha384-FYXAFwPN7TccH+1GBGhfSmj4kqvVseEdP5OAvO5JnZp3fArgoYkLmW0MLwnxJFUB"
+CLERK_JS_INTEGRITY = "sha384-JcUoKGgU3fVbZOepxOhFBTSImBs/0xQTLYLqy0CLEkd2sMiA4wn5VDTC6IJYRSaj"
 WORKDOE_PUBLIC_DOMAIN = "workdoe.com"
 CLERK_PROXY_PATH = "/__clerk"
 CLERK_DEVELOPMENT_SUFFIX = ".clerk.accounts.dev"
@@ -36,10 +50,6 @@ CLERK_IMAGE_ORIGIN = "https://img.clerk.com"
 CLERK_TELEMETRY_ORIGINS = (
     "https://clerk-telemetry.com",
     "https://*.clerk-telemetry.com",
-)
-DEFAULT_MAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-DEFAULT_MAP_TILE_ATTRIBUTION = (
-    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 )
 
 
@@ -54,23 +64,6 @@ def first_query_value(params: dict, key: str, default: str = "") -> str:
     if isinstance(value, list):
         value = value[0] if value else default
     return str(value or default)
-
-
-def map_tile_configuration(
-    tile_url: str | None = None,
-    tile_attribution: str | None = None,
-) -> tuple[str, str]:
-    """Return a complete HTTPS Leaflet tile configuration from reviewed env vars."""
-    candidate_url = str(tile_url or "").strip()
-    required_tokens = ("{z}", "{x}", "{y}")
-    if not candidate_url.startswith("https://") or not all(
-        token in candidate_url for token in required_tokens
-    ):
-        candidate_url = DEFAULT_MAP_TILE_URL
-    candidate_attribution = str(tile_attribution or "").strip()
-    if not candidate_attribution:
-        candidate_attribution = DEFAULT_MAP_TILE_ATTRIBUTION
-    return candidate_url, candidate_attribution
 
 
 def safe_entry_next(value: str | None, fallback: str = "") -> str:
@@ -134,15 +127,25 @@ def cleared_lead_next(value: str) -> str:
     )
 
 
-def entry_clear_url(path: str, params: dict) -> str:
+def entry_navigation_context(params: dict) -> dict[str, str]:
     args: dict[str, str] = {}
-    for key in ("intent", "job_id", "embed"):
-        value = first_query_value(params, key)
-        if value:
-            args[key] = value
-    next_url = cleared_lead_next(safe_entry_next(first_query_value(params, "next")))
+    intent = first_query_value(params, "intent")
+    if intent in {"post-job", "find-work"}:
+        args["intent"] = intent
+    job_id = selected_job_id(params)
+    if job_id:
+        args["job_id"] = job_id
+    # Top-level filters are authoritative after navigating or submitting a GET.
+    next_url = cleared_lead_next(first_query_value(params, "next"))
     if next_url:
         args["next"] = next_url
+    return args
+
+
+def entry_clear_url(path: str, params: dict) -> str:
+    args = entry_navigation_context(params)
+    if first_query_value(params, "embed") == "1":
+        args["embed"] = "1"
     return path + (f"?{urlencode(args)}" if args else "")
 
 
@@ -205,11 +208,19 @@ def clerk_proxy_url(frontend_api_url: str) -> str:
 
 
 def clerk_ui_asset_url(frontend_api_url: str) -> str:
-    return f"{frontend_api_url}/npm/@clerk/ui@{CLERK_UI_VERSION}/dist/ui.browser.js"
+    return f"{frontend_api_url}{CLERK_UI_PACKAGE_PATH}/dist/ui.browser.js"
 
 
 def clerk_js_asset_url(frontend_api_url: str) -> str:
-    return f"{frontend_api_url}/npm/@clerk/clerk-js@{CLERK_JS_VERSION}/dist/clerk.browser.js"
+    return f"{frontend_api_url}{CLERK_JS_PACKAGE_PATH}/dist/clerk.browser.js"
+
+
+def clerk_browser_script_tags(frontend_api_url: str, publishable_key: str, proxy_url: str) -> tuple[str, str]:
+    proxy_attribute = f' data-clerk-proxy-url="{escape(proxy_url)}"' if proxy_url else ""
+    return (
+        f'<script defer crossorigin="anonymous" integrity="{CLERK_UI_INTEGRITY}" src="{escape(clerk_ui_asset_url(frontend_api_url))}"></script>',
+        f'<script defer crossorigin="anonymous" integrity="{CLERK_JS_INTEGRITY}" data-clerk-publishable-key="{escape(publishable_key)}"{proxy_attribute} src="{escape(clerk_js_asset_url(frontend_api_url))}"></script>',
+    )
 
 
 def clerk_development_frontend_api_url(publishable_key: str | None) -> str:
@@ -255,14 +266,22 @@ def csp_sources(base: str, *extras: str) -> str:
     return " ".join(values)
 
 
+def valid_entry_project_id(value: str) -> bool:
+    return bool(parse_url_record_id(value))
+
+
 def selected_job_id(params: dict) -> str:
     value = first_query_value(params, "job_id")
-    if (value.isdigit() and int(value) > 0) or value.startswith("demo-"):
+    sample_suffix = value.removeprefix("demo-")
+    if valid_entry_project_id(value) or (
+        value.startswith("demo-") and len(sample_suffix) == 2
+        and sample_suffix.isascii() and sample_suffix.isdecimal()
+    ):
         return value
     next_url = first_query_value(params, "next")
     if next_url.startswith("/jobs/"):
         raw = next_url.removeprefix("/jobs/").split("?", 1)[0].split("/", 1)[0]
-        if raw.isdigit() and int(raw) > 0:
+        if valid_entry_project_id(raw):
             return raw
     return ""
 
@@ -311,11 +330,7 @@ def public_jobs_api_url(params: dict, target: str) -> str:
 
 
 def service_family_filter_html(path: str, params: dict, filters: dict[str, str]) -> str:
-    shared: dict[str, str] = {}
-    for key in ("intent", "job_id", "next"):
-        value = first_query_value(params, key)
-        if value:
-            shared[key] = value
+    shared = entry_navigation_context(params)
     if filters.get("q"):
         shared["q"] = filters["q"]
     if filters.get("sort", "newest") != "newest":
@@ -376,13 +391,13 @@ def selected_lane_action_html(filters: dict[str, str], project_count: int) -> st
         post_args["service"] = selected_service["slug"]
     post_url = "/post-project?" + urlencode(post_args)
     return f"""
-      <section class="market-lane-action" aria-label="Selected work lane">
+      <section class="market-lane-action" aria-label="Selected work lane" data-market-lane data-lane-family="{escape(selected['slug'])}">
         <div class="market-lane-heading">
           <span aria-hidden="true">{number:02d}</span>
           <img src="/vendor/tabler-icons/{escape(selected['icon'])}" alt="" width="28" height="28">
-          <div><small>Lane selected</small><strong>{escape(selected['name'])}</strong><span>{project_count} open {noun}</span></div>
+          <div><small>Lane selected</small><strong>{escape(selected['name'])}</strong><span data-lane-project-count>{project_count} {noun}</span></div>
         </div>
-        <a class="button primary compact" href="{escape(post_url)}" data-dialog-title="Post a project">{'Post this task' if selected_service else 'Post in this lane'}</a>
+        <a class="button primary compact" href="{escape(post_url)}" data-dialog-title="Post a project" data-lane-post-project>{'Post this task' if selected_service else 'Post in this lane'}</a>
       </section>"""
 
 
@@ -430,17 +445,26 @@ def entry_sign_up_url(path: str, selected_id: str, params: dict | None = None) -
     return "/create-account"
 
 
-def job_row(row, selected_id: str, target: str) -> str:
+def job_row(row, selected_id: str, target: str, list_filters: dict[str, str] | None = None) -> str:
     project = public_job_payload(row, target=target)
     job_id = str(project["id"])
     is_selected = selected_id == job_id
     row_class = "project-result" + (" is-map-active" if is_selected else "")
     current = ' aria-current="true"' if is_selected else ""
     sample = '<span class="sample-badge">Sample</span>' if project["is_demo"] else ""
+    action_label = "View sample: " if project["is_demo"] else "View details for "
     icon_name = service_icon(project.get("service_slug") or project["service_name"])
+    detail_url = project["detail_url"]
+    if list_filters is not None:
+        detail_params = {
+            key: value for key, value in list_filters.items()
+            if key in {"category", "family", "service", "q", "sort"} and value
+        }
+        detail_params["job_id"] = job_id
+        detail_url = "/?" + urlencode(detail_params) + "#market-details-panel"
     return f"""
           <div class="project-result-item" role="listitem">
-            <a class="{row_class}" data-job-id="{escape(job_id)}" href="{escape(project['detail_url'])}" aria-label="View details for {escape(project['title'])}"{current}>
+            <a class="{row_class}" data-job-id="{escape(job_id)}" href="{escape(detail_url)}" aria-label="{action_label}{escape(project['title'])}"{current}>
               <span class="project-result-topline">
                 <span class="job-service-chip"><img src="/vendor/tabler-icons/{escape(icon_name)}" alt="" width="16" height="16">{escape(project['service_name'])}</span>
                 {sample}
@@ -454,7 +478,7 @@ def job_row(row, selected_id: str, target: str) -> str:
           </div>"""
 
 
-def job_list_html(rows: list, selected_id: str, target: str) -> str:
+def job_list_html(rows: list, selected_id: str, target: str, list_filters: dict[str, str] | None = None) -> str:
     if not rows:
         return """
           <div class="empty-state field-empty-state">
@@ -462,7 +486,7 @@ def job_list_html(rows: list, selected_id: str, target: str) -> str:
             <h2>The board is quiet</h2>
             <p>New local projects will appear here.</p>
           </div>"""
-    return "\n".join(job_row(row, selected_id, target) for row in rows)
+    return "\n".join(job_row(row, selected_id, target, list_filters) for row in rows)
 
 
 def selected_job_pill(row) -> str:
@@ -504,22 +528,42 @@ def task_options(family_slug: str, selected: str = "") -> str:
     return "\n".join(options)
 
 
-def project_detail_html(row, target: str) -> str:
+def missing_shared_project_html() -> str:
+    return """
+        <div class="market-detail-empty" data-project-detail-content>
+          <h2>Project not shown</h2>
+          <p>It may be closed or outside these results.</p>
+          <a class="button secondary" href="/">Browse all projects</a>
+        </div>"""
+
+
+def project_detail_html(row, target: str, *, include_map: bool = True) -> str:
     if not row:
-        return """
+        return f"""
         <div class="market-detail-empty" data-project-detail-content>
           <img src="/field-doe.webp" alt="" width="160" height="160">
           <h2>No projects match</h2>
-          <p>Adjust the filters to widen the map.</p>
+          <p>{'Adjust the filters to widen the map.' if include_map else 'Try a different search or service.'}</p>
         </div>"""
     project = public_job_payload(row, target=target)
     sample = '<span class="sample-badge">Demonstration project</span>' if project["is_demo"] else '<span class="live-badge">Open project</span>'
+    pin_note = ' <span class="help-text">(no map pin)</span>' if include_map and project["lat"] is None else ""
     date_label = "Sample timing" if project["is_demo"] else (
         f'<time datetime="{escape(project["desired_date"])}">{escape(calendar_date_label(project["desired_date"]))}</time>'
         if project["desired_date"]
         else "Flexible"
     )
     date_heading = "Timing" if project["is_demo"] else "Desired date"
+    if project["is_demo"]:
+        note = "This sample does not accept bids."
+        actions = ""
+    else:
+        note = "Locations stay approximate after approval. Do not include a street address."
+        actions = f"""
+          <div class="project-detail-actions">
+            <a class="button primary" href="{escape(project['url'])}">{escape(project['action_label'])}</a>
+            <a class="button secondary" href="{escape(project['detail_url'])}">Open project link</a>
+          </div>"""
     return f"""
         <article class="market-project-detail" data-project-detail-content data-job-id="{escape(str(project['id']))}">
           <div class="project-detail-heading">
@@ -527,7 +571,7 @@ def project_detail_html(row, target: str) -> str:
             <span>{escape(project['service_name'])}</span>
           </div>
           <h2>{escape(project['title'])}</h2>
-          <p class="project-detail-location">{escape(project['city'])}, {escape(project['state'])}</p>
+          <p class="project-detail-location">{escape(project['city'])}, {escape(project['state'])}{pin_note}</p>
           <dl class="project-facts">
             <div><dt>Estimated budget</dt><dd>{escape(project['budget'])}</dd></div>
             <div><dt>{date_heading}</dt><dd>{date_label}</dd></div>
@@ -536,11 +580,8 @@ def project_detail_html(row, target: str) -> str:
             <h3>Field brief</h3>
             <p>{escape(project.get('description') or 'Project details are available after sign-in.')}</p>
           </div>
-          <p class="project-privacy-note">Location is intentionally approximate until a match is approved.</p>
-          <div class="project-detail-actions">
-            <a class="button primary" href="{escape(project['url'])}">{escape(project['action_label'])}</a>
-            <a class="button secondary" href="{escape(project['detail_url'])}">Open project link</a>
-          </div>
+          <p class="project-privacy-note">{note}</p>
+          {actions}
         </article>"""
 
 
@@ -572,6 +613,7 @@ def shell_csp(
     clerk_frontend_api_url: str,
     include_turnstile: bool = False,
     clerk_publishable_key: str = "",
+    map_tile_url: str = DEFAULT_MAP_TILE_URL,
 ) -> str:
     clerk_origin = clerk_csp_origin(
         clerk_runtime_frontend_api_url(clerk_publishable_key, clerk_frontend_api_url)
@@ -605,7 +647,8 @@ def shell_csp(
             csp_sources("style-src-elem 'self' 'unsafe-inline'", clerk_origin),
             "style-src-attr 'unsafe-inline'",
             csp_sources(
-                "img-src 'self' data: https://tile.openstreetmap.org",
+                "img-src 'self' data:",
+                map_tile_origin(map_tile_url),
                 CLERK_IMAGE_ORIGIN if clerk_enabled else "",
             ),
             csp_sources(
@@ -629,6 +672,8 @@ def shell_headers(
     clerk_frontend_api_url: str,
     include_turnstile: bool = False,
     clerk_publishable_key: str = "",
+    *,
+    map_tile_url: str = DEFAULT_MAP_TILE_URL,
 ) -> dict[str, str]:
     return {
         "Content-Type": "text/html; charset=utf-8",
@@ -639,10 +684,12 @@ def shell_headers(
             clerk_frontend_api_url,
             include_turnstile=include_turnstile,
             clerk_publishable_key=clerk_publishable_key,
+            map_tile_url=map_tile_url,
         ),
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
-        "Referrer-Policy": "strict-origin-when-cross-origin",
+        # Auth dialogs inherit this document's policy when calling the same-origin proxy.
+        "Referrer-Policy": "strict-origin",
         "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
         "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     }
@@ -650,6 +697,71 @@ def shell_headers(
 
 def is_production_clerk_publishable_key(value: str) -> bool:
     return str(value or "").strip().startswith("pk_live_")
+
+
+def public_status_html(title: str, heading_id: str, message: str, actions: tuple[tuple[str, str], ...]) -> str:
+    action_links = "\n".join(
+        f'      <a class="button{" secondary" if index else ""}" href="{escape(href)}">{escape(label)}</a>'
+        for index, (label, href) in enumerate(actions)
+    )
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escape(title)} - Workdoe</title>
+  <link rel="icon" href="/deer.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css?v={ASSET_RELEASE_TOKEN}">
+</head>
+<body class="public-entry-status">
+  <header class="site-header">
+    <a class="brand brand-home-button" href="/" aria-label="Workdoe home">
+      <span class="brand-mark"><img class="brand-icon" src="/deer.svg" alt=""></span>
+      <strong>Workdoe</strong>
+    </a>
+  </header>
+  <main class="error-copy" aria-labelledby="{escape(heading_id)}">
+    <h1 id="{escape(heading_id)}">{escape(title)}</h1>
+    <p>{escape(message)}</p>
+    <div class="form-actions">
+{action_links}
+    </div>
+    <nav class="site-footer-links" aria-label="Policies">
+      <a href="/safety">Safety</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+    </nav>
+  </main>
+</body>
+</html>"""
+
+
+def missing_page_html() -> str:
+    return public_status_html(
+        "Page not found", "missing-page-title", "This link may be out of date.",
+        (("Browse projects", "/"),),
+    )
+
+
+def unavailable_entry_html(*, sign_in: bool, busy: bool) -> str:
+    if sign_in:
+        title = "Sign-in temporarily unavailable"
+        actions = (("Try again", ""), ("Browse projects", "/"))
+    else:
+        title = "Projects are busy" if busy else "Projects temporarily unavailable"
+        actions = (("Try again", ""), ("Sign in", "/login"), ("Create account", "/create-account"))
+    return public_status_html(title, "entry-unavailable-title", "Please try again shortly.", actions)
+
+
+def unavailable_job_draft_html(*, signed_in: bool) -> str:
+    actions = (
+        (("Try again", "/jobs/new"), ("My projects", "/dashboard")) if signed_in
+        else (("Try again", "/post-project"), ("Browse projects", "/"))
+    )
+    return public_status_html(
+        "Draft temporarily unavailable", "draft-unavailable-title",
+        "We couldn't load your draft. Try again before starting a new one.", actions,
+    )
 
 
 def build_entry_shell_html(
@@ -660,14 +772,23 @@ def build_entry_shell_html(
     clerk_frontend_api_url: str,
     auth_provider: str = "clerk",
     turnstile_site_key: str = "",
-    map_tile_url: str = "",
-    map_tile_attribution: str = "",
+    map_tile_url: str | None = None,
+    map_tile_attribution: str | None = None,
+    map_mode: str | None = None,
+    marketplace_unavailable: bool = False,
+    page_snapshot: dict | None = None,
+    access_protected_map: bool = False,
 ) -> str:
+    rows = [row for row in rows if public_project_visible(row)]
     map_tile_url, map_tile_attribution = map_tile_configuration(
         map_tile_url,
         map_tile_attribution,
+        map_mode=map_mode,
     )
     embedded = first_query_value(params, "embed") == "1"
+    include_map = bool(map_tile_url) and not embedded
+    area_attrs = area_map_attributes(map_tile_url, access_protected_map)
+    list_only = not map_tile_url
     native_email_code = auth_provider == "workdoe_email_code"
     development_frontend_api_url = clerk_development_frontend_api_url(
         clerk_publishable_key
@@ -678,8 +799,11 @@ def build_entry_shell_html(
     target = "login" if path == "/login" else "start"
     intent = normalize_intent(first_query_value(params, "intent"), path)
     auth_selected_id = selected_job_id(params)
+    requested = selected_job(rows, auth_selected_id)
+    shared_project = path == "/" and bool(auth_selected_id) and first_query_value(params, "job_id") == auth_selected_id
+    missing_shared_project = shared_project and requested is None
     selected_id = auth_selected_id
-    selected = selected_job(rows, selected_id) or (rows[0] if rows else None)
+    selected = requested or (rows[0] if rows and not missing_shared_project else None)
     if selected and not selected_id:
         selected_id = str(row_value(selected, "id", ""))
     redirect_url = entry_redirect_url(path, params, intent, auth_selected_id)
@@ -688,11 +812,18 @@ def build_entry_shell_html(
     map_payload = public_jobs_payload(rows, filters, target=target)
     jobs_api_url = public_jobs_api_url(params, target)
     selected_family = GROUP_BY_SLUG.get(filters.get("family", ""))
+    family_filters = service_family_filter_html(path, params, filters)
+    if list_only:
+        family_label = f": {escape(selected_family['name'])}" if selected_family else ""
+        family_filters = f"""<details class="market-service-chooser">
+          <summary>Services{family_label}</summary>
+          {family_filters}
+        </details>"""
     task_filter_html = ""
     if selected_family:
         task_filter_html = f"""
         <label for="market-service">Task</label>
-        <select id="market-service" data-market-service>
+        <select id="market-service" name="service" data-market-service>
 {task_options(selected_family["slug"], filters.get("service", ""))}
         </select>"""
     sort_options = "".join(
@@ -710,11 +841,6 @@ def build_entry_shell_html(
     )
     proxy_data_attr = (
         f'\n          data-clerk-proxy-url="{escape(proxy_url)}"'
-        if proxy_url
-        else ""
-    )
-    proxy_script_attr = (
-        f' data-clerk-proxy-url="{escape(proxy_url)}"'
         if proxy_url
         else ""
     )
@@ -742,6 +868,7 @@ def build_entry_shell_html(
     sign_up_url = entry_sign_up_url(path, auth_selected_id, params)
     account_switch_html = (
         f'<p class="account-entry-switch">New to Workdoe? <a href="{escape(sign_up_url)}">Create account</a></p>'
+        f'<div class="account-entry-switch">{ACCOUNT_DATA_REQUEST_LINK}</div>'
         if path == "/login"
         else f'<p class="account-entry-switch">Already have an account? <a href="/login?{escape(urlencode({"next": redirect_url}))}">Sign in</a></p>'
     )
@@ -751,7 +878,7 @@ def build_entry_shell_html(
     )
     if urlparse(contractor_leads_url).path != "/leads":
         contractor_leads_url = "/leads"
-    data_selected = auth_selected_id if selected and auth_selected_id.isdigit() else ""
+    data_selected = auth_selected_id if requested and auth_selected_id.isdigit() else ""
     draft_saved_html = (
         '<div class="selected-lead-pill"><span>Draft saved</span><strong>Verify your email to finish posting</strong></div>'
         if first_query_value(params, "draft") == "saved"
@@ -831,11 +958,26 @@ def build_entry_shell_html(
             + '  <script defer src="/email-code-entry.js"></script>'
         )
     else:
+        retry_args = {"next": redirect_url}
+        if path != "/login":
+            retry_args["intent"] = intent
+        if auth_selected_id:
+            retry_args["job_id"] = auth_selected_id
+        retry_url = f"{path}?{urlencode(retry_args)}"
         auth_mount_html = f"""
 {onboarding_fields}
+        <div class="clerk-entry-recovery" data-clerk-load-fallback>
+          <p>Form not loading?</p>
+          <noscript><p>Sign-in needs JavaScript.</p></noscript>
+          <div class="action-row">
+            <a class="button secondary" href="{escape(retry_url)}" data-dialog-bypass>Try again</a>
+            <a href="/" data-dialog-bypass>Browse projects</a>
+          </div>
+        </div>
         <div
           id="clerk-entry"
           class="clerk-entry-mount"
+          hidden
           data-clerk-entry
           data-clerk-mode="{escape(clerk_mode)}"
           data-redirect-url="{escape(redirect_url)}"
@@ -852,42 +994,153 @@ def build_entry_shell_html(
           <button class="button secondary" type="button" data-clerk-session-retry>Use a new email code</button>
         </div>
         <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>"""
-        auth_scripts_html = f"""  <script defer crossorigin="anonymous" src="{escape(clerk_ui_asset_url(clerk_asset_base_url))}"></script>
-  <script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_script_attr} src="{escape(clerk_js_asset_url(clerk_asset_base_url))}"></script>
+        ui_script, sdk_script = clerk_browser_script_tags(clerk_asset_base_url, clerk_publishable_key, proxy_url)
+        auth_scripts_html = f"""  {ui_script}
+  {sdk_script}
   <script defer src="/clerk-entry.js?v={ASSET_RELEASE_TOKEN}"></script>"""
     if path == "/":
         auth_scripts_html = ""
+        detail_html = (
+            missing_shared_project_html() if missing_shared_project
+            else project_detail_html(selected, target, include_map=include_map)
+        )
+        missing_detail_template = (
+            f'<template data-missing-shared-project>{missing_shared_project_html()}</template>'
+            if shared_project and include_map else ""
+        )
         right_panel_html = f"""
-      <aside class="market-detail-rail" data-market-panel="details" aria-label="Selected project">
-{project_detail_html(selected, target)}
-      </aside>"""
+      <div id="market-details-panel" class="market-detail-rail" data-market-panel="details" role="complementary" aria-label="Selected project"{' tabindex="-1"' if list_only else ''}>
+{detail_html}
+{missing_detail_template}
+      </div>"""
     else:
+        heading_tag = "h1" if marketplace_unavailable and not embedded else "h2"
+        availability_note = (
+            '<p role="status">Project listings are temporarily unavailable. Account access may also be affected.</p>'
+            if marketplace_unavailable else ""
+        )
         right_panel_html = f"""
-      <aside id="{escape(panel_id)}" class="market-detail-rail market-auth-rail" data-market-panel="details" data-dialog-fragment aria-labelledby="entry-title">
+      <div id="{escape(panel_id)}" class="market-detail-rail market-auth-rail" data-market-panel="details" data-dialog-fragment role="complementary" aria-labelledby="entry-title">
         <div class="market-auth-heading">
           <p class="eyebrow">{escape(eyebrow)}</p>
-          <h2 id="entry-title">{escape(heading)}</h2>
+          <{heading_tag} id="entry-title">{escape(heading)}</{heading_tag}>
+          {availability_note}
           <p>{'Use your email code to reopen your workspace.' if path == '/login' else 'Choose a role and verify your email to begin.'}</p>
 {draft_saved_html}
-{selected_job_pill(selected if selected_job_id(params) else None)}
+{selected_job_pill(requested)}
         </div>
 {auth_mount_html}
         <div class="auth-switch clerk-entry-note">
           <span>No password needed. Your one-time code arrives by email. One account keeps one role during beta.</span>
         </div>
         {account_switch_html}
-      </aside>"""
-    mobile_default = "details" if path in {"/login", "/start", "/create-account", "/post-project"} else "map"
+      </div>"""
+    if marketplace_unavailable:
+        return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{escape(title)}</title>
+  <link rel="icon" href="/deer.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css?v={ASSET_RELEASE_TOKEN}">
+</head>
+<body class="public-entry-status{' dialog-fragment-body market-entry-body' if embedded else ''}">
+  <header class="site-header">
+    <a class="brand brand-home-button" href="/" aria-label="Workdoe home">
+      <span class="brand-mark"><img class="brand-icon" src="/deer.svg" alt=""></span>
+      <strong>Workdoe</strong>
+    </a>
+  </header>
+  <main class="error-copy" aria-labelledby="entry-title">
+{right_panel_html}
+    <nav class="site-footer-links" aria-label="Policies">
+      <a href="/safety">Safety</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+    </nav>
+  </main>
+{auth_scripts_html}
+</body>
+</html>"""
+    if missing_shared_project or path in {"/login", "/start", "/create-account", "/post-project"}:
+        mobile_default = "details"
+    else:
+        mobile_default = "filters" if selected_family or list_only else "map"
     filter_count = len(map_payload["jobs"])
+    mapped_count = map_payload["mapped_count"]
+    mapped_samples = sum(job["is_demo"] and job["lat"] is not None for job in map_payload["jobs"])
+    list_only_count = filter_count - mapped_count
+    snapshot_attr = (
+        f' data-map-snapshot="{escape(safe_json_script(page_snapshot))}"'
+        if page_snapshot is not None else ""
+    )
+    results_truncated = bool(page_snapshot and page_snapshot.get("truncated"))
     body_class = "market-entry-body dialog-fragment-body" if embedded else "market-entry-body"
-    map_styles_html = "" if embedded else """  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+    if list_only:
+        body_class += " market-list-only"
+    map_styles_html = """  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="/vendor/leaflet-markercluster/MarkerCluster.css">
-  <link rel="stylesheet" href="/vendor/leaflet-markercluster/MarkerCluster.Default.css">"""
-    map_scripts_html = "" if embedded else f"""  <script src="/vendor/leaflet/leaflet.js"></script>
-  <script src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>
-  <script src="/map.js?v={ASSET_RELEASE_TOKEN}"></script>"""
+  <link rel="stylesheet" href="/vendor/leaflet-markercluster/MarkerCluster.Default.css">""" if include_map else ""
+    # Entry and dialog controls must execute before the optional map scripts.
+    map_scripts_html = f"""  <script defer src="/vendor/leaflet/leaflet.js"></script>
+  <script defer src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>
+  <script defer src="/map.js?v={ASSET_RELEASE_TOKEN}"></script>""" if include_map else ""
     dialog_html = "" if embedded else site_dialog_html()
-    dialog_script_html = "" if embedded else '  <script defer src="/site-dialogs.js?v=workdoe-bid-dialog"></script>'
+    dialog_script_html = "" if embedded else f'  <script defer src="/site-dialogs.js?v={ASSET_RELEASE_TOKEN}"></script>'
+    page_heading = "Local projects" if path == "/" else heading
+    details_id = "market-details-panel" if path == "/" else panel_id
+    page_mode = ' data-entry-mode="browse"' if path == "/" else ' data-entry-mode="account"'
+    view_navigation = f"""
+  <nav class="market-view-navigation" aria-label="Marketplace views">
+    <div class="market-mobile-tabs" role="tablist" aria-label="Marketplace view">
+      <button id="market-projects-tab" type="button" role="tab" data-mobile-panel-target="filters" aria-controls="market-projects-panel">Projects</button>
+      <button id="market-map-tab" type="button" role="tab" data-mobile-panel-target="map" aria-controls="market-map-panel">Map</button>
+      <button id="market-details-tab" type="button" role="tab" data-mobile-panel-target="details" aria-controls="{escape(details_id)}">{detail_tab_label}</button>
+    </div>
+  </nav>
+""" if include_map else ""
+    map_panel = f"""
+    <div id="market-map-panel" class="market-map-stage" data-market-panel="map" role="region" aria-label="Project map workspace">
+      <div class="map-stage-toolbar">
+        <div>
+          <span class="map-live-indicator" aria-hidden="true"></span>
+          <span><strong data-map-result-count>{mapped_count} project{'' if mapped_count == 1 else 's'} mapped</strong><span data-map-list-only-count{'' if list_only_count else ' hidden'}>; {list_only_count} list only</span></span>
+        </div>
+        <span data-map-source-counts>{mapped_count - mapped_samples} live / {mapped_samples} sample</span>
+      </div>
+      <div class="market-map-frame">
+        <div id="lead-map" data-map data-map-workspace{snapshot_attr}{area_attrs} data-jobs-api="{escape(jobs_api_url)}" data-tile-url="{escape(map_tile_url)}" data-tile-attribution='{escape(map_tile_attribution)}' role="region" tabindex="0" aria-label="Interactive map of approximate DMV project locations" aria-describedby="lead-map-status">
+          <button class="button compact map-search-area" type="button" data-search-map-area hidden>Search this area</button>
+          <div class="map-view-controls" aria-label="Map controls">
+            <button class="button compact map-view-control" type="button" data-show-map-area title="Describe the current approximate map area">Map area</button>
+            <button class="button compact map-view-control" type="button" data-reset-map-view title="Return to the default DMV map view">DMV view</button>
+          </div>
+          <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Loading the project map. The project list is ready.</p>
+          <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Loading the project map. The project list is ready.</p>
+        </div>
+      </div>
+    </div>
+""" if include_map else ""
+    map_snapshot = f"""
+  <script id="map-jobs-data" type="application/json">{safe_json_script(map_payload["jobs"])}</script>
+""" if include_map else ""
+    form_state = {key: filters[key] for key in ("category", "family") if filters.get(key)}
+    if path != "/" and not embedded:
+        form_state.update(entry_navigation_context(params))
+    if page_snapshot and page_snapshot.get("viewport"):
+        form_state.update(page_snapshot["viewport"])
+    fallback_filters = "".join(
+        f'<input type="hidden" name="{key}" value="{escape(str(value))}">'
+        for key, value in form_state.items()
+    )
+    policy_footer = "" if embedded else """  <footer class="market-policy-footer">
+    <nav class="site-footer-links" aria-label="Policies">
+      <a href="/safety">Safety</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+    </nav>
+  </footer>"""
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -936,65 +1189,47 @@ def build_entry_shell_html(
       <a href="/login" data-dialog-title="Sign in"{login_current}>Sign in</a>
     </nav>
   </header>
-  <div class="market-mobile-tabs" role="tablist" aria-label="Marketplace view">
-    <button type="button" role="tab" data-mobile-panel-target="filters">Projects</button>
-    <button type="button" role="tab" data-mobile-panel-target="map">Map</button>
-    <button type="button" role="tab" data-mobile-panel-target="details">{detail_tab_label}</button>
-  </div>
-  <main id="main-content" class="market-workspace" tabindex="-1" data-market-workspace data-mobile-panel="{escape(mobile_default)}">
-    <aside class="market-filter-rail" data-market-panel="filters" aria-label="Project search and filters">
+{view_navigation}
+  <main id="main-content" class="market-workspace" tabindex="-1" data-market-workspace data-mobile-panel="{escape(mobile_default)}"{page_mode}>
+    <h1 class="sr-only">{escape(page_heading)}</h1>
+    {'<p class="sr-only" role="status" aria-atomic="true" data-project-results-status></p>' if include_map else ''}
+    <div id="market-projects-panel" class="market-filter-rail" data-market-panel="filters" role="complementary" aria-label="Project search and filters">
       <div class="market-rail-heading">
-        <p class="eyebrow">DMV field board</p>
-        <h1>Find work nearby</h1>
-        <p>Explore approximate locations before creating an account.</p>
+        <h2>Find work nearby</h2>
       </div>
-      {service_family_filter_html(path, params, filters)}
+      {family_filters}
       {selected_lane_action_html(filters, filter_count)}
-      <form class="market-filter-form" data-market-filters>
+      <form class="market-filter-form" method="get" data-market-filters>
+        {fallback_filters}
         <label for="market-search">Search projects</label>
-        <input id="market-search" type="search" value="{escape(filters.get('q', ''))}" placeholder="Try painting or Arlington" autocomplete="off" data-market-search>
+        <input id="market-search" name="q" type="search" value="{escape(filters.get('q', ''))}" maxlength="80" placeholder="Try painting or Arlington" autocomplete="off" pattern="{escape(PROJECT_SEARCH_INPUT_PATTERN)}" title="{escape(PROJECT_SEARCH_INPUT_HINT)}" data-market-search>
 {task_filter_html}
-        <label for="market-sort">Sort</label>
-        <select id="market-sort" data-market-sort>{sort_options}</select>
-        <div class="filter-actions">
-          <button class="button secondary compact" type="button" data-clear-market-filters data-clear-market-url="{escape(entry_clear_url(path, params))}">Clear filters</button>
+        <div class="filter-actions market-sort-actions">
+          <label class="sr-only" for="market-sort">Sort</label>
+          <select id="market-sort" name="sort" data-market-sort>{sort_options}</select>
+          <button class="button compact" type="submit">Filter</button>
+          <a class="button secondary compact" href="{escape(entry_clear_url(path, params))}" data-clear-market-filters data-clear-market-url="{escape(entry_clear_url(path, params))}">Clear filters</a>
         </div>
       </form>
-      <div class="sample-data-note">
-        <span class="sample-badge">Demonstration data</span>
-        <p>{map_payload['demo_count']} realistic sample projects show how Workdoe will feel as local jobs arrive.</p>
-      </div>
+      <p class="sample-data-note">Sample listings are not active requests.</p>
       <div class="project-results-heading">
         <strong data-project-result-count>{filter_count} projects</strong>
         <span>Approximate locations</span>
       </div>
+      <p class="market-search-notice" data-project-truncation{'' if results_truncated else ' hidden'}>More projects are available. Narrow your search to see more.</p>
       <div class="project-results" data-project-results aria-label="Available projects"{job_list_role}>
-{job_list_html(rows, selected_id, target)}
+{job_list_html(rows, selected_id, target, filters if list_only else None)}
       </div>
-    </aside>
-    <section class="market-map-stage" data-market-panel="map" aria-label="Project map workspace">
-      <div class="map-stage-toolbar">
-        <div>
-          <span class="map-live-indicator" aria-hidden="true"></span>
-          <strong data-map-result-count>{filter_count} projects mapped</strong>
-        </div>
-        <span>{map_payload['live_count']} live / {map_payload['demo_count']} sample</span>
-      </div>
-      <div class="market-map-frame">
-        <div id="lead-map" data-map data-map-workspace data-jobs-api="{escape(jobs_api_url)}" data-tile-url="{escape(map_tile_url)}" data-tile-attribution='{escape(map_tile_attribution)}' role="region" tabindex="0" aria-label="Interactive map of approximate DMV project locations" aria-describedby="lead-map-status">
-          <button class="button compact map-search-area" type="button" data-search-map-area hidden>Search this area</button>
-          <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Loading the project map. The project list is ready.</p>
-          <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Loading the project map. The project list is ready.</p>
-        </div>
-      </div>
-    </section>
+    </div>
+{map_panel}
 {right_panel_html}
   </main>
-  <script id="map-jobs-data" type="application/json">{safe_json_script(map_payload["jobs"])}</script>
-{map_scripts_html}
-{auth_scripts_html}
+{policy_footer}
+{map_snapshot}
 {dialog_html}
 {dialog_script_html}
+{auth_scripts_html}
+{map_scripts_html}
 </body>
 </html>
 """

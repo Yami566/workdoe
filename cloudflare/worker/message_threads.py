@@ -1,7 +1,13 @@
 from __future__ import annotations
 
-from content_privacy import contains_disallowed_personal_data, personal_data_error
+from content_privacy import (
+    contains_disallowed_personal_data,
+    participant_message_text,
+    personal_data_error,
+    shared_project_record,
+)
 from contractor_reputation import contractor_match_provider
+from request_security import parse_url_record_id
 
 MESSAGE_BODY_MAX_LENGTH = 1000
 MAX_MESSAGE_BODY_BYTES = 4096
@@ -38,9 +44,10 @@ def parse_thread_id(path: str) -> int:
     if not path.startswith(prefix):
         raise MessageThreadError(["Unsupported message thread route."])
     raw_id = path[len(prefix) :].strip("/")
-    if not raw_id.isdigit() or int(raw_id) < 1:
+    record_id = parse_url_record_id(raw_id)
+    if not record_id:
         raise MessageThreadError(["Unsupported message thread route."])
-    return int(raw_id)
+    return record_id
 
 
 def can_view_thread(user, thread) -> bool:
@@ -66,7 +73,10 @@ def can_send_thread_message(user, thread) -> bool:
 def cleaned_message_payload(payload: dict) -> str:
     if not isinstance(payload, dict):
         raise MessageThreadError(["Message payload must be a JSON object."])
-    return (payload.get("body") or "").strip()
+    body = payload.get("body", "")
+    if not isinstance(body, str):
+        raise MessageThreadError(["Enter your message as text."])
+    return body.strip()
 
 
 def message_body_payload(payload: dict) -> str:
@@ -102,7 +112,7 @@ def message_thread_summary(row, viewer_id: int | None = None) -> dict:
     job_id = row_value(row, "job_id")
     contractor_id = row_value(row, "contractor_id")
     contractor_name = row_value(row, "contractor_name")
-    return {
+    return shared_project_record({
         "id": row_value(row, "id"),
         "job_id": job_id,
         "title": row_value(row, "title"),
@@ -123,14 +133,14 @@ def message_thread_summary(row, viewer_id: int | None = None) -> dict:
             row_value(row, "source_checked_credential_count", 0),
             row_value(row, "source_checked_license_count", 0),
         ),
-        "last_message": row_value(row, "last_message", "") or "",
+        "last_message": participant_message_text(row_value(row, "last_message", "") or ""),
         "last_message_at": row_value(row, "last_message_at", "") or "",
         "message_count": count_value(row, "message_count"),
         "unread_count": unread_count,
         "has_unread": unread_count > 0,
         "needs_reply": needs_reply,
         "url": f"/messages/{row_value(row, 'id')}",
-    }
+    })
 
 
 def message_threads_listing_payload(
@@ -160,20 +170,24 @@ def message_threads_listing_payload(
     }
 
 
-def message_detail_payload(message) -> dict:
+def message_detail_payload(message, *, include_moderation_evidence: bool = False) -> dict:
+    body = row_value(message, "body", "") or ""
     return {
         "id": row_value(message, "id"),
         "sender_id": row_value(message, "sender_id"),
         "sender_name": row_value(message, "display_name"),
-        "body": row_value(message, "body"),
+        "body": body if include_moderation_evidence else participant_message_text(body),
         "is_hidden": row_value(message, "is_hidden", 0),
         "created_at": row_value(message, "created_at"),
     }
 
 
-def thread_detail_payload(thread, messages: list[dict]) -> dict:
+def thread_detail_payload(thread, messages: list[dict], *, include_moderation_evidence: bool = False) -> dict:
     return {
         "ok": True,
         "thread": message_thread_summary({**dict(thread), "message_count": len(messages)} if isinstance(thread, dict) else thread),
-        "messages": [message_detail_payload(message) for message in messages],
+        "messages": [
+            message_detail_payload(message, include_moderation_evidence=include_moderation_evidence)
+            for message in messages
+        ],
     }

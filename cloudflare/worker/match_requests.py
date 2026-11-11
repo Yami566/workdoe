@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from content_privacy import contains_disallowed_personal_data, personal_data_error
+from request_security import parse_url_record_id
 
 BID_SCOPE_MIN_LENGTH = 20
 BID_SCOPE_MAX_LENGTH = 800
@@ -30,9 +31,10 @@ def parse_match_request_job_id(path: str) -> int:
     if not path.startswith(prefix) or not path.endswith(suffix):
         raise MatchRequestError(["Unsupported match request route."])
     raw_id = path[len(prefix) : -len(suffix)]
-    if not raw_id.isdigit() or int(raw_id) < 1:
+    record_id = parse_url_record_id(raw_id)
+    if not record_id:
         raise MatchRequestError(["Unsupported match request route."])
-    return int(raw_id)
+    return record_id
 
 
 def cleaned_match_request_payload(payload: dict) -> dict[str, str]:

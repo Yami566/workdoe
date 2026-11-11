@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from request_security import parse_url_record_id
+
 JOB_STATUS_ACTIONS = {"close": "closed", "reopen": "open"}
 JOB_STATUS_EVENTS = {"closed": "job-closed", "open": "job-reopened"}
 PROJECT_CLOSE_REASONS = (
@@ -49,11 +51,12 @@ def parse_job_status_path(path: str) -> tuple[int, str, str]:
     if len(parts) != 2:
         raise JobStatusError("Unsupported job status route.", 404)
     raw_id, action = parts
-    if not raw_id.isdigit() or int(raw_id) < 1:
+    record_id = parse_url_record_id(raw_id)
+    if not record_id:
         raise JobStatusError("Unsupported job status route.", 404)
     if action not in JOB_STATUS_ACTIONS:
         raise JobStatusError("Unsupported job status route.", 404)
-    return int(raw_id), action, JOB_STATUS_ACTIONS[action]
+    return record_id, action, JOB_STATUS_ACTIONS[action]
 
 
 def can_update_job_status(user, job) -> bool:
@@ -109,9 +112,10 @@ def parse_job_quality_feedback_path(path: str) -> int:
     if not path.startswith(prefix) or not path.endswith(suffix):
         raise JobStatusError("Unsupported lead feedback route.", 404)
     raw_id = path[len(prefix) : -len(suffix)].strip("/")
-    if not raw_id.isdigit() or int(raw_id) < 1:
+    record_id = parse_url_record_id(raw_id)
+    if not record_id:
         raise JobStatusError("Unsupported lead feedback route.", 404)
-    return int(raw_id)
+    return record_id
 
 
 def can_submit_lead_quality_feedback(user, job, match_request) -> bool:

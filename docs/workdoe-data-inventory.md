@@ -4,6 +4,12 @@ Status: Internal review draft for the controlled beta. This inventory describes
 the current code and planned Cloudflare production path. It is not an approved
 Privacy Policy and it does not establish retention periods.
 
+Release boundary, 2026-10-30: production is separately approved `245b004`.
+Retained visible contractor photos require an active signed-in account;
+anonymous profile HTML/API omit photo URLs and direct media GET/HEAD deny
+anonymous access before photo/R2 lookup. New uploads remain disabled. See
+`release-evidence/2026-10-30-retained-photo-auth.md` for tested permissions.
+
 ## Data principles
 
 - Collect only what is required to create an account, describe work, evaluate a
@@ -31,7 +37,7 @@ Privacy Policy and it does not establish retention periods.
 | Saved project area | Owner-defined label, city, state, ZIP, timestamps | Prefill the approximate-location step for recurring work | D1 `client_saved_locations` | Owning consumer and active administrators; project composer shows only the owner's records and no street address is collected |
 | Project template | Owner-defined name plus service family/task, category, title, description, coarse project setting, optional budget, optional license-record preference, source-project ID, timestamps | Reuse recurring scope without silently carrying stale or sensitive project state | D1 `client_project_templates` | Owning consumer and active administrators through controlled operations. The schema excludes city, state, ZIP, desired date, photos/media paths, bids, messages, close outcomes, and completion state; use opens the six-step composer with location/date blank |
 | Repeat-provider invitation | New project ID, prior project and approved-match IDs, consumer and contractor IDs, canonical service, pending/bid-sent/declined/withdrawn state, timestamps | Let a consumer ask a contractor from mutually verified work to consider a new same-service project without silently recreating prior terms; measure invitation, fresh-bid, and verified-repeat outcomes | D1 `repeat_provider_invitations`; one immediate Cloudflare email queue job in production | Owning consumer sees status; invited contractor sees the new project and may pass or submit a fresh ordinary mini bid; active administrators receive aggregate funnel counts and a recent project-level queue. The table contains no address, ZIP, media, message, contact, prior bid, price, schedule, or ranking fields. The email carries only recipient, new-project title, city/state, and a same-domain `/jobs/:id` URL; its D1 audit record replaces recipient with a keyed hash and omits message content |
-| Contractor profile | Business name, legacy trade/area summary, introduction, insurance statement, license number, years in business, optional HTTPS website | Help consumers evaluate a bidder and preserve compatibility with earlier profiles | D1 `contractor_profiles` | General public sees profile facts; portfolio media is a future feature and new uploads are disabled in the current beta. The owner, active administrators, and a consumer who received that contractor's bid may see the normalized website; phone is not collected by the current profile form |
+| Contractor profile | Business name, legacy trade/area summary, introduction, insurance statement, license number, years in business, optional HTTPS website | Help consumers evaluate a bidder and preserve compatibility with earlier profiles | D1 `contractor_profiles` | General public sees profile facts, not portfolio photo URLs. New portfolio uploads are disabled; retained visible active-profile photos require an active signed-in viewer in production `245b004`. Hidden/inactive-photo owner/admin rules remain unchanged. The owner, active administrators, and a consumer who received that contractor's bid may see the normalized website; phone is not collected by the current profile form |
 | Contractor credential claim | Contractor ID, credential type, jurisdiction, claimed identifier/name, review status, public HTTPS source, checked/expiry timestamps, reviewer ID, private review note, creation/update timestamps | Preserve claim and human-review provenance without manufacturing a generic trust badge | D1 `contractor_credentials` | Contractor owner and active administrators see the full claim; public profiles receive only current source-checked type/jurisdiction, checked/expiry dates, and public source. Rejected, pending, self-reported, and expired records are not public; public payloads exclude identifier and review note |
 | Contractor market fit | Canonical service slugs and practical DMV zone slugs selected by the contractor | Deterministic, explainable service/area fit on the lead board | D1 `contractor_service_capabilities`, `service_zones`, and `contractor_service_zones` | Contractor owner can update selections; public profiles show service and area labels; lead payloads expose a fit label but not the saved selection records or project ZIP |
 | Contractor work preferences | Self-reported availability state, optional next-available date, saved canonical work-family slug, saved canonical task slug, saved legacy category for compatibility, saved search text, saved deterministic sort, matching-project alert preference and consent timestamp, timestamps | Let a contractor communicate coarse capacity, restore one useful deterministic lead view, and explicitly opt into new matching project email | D1 `contractor_lead_preferences` | Public profiles receive only the coarse availability label/date and a self-reported qualifier; saved filters and alert consent are returned only to the owning active contractor and active administrators through controlled operations. Family and task values are allow-listed taxonomy slugs, not free text or embeddings. Opting out clears consent |
@@ -77,8 +83,9 @@ stored text cannot become executable markup in those views.
 
 Public contractor profiles can show business name, trades, service area,
 introduction, self-reported insurance/license/experience fields, coarse
-self-reported availability, and update date. Portfolio media is not a current
-beta feature because new uploads are disabled. Phone, email,
+self-reported availability, and update date. New portfolio uploads are disabled,
+and retained portfolio media requires active sign-in under production `245b004`.
+Anonymous profile HTML/API omit its photo URLs. Phone, email,
 account subject, saved lead filters, and storage keys are
 excluded. A contractor-provided HTTPS website is additionally available to the
 profile owner, active administrators, and a consumer who has received a bid

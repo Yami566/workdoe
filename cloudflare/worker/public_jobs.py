@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from urllib.parse import urlencode
 
+from content_privacy import cleaned_project_search, public_project_visible
 from job_posts import budget_label
+from location_pins import reviewed_stored_pin
 from service_taxonomy import GROUP_BY_SLUG, SERVICE_BY_SLUG, service_label
 
 FILTER_QUERY_MAX_LENGTH = 80
@@ -75,7 +77,7 @@ def public_job_filters_from_query(params: dict) -> dict[str, str]:
         "category": category,
         "family": family,
         "service": service,
-        "q": compact_spaces(first_query_value(params, "q"))[:FILTER_QUERY_MAX_LENGTH],
+        "q": cleaned_project_search(first_query_value(params, "q"), FILTER_QUERY_MAX_LENGTH),
         "sort": normalize_public_sort(first_query_value(params, "sort")),
     }
 
@@ -98,15 +100,7 @@ def row_value(row, key: str, default=None):
     return getattr(row, key, default)
 
 
-def has_public_coordinates(row) -> bool:
-    return row_value(row, "approx_lat") is not None and row_value(row, "approx_lng") is not None
-
-
 def public_job_url(job_id, target: str) -> str:
-    job_id_text = str(job_id or "")
-    if job_id_text.startswith("demo-"):
-        args = {"intent": "find-work", "demo": job_id_text}
-        return "/login?" + urlencode({"next": "/?" + urlencode({"job_id": job_id_text})}, safe="/?=") if normalize_public_target(target) == "login" else "/create-account?" + urlencode(args)
     if normalize_public_target(target) == "login":
         return "/login?" + urlencode({"next": f"/jobs/{job_id}"}, safe="/")
     return "/create-account?" + urlencode({"intent": "find-work", "job_id": str(job_id)})
@@ -115,7 +109,19 @@ def public_job_url(job_id, target: str) -> str:
 def public_job_payload(row, target: str = "start") -> dict:
     job_id = row_value(row, "id")
     is_demo = bool(row_value(row, "is_demo", False))
-    action_label = "Sign in" if normalize_public_target(target) == "login" else "Create account to respond"
+    lat, lng = row_value(row, "approx_lat"), row_value(row, "approx_lng")
+    if not is_demo:
+        lat, lng = reviewed_stored_pin(
+            row_value(row, "city"), row_value(row, "state"), row_value(row, "zip_code"), lat, lng,
+        )
+    elif lat is None or lng is None:
+        lat = lng = None
+    detail_url = "/?" + urlencode({"job_id": str(job_id)})
+    if is_demo:
+        action_url, action_label = detail_url, "View sample"
+    else:
+        action_url = public_job_url(job_id, target)
+        action_label = "Sign in" if normalize_public_target(target) == "login" else "Create account to respond"
     payload = {
         "id": job_id,
         "title": row_value(row, "title", ""),
@@ -136,10 +142,10 @@ def public_job_payload(row, target: str = "start") -> dict:
         # renderer could mistake them for a live consumer request.
         "desired_date": "" if is_demo else row_value(row, "desired_date", "") or "",
         "photo_count": int(row_value(row, "photo_count", 0) or 0),
-        "lat": row_value(row, "approx_lat"),
-        "lng": row_value(row, "approx_lng"),
-        "url": public_job_url(job_id, target),
-        "detail_url": "/?" + urlencode({"job_id": str(job_id)}),
+        "lat": lat,
+        "lng": lng,
+        "url": action_url,
+        "detail_url": detail_url,
         "action_label": action_label,
         "is_demo": is_demo,
         "sample_label": "Sample project" if is_demo else "Open project",
@@ -159,15 +165,12 @@ def public_jobs_payload(
     next_cursor: str = "",
     truncated: bool = False,
 ) -> dict:
-    map_jobs = [
-        public_job_payload(row, target=target)
-        for row in rows
-        if has_public_coordinates(row)
-    ]
+    map_jobs = [public_job_payload(row, target=target) for row in rows if public_project_visible(row)]
     demo_count = sum(1 for job in map_jobs if job["is_demo"])
     return {
         "count": len(map_jobs),
         "result_count": len(map_jobs),
+        "mapped_count": sum(job["lat"] is not None for job in map_jobs),
         "jobs": map_jobs,
         "next_cursor": next_cursor,
         "truncated": bool(truncated),

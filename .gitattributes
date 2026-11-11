@@ -8,4 +8,17 @@
 *.py text eol=lf
 *.sql text eol=lf
 *.svg text eol=lf
+.github/python/*.txt text eol=lf
+requirements.txt text eol=lf
+requirements-audit.txt text eol=lf
 *.png binary
+*.geojson -text
+licenses/*.MIT text eol=lf
+cloudflare/.dev.vars.example text eol=lf
+workdoe/static/.assetsignore text eol=lf
+workdoe/static/_headers text eol=lf
+workdoe/static/site.webmanifest text eol=lf
+workdoe/static/vendor/**/LICENSE text eol=lf
+workdoe/static/vendor/clerk-notices-v2/*.txt text eol=lf
+# Preserve the original Markdown line break in the pinned CryptoJS notice.
+workdoe/static/vendor/clerk-notices-v2/crypto-js-4.2.0-license.txt whitespace=-blank-at-eol

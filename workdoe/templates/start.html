@@ -8,9 +8,6 @@
 {% set account_login_next = next_url or (url_for('contractor_job_detail', job_id=selected_job.id) if selected_job else (url_for('new_job') if intent == 'post-job' else url_for('leads'))) %}
 {% set account_login_url = url_for('login', next=account_login_next) %}
 {% block title %}{{ "Post Project" if is_post_project else ("Create Account" if is_create_account else "Start") }} - Workdoe{% endblock %}
-{% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
-{% endblock %}
 {% block content %}
 <section class="start-market">
   <div id="live-jobs" class="login-live-panel start-live-panel" tabindex="-1">
@@ -26,7 +23,7 @@
     {% endif %}
     {% set family_filter_label = "Filter projects while starting by work family" %}
     {% include "_service_family_filter.html" %}
-    <form class="filter-bar compact-filter entry-filter" method="get" role="search" aria-label="Filter open jobs while starting" aria-controls="start-open-jobs lead-map" data-market-filters>
+    <form class="filter-bar compact-filter entry-filter" method="get" role="search" aria-label="Filter open jobs while starting" aria-controls="start-open-jobs{% if project_map_enabled() %} lead-map{% endif %}" data-market-filters>
       <input type="hidden" name="intent" value="{{ intent }}">
       {% if selected_job %}<input type="hidden" name="job_id" value="{{ selected_job.id }}">{% endif %}
       {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
@@ -44,7 +41,7 @@
       {% endif %}
       <label for="start-search">
         Search
-        <input name="q" type="search" id="start-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}" data-market-search>
+        <input name="q" type="search" id="start-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}" pattern="{{ project_search_input_pattern }}" title="{{ project_search_input_hint }}" data-market-search>
       </label>
       <label for="start-sort">
         Sort
@@ -61,12 +58,14 @@
         {% endif %}
       </div>
     </form>
-    <div class="login-board start-board">
+    <div class="login-board start-board{% if not project_map_enabled() %} login-board-list{% endif %}">
+      {% if project_map_enabled() %}
       <div class="map-panel login-map-panel">
         {% with map_jobs_api_url=map_jobs_api_url(filters, entry_job_limit), map_label="Approximate DMV job map while starting account" %}
           {% include "_lead_map.html" %}
         {% endwith %}
       </div>
+      {% endif %}
       <div id="start-open-jobs" class="job-list login-job-list" aria-label="Open jobs while starting account" {% if open_jobs %}role="list"{% endif %} data-project-results>
         {% for job in open_jobs %}
           {% set is_selected = selected_job and selected_job.id == job.id %}
@@ -141,9 +140,13 @@
         <input name="display_name" id="start-display-name" autocomplete="nickname" maxlength="120" aria-describedby="start-name-help" data-clerk-display-name required>
         <span id="start-name-help" class="help-text">Use a non-identifying business label. Do not use a legal name, email, phone number, or street address.</span>
       </label>
+      {% with retry_url=url_for(account_endpoint, intent=intent, next=next_url or none, job_id=selected_job.id if selected_job else none) %}
+        {% include "_clerk_load_fallback.html" %}
+      {% endwith %}
       <div
         id="clerk-start"
         class="clerk-entry-mount"
+        hidden
         data-clerk-entry
         data-clerk-mode="start"
         data-redirect-url="{{ next_url or (url_for(account_endpoint, intent=intent, job_id=selected_job.id) if selected_job else url_for(account_endpoint, intent=intent)) }}"
@@ -167,9 +170,6 @@
       </div>
       <p class="account-entry-switch">Already have an account? <a href="{{ account_login_url }}">Sign in</a></p>
       <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>
-      <noscript>
-        <p class="help-text">Enable JavaScript to use Clerk email-code sign-in.</p>
-      </noscript>
     </section>
   {% else %}
     <form id="start-account" class="form-panel login-form-panel start-form-panel" method="post" data-dialog-fragment>
@@ -218,12 +218,9 @@
   {% endif %}
 </section>
 
-<script id="map-jobs-data" type="application/json">{{ map_jobs|tojson }}</script>
-<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
-<script src="{{ url_for('static', filename='map.js') }}?v={{ asset_release_token }}"></script>
+{% include "_lead_map_scripts.html" %}
 {% if clerk_entry_enabled() %}
-  <script defer crossorigin="anonymous" src="{{ clerk_ui_script_url() }}"></script>
-  <script defer crossorigin="anonymous" data-clerk-publishable-key="{{ clerk_publishable_key() }}" {% if clerk_proxy_url() %}data-clerk-proxy-url="{{ clerk_proxy_url() }}"{% endif %} src="{{ clerk_js_script_url() }}"></script>
+  {% include "_clerk_browser_scripts.html" %}
   <script defer src="{{ url_for('static', filename='clerk-entry.js') }}?v={{ asset_release_token }}"></script>
 {% endif %}
 {% endblock %}

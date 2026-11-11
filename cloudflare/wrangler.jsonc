@@ -16,7 +16,7 @@
       "database_id": "fe8c22a8-1585-46dd-916e-2913c60d139a",
       "database_name": "workdoe",
       "migrations_dir": "d1/migrations",
-      "preview_database_id": "ba816597-68ba-40a9-830e-751f44e4f54b"
+      "preview_database_id": "00000000-0000-0000-0000-000000000000"
     }
   ],
   "main": "worker/entry.py",
@@ -100,8 +100,7 @@
     "WORKDOE_ENFORCE_SERVICE_ACTIVATION": "false",
     "WORKDOE_ENV": "production",
     "WORKDOE_LOGIN_MODE": "same_domain_email_code",
-    "WORKDOE_MAP_TILE_ATTRIBUTION": "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a>",
-    "WORKDOE_MAP_TILE_URL": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "WORKDOE_MAP_MODE": "area",
     "WORKDOE_MEDIA_UPLOADS_ENABLED": "false",
     "WORKDOE_PUBLIC_URL": "https://workdoe.com"
   },

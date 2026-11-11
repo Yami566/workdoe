@@ -8,6 +8,10 @@ JOB_DRAFT_COOKIE_NAME = "workdoe_job_draft"
 JOB_DRAFT_TTL_SECONDS = 24 * 60 * 60
 
 
+class JobDraftReadError(RuntimeError):
+    pass
+
+
 def generate_job_draft_token() -> str:
     return secrets.token_urlsafe(32)
 

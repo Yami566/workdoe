@@ -19,6 +19,7 @@ from client_project_templates import (
     PROJECT_TEMPLATE_LIMIT,
     PROJECT_TEMPLATE_NAME_MAX_LENGTH,
 )
+from content_privacy import PROJECT_SEARCH_INPUT_HINT, PROJECT_SEARCH_INPUT_PATTERN
 from contractor_credentials import (
     CREDENTIAL_IDENTIFIER_MAX_LENGTH,
     CREDENTIAL_JURISDICTIONS,
@@ -29,22 +30,27 @@ from contractor_credentials import (
 from contractor_preferences import AVAILABILITY_OPTIONS, LEAD_ALERT_OPTIONS
 from contractor_profiles import contractor_profile_readiness
 from entry_shell import (
+    ACCOUNT_DATA_REQUEST_LINK,
     CLERK_CHALLENGE_ORIGIN,
     CLERK_IMAGE_ORIGIN,
-    CLERK_JS_VERSION,
     CLERK_PROTECT_ORIGIN,
     CLERK_TELEMETRY_ORIGINS,
-    CLERK_UI_VERSION,
+    clerk_browser_script_tags,
     clerk_csp_origin,
     clerk_proxy_url,
     clerk_runtime_frontend_api_url,
-    map_tile_configuration,
 )
 from job_posts import (
     DMV_ZIPS,
     JOB_BUDGET_MAX,
     PROJECT_SETTINGS,
     job_field_errors,
+)
+from map_tiles import (
+    DEFAULT_MAP_TILE_URL,
+    area_map_attributes,
+    map_tile_configuration,
+    map_tile_origin,
 )
 from market_fit import (
     DMV_SERVICE_ZONES,
@@ -61,6 +67,7 @@ from match_reviews import (
     REVIEW_RESPONSE_MAX_LENGTH,
     WOULD_WORK_AGAIN_OPTIONS,
 )
+from request_security import parse_url_record_id
 from service_activation import activation_is_live
 from service_policy import SERVICE_POLICY_VERSION, service_policy
 from service_scope import SERVICE_SCOPE_QUESTIONS
@@ -232,16 +239,11 @@ def is_app_shell_route(path: str) -> bool:
     if path in APP_SHELL_ROUTES:
         return True
     if path.startswith("/client/jobs/"):
-        raw = path.removeprefix("/client/jobs/").strip("/")
-        if raw.endswith("/edit"):
-            raw = raw.removesuffix("/edit").strip("/")
-        return raw.isdigit() and int(raw) > 0
+        return bool(parse_app_client_job_id(path) or parse_app_client_job_edit_id(path))
     if path.startswith("/messages/"):
-        raw = path.removeprefix("/messages/").strip("/")
-        return raw.isdigit() and int(raw) > 0
+        return bool(parse_app_thread_id(path))
     if path.startswith("/jobs/"):
-        raw = path.removeprefix("/jobs/").strip("/")
-        return raw.isdigit() and int(raw) > 0
+        return bool(parse_app_job_id(path))
     return False
 
 
@@ -262,12 +264,12 @@ def dashboard_path_for_user(user) -> str:
 
 def parse_app_job_id(path: str) -> int:
     raw = path.removeprefix("/jobs/").strip("/")
-    return int(raw) if raw.isdigit() and int(raw) > 0 else 0
+    return parse_url_record_id(raw)
 
 
 def parse_app_client_job_id(path: str) -> int:
     raw = path.removeprefix("/client/jobs/").strip("/")
-    return int(raw) if raw.isdigit() and int(raw) > 0 else 0
+    return parse_url_record_id(raw)
 
 
 def parse_app_client_job_edit_id(path: str) -> int:
@@ -275,24 +277,21 @@ def parse_app_client_job_edit_id(path: str) -> int:
     if not raw.endswith("/edit"):
         return 0
     raw = raw.removesuffix("/edit").strip("/")
-    return int(raw) if raw.isdigit() and int(raw) > 0 else 0
+    return parse_url_record_id(raw)
 
 
 def is_public_contractor_profile_route(path: str) -> bool:
-    if not path.startswith("/contractors/"):
-        return False
-    raw = path.removeprefix("/contractors/").strip("/")
-    return raw.isdigit() and int(raw) > 0
+    return path.startswith("/contractors/") and bool(parse_app_contractor_id(path))
 
 
 def parse_app_contractor_id(path: str) -> int:
     raw = path.removeprefix("/contractors/").strip("/")
-    return int(raw) if raw.isdigit() and int(raw) > 0 else 0
+    return parse_url_record_id(raw)
 
 
 def parse_app_thread_id(path: str) -> int:
     raw = path.removeprefix("/messages/").strip("/")
-    return int(raw) if raw.isdigit() and int(raw) > 0 else 0
+    return parse_url_record_id(raw)
 
 
 def app_shell_csp(
@@ -301,6 +300,7 @@ def app_shell_csp(
     include_clerk: bool = False,
     clerk_publishable_key: str = "",
     clerk_frontend_api_url: str = "",
+    map_tile_url: str = DEFAULT_MAP_TILE_URL,
 ) -> str:
     script_sources = ["'self'"]
     frame_sources = []
@@ -313,8 +313,8 @@ def app_shell_csp(
         frame_sources.append("https://challenges.cloudflare.com")
         connect_sources.append("https://challenges.cloudflare.com")
     img_sources = ["'self'", "data:"]
-    if include_map:
-        img_sources.append("https://tile.openstreetmap.org")
+    if include_map and (tile_origin := map_tile_origin(map_tile_url)):
+        img_sources.append(tile_origin)
     if include_clerk:
         runtime_url = clerk_runtime_frontend_api_url(
             clerk_publishable_key,
@@ -375,6 +375,8 @@ def app_shell_headers(
     include_clerk: bool = False,
     clerk_publishable_key: str = "",
     clerk_frontend_api_url: str = "",
+    include_dialog_forms: bool = True,
+    map_tile_url: str = DEFAULT_MAP_TILE_URL,
 ) -> dict[str, str]:
     return {
         "Content-Type": "text/html; charset=utf-8",
@@ -383,14 +385,16 @@ def app_shell_headers(
         "Expires": "0",
         "Content-Security-Policy": app_shell_csp(
             include_map=include_map,
-            include_turnstile=include_turnstile,
+            # Native dialogs inherit this document's CSP, not the fetched form's.
+            include_turnstile=include_turnstile or include_dialog_forms,
             include_clerk=include_clerk,
             clerk_publishable_key=clerk_publishable_key,
             clerk_frontend_api_url=clerk_frontend_api_url,
+            map_tile_url=map_tile_url,
         ),
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY",
-        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Referrer-Policy": "strict-origin" if include_clerk else "strict-origin-when-cross-origin",
         "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
         "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     }
@@ -559,7 +563,7 @@ def mobile_task_nav_html(user, active_path: str) -> str:
     unread_count = int(row_value(user, "unread_message_count", 0) or 0)
     items = []
     for href, label, icon in task_nav_items(user):
-        mobile_label = {"Post project": "Post", "Create account": "Join"}.get(
+        mobile_label = {"Explore": "Find", "Messages": "Inbox", "Post project": "Post", "Create account": "Join"}.get(
             label, label
         )
         current = (
@@ -569,7 +573,7 @@ def mobile_task_nav_html(user, active_path: str) -> str:
         )
         if href == "/messages":
             accessibility_label = (
-                f' aria-label="Messages, {unread_count} unread"'
+                f' aria-label="{mobile_label}, {unread_count} unread"'
                 if unread_count
                 else ""
             )
@@ -626,16 +630,14 @@ def layout(
     embedded = "dialog-fragment-body" in body_class.split()
     authenticated = row_value(user, "role") in {"client", "contractor", "admin"}
     if include_turnstile:
-        turnstile_url = "https://challenges.cloudflare.com/turnstile/v0/api.js"
-        if embedded:
-            turnstile_url += "?render=explicit"
+        turnstile_url = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
         scripts.append(f'<script src="{turnstile_url}" async defer></script>')
     if include_map:
         scripts.extend(
             [
-                '<script src="/vendor/leaflet/leaflet.js"></script>',
-                '<script src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>',
-                f'<script src="/map.js?v={ASSET_RELEASE_TOKEN}"></script>',
+                '<script defer src="/vendor/leaflet/leaflet.js"></script>',
+                '<script defer src="/vendor/leaflet-markercluster/leaflet.markercluster.js"></script>',
+                f'<script defer src="/map.js?v={ASSET_RELEASE_TOKEN}"></script>',
             ]
         )
     if include_actions or authenticated:
@@ -654,18 +656,14 @@ def layout(
             if clerk_asset_base_url.endswith(".clerk.accounts.dev")
             else clerk_proxy_url(clerk_frontend_api_url)
         )
-        proxy_attribute = (
-            f' data-clerk-proxy-url="{escape(proxy_url)}"' if proxy_url else ""
-        )
         scripts.extend(
             [
-                f'<script defer crossorigin="anonymous" src="{escape(clerk_asset_base_url)}/npm/@clerk/ui@{CLERK_UI_VERSION}/dist/ui.browser.js"></script>',
-                f'<script defer crossorigin="anonymous" data-clerk-publishable-key="{escape(clerk_publishable_key)}"{proxy_attribute} src="{escape(clerk_asset_base_url)}/npm/@clerk/clerk-js@{CLERK_JS_VERSION}/dist/clerk.browser.js"></script>',
+                *clerk_browser_script_tags(clerk_asset_base_url, clerk_publishable_key, proxy_url),
                 '<script defer src="/clerk-account.js"></script>',
             ]
         )
     if not embedded:
-        scripts.append('<script defer src="/site-dialogs.js?v=workdoe-bid-dialog"></script>')
+        scripts.append(f'<script defer src="/site-dialogs.js?v={ASSET_RELEASE_TOKEN}"></script>')
     script_html = "\n  ".join(scripts)
     dialog_html = "" if embedded else site_dialog_html()
     mobile_nav_html = "" if embedded else mobile_task_nav_html(user, active_path)
@@ -726,6 +724,7 @@ def layout(
       <a href="/safety"{" aria-current=\"page\"" if active_path == "/safety" else ""}>Safety</a>
       <a href="/privacy"{" aria-current=\"page\"" if active_path == "/privacy" else ""}>Privacy</a>
       <a href="/terms"{" aria-current=\"page\"" if active_path == "/terms" else ""}>Terms</a>
+      {'<a href="/vendor/clerk-notices-v2/notices-1">Software notices</a>' if active_path == "/terms" else ''}
     </nav>
     <span>Serving DC, Maryland &amp; Virginia</span>
   </footer>
@@ -781,10 +780,11 @@ def account_security_html(
       <aside class="panel account-summary" aria-labelledby="account-summary-title">
         <h2 id="account-summary-title">Workdoe identity</h2>
         <dl class="profile-facts compact-facts">
-          <div><dt>Email</dt><dd>{escape(row_value(user, 'email', ''))}</dd></div>
-          <div><dt>Role</dt><dd>{escape(role.capitalize())}</dd></div>
+          <div><dt>Email</dt><dd class="account-email" tabindex="0">{escape(row_value(user, 'email', ''))}</dd></div>
+          <div><dt>Role</dt><dd>{escape('Consumer' if role == 'client' else role.capitalize())}</dd></div>
         </dl>
         <p class="help-text">One account keeps one role during the DMV beta.</p>
+        {ACCOUNT_DATA_REQUEST_LINK}
       </aside>
       <section class="account-security-surface" aria-labelledby="account-security-title">
         <header class="panel-heading">
@@ -802,6 +802,81 @@ def account_security_html(
         clerk_publishable_key=clerk_publishable_key,
         clerk_frontend_api_url=clerk_frontend_api_url,
     )
+
+
+def recovery_workspace_html(*, sealed: bool) -> str:
+    if not sealed:
+        return layout(None, "/", "Temporarily paused", """
+    <section aria-labelledby="paused-workspace-title">
+      <header class="dashboard-header">
+        <div>
+          <h1 id="paused-workspace-title">Workdoe is temporarily read-only</h1>
+          <p>Sign-in, posting, and messaging are paused. You can still browse projects.</p>
+        </div>
+      </header>
+      <a class="button" href="/">Browse projects</a>
+    </section>""")
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workdoe temporarily unavailable</title>
+  <link rel="icon" href="/deer.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css?v={ASSET_RELEASE_TOKEN}">
+</head>
+<body>
+  <main id="main-content">
+    <section class="error-copy" aria-labelledby="maintenance-title">
+      <img src="/deer.svg" alt="" width="32" height="32">
+      <h1 id="maintenance-title">Workdoe is temporarily unavailable</h1>
+      <p>Projects, messages, and sign-in are paused. Please check back later.</p>
+      <div><a class="button secondary" href="/safety">Safety and account help</a></div>
+    </section>
+  </main>
+</body>
+</html>"""
+
+
+def unavailable_form_html() -> str:
+    return layout(None, "/", "Form not saved", """
+    <section aria-labelledby="form-not-saved-title">
+      <header class="dashboard-header">
+        <div>
+          <h1 id="form-not-saved-title">Form not saved</h1>
+          <p>Go back and reload the form before trying again.</p>
+        </div>
+      </header>
+      <a class="button secondary" href="/dashboard">Open my workspace</a>
+    </section>""")
+
+
+def dashboard_access_html(user, expected_role: str) -> str:
+    expected_label = {"client": "consumer", "contractor": "contractor"}[expected_role]
+    current_label = {
+        "client": "a consumer",
+        "contractor": "a contractor",
+        "admin": "an administrator",
+    }.get(row_value(user, "role"), "another account type")
+    destination = f"/{expected_role}/dashboard"
+    body = f"""
+    <section aria-labelledby="dashboard-access-title">
+      <header class="dashboard-header">
+        <div>
+          <p class="eyebrow">Account access</p>
+          <h1 id="dashboard-access-title">Use a {expected_label} account</h1>
+          <p>You are signed in as {current_label}. This workspace is for {expected_label} accounts.</p>
+        </div>
+      </header>
+      <div class="form-actions">
+        <a class="button" href="/dashboard">Open my workspace</a>
+        <form data-json-action="/api/auth/logout" data-success-url-template="{escape(app_login_url(destination))}" aria-label="Switch account">
+          <button class="button secondary" type="submit">Sign out and switch account</button>
+          <p class="help-text" data-form-status role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </section>"""
+    return layout(user, "/dashboard", f"Use a {expected_label} account", body)
 
 
 def empty_state(title: str, href: str, label: str) -> str:
@@ -982,14 +1057,21 @@ def client_profile_html(
     templates: list[dict] | None = None,
     source_jobs: list[dict] | None = None,
     selected_source_job_id: int = 0,
+    *,
+    email_available: bool = False,
 ) -> str:
     account_choices = "".join(
         f'<label><input type="radio" name="account_type" value="{escape(value)}"{' checked' if profile.get("account_type") == value else ''} required><span>{escape(label)}</span></label>'
         for value, label in CLIENT_ACCOUNT_TYPES
     )
     notification_choices = "".join(
-        f'<label><input type="radio" name="notification_preference" value="{escape(value)}"{' checked' if profile.get("notification_preference") == value else ''} required><span>{escape(label)}</span></label>'
+        f'<label><input type="radio" name="notification_preference" value="{escape(value)}"{' checked' if profile.get("notification_preference") == value else ''} required><span>{escape(label if email_available or value != "email" else "Email when available")}</span></label>'
         for value, label in CLIENT_NOTIFICATION_OPTIONS
+    )
+    notification_help = (
+        "Email reminders are optional. Choose email and save to opt in."
+        if email_available
+        else "Email reminders are paused. Check Workdoe for bids."
     )
     location_rows = []
     for location in locations:
@@ -1037,7 +1119,7 @@ def client_profile_html(
         <form class="form-grid consumer-profile-form" data-json-action="/api/client/profile" data-success-url-template="/client/profile" aria-label="Consumer profile" aria-describedby="client-profile-status">
           <label class="wide" for="client-organization-name">Private workspace label <input id="client-organization-name" name="organization_name" value="{escape(profile.get('organization_name', ''))}" maxlength="{CLIENT_ORGANIZATION_MAX_LENGTH}" autocomplete="organization" autocapitalize="words" spellcheck="true" aria-describedby="client-organization-name-help" required><span id="client-organization-name-help" class="help-text">Private to your workspace. Do not include an address, email, or phone number.</span></label>
           <fieldset class="wide option-fieldset"><legend>Workspace type</legend><div class="choice-grid compact-choice-grid">{account_choices}</div></fieldset>
-          <fieldset id="bid-reminders" class="wide option-fieldset" aria-describedby="client-notification-preference-help"><legend>Bid reminders</legend><div class="choice-grid compact-choice-grid two-column">{notification_choices}</div><span id="client-notification-preference-help" class="help-text">Email reminders are optional. Choosing email and saving this profile records your consent; switch back here at any time. Account and security emails still arrive.</span></fieldset>
+          <fieldset id="bid-reminders" class="wide option-fieldset" aria-describedby="client-notification-preference-help"><legend>Bid reminders</legend><div class="choice-grid compact-choice-grid two-column">{notification_choices}</div><span id="client-notification-preference-help" class="help-text">{notification_help} You can change this preference anytime. Sign-in emails are separate.</span></fieldset>
           <label class="wide" for="client-profile-note">Private workspace note <span class="optional-label">Optional</span><textarea id="client-profile-note" name="profile_note" rows="4" maxlength="{CLIENT_PROFILE_NOTE_MAX_LENGTH}" autocapitalize="sentences" spellcheck="true" aria-describedby="client-profile-note-help">{escape(profile.get('profile_note', ''))}</textarea><span id="client-profile-note-help" class="help-text">For recurring timing or property-management context. Contractors cannot see this note. Do not include an address, email, or phone number.</span></label>
           <div class="form-actions wide"><button class="button" type="submit">Save profile</button><p id="client-profile-status" class="help-text" data-form-status aria-live="polite"></p></div>
         </form>
@@ -1121,35 +1203,36 @@ def safety_page_html() -> str:
       <p class="eyebrow">Work with confidence</p>
       <h1>Share only what the job needs.</h1>
       <p>Workdoe keeps early conversations focused on project scope, approximate location, and contractor fit.</p>
+      <div><a class="button secondary" href="#safety-contact-title">Safety and account help</a></div>
     </section>
-    <section class="content-grid two" aria-label="Workdoe safety practices">
-      <article class="panel">
+    <section class="trust-practices" aria-label="Workdoe safety practices">
+      <article>
         <h2>Approximate locations</h2>
         <p>Contractors see the city and a rounded ZIP area before a client approves a bid. Workdoe rejects common email, phone, and street-address patterns, but do not put an exact address in any project text.</p>
       </article>
-      <article class="panel">
+      <article>
         <h2>Private contact</h2>
         <p>A private message thread opens after the client approves a contractor's mini bid. Keep access codes, payment details, direct contact details, and sensitive documents out of messages.</p>
       </article>
-      <article class="panel">
+      <article>
         <h2>Review before approval</h2>
         <p>Clients can compare the proposed scope, price range, timeline, experience, and availability before choosing who to contact.</p>
       </article>
-      <article class="panel">
+      <article>
         <h2>Check local requirements</h2>
         <p>Workdoe does not verify provider credentials. Confirm licenses, permits, insurance, inspections, and safe-work requirements directly with the provider and the appropriate local authority.</p>
       </article>
-      <article class="panel">
+      <article>
         <h2>Report concerns</h2>
         <p>Report suspicious projects, profiles, photos, or messages from the related Workdoe page. Workdoe moderators can review content and suspend accounts when needed.</p>
       </article>
     </section>
     <section class="trust-contact" aria-labelledby="safety-contact-title">
       <p class="eyebrow">Contact</p>
-      <h2 id="safety-contact-title">Safety and account help</h2>
+      <h2 id="safety-contact-title" tabindex="-1">Safety and account help</h2>
       <p>Workdoe is operated by Moose Bay and Company LLC, a Virginia limited liability company. Email <a href="mailto:admin@workdoe.com">admin@workdoe.com</a> for account, privacy, or safety requests; the monitored inbox aims to respond within 1 to 5 business days. Workdoe is not an emergency service; call 911 when anyone faces immediate danger.</p>
     </section>"""
-    return layout(None, "/safety", "Safety", body)
+    return layout(None, "/safety", "Safety", body, body_class="public-trust-body")
 
 
 def privacy_page_html() -> str:
@@ -1159,15 +1242,28 @@ def privacy_page_html() -> str:
       <h1>Privacy Policy</h1>
       <p>Effective August 17, 2026. This notice explains the information Workdoe uses to operate the local work exchange.</p>
     </section>
-    <article class="legal-copy">
-      <section><h2>Operator and contact</h2><p>Workdoe is operated by Moose Bay and Company LLC, a Virginia limited liability company.</p><p>Email <a href="mailto:admin@workdoe.com">admin@workdoe.com</a> for account, privacy, safety, or security requests. The monitored inbox aims to respond within 1 to 5 business days. Workdoe is not an emergency service.</p></section>
-      <section><h2>Information we collect</h2><p>We collect account identity and email verification details, your fixed consumer or contractor role, profile information you choose to provide, project and bid details, approximate service areas, approved-match messages, reports, and security or audit records. New photo uploads are unavailable during this beta; retained legacy or demonstration photos may remain subject to the access controls described below.</p><p>Workdoe does not collect payment card details, browser geolocation, or a structured exact project address in this beta. Marketplace text rejects common email, phone, and street-address patterns, but automated checks cannot identify every possible disclosure. Do not put an address, access code, phone number, or email address in Workdoe content.</p></section>
-      <section><h2>How we use information</h2><p>We use information to verify accounts, publish and match local projects, show relevant contractor profiles, open messaging after a client approves a bid, prevent abuse, moderate content, send account or service messages, and maintain marketplace and security records.</p></section>
-      <section><h2>Who can see it</h2><p>Public visitors receive limited project summaries and approximate map pins. Signed-in contractors can see project briefs and any retained legacy or demonstration photos for available work. Clients can review bids and relevant contractor profiles. Approved participants can use a private message thread. Active administrators can review records needed for moderation and security.</p><p>Service providers supporting the beta may process limited information on Workdoe's behalf. These include the identity, hosting, email, bot-protection, and map services needed to run Workdoe. We do not sell personal information or use it for third-party behavioral advertising.</p></section>
-      <section><h2>Retention and choices</h2><p>We keep records only while they are reasonably needed to operate the beta, investigate abuse, meet legal obligations, and respond to requests. The controlled beta does not yet promise a fixed deletion period.</p><p>Email <a href="mailto:admin@workdoe.com">admin@workdoe.com</a> to request access, correction, or deletion. Some records may be retained when required for security, fraud prevention, dispute preservation, or legal compliance.</p></section>
-      <section><h2>Age and changes</h2><p>Workdoe accounts are for adults who are at least 18 years old and able to enter a service agreement. We may update this notice as the beta changes and will revise the effective date when we do.</p></section>
-    </article>"""
-    return layout(None, "/privacy", "Privacy Policy", body)
+    <div class="legal-layout">
+      <nav class="legal-contents" aria-label="On this page">
+        <p aria-hidden="true">On this page</p>
+        <ul>
+          <li><a href="#privacy-contact">Operator and contact</a></li>
+          <li><a href="#privacy-collection">Information we collect</a></li>
+          <li><a href="#privacy-use">How we use information</a></li>
+          <li><a href="#privacy-visibility">Who can see it</a></li>
+          <li><a href="#privacy-choices">Retention and choices</a></li>
+          <li><a href="#privacy-changes">Age and changes</a></li>
+        </ul>
+      </nav>
+      <article class="legal-copy">
+        <section><h2 id="privacy-contact" tabindex="-1">Operator and contact</h2><p>Workdoe is operated by Moose Bay and Company LLC, a Virginia limited liability company.</p><p>Email <a href="mailto:admin@workdoe.com">admin@workdoe.com</a> for account, privacy, safety, or security requests. The monitored inbox aims to respond within 1 to 5 business days. Workdoe is not an emergency service.</p></section>
+        <section><h2 id="privacy-collection" tabindex="-1">Information we collect</h2><p>We collect account identity and email verification details, your fixed consumer or contractor role, profile information you choose to provide, project and bid details, approximate service areas, approved-match messages, reports, and security or audit records. New photo uploads are unavailable during this beta; retained legacy or demonstration photos may remain subject to the access controls described below.</p><p>Workdoe does not collect payment card details, browser geolocation, or a structured exact project address in this beta. Marketplace text rejects common email, phone, and street-address patterns, but automated checks cannot identify every possible disclosure. Do not put an address, access code, phone number, or email address in Workdoe content.</p></section>
+        <section><h2 id="privacy-use" tabindex="-1">How we use information</h2><p>We use information to verify accounts, publish and match local projects, show relevant contractor profiles, open messaging after a client approves a bid, prevent abuse, moderate content, send account or service messages, and maintain marketplace and security records.</p></section>
+        <section><h2 id="privacy-visibility" tabindex="-1">Who can see it</h2><p>Public visitors receive limited project summaries and approximate map pins. Signed-in contractors can see project briefs and any retained legacy or demonstration photos for available work. Clients can review bids and relevant contractor profiles. Approved participants can use a private message thread. Active administrators can review records needed for moderation and security.</p><p>Service providers supporting the beta may process limited information on Workdoe's behalf. These include the identity, hosting, email, bot-protection, and map services needed to run Workdoe. We do not sell personal information or use it for third-party behavioral advertising.</p></section>
+        <section><h2 id="privacy-choices" tabindex="-1">Retention and choices</h2><p>We keep records only while they are reasonably needed to operate the beta, investigate abuse, meet legal obligations, and respond to requests. The controlled beta does not yet promise a fixed deletion period.</p><p>Email <a href="mailto:admin@workdoe.com">admin@workdoe.com</a> to request access, correction, or deletion. Some records may be retained when required for security, fraud prevention, dispute preservation, or legal compliance.</p></section>
+        <section><h2 id="privacy-changes" tabindex="-1">Age and changes</h2><p>Workdoe accounts are for adults who are at least 18 years old and able to enter a service agreement. We may update this notice as the beta changes and will revise the effective date when we do.</p></section>
+      </article>
+    </div>"""
+    return layout(None, "/privacy", "Privacy Policy", body, body_class="public-trust-body")
 
 
 def terms_page_html() -> str:
@@ -1177,15 +1273,28 @@ def terms_page_html() -> str:
       <h1>Terms of Use</h1>
       <p>Effective August 17, 2026. These terms describe the boundaries of the Workdoe local work exchange.</p>
     </section>
-    <article class="legal-copy">
-      <section><h2>Who may use Workdoe</h2><p>You must be at least 18 years old, use accurate account information, and have authority to post or perform the work. One account keeps one marketplace role: consumers post projects and contractors respond to projects.</p></section>
-      <section><h2>Marketplace role</h2><p>Workdoe helps independent consumers and contractors find each other. Workdoe is not the employer, general contractor, agent, insurer, payment processor, or party performing the project. The participants decide whether to work together and are responsible for scope, price, scheduling, permits, licenses, insurance, taxes, contracts, payment, and safe performance.</p><p>The beta does not provide payment, escrow, warranties, background checks, license verification, emergency dispatch, ratings, or dispute adjudication. Profile qualifications and project statements are self-reported unless Workdoe explicitly says otherwise.</p></section>
-      <section><h2>Project and account conduct</h2><p>Post a clear and lawful scope, protect private contact and location details, communicate respectfully, and do not misrepresent identity, qualifications, availability, ownership, or authorization. Do not scrape accounts, bypass access controls, spam users, manipulate bids, or use Workdoe to commit fraud or discrimination.</p></section>
-      <section><h2>Prohibited work</h2><p>Do not post or seek illegal work, emergency response, medical or personal-care services, firearms activity, hazardous-material or asbestos/mold/lead abatement, unlicensed gas or utility work, insurance-claim negotiation, illegal dumping, or work that would place an unverified minor at risk. Workdoe may restrict additional high-risk categories until the required verification and operating controls exist.</p></section>
-      <section><h2>Moderation and availability</h2><p>Workdoe may hide content, limit a service area, suspend an account, preserve audit records, or report credible threats when needed for safety, policy enforcement, or legal compliance. The controlled beta may change, pause, or end without guaranteeing that a project receives bids or that a contractor receives work.</p></section>
-      <section><h2>Questions</h2><p>Workdoe is operated by Moose Bay and Company LLC, a Virginia limited liability company. Email <a href="mailto:admin@workdoe.com">admin@workdoe.com</a> with account, policy, privacy, or safety questions; the monitored inbox aims to respond within 1 to 5 business days. Call 911 for immediate danger; Workdoe is not an emergency service.</p></section>
-    </article>"""
-    return layout(None, "/terms", "Terms of Use", body)
+    <div class="legal-layout">
+      <nav class="legal-contents" aria-label="On this page">
+        <p aria-hidden="true">On this page</p>
+        <ul>
+          <li><a href="#terms-eligibility">Who may use Workdoe</a></li>
+          <li><a href="#terms-marketplace">Marketplace role</a></li>
+          <li><a href="#terms-conduct">Project and account conduct</a></li>
+          <li><a href="#terms-prohibited-work">Prohibited work</a></li>
+          <li><a href="#terms-moderation">Moderation and availability</a></li>
+          <li><a href="#terms-questions">Questions</a></li>
+        </ul>
+      </nav>
+      <article class="legal-copy">
+        <section><h2 id="terms-eligibility" tabindex="-1">Who may use Workdoe</h2><p>You must be at least 18 years old, use accurate account information, and have authority to post or perform the work. One account keeps one marketplace role: consumers post projects and contractors respond to projects.</p></section>
+        <section><h2 id="terms-marketplace" tabindex="-1">Marketplace role</h2><p>Workdoe helps independent consumers and contractors find each other. Workdoe is not the employer, general contractor, agent, insurer, payment processor, or party performing the project. The participants decide whether to work together and are responsible for scope, price, scheduling, permits, licenses, insurance, taxes, contracts, payment, and safe performance.</p><p>The beta does not provide payment, escrow, warranties, background checks, license verification, emergency dispatch, ratings, or dispute adjudication. Profile qualifications and project statements are self-reported unless Workdoe explicitly says otherwise.</p></section>
+        <section><h2 id="terms-conduct" tabindex="-1">Project and account conduct</h2><p>Post a clear and lawful scope, protect private contact and location details, communicate respectfully, and do not misrepresent identity, qualifications, availability, ownership, or authorization. Do not scrape accounts, bypass access controls, spam users, manipulate bids, or use Workdoe to commit fraud or discrimination.</p></section>
+        <section><h2 id="terms-prohibited-work" tabindex="-1">Prohibited work</h2><p>Do not post or seek illegal work, emergency response, medical or personal-care services, firearms activity, hazardous-material or asbestos/mold/lead abatement, unlicensed gas or utility work, insurance-claim negotiation, illegal dumping, or work that would place an unverified minor at risk. Workdoe may restrict additional high-risk categories until the required verification and operating controls exist.</p></section>
+        <section><h2 id="terms-moderation" tabindex="-1">Moderation and availability</h2><p>Workdoe may hide content, limit a service area, suspend an account, preserve audit records, or report credible threats when needed for safety, policy enforcement, or legal compliance. The controlled beta may change, pause, or end without guaranteeing that a project receives bids or that a contractor receives work.</p></section>
+        <section><h2 id="terms-questions" tabindex="-1">Questions</h2><p>Workdoe is operated by Moose Bay and Company LLC, a Virginia limited liability company. Email <a href="mailto:admin@workdoe.com">admin@workdoe.com</a> with account, policy, privacy, or safety questions; the monitored inbox aims to respond within 1 to 5 business days. Call 911 for immediate danger; Workdoe is not an emergency service.</p></section>
+      </article>
+    </div>"""
+    return layout(None, "/terms", "Terms of Use", body, body_class="public-trust-body")
 
 
 def public_robots_txt() -> str:
@@ -1576,13 +1685,19 @@ def lead_board_html(
     user,
     payload: dict,
     *,
-    map_tile_url: str = "",
-    map_tile_attribution: str = "",
+    map_tile_url: str | None = None,
+    map_tile_attribution: str | None = None,
+    map_mode: str | None = None,
+    email_available: bool = False,
+    access_protected_map: bool = False,
 ) -> str:
     map_tile_url, map_tile_attribution = map_tile_configuration(
         map_tile_url,
         map_tile_attribution,
+        map_mode=map_mode,
     )
+    include_map = bool(map_tile_url)
+    area_attrs = area_map_attributes(map_tile_url, access_protected_map)
     jobs = payload.get("jobs", [])
     filters = payload.get("filters", {})
     preferences = payload.get("preferences", {})
@@ -1604,8 +1719,12 @@ def lead_board_html(
         )
     lead_view_tabs = "".join(lead_view_tab_items)
     lead_alert_choices = "".join(
-        f'<label><input type="radio" name="lead_alert_preference" value="{escape(value)}"{' checked' if preferences.get("lead_alert_preference", "workdoe") == value else ''} required><span>{escape(label)}</span></label>'
+        f'<label><input type="radio" name="lead_alert_preference" value="{escape(value)}"{' checked' if preferences.get("lead_alert_preference", "workdoe") == value else ''} required><span>{escape(label if email_available or value != "email" else "Email when available")}</span></label>'
         for value, label in LEAD_ALERT_OPTIONS
+    )
+    lead_alert_help = (
+        "Email uses this view plus your services and DMV zones."
+        if email_available else "Email alerts are paused. Saved views still work."
     )
     selected = jobs[0] if jobs else None
     rows = []
@@ -1644,6 +1763,7 @@ def lead_board_html(
         )
     list_html = "\n".join(rows) if rows else '<div class="market-list-empty"><strong>No matching projects</strong><span>Clear filters to widen the map.</span></div>'
     map_jobs = payload.get("map_jobs", [])
+    mapped_count = sum(job.get("lat") is not None and job.get("lng") is not None for job in map_jobs)
     list_role = ' role="list"' if rows else ""
     selected_family = GROUP_BY_SLUG.get(filters.get("family", ""))
     task_filter_html = ""
@@ -1667,7 +1787,8 @@ def lead_board_html(
         filters.get("service", ""),
         selected_family["name"] if selected_family else "All work",
     )
-    alert_state = "Email on" if preferences.get("lead_alert_enabled") else "Alerts off"
+    alerts_on = email_available and bool(preferences.get("lead_alert_enabled"))
+    alert_state = "Email on" if alerts_on else "Alerts off" if email_available else "Email paused"
     lead_tools_open = " open" if any(
         (
             filters.get("category"),
@@ -1685,12 +1806,14 @@ def lead_board_html(
         )
         saved_view_html = (
             f'<a class="button secondary compact" href="{escape(payload.get("saved_lead_view_url", "/leads"))}">Use saved view</a>'
-            f'<span>{escape(preferences.get("saved_service_label") or preferences.get("saved_family_label") or preferences.get("saved_category") or "All work")}{saved_query_label}{" - Email alerts on" if preferences.get("lead_alert_enabled") else ""}</span>'
+            f'<span>{escape(preferences.get("saved_service_label") or preferences.get("saved_family_label") or preferences.get("saved_category") or "All work")}{saved_query_label}{" - Email alerts on" if alerts_on else ""}</span>'
         )
     else:
         saved_view_html = '<span>Keep a useful task, area, or sort for your next visit.</span>'
     if selected:
         desired_date = escape(selected.get("desired_date", "") or "Flexible")
+        has_pin = any(job["id"] == selected["id"] and job.get("lat") is not None and job.get("lng") is not None for job in map_jobs)
+        pin_note = "" if has_pin else ' <span class="help-text">(no map pin)</span>'
         action_label = (
             "View bid status"
             if selected.get("request_status")
@@ -1705,7 +1828,7 @@ def lead_board_html(
         <article class="market-project-detail" data-project-detail-content data-job-id="{escape(str(selected.get('id', '')))}">
           <div class="project-detail-heading"><span class="live-badge">Open project</span><span>{escape(selected.get('category', ''))}</span></div>
           <h2>{escape(selected.get('title', ''))}</h2>
-          <p class="project-detail-location">{escape(selected.get('city', ''))}, {escape(selected.get('state', ''))}</p>
+          <p class="project-detail-location">{escape(selected.get('city', ''))}, {escape(selected.get('state', ''))}{pin_note}</p>
           <dl class="project-facts">
             <div><dt>Estimated budget</dt><dd>{escape(selected.get('budget', '') or 'Budget not provided')}</dd></div>
             <div><dt>Desired date</dt><dd>{desired_date}</dd></div>
@@ -1713,46 +1836,65 @@ def lead_board_html(
           </dl>
           {license_note}
           <div class="project-description"><h3>Field brief</h3><p>{escape(selected.get('description', ''))}</p></div>
-          <p class="project-privacy-note">Location is intentionally approximate until a match is approved.</p>
+          <p class="project-privacy-note">Locations stay approximate after approval. Do not include a street address.</p>
           <div class="project-detail-actions"><a class="button primary" href="{escape(selected.get('url', '#'))}" data-dialog-title="{escape(action_label)}">{escape(action_label)}</a></div>
         </article>"""
     else:
-        detail_html = """
+        detail_html = f"""
         <div class="market-detail-empty" data-project-detail-content>
           <img src="/field-doe.webp" alt="" width="160" height="160">
-          <h2>No projects match</h2><p>Adjust the filters to widen the map.</p>
+          <h2>No projects match</h2><p>{'Adjust the filters to widen the map.' if include_map else 'Try a different search or service.'}</p>
         </div>"""
-    body = f"""
-    <div class="market-mobile-tabs" role="tablist" aria-label="Marketplace view">
-      <button type="button" role="tab" data-mobile-panel-target="filters">Projects</button>
-      <button type="button" role="tab" data-mobile-panel-target="map">Map</button>
-      <button type="button" role="tab" data-mobile-panel-target="details">Details</button>
+    view_navigation = """
+    <div class="market-mobile-tabs" role="tablist" aria-label="Marketplace view" aria-orientation="horizontal">
+      <button id="market-projects-tab" type="button" role="tab" data-mobile-panel-target="filters" aria-controls="market-projects-panel">Projects</button>
+      <button id="market-map-tab" type="button" role="tab" data-mobile-panel-target="map" aria-controls="market-map-panel">Map</button>
+      <button id="market-details-tab" type="button" role="tab" data-mobile-panel-target="details" aria-controls="market-details-panel">Details</button>
     </div>
+""" if include_map else ""
+    map_panel = f"""
+      <section id="market-map-panel" class="market-map-stage" data-market-panel="map" aria-label="Project map workspace">
+        <div class="map-stage-toolbar"><div><span class="map-live-indicator" aria-hidden="true"></span><strong data-map-result-count>{mapped_count} project{"" if mapped_count == 1 else "s"} mapped</strong></div><span>Approximate pins</span></div>
+        <div class="market-map-frame">
+          <div id="lead-map" data-map data-map-workspace{area_attrs} data-tile-url="{escape(map_tile_url)}" data-tile-attribution='{escape(map_tile_attribution)}' role="region" tabindex="0" aria-label="Approximate DMV job map" aria-describedby="lead-map-status">
+            <div class="map-view-controls" aria-label="Map controls">
+              <button class="button compact map-view-control" type="button" data-show-map-area title="Describe the current approximate map area">Map area</button>
+              <button class="button compact map-view-control" type="button" data-reset-map-view title="Return to the default DMV map view">DMV view</button>
+            </div>
+            <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Map loading. Project list is ready.</p>
+            <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Map loading. Project list is ready.</p>
+          </div>
+        </div>
+      </section>
+""" if include_map else ""
+    map_snapshot = f'<script id="map-jobs-data" type="application/json">{safe_json_script(map_jobs)}</script>' if include_map else ""
+    body = f"""
+{view_navigation}
     <section class="signed-in-market-heading">
       <div>
         <p class="eyebrow">Area scan // DMV</p>
         <h1>Work near you</h1>
       </div>
     </section>
-    <section class="market-workspace signed-in-market-workspace" data-market-workspace data-mobile-panel="map">
-      <aside class="market-filter-rail" data-market-panel="filters" aria-label="Project search and filters">
-        <div class="market-rail-heading"><h2>Available projects</h2><p>Approximate locations until a client approves your bid.</p></div>
+    <section class="market-workspace signed-in-market-workspace" tabindex="-1" data-market-workspace data-mobile-panel="{'filters' if selected_family or not include_map else 'map'}">
+      <aside id="market-projects-panel" class="market-filter-rail" data-market-panel="filters" aria-label="Project search and filters">
+        <div class="market-rail-heading"><h2>Available projects</h2><p>Locations stay approximate, even after approval.</p></div>
         <nav class="lead-view-tabs" aria-label="Lead status">{lead_view_tabs}</nav>
         <div class="project-results-heading"><strong data-project-result-count>{len(jobs)} project{"" if len(jobs) == 1 else "s"}</strong><span>Ready to review</span></div>
         <details class="lead-tools"{lead_tools_open}>
           <summary aria-label="Filter projects and manage matching project alerts">
             <span class="lead-tools-summary-layout">
               <span class="lead-tools-summary-copy"><strong>Filters &amp; alerts</strong><small>{escape(active_filter_label)} / {escape(filters.get('sort', 'newest').capitalize())}</small></span>
-              <span class="lead-tools-alert-state{' is-on' if preferences.get('lead_alert_enabled') else ''}">{alert_state}</span>
+              <span class="lead-tools-alert-state{' is-on' if alerts_on else ''}">{alert_state}</span>
             </span>
           </summary>
           <div class="lead-tools-body">
             {service_family_filter_html(filters, view=lead_view)}
-            <form class="market-filter-form" method="get" action="/leads" role="search" aria-label="Filter contractor leads" aria-controls="lead-results lead-map" data-market-filters>
+            <form class="market-filter-form" method="get" action="/leads" role="search" aria-label="Filter contractor leads" aria-controls="lead-results{' lead-map' if include_map else ''}" data-market-filters>
               {f'<input type="hidden" name="view" value="{escape(lead_view)}">' if lead_view != 'all' else ''}
               {f'<input type="hidden" name="family" value="{escape(filters.get("family", ""))}">' if filters.get('family') else ''}
               <label for="market-search">Search projects</label>
-              <input id="market-search" name="q" type="search" value="{escape(filters.get('q', ''))}" maxlength="80" placeholder="Try painting or Arlington" autocomplete="off" data-market-search>
+              <input id="market-search" name="q" type="search" value="{escape(filters.get('q', ''))}" maxlength="80" placeholder="Try painting or Arlington" autocomplete="off" pattern="{escape(PROJECT_SEARCH_INPUT_PATTERN)}" title="{escape(PROJECT_SEARCH_INPUT_HINT)}" data-market-search>
               {task_filter_html}
               <label for="market-sort">Sort</label>
               <select id="market-sort" name="sort" data-market-sort>{sort_options}</select>
@@ -1768,7 +1910,7 @@ def lead_board_html(
                 <fieldset class="lead-alert-choice">
                   <legend>New matching projects</legend>
                   <div class="lead-alert-options">{lead_alert_choices}</div>
-                  <small>Email uses this view plus your services and DMV zones.</small>
+                  <small>{lead_alert_help}</small>
                 </fieldset>
                 <button class="button secondary compact" type="submit">Save view</button>
                 <span id="saved-lead-view-status" class="sr-only" data-form-status aria-live="polite"></span>
@@ -1781,42 +1923,36 @@ def lead_board_html(
 {list_html}
         </div>
       </aside>
-      <section class="market-map-stage" data-market-panel="map" aria-label="Project map workspace">
-        <div class="map-stage-toolbar"><div><span class="map-live-indicator" aria-hidden="true"></span><strong data-map-result-count>{len(map_jobs)} project{"" if len(map_jobs) == 1 else "s"} mapped</strong></div><span>Approximate pins</span></div>
-        <div class="market-map-frame">
-          <div id="lead-map" data-map data-map-workspace data-tile-url="{escape(map_tile_url)}" data-tile-attribution='{escape(map_tile_attribution)}' role="region" tabindex="0" aria-label="Approximate DMV job map" aria-describedby="lead-map-status">
-            <div class="map-view-controls" aria-label="Map controls">
-              <button class="button compact map-view-control" type="button" data-show-map-area title="Describe the current approximate map area">Map area</button>
-              <button class="button compact map-view-control" type="button" data-reset-map-view title="Return to the default DMV map view">DMV view</button>
-            </div>
-            <p id="lead-map-loading" class="map-fallback" aria-hidden="true">Map loading. Project list is ready.</p>
-            <p id="lead-map-status" class="sr-only" aria-live="polite" aria-atomic="true">Map loading. Project list is ready.</p>
-          </div>
-        </div>
-      </section>
-      <aside class="market-detail-rail" data-market-panel="details" aria-label="Selected project">{detail_html}</aside>
+{map_panel}
+      <aside id="market-details-panel" class="market-detail-rail" data-market-panel="details" aria-label="Selected project">{detail_html}</aside>
     </section>
-    <script id="map-jobs-data" type="application/json">{safe_json_script(map_jobs)}</script>"""
+    {map_snapshot}"""
     return layout(
         user,
         "/leads",
         "Find Work",
         body,
-        include_map=True,
+        include_map=include_map,
         include_actions=True,
-        body_class="app-market-body",
+        body_class="app-market-body" + ("" if include_map else " market-list-only"),
         main_class="app-market-main",
     )
 
 
-def turnstile_html(site_key: str, action: str, *, explicit: bool = False) -> str:
+def turnstile_html(site_key: str, action: str, *, explicit: bool = True) -> str:
     if not site_key:
         return ""
     widget_class = "workdoe-turnstile" if explicit else "cf-turnstile"
     explicit_marker = ' data-workdoe-turnstile="true"' if explicit else ""
+    recovery = (
+        '<p class="help-text" data-turnstile-status role="status" aria-live="polite">Loading verification...</p>'
+        '<button class="button secondary compact" type="button" data-turnstile-retry>Retry verification</button>'
+        if explicit else ""
+    )
     return f"""
         <div class="turnstile-field">
           <div class="{widget_class}"{explicit_marker} data-sitekey="{escape(site_key)}" data-action="{escape(action)}" data-theme="light"></div>
+          {recovery}
         </div>"""
 
 
@@ -2096,12 +2232,13 @@ def project_composer_fields_html(
         </section>"""
     return f"""
       <div class="project-composer-head wide">
-        <div><p class="eyebrow" data-project-step-label>Step 1 of 6</p><h2 data-project-step-title>Choose a work family</h2></div>
+        <div><p class="eyebrow" data-project-step-label>Step 1 of 6</p><h2 data-project-step-title data-dialog-focus tabindex="-1">Choose a work family</h2></div>
         <progress value="1" max="6" data-project-progress aria-label="Project posting progress">1 of 6</progress>
       </div>
       <fieldset class="project-composer-step wide" data-project-step="1" data-step-title="Choose a work family">
         <legend>What kind of work is this?</legend>
         <p class="help-text" id="service-family-help">Pick the closest fit. You can change it before posting.</p>
+        <p id="project-family-choice-error" class="field-error" data-project-choice-error hidden>Choose a work family to continue.</p>
         <div class="service-family-grid" aria-describedby="service-family-help">{family_options}</div>
         {field_error('service_group_slug', 'job-service-group-slug-error')}
         <div class="project-step-actions"><a class="button secondary" href="{escape(cancel_url)}">Cancel</a><button class="button" type="button" data-project-next>Continue</button></div>
@@ -2110,6 +2247,7 @@ def project_composer_fields_html(
         <legend>What should be done?</legend>
         <p class="help-text">Choose one task. Add details next.</p>
         <div class="service-family-context" data-selected-service-family hidden><img data-selected-service-family-icon alt="" aria-hidden="true"><span><small>Selected family</small><strong data-selected-service-family-name></strong><small data-selected-service-family-description></small></span></div>
+        <p id="project-service-choice-error" class="field-error" data-project-choice-error hidden>Choose a service to continue.</p>
         <div class="service-option-groups" data-service-option-groups>{service_choice_groups}</div>
         <label class="service-select-control" for="job-service-slug">Service <select id="job-service-slug" name="service_slug" required{' aria-invalid="true" aria-describedby="job-service-slug-error"' if service_error else ''}>{service_options_html}</select></label>
         <input id="job-category" type="hidden" name="category" value="{escape(str(form.get('category') or ''))}">
@@ -2130,7 +2268,7 @@ def project_composer_fields_html(
         <div class="project-step-actions"><button class="button secondary" type="button" data-project-back>Back</button><button class="button" type="button" data-project-next>Continue</button></div>
       </fieldset>
       <fieldset class="project-composer-step wide" data-project-step="4" data-step-title="Set the area">
-        <legend>Where is the project?</legend><p class="help-text">Only an approximate city or ZIP pin is shown before a match is approved.</p>
+        <legend>Where is the project?</legend><p class="help-text">Only city/ZIP-level locations are shown. Do not enter a street address.</p>
         <div class="project-field-grid three">
           <label for="job-zip-code">ZIP <input id="job-zip-code" name="zip_code" value="{escape(str(form.get('zip_code') or ''))}" pattern="[0-9]{{5}}" maxlength="5" inputmode="numeric" autocomplete="postal-code" list="job-zip-options" enterkeyhint="next" placeholder="20003" required{invalid('zip_code', 'job-zip-code-error')}>{field_error('zip_code', 'job-zip-code-error')}</label>
           <label for="job-city">City <input id="job-city" name="city" value="{escape(str(form.get('city') or ''))}" maxlength="80" autocomplete="address-level2" autocapitalize="words" spellcheck="false" list="job-city-options" enterkeyhint="next" placeholder="Washington" required{invalid('city', 'job-city-error')}>{field_error('city', 'job-city-error')}</label>
@@ -2158,7 +2296,7 @@ def project_composer_fields_html(
         <legend>Ready to post?</legend>
         <dl class="project-review" aria-label="Project summary">
           <div><dt>Work</dt><dd data-review-service>Choose a service</dd><button class="project-review-edit" type="button" data-project-jump-step="1" aria-label="Edit work selection" title="Edit work selection"><img src="/vendor/tabler-icons/pencil.svg" alt=""></button></div>
-          <div><dt>Project</dt><dd class="project-review-copy"><strong data-review-title>Add a title</strong><small><span data-review-setting>Not specified</span><span aria-hidden="true"> · </span><span data-review-scope>Description only</span><span aria-hidden="true"> · </span><span data-review-brief>Brief 0 of 6</span></small></dd><button class="project-review-edit" type="button" data-project-jump-step="3" aria-label="Edit project details" title="Edit project details"><img src="/vendor/tabler-icons/pencil.svg" alt=""></button></div>
+          <div><dt>Project</dt><dd class="project-review-copy"><strong data-review-title>Add a title</strong><span class="project-review-description" data-review-description></span><small><span data-review-setting>Not specified</span><span aria-hidden="true"> · </span><span data-review-scope>Description only</span><span aria-hidden="true"> · </span><span data-review-brief>Brief 0 of 6</span></small></dd><button class="project-review-edit" type="button" data-project-jump-step="3" aria-label="Edit project details" title="Edit project details"><img src="/vendor/tabler-icons/pencil.svg" alt=""></button></div>
           <div><dt>Area</dt><dd data-review-location>Add a city and ZIP</dd><button class="project-review-edit" type="button" data-project-jump-step="4" aria-label="Edit project area" title="Edit project area"><img src="/vendor/tabler-icons/pencil.svg" alt=""></button></div>
           <div><dt>Timing &amp; budget</dt><dd class="project-review-copy"><strong data-review-timing>Flexible</strong><small><span data-review-budget>Open</span><span aria-hidden="true"> / </span><span data-review-license>Any provider</span></small></dd><button class="project-review-edit" type="button" data-project-jump-step="5" aria-label="Edit timing and budget" title="Edit timing and budget"><img src="/vendor/tabler-icons/pencil.svg" alt=""></button></div>
         </dl>
@@ -2205,7 +2343,7 @@ def job_form_html(
             include_photos=media_uploads_enabled,
             submit_label="Post project",
             cancel_url="/client/dashboard",
-            turnstile=turnstile_html(site_key, "job-post", explicit=embedded),
+            turnstile=turnstile_html(site_key, "job-post"),
         )
         location_shortcuts = "".join(
             f'<a class="button secondary compact" href="/jobs/new?{urlencode({"location": int(location.get("id", 0) or 0)})}">{escape(location.get("label", ""))}</a>'
@@ -2324,7 +2462,7 @@ def job_form_html(
       <label class="wide" for="job-description">Description <textarea id="job-description" name="description" rows="5" minlength="20" maxlength="1200" autocapitalize="sentences" spellcheck="true" enterkeyhint="done" placeholder="Describe the {escape(edit_service_name.lower() + ' ' if edit_service_name else '')}scope, size, current condition, access, and desired outcome." aria-describedby="job-description-help" required>{escape(str(row_value(job, 'description', '') or ''))}</textarea><span id="job-description-help" class="help-text">Do not include an exact street address, email, or phone number.</span></label>
       {edit_policy_html}
       {('<label class="wide" for="job-photos">Photos <input id="job-photos" name="photos" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-describedby="job-photos-help"></label><p id="job-photos-help" class="help-text wide">Private uploads. PNG, JPG, GIF, or WebP.</p>') if media_uploads_enabled else '<p class="help-text wide">Photos are not available during this beta.</p>'}
-      {turnstile_html(site_key, "job-post", explicit=embedded)}
+      {turnstile_html(site_key, "job-post")}
       <div class="form-actions wide">
         <button class="button" type="submit" aria-label="{'Save project changes' if is_edit else 'Post project'}">{'Save changes' if is_edit else 'Post project'}</button>
         <p id="worker-form-status" class="help-text" data-form-status aria-live="polite"></p>
@@ -2346,27 +2484,33 @@ def public_job_draft_html(
     errors: list[str] | None = None,
     site_key: str = "",
     embedded: bool = False,
+    *,
+    save_unavailable: bool = False,
 ) -> str:
     form = form or {}
     errors = errors or []
     summary = ""
     if errors:
         items = "".join(f"<li>{escape(message)}</li>" for message in errors)
-        summary = f'<section id="job-form-errors" class="form-error-summary wide" role="alert"><h2>Fix {len(errors)} item{"" if len(errors) == 1 else "s"}</h2><ul>{items}</ul></section>'
+        heading = "Draft save interrupted" if save_unavailable else f"Fix {len(errors)} item{'s' if len(errors) != 1 else ''}"
+        summary = f'<section id="job-form-errors" class="form-error-summary wide" role="alert"><h2>{heading}</h2><ul>{items}</ul></section>'
+    initial_step = 3 if form.get("service_slug") else (2 if form.get("service_group_slug") else 1)
+    if save_unavailable:
+        initial_step = 6
     composer = project_composer_fields_html(
         form,
         errors=errors,
         include_photos=False,
         submit_label="Save draft and verify email",
         cancel_url="/",
-        turnstile=turnstile_html(site_key, "job-draft", explicit=embedded),
+        turnstile=turnstile_html(site_key, "job-draft"),
     )
     posting_intro = "" if embedded else """
     <section class="page-header"><p class="eyebrow">Consumer workspace</p><h1>What needs doing?</h1><p>Start the project now. Verify your email before it goes live.</p></section>
     <ul class="form-checklist" aria-label="Project draft steps"><li>Save scope</li><li>Verify email</li><li>Review before posting</li></ul>"""
     body = f"""
     {posting_intro}
-    <form class="form-grid" method="post" action="/post-project" aria-label="Project draft" data-dialog-fragment data-project-composer data-project-initial-step="{'3' if form.get('service_slug') else ('2' if form.get('service_group_slug') else '1')}">
+    <form class="form-grid" method="post" action="/post-project" aria-label="Project draft" data-dialog-fragment data-project-composer data-project-initial-step="{initial_step}">
       {summary}{composer}
     </form>"""
     return layout(
@@ -2524,7 +2668,7 @@ def contractor_profile_html(
       </fieldset>
       <fieldset class="wide profile-zone-selector" id="profile-service-area">
         <legend>Where you work</legend>
-        <p class="help-text">Pick practical DMV coverage areas. Exact project addresses stay private until a match is approved.</p>
+        <p class="help-text">Pick DMV coverage areas. Workdoe does not show project street addresses.</p>
         <div class="profile-zone-options">{zone_options}</div>
       </fieldset>
       <label for="profile-years-in-business">Years in business <input id="profile-years-in-business" name="years_in_business" type="number" min="0" max="100" value="{escape(years_value)}" inputmode="numeric" enterkeyhint="next"></label>
@@ -2864,8 +3008,13 @@ def message_thread_detail_html(
 ) -> str:
     thread = payload.get("thread", {})
     messages = payload.get("messages", [])
+    history = payload.get("history", {})
     inbox_threads = payload.get("inbox_threads", [])
     thread_id = int(thread.get("id", 0) or 0)
+    thread_url = f"/messages/{thread_id}"
+    through = history.get("through")
+    next_through = history.get("next_through")
+    report_return_url = f"{thread_url}?through={through}" if through else thread_url
     user_id = int(row_value(user, "id", 0) or 0)
     role = str(row_value(user, "role", "") or "")
     job_id = int(thread.get("job_id", 0) or 0)
@@ -2954,7 +3103,7 @@ def message_thread_detail_html(
             report_html = f"""
         <details class="message-report">
           <summary>Report message</summary>
-          <form class="inline-report" data-json-action="/api/reports" data-success-url-template="/messages/{thread_id}" aria-describedby="{status_id}">
+          <form class="inline-report" data-json-action="/api/reports" data-success-url-template="{report_return_url}" aria-describedby="{status_id}">
             <input type="hidden" name="target_type" value="message">
             <input type="hidden" name="target_id" value="{message_id}">
             <label for="message-report-reason-{message_id}"><span class="sr-only">Report message reason</span><input id="message-report-reason-{message_id}" name="reason" maxlength="500" placeholder="Report reason" autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required></label>
@@ -2965,7 +3114,7 @@ def message_thread_detail_html(
         </details>"""
         message_rows.append(
             f"""
-      <article class="message{' mine' if is_mine else ''}{' is-hidden' if is_hidden else ''}">
+      <article id="message-{message_id}" tabindex="-1" class="message{' mine' if is_mine else ''}{' is-hidden' if is_hidden else ''}">
         <div class="message-meta">
           <strong>{escape(message.get('sender_name', 'Workdoe user'))}</strong>
           <span>{'<span class="status hidden">hidden</span>' if is_hidden else ''} {escape(message.get('created_at', ''))}</span>
@@ -2974,9 +3123,21 @@ def message_thread_detail_html(
         {report_html}
       </article>"""
         )
-    messages_html = "\n".join(message_rows) if message_rows else '<p class="empty">No messages yet.</p>'
+    empty_message = "No messages in this view." if through else "No messages yet."
+    messages_html = "\n".join(message_rows) if message_rows else f'<p class="empty">{empty_message}</p>'
+    history_links = []
+    if next_through:
+        history_links.append(
+            f'<a class="button secondary compact" href="{thread_url}?through={next_through}">Older messages</a>'
+        )
+    if through:
+        history_links.append(f'<a class="button secondary compact" href="{thread_url}">Latest messages</a>')
+    history_nav = (
+        f'<nav class="row-actions" aria-label="Message history">{"".join(history_links)}</nav>'
+        if history_links else ""
+    )
     reply_html = ""
-    if can_reply:
+    if can_reply and not through:
         reply_html = f"""
     <form class="message-form thread-message-form" data-json-action="/api/messages/threads/{thread_id}" data-success-url-template="/messages/{thread_id}" aria-label="New message" aria-describedby="message-reply-status">
       <label for="message-body">New message <textarea id="message-body" name="body" rows="4" maxlength="1000" placeholder="Share timing, access, or next steps." autocapitalize="sentences" spellcheck="true" enterkeyhint="send" required></textarea><span class="help-text">Keep email, phone, and exact street details out of Workdoe messages.</span></label>
@@ -2984,7 +3145,7 @@ def message_thread_detail_html(
       <p id="message-reply-status" class="help-text" data-form-status aria-live="polite"></p>
     </form>"""
     body = f"""
-    <section class="dashboard-header">
+    <section class="dashboard-header thread-dashboard-header">
       <div>
         <p class="eyebrow">Private thread</p>
         <h1>{escape(thread.get('title', 'Message thread'))}</h1>
@@ -2994,7 +3155,7 @@ def message_thread_detail_html(
           <span>{escape(thread.get('city', ''))}, {escape(thread.get('state', ''))}</span>
         </div>
       </div>
-      <a class="button secondary" href="/messages">Inbox</a>
+      {'<a class="button secondary" href="/messages">Inbox</a>' if can_reply else '<a class="button secondary" href="/admin">Admin</a>'}
     </section>
     <section class="message-workspace{' admin-message-workspace' if not can_reply else ''}">
       {inbox_rail}
@@ -3012,7 +3173,8 @@ def message_thread_detail_html(
           </dl>
           {provider_limit_html}
         </aside>
-        <div class="message-list thread-message-list" aria-label="{escape(message_count_label(len(messages)))}">
+        <div class="message-list thread-message-list" role="region" tabindex="0" aria-label="{escape(message_count_label(len(messages)))}">
+          {history_nav}
 {messages_html}
         </div>
         {reply_html}
@@ -3077,7 +3239,9 @@ def admin_report_review_url(report: dict) -> str:
     if target_type == "job":
         return f"/jobs/{int(report.get('target_id', 0) or 0)}"
     if target_type == "message" and report.get("message_thread_id"):
-        return f"/messages/{int(report.get('message_thread_id', 0) or 0)}"
+        thread_id = int(report["message_thread_id"])
+        message_id = int(report.get("target_id", 0) or 0)
+        return f"/messages/{thread_id}?through={message_id}#message-{message_id}" if message_id else ""
     if target_type == "profile":
         return f"/contractors/{int(report.get('target_id', 0) or 0)}"
     return ""
@@ -3362,6 +3526,7 @@ def admin_dashboard_html(user, payload: dict) -> str:
       <div class="dashboard-metrics compact-metrics" aria-label="Marketplace outcomes">
         <div class="metric-card"><span>Published</span><strong>{int(marketplace.get('published_projects', 0))}</strong></div>
         <div class="metric-card"><span>With bids</span><strong>{int(marketplace.get('projects_with_bids', 0))}</strong></div>
+        <div class="metric-card"><span>Bid approval</span><strong>{int(marketplace.get('approved_matches', 0))} of {int(marketplace.get('total_bids', 0))}</strong><small>Approved bids</small></div>
         <div class="metric-card"><span>Matched</span><strong>{int(marketplace.get('matched_projects', 0))}</strong><small>{int(marketplace.get('qualified_match_rate', 0))}% of published</small></div>
         <div class="metric-card"><span>Completion signals</span><strong>{int(marketplace.get('completion_signals', 0))}</strong></div>
         <div class="metric-card"><span>Verified complete</span><strong>{int(marketplace.get('verified_completions', 0))}</strong><small>{int(marketplace.get('verified_completion_rate', 0))}% of approved matches</small></div>
@@ -3601,7 +3766,7 @@ def contractor_job_detail_html(
           </datalist>
           <details class="optional-field"{' open' if bid_form.get('questions') else ''}><summary>Questions (optional)</summary><label class="sr-only" for="bid-questions">Questions</label><textarea id="bid-questions" name="questions" rows="2" maxlength="500" placeholder="Optional" autocapitalize="sentences" spellcheck="true" enterkeyhint="done">{escape(bid_form.get('questions', ''))}</textarea></details>
           {bid_policy_html}
-          {turnstile_html(site_key, "match-request", explicit=embedded)}
+          {turnstile_html(site_key, "match-request")}
           <button class="button full" type="submit" aria-label="Send mini bid">Send bid</button>
           <p id="bid-form-status" class="help-text" data-form-status aria-live="polite"></p>
         </form>"""
@@ -3621,7 +3786,7 @@ def contractor_job_detail_html(
           <input type="hidden" name="target_type" value="job">
           <input type="hidden" name="target_id" value="{int(job.get('id', 0))}">
           <label for="lead-report-reason">Report this lead <input id="lead-report-reason" name="reason" maxlength="500" placeholder="Why should moderation review it?" required></label>
-          {turnstile_html(site_key, "report", explicit=embedded)}
+          {turnstile_html(site_key, "report")}
           <button class="button secondary compact" type="submit">Report</button>
           <p id="lead-report-status" class="help-text" data-form-status aria-live="polite"></p>
         </form>"""

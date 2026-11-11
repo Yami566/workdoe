@@ -19,7 +19,7 @@
 {% endif %}
 <label for="job-desired-date">
   Desired date
-  <input id="job-desired-date" name="desired_date" type="date" value="{{ form.desired_date }}" min="{{ today }}" {% if field_errors.desired_date %}aria-invalid="true" aria-describedby="job-desired-date-error"{% endif %}>
+  <input id="job-desired-date" name="desired_date" type="date" value="{{ form.desired_date }}" {% if field_errors.desired_date %}aria-invalid="true" aria-describedby="job-desired-date-error"{% endif %}>
   {% if field_errors.desired_date %}<span id="job-desired-date-error" class="field-error">{{ field_errors.desired_date[0] }}</span>{% endif %}
 </label>
 <label for="job-city">

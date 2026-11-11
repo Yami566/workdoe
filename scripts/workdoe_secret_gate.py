@@ -19,6 +19,8 @@ def baseline_audit_error(baseline: Path) -> str:
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return f"Secret baseline is unreadable or invalid JSON: {exc}"
 
+    if not isinstance(payload, dict):
+        return "Secret baseline must be a JSON object."
     results = payload.get("results")
     if not isinstance(results, dict):
         return "Secret baseline results must be a JSON object."
@@ -32,10 +34,10 @@ def baseline_audit_error(baseline: Path) -> str:
             if not isinstance(finding, dict):
                 return "Secret baseline findings must be JSON objects."
             verdict = finding.get("is_secret")
-            if verdict is None:
-                unaudited += 1
-            elif verdict is True:
+            if verdict is True:
                 confirmed_secrets += 1
+            elif verdict is not False:
+                unaudited += 1
 
     if confirmed_secrets:
         return (
@@ -171,7 +173,6 @@ def run_gate(repo_root: Path, baseline: Path) -> dict:
     with tempfile.TemporaryDirectory(prefix=".workdoe-secret-gate-", dir=repo_root) as temp_dir:
         scan_baseline = Path(temp_dir) / baseline.name
         shutil.copyfile(baseline, scan_baseline)
-        scan_baseline_before = scan_baseline.read_bytes()
         baseline_argument = command_path(scan_baseline, repo_root)
         for batch in file_argument_batches(files):
             completed = subprocess.run(
@@ -186,9 +187,10 @@ def run_gate(repo_root: Path, baseline: Path) -> dict:
             batch_output = (completed.stdout + completed.stderr).strip()
             if batch_output:
                 outputs.append(batch_output)
-            raw_ok = completed.returncode == 0 and raw_ok
+            # detect-secrets 1.5.0 reserves 3 for baseline-only metadata refreshes;
+            # candidate secrets and scanner errors must fail every batch.
+            raw_ok = completed.returncode in (0, 3) and raw_ok
         scan_payload = read_baseline_payload(scan_baseline)
-        baseline_changed = scan_baseline.read_bytes() != scan_baseline_before
 
     if baseline.read_bytes() != source_bytes:
         return {
@@ -206,13 +208,10 @@ def run_gate(repo_root: Path, baseline: Path) -> dict:
         }
 
     output = "\n".join(outputs)
-    # detect-secrets exits nonzero when it adjusts only line locations of already
-    # reviewed findings. The actual baseline is never passed to the scanner.
-    ok = raw_ok or baseline_changed
     return {
-        "ok": ok,
-        "error": "" if ok else output,
-        "warnings": output.splitlines() if ok and output else [],
+        "ok": raw_ok,
+        "error": "" if raw_ok else output or "detect-secrets failed without diagnostic output.",
+        "warnings": output.splitlines() if raw_ok and output else [],
         "file_count": len(files),
     }
 

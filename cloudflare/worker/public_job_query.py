@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import base64
 import binascii
+import json
 import math
+
+if __package__:
+    from .location_pins import CITY_COORDS, DMV_ZIPS
+else:
+    from location_pins import CITY_COORDS, DMV_ZIPS
 
 PILOT_VIEWPORT = {
     "north": 39.5,
@@ -11,6 +17,9 @@ PILOT_VIEWPORT = {
     "west": -78.0,
 }
 PUBLIC_CURSOR_MAX_OFFSET = 5000
+PUBLIC_QUERY_MAX_BYTES = 4096
+PUBLIC_QUERY_MAX_FIELDS = 32
+PUBLIC_DISCOVERY_API_METHODS = ("GET", "HEAD", "OPTIONS")
 PUBLIC_VIEWPORT_KEYS = ("north", "south", "east", "west")
 PUBLIC_ORDER_CLAUSES = frozenset(
     {
@@ -29,22 +38,17 @@ SELECT
     jobs.category,
     jobs.service_group_slug,
     jobs.service_slug,
-    jobs.license_preference,
-    jobs.city,
+{license_projection}    jobs.city,
     jobs.state,
-    jobs.description,
+    jobs.zip_code,
     jobs.approx_lat,
     jobs.approx_lng,
     jobs.created_at,
-    jobs.desired_date,
-    COUNT(job_photos.id) AS photo_count
+    jobs.desired_date
 FROM jobs
 JOIN users AS clients
   ON clients.id = jobs.client_id
  AND clients.status = 'active'
-LEFT JOIN job_photos
-  ON job_photos.job_id = jobs.id
- AND job_photos.is_hidden = 0
 WHERE jobs.status = 'open'
   AND NOT EXISTS (
       SELECT 1
@@ -53,10 +57,42 @@ WHERE jobs.status = 'open'
         AND approved_request.status = 'approved'
   )
 """
+# Older open records may have no deadline; they still use the configured bid cap.
+PUBLIC_BID_AVAILABILITY_SQL = """
+AND (
+    NULLIF(jobs.bidding_closes_at, '') IS NULL
+    OR datetime(jobs.bidding_closes_at) > CURRENT_TIMESTAMP
+)
+AND (
+    SELECT COUNT(*) FROM match_requests AS bid_slots
+    WHERE bid_slots.job_id = jobs.id
+) < jobs.bid_limit
+"""
+PUBLIC_PAGE_WITH_PHOTO_COUNTS = """
+)
+SELECT public_page.*,
+       (SELECT COUNT(*) FROM job_photos
+        WHERE job_photos.job_id = public_page.id
+          AND job_photos.is_hidden = 0) AS photo_count
+FROM public_page
+"""
 
 
 class PublicJobQueryError(ValueError):
     pass
+
+
+def public_query_envelope_rejection(query: str | bytes) -> tuple[int, str] | None:
+    too_long = (414, "This project search link is too long. Start a new search.")
+    if len(query) > PUBLIC_QUERY_MAX_BYTES:
+        return too_long
+    raw = query.encode("utf-8") if isinstance(query, str) else query
+    if len(raw) > PUBLIC_QUERY_MAX_BYTES:
+        return too_long
+    # Count separators before decoding so encoded ampersands remain values.
+    if raw.count(b"&") >= PUBLIC_QUERY_MAX_FIELDS:
+        return 400, "This project search link has too many filters. Start a new search."
+    return None
 
 
 def first_query_value(params, key: str, default: str = "") -> str:
@@ -119,19 +155,52 @@ def encode_public_cursor(offset: int) -> str:
     return payload.rstrip("=")
 
 
-def public_viewport_sql(viewport: dict[str, float] | None) -> tuple[str, list[float]]:
+def next_public_cursor(offset: int, page_count: int, *, has_more: bool) -> str:
+    next_offset = offset + page_count
+    if has_more and offset < next_offset <= PUBLIC_CURSOR_MAX_OFFSET:
+        return encode_public_cursor(next_offset)
+    return ""
+
+
+def public_viewport_sql(viewport: dict[str, float] | None) -> tuple[str, list[float | str]]:
     if not viewport:
         return "", []
+    zip_pins = [
+        (state, zip_code, lat, lng) for zip_code, (_, state, lat, lng) in DMV_ZIPS.items()
+        if public_viewport_contains(viewport, lat, lng)
+    ]
+    city_pins = []
+    for city_state, (lat, lng) in CITY_COORDS.items():
+        if public_viewport_contains(viewport, lat, lng):
+            city, state = city_state.rsplit(" ", 1)
+            city_pins.append((state.upper(), city, lat, lng))
+    if not zip_pins and not city_pins:
+        return "AND 0", []
+    # Check provenance before paging so guessed bounds cannot expose a legacy pin.
     return (
-        (
-            "AND jobs.approx_lat BETWEEN ? AND ? "
-            "AND jobs.approx_lng BETWEEN ? AND ?"
-        ),
+        """
+        AND jobs.approx_lat BETWEEN ? AND ?
+        AND jobs.approx_lng BETWEEN ? AND ?
+        AND (
+            (jobs.state, jobs.zip_code, jobs.approx_lat, jobs.approx_lng) IN (
+                SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]'),
+                       json_extract(value, '$[2]'), json_extract(value, '$[3]')
+                FROM json_each(?)
+            ) OR
+            (jobs.state, lower(jobs.city), jobs.approx_lat, jobs.approx_lng) IN (
+                SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]'),
+                       json_extract(value, '$[2]'), json_extract(value, '$[3]')
+                FROM json_each(?)
+            )
+        )
+        """,
         [
             viewport["south"],
             viewport["north"],
             viewport["west"],
             viewport["east"],
+            json.dumps(zip_pins, separators=(",", ":")),
+            json.dumps(city_pins, separators=(",", ":")),
         ],
     )
 
@@ -150,6 +219,38 @@ def public_viewport_contains(viewport: dict[str, float] | None, lat, lng) -> boo
     )
 
 
+def literal_project_search(query: str, *, include_zip: bool = True) -> tuple[str, list[str]]:
+    if not query:
+        return "", []
+    if "\x00" in query:
+        return "AND 0", []
+    # D1 caps LIKE patterns at 50 bytes; search these public fields literally.
+    clauses = [
+        "instr(lower(jobs.city), lower(?)) > 0",
+        "instr(lower(jobs.state), lower(?)) > 0",
+        "instr(lower(jobs.title), lower(?)) > 0",
+    ]
+    if include_zip:
+        clauses.append("instr(jobs.zip_code, ?) > 0")
+    return "AND (" + " OR ".join(clauses) + ")", [query] * len(clauses)
+
+
+def public_photo_page_sql(
+    clauses: list[str], order_clause: str, *, include_license_preference: bool = True,
+) -> str:
+    if order_clause not in PUBLIC_ORDER_CLAUSES:
+        raise PublicJobQueryError("The project sort order is invalid.")
+    # Limit the eligible projects before looking up any visible photo counts.
+    page_order = order_clause.replace("jobs.", "public_page.")
+    license_projection = "    jobs.license_preference,\n" if include_license_preference else ""
+    return "\n".join((
+        "WITH public_page AS (", PUBLIC_OPEN_JOBS_SELECT.format(license_projection=license_projection), *clauses,
+        PUBLIC_BID_AVAILABILITY_SQL,
+        f"ORDER BY {order_clause} LIMIT ? OFFSET ?", PUBLIC_PAGE_WITH_PHOTO_COUNTS,
+        f"ORDER BY {page_order}",
+    ))
+
+
 def build_public_open_jobs_query(
     filters: dict[str, str],
     viewport: dict[str, float] | None,
@@ -157,36 +258,29 @@ def build_public_open_jobs_query(
     order_clause: str,
     limit: int,
     cursor_offset: int,
+    service_activation_clause: str = "",
 ) -> tuple[str, list[str | int | float]]:
-    if order_clause not in PUBLIC_ORDER_CLAUSES:
-        raise PublicJobQueryError("The project sort order is invalid.")
-    sql = [PUBLIC_OPEN_JOBS_SELECT]
+    clauses = [service_activation_clause] if service_activation_clause else []
     bindings: list[str | int | float] = []
     if filters.get("category"):
-        sql.append("AND jobs.category = ?")
+        clauses.append("AND jobs.category = ?")
         bindings.append(filters["category"])
     if filters.get("service"):
-        sql.append("AND jobs.service_slug = ?")
+        clauses.append("AND jobs.service_slug = ?")
         bindings.append(filters["service"])
     if filters.get("family"):
-        sql.append("AND jobs.service_group_slug = ?")
+        clauses.append("AND jobs.service_group_slug = ?")
         bindings.append(filters["family"])
-    if filters.get("q"):
-        like = f"%{filters['q']}%"
-        sql.append(
-            "AND (jobs.city LIKE ? OR jobs.state LIKE ? OR jobs.zip_code LIKE ? OR jobs.title LIKE ?)"
-        )
-        bindings.extend([like, like, like, like])
+    search, search_bindings = literal_project_search(filters.get("q", ""))
+    if search:
+        clauses.append(search)
+        bindings.extend(search_bindings)
     viewport_clause, viewport_bindings = public_viewport_sql(viewport)
     if viewport_clause:
-        sql.append(viewport_clause)
+        clauses.append(viewport_clause)
         bindings.extend(viewport_bindings)
-    sql.append(
-        f"GROUP BY jobs.id ORDER BY {order_clause} "
-        "LIMIT ? OFFSET ?"
-    )
     bindings.extend([limit + 1, cursor_offset])
-    return "\n".join(sql), bindings
+    return public_photo_page_sql(clauses, order_clause), bindings
 
 
 def result_meta(result) -> dict:

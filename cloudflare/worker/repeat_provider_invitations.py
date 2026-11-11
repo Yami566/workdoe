@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import re
 
+from content_privacy import shared_project_record
+from request_security import parse_url_record_id
+
 INVITATION_STATUSES = {"pending", "bid_sent", "declined", "withdrawn"}
 INVITATION_STATUS_LABELS = {
     "pending": "Waiting for contractor",
@@ -114,7 +117,7 @@ def repeat_invitation_response(row) -> dict:
     status = str(row_value(row, "status", "pending") or "pending")
     if status not in INVITATION_STATUSES:
         status = "pending"
-    return {
+    return shared_project_record({
         "id": invitation_id,
         "job_id": job_id,
         "source_job_id": positive_int(row_value(row, "source_job_id")),
@@ -141,7 +144,7 @@ def repeat_invitation_response(row) -> dict:
         "client_detail_url": f"/client/jobs/{job_id}",
         "decline_url": f"/api/repeat-invitations/{invitation_id}/decline",
         "withdraw_url": f"/api/repeat-invitations/{invitation_id}/withdraw",
-    }
+    })
 
 
 def validate_invitation_action(user, invitation, action: str) -> None:
@@ -165,6 +168,7 @@ def validate_invitation_action(user, invitation, action: str) -> None:
 
 def parse_invitation_action_path(path: str) -> tuple[int, str]:
     match = INVITATION_ACTION_RE.fullmatch(path or "")
-    if not match:
+    record_id = parse_url_record_id(match.group(1)) if match else 0
+    if not record_id:
         raise RepeatProviderInvitationError("Unsupported invitation route.", 404)
-    return int(match.group(1)), match.group(2)
+    return record_id, match.group(2)

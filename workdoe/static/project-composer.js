@@ -7,6 +7,8 @@
   }
 
   var steps = Array.prototype.slice.call(composer.querySelectorAll("[data-project-step]"));
+  var finalStep = steps[steps.length - 1];
+  var submitButton = finalStep && finalStep.querySelector('button[type="submit"]');
   var progress = composer.querySelector("[data-project-progress]");
   var stepLabel = composer.querySelector("[data-project-step-label]");
   var stepTitle = composer.querySelector("[data-project-step-title]");
@@ -292,6 +294,7 @@
 
     writeReview("[data-review-service]", service);
     writeReview("[data-review-title]", title);
+    writeReview("[data-review-description]", fieldValue("description"));
     writeReview("[data-review-setting]", setting);
     writeReview("[data-review-scope]", scope.total ? scope.complete + " of " + scope.total + " details ready" : "Description only");
     writeReview("[data-review-brief]", "Brief " + briefScore + " of 6");
@@ -318,6 +321,10 @@
     steps.forEach(function (step) {
       step.hidden = Number(step.dataset.projectStep) !== currentStep;
     });
+    if (submitButton) {
+      // A hidden submit button can still be the form's default Enter action.
+      submitButton.type = currentStep === steps.length ? "submit" : "button";
+    }
     var active = steps[currentStep - 1];
     if (progress) {
       progress.value = currentStep;
@@ -352,6 +359,47 @@
     return true;
   }
 
+  function clearChoiceError(step) {
+    var error = step.querySelector("[data-project-choice-error]");
+    if (!error || error.hidden) {
+      return;
+    }
+    error.hidden = true;
+    var describedChoice = step.querySelector('[aria-describedby="' + error.id + '"]');
+    if (describedChoice) {
+      describedChoice.removeAttribute("aria-describedby");
+      describedChoice.removeAttribute("aria-invalid");
+    }
+  }
+
+  function showChoiceError(step, event) {
+    var error = step.querySelector("[data-project-choice-error]");
+    if (!error || !event.target.validity.valueMissing) {
+      return;
+    }
+    // The required select is hidden in the enhanced service picker.
+    var choice = event.target === serviceSelect
+      ? serviceChoices.find(function (input) {
+        return !input.disabled && !input.closest("[hidden], details:not([open])");
+      })
+      : groupInputs.indexOf(event.target) !== -1 ? groupInputs[0] : null;
+    if (!choice) {
+      return;
+    }
+    event.preventDefault();
+    error.hidden = false;
+    choice.setAttribute("aria-invalid", "true");
+    choice.setAttribute("aria-describedby", error.id);
+    choice.focus({preventScroll: true});
+    var scroller = composer.closest("[data-site-dialog-content]");
+    if (scroller) {
+      // Scroll the sheet itself so the sticky actions cannot cover the error.
+      scroller.scrollTop += error.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
+    } else {
+      error.scrollIntoView({block: "center"});
+    }
+  }
+
   composer.addEventListener("click", function (event) {
     var jump = event.target.closest("[data-project-jump-step]");
     var next = event.target.closest("[data-project-next]");
@@ -368,11 +416,31 @@
     }
   });
 
+  if (titleInput && descriptionInput) {
+    titleInput.addEventListener("keydown", function (event) {
+      if (event.key !== "Enter" || event.isComposing || event.defaultPrevented) {
+        return;
+      }
+      event.preventDefault();
+      if (titleInput.reportValidity()) {
+        descriptionInput.focus({preventScroll: true});
+        descriptionInput.scrollIntoView({block: "center", inline: "nearest"});
+      }
+    });
+  }
+
   groupInputs.forEach(function (input) {
-    input.addEventListener("change", filterServices);
+    input.addEventListener("change", function () {
+      clearChoiceError(input.closest("[data-project-step]"));
+      if (serviceSelect) {
+        clearChoiceError(serviceSelect.closest("[data-project-step]"));
+      }
+      filterServices();
+    });
   });
   if (serviceSelect) {
     serviceSelect.addEventListener("change", function () {
+      clearChoiceError(serviceSelect.closest("[data-project-step]"));
       syncServiceChoices();
       syncScopePanels();
       updateCategory();
@@ -391,6 +459,7 @@
         return;
       }
       serviceSelect.value = choice.value;
+      clearChoiceError(choice.closest("[data-project-step]"));
       syncScopePanels();
       updateCategory();
       syncServicePolicy();
@@ -441,6 +510,7 @@
     var step = event.target.closest("[data-project-step]");
     if (step) {
       showStep(Number(step.dataset.projectStep), false);
+      showChoiceError(step, event);
     }
   }, true);
 

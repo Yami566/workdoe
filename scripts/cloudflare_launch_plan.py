@@ -13,8 +13,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from cloudflare_readiness import (
     REPO_ROOT,
     REQUIRED_SECRETS,
-    ZERO_UUID,
-    clerk_proxy_proof_error,
+    clerk_release_proof_error,
     read_json,
     run_readiness,
 )
@@ -23,6 +22,7 @@ from cloudflare_wrangler import (
     CLOUDFLARE_API_TOKEN_ENV_VAR,
     cloudflare_api_token_present,
 )
+from prepare_cloudflare_release import production_d1_ids
 
 
 @dataclass
@@ -35,11 +35,11 @@ class LaunchStep:
 
 
 def d1_ids_are_configured(wrangler: dict) -> bool:
-    d1 = (wrangler.get("d1_databases") or [{}])[0]
-    return all(
-        bool(d1.get(field)) and d1.get(field) != ZERO_UUID
-        for field in ("database_id", "preview_database_id")
-    )
+    try:
+        production_d1_ids(wrangler)
+    except ValueError:
+        return False
+    return True
 
 
 def secret_names_from_plan(secret_list_json: Path | None) -> set[str]:
@@ -95,7 +95,7 @@ def build_launch_plan(
         "Cloudflare secret evidence is unverified."
     )
     secrets_ready = not secret_error
-    proof_error = clerk_proxy_proof_error(clerk_proxy_proof_json)
+    proof_error = clerk_release_proof_error(clerk_proxy_proof_json)
     clerk_proxy_ready = bool(clerk_proxy_proof_json) and not proof_error
     token_ready = cloudflare_api_token_present()
     strict_args = ["--strict-production"]
@@ -206,9 +206,9 @@ def build_launch_plan(
             title="Confirm Clerk same-domain proxy",
             status="ready" if clerk_proxy_ready else "pending",
             why=(
-                "The supplied proof confirms Clerk Domains uses https://workdoe.com/__clerk."
+                "The supplied proof records a recent operator confirmation of the Workdoe Clerk settings."
                 if clerk_proxy_ready
-                else "Clerk Domains proof is missing; confirm the Frontend API proxy URL before production deploy."
+                else proof_error
             ),
             commands=command_block(
                 [
@@ -230,17 +230,17 @@ def build_launch_plan(
         ),
         LaunchStep(
             phase="migrate-and-deploy",
-            title="Apply D1 migrations and deploy Workdoe",
+            title="Review the production release plan",
             status="ready" if strict.ready else "blocked",
             why=(
-                "Production checks are clean, so the migration/deploy commands can run."
+                "Local readiness passed. Plan against the exact reviewed commit and active Worker. "
+                "Choose migration scope explicitly; planning does not authorize production changes."
                 if strict.ready
                 else "This phase stays blocked until the strict production gate passes."
             ),
             commands=command_block(
                 [
-                    "python scripts\\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
-                    "python scripts\\cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
+                    "npm run cf:deploy:plan",
                 ]
             ),
         ),

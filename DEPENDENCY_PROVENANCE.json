@@ -10,6 +10,49 @@
     "license_status": "proprietary",
     "license_file": "LICENSE"
   },
+  "node_lock_review": {
+    "package_count": 91,
+    "canonical_sha256": "24844b24913c2d73fb285ec48c685d348e740ada7cd0fa69207171c97fe647f6"
+  },
+  "clerk_browser_body_pins_sha256": "9556a1a1061cbd6eef1f107ccf3d40c825262d4727f35e36551fdb1e08a48fbd",
+  "static_root_review": {
+    "application_files": [
+      ".assetsignore",
+      "_headers",
+      "clerk-account.js",
+      "clerk-entry.js",
+      "email-code-entry.js",
+      "map.js",
+      "project-composer.js",
+      "site-dialogs.js",
+      "site.webmanifest",
+      "styles.css",
+      "worker-actions.js"
+    ],
+    "raster_assets": [
+      {
+        "filename": "field-doe.webp",
+        "sha256": "44653c1dd9d6fa4f3f04b8a36e798c805ac2baf2c3a092e6ef3aa2f38eb810ad",
+        "source_commit": "1d0d885fd384d9483e6676a542f3917f85004574",
+        "provenance": "Generated Workdoe illustration documented in docs/workdoe-design-provenance.md."
+      },
+      {
+        "filename": "workdoe-share.png",
+        "sha256": "be07d27da4ea2c7bf01cfa90831ef1fe1138c1e177b3c75dfc744c7cb15d2db5",
+        "source_commit": "5083296290bd9bf377ac7a9c718b8a9ae04739c3",
+        "provenance": "Workdoe share card including the Tabler-derived deer; see the retained Tabler MIT notice."
+      }
+    ],
+    "asset_ignore_sha256": "507100771c90481a9ef455cbf2a597f633820dbbe2efb5c48fc1394055eebbc3"
+  },
+  "public_map_data": {
+    "artifact": "workdoe/static/dmv-area-50fe6cd3.geojson",
+    "official_source": "https://tigerweb.geo.census.gov/arcgis/rest/services/Generalized_ACS2025/State_County/MapServer/11",
+    "publisher": "U.S. Census Bureau",
+    "vintage": "2025-01-01",
+    "license": "U.S. government public domain",
+    "sha256": "50fe6cd3258d9a077955bd7b248f0fcc8f8837244214e124dc10bedb4c326051"
+  },
   "python_groups": [
     {
       "requirements_file": "requirements.txt",
@@ -112,6 +155,11 @@
       ]
     }
   ],
+  "python_wheel_locks": {
+    "audit.txt": "c1fb59015c974d7016cd9dd676d0d4711345b4897e1ab8f481d6507b5e8278bc",
+    "ruff.txt": "4054dc8df86a3955e2551ae76bc6b291f5a489e700baac99d3705f1d6c2b2f4d",
+    "runtime.txt": "48d03330ef1df5a8d2d3c21c1a2b368865311de9bbfb9f94691baf443a49921f"
+  },
   "node_tooling": [
     {
       "name": "wrangler",
@@ -180,7 +228,9 @@
       "deer_asset_sha256": "d7af5631b8385e4bbbd88544210ffedcf902d73b6fc7bd22aa50a150a5ceb8a3",
       "pencil_asset_sha256": "03a842bd4a16861b0adc0e38ed7b0eb5e7cc613012006833da22e58d56f1f1fe",
       "service_icon_count": 50,
-      "service_icon_manifest_sha256": "b52f6c73b3afb6b19df964190046fd51748cce40d15c090054909f7007e8fcfe"
+      "service_icon_manifest_sha256": "b52f6c73b3afb6b19df964190046fd51748cce40d15c090054909f7007e8fcfe",
+      "vendor_file_count": 57,
+      "vendor_manifest_sha256": "9948238cbe4696ccce75ca036aed8007248851eaae40a226f7a4d155cf8404a2"
     }
   ],
   "hosted_browser_components": [
@@ -192,6 +242,11 @@
       "official_source": "https://www.npmjs.com/package/@clerk/ui/v/1.41.2",
       "package_integrity": "sha512-h3q26aWOblRfC+dt+9ALPLVrHAbi5Aw3Vo7kWY2944ZMVNpnSNXwousin1qY2RcYi/gALK7+ShFpVRfoFYc4SA==",
       "script_path": "/npm/@clerk/ui@1.41.2/dist/ui.browser.js",
+      "script_integrity": "sha384-FYXAFwPN7TccH+1GBGhfSmj4kqvVseEdP5OAvO5JnZp3fArgoYkLmW0MLwnxJFUB",
+      "browser_file_count": 176,
+      "browser_filenames_sha256": "3af279656236973b11e3126fa57db63845e2cb6f51999f2c184ddd204c0c0ead",
+      "retained_license": "licenses/clerk-ui.MIT",
+      "retained_license_sha256": "b36183cf0be2cbda03d80db9b96e5aacd2879462b15fc8e4f4e179a7c91f1ca7",
       "delivery": "same-domain Clerk Frontend API proxy"
     },
     {
@@ -202,9 +257,203 @@
       "official_source": "https://www.npmjs.com/package/@clerk/clerk-js/v/6.40.1",
       "package_integrity": "sha512-Y2Jho5IIiMEhXkpyo7UTAYA/iPJcJSTUSgqoywQNSAbyV8FZZtZVYRmi0/7Mq1LAUVaTbrvNgF3PsxZAHDmt2A==",
       "script_path": "/npm/@clerk/clerk-js@6.40.1/dist/clerk.browser.js",
+      "script_integrity": "sha384-JcUoKGgU3fVbZOepxOhFBTSImBs/0xQTLYLqy0CLEkd2sMiA4wn5VDTC6IJYRSaj",
+      "browser_file_count": 24,
+      "browser_filenames_sha256": "989dd74d4aa75b586bca2015741739ef8a2617d6b5936a45e3ee3b781ec08cd8",
+      "retained_license": "licenses/clerk-js.MIT",
+      "retained_license_sha256": "629611a2fad128e60cc850d64b8770fcb251b0b55016a60802d70eeb32ee1b04",
       "delivery": "same-domain Clerk Frontend API proxy"
     }
   ],
+  "clerk_build_notices": {
+    "source_commit": "8b9403b5e86b33d80eccea24b3b902b5585c07b0",
+    "index_sha256": "caa969fdfee8e47b806ef7f861c60f673896716b27170e8844e2470bcdc5eba0",
+    "apache_license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "coinbase_eip712_notice": {
+      "parent_package": "@coinbase/wallet-sdk",
+      "archive_member": "package/dist/vendor-js/eth-eip712-util/LICENSE",
+      "license": "ISC",
+      "filename": "coinbase-eip712-isc-license.txt",
+      "sha256": "d165ed849f634ee3db2362f5ed924d07263cb5b492c5c074239e2b3a35cbfe6c"
+    },
+    "packages": [
+      {
+        "package": "react",
+        "version": "18.3.1",
+        "license": "MIT",
+        "package_integrity": "sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==",
+        "filename": "react-18.3.1-license.txt",
+        "sha256": "52412d7bc7ce4157ea628bbaacb8829e0a9cb3c58f57f99176126bc8cf2bfc85"
+      },
+      {
+        "package": "react-dom",
+        "version": "18.3.1",
+        "license": "MIT",
+        "package_integrity": "sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==",
+        "filename": "react-18.3.1-license.txt",
+        "sha256": "52412d7bc7ce4157ea628bbaacb8829e0a9cb3c58f57f99176126bc8cf2bfc85"
+      },
+      {
+        "package": "scheduler",
+        "version": "0.23.2",
+        "license": "MIT",
+        "package_integrity": "sha512-UOShsPwz7NrMUqhR6t0hWjFduvOzbtv7toDH1/hIrfRNIDBnnBWd0CwJTGvTpngVlmwGCdP9/Zl/tVrDqcuYzQ==",
+        "filename": "react-18.3.1-license.txt",
+        "sha256": "52412d7bc7ce4157ea628bbaacb8829e0a9cb3c58f57f99176126bc8cf2bfc85"
+      },
+      {
+        "package": "@base-org/account",
+        "version": "2.0.1",
+        "license": "Apache-2.0",
+        "package_integrity": "sha512-tySVNx+vd6XEynZL0uvB10uKiwnAfThr8AbKTwILVG86mPbLAhEOInQIk+uDnvpTvfdUhC1Bi5T/46JvFoLZQQ==",
+        "filename": "base-account-2.0.1-license.txt",
+        "sha256": "55205fa31c71667e5b6ef99b0420baa6ddcaf7792e9aefa07713582d817fc261"
+      },
+      {
+        "package": "@coinbase/wallet-sdk",
+        "version": "4.3.7",
+        "license": "Apache-2.0",
+        "package_integrity": "sha512-z6e5XDw6EF06RqkeyEa+qD0dZ2ZbLci99vx3zwDY//XO8X7166tqKJrR2XlQnzVmtcUuJtCd5fCvr9Cu6zzX7w==",
+        "filename": "coinbase-wallet-4.3.7-license.txt",
+        "sha256": "52c9940fbc5cb33de73787e6d3e5cf6697d8e3aabab22fb85c609a574fcacaf1"
+      },
+      {
+        "package": "browser-tabs-lock",
+        "version": "1.3.0",
+        "license": "MIT",
+        "package_integrity": "sha512-g6nHaobTiT0eMZ7jh16YpD2kcjAp+PInbiVq3M1x6KKaEIVhT4v9oURNIpZLOZ3LQbQ3XYfNhMAb/9hzNLIWrw==",
+        "filename": "browser-tabs-lock-1.3.0-license.txt",
+        "sha256": "d9f86d92023122397b859a28e4d10b626395c1431c00e1d6734d9cd814766004"
+      },
+      {
+        "package": "@tanstack/query-core",
+        "version": "5.102.8",
+        "license": "MIT",
+        "package_integrity": "sha512-ZNjkJ33CqvPNec/6lZBnHqLc3EVGPZ9ySLhYahU9TcuRFdmwXewuj0c4hwSWcGHqEUwcSrKeZ+oGcvPBqXcQcg==",
+        "filename": "tanstack-query-core-5.102.8-license.txt",
+        "sha256": "a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7"
+      },
+      {
+        "package": "@formkit/auto-animate",
+        "version": "0.8.4",
+        "license": "MIT",
+        "package_integrity": "sha512-DHHC01EJ1p70Q0z/ZFRBIY8NDnmfKccQoyoM84Tgb6omLMat6jivCdf272Y8k3nf4Lzdin/Y4R9q8uFtU0GbnA==",
+        "filename": "formkit-auto-animate-0.8.4-license.txt",
+        "sha256": "02d5eb6ab7b888ccff93e1c59b9a4dd4f97b5ac219f4f25cbf12fd5dd538bf3d"
+      },
+      {
+        "package": "@stripe/react-stripe-js",
+        "version": "3.1.1",
+        "license": "MIT",
+        "package_integrity": "sha512-+JzYFgUivVD7koqYV7LmLlt9edDMAwKH7XhZAHFQMo7NeRC+6D2JmQGzp9tygWerzwttwFLlExGp4rAOvD6l9g==",
+        "filename": "stripe-sdk-license.txt",
+        "sha256": "f5ecc63f26b1bf790f68fd8e4a84376385b19b9246100dc93a5b6ba9bf17f964"
+      },
+      {
+        "package": "@stripe/stripe-js",
+        "version": "5.6.0",
+        "license": "MIT",
+        "package_integrity": "sha512-w8CEY73X/7tw2KKlL3iOk679V9bWseE4GzNz3zlaYxcTjmcmWOathRb0emgo/QQ3eoNzmq68+2Y2gxluAv3xGw==",
+        "filename": "stripe-sdk-license.txt",
+        "sha256": "f5ecc63f26b1bf790f68fd8e4a84376385b19b9246100dc93a5b6ba9bf17f964"
+      },
+      {
+        "package": "@zxcvbn-ts/core",
+        "version": "3.0.4",
+        "license": "MIT",
+        "package_integrity": "sha512-aQeiT0F09FuJaAqNrxynlAwZ2mW/1MdXakKWNmGM1Qp/VaY6CnB/GfnMS2T8gB2231Esp1/maCWd8vTG4OuShw==",
+        "filename": "zxcvbn-ts-3.0.4-license.txt",
+        "sha256": "8fd6c9ffe44291acd207a4d3cf7d6db5ac05f585ee1cf45db9fc6b153b08990f"
+      },
+      {
+        "package": "@zxcvbn-ts/language-common",
+        "version": "3.0.4",
+        "license": "MIT",
+        "package_integrity": "sha512-viSNNnRYtc7ULXzxrQIVUNwHAPSXRtoIwy/Tq4XQQdIknBzw4vz36lQLF6mvhMlTIlpjoN/Z1GFu/fwiAlUSsw==",
+        "filename": "zxcvbn-ts-3.0.4-license.txt",
+        "sha256": "8fd6c9ffe44291acd207a4d3cf7d6db5ac05f585ee1cf45db9fc6b153b08990f"
+      },
+      {
+        "package": "input-otp",
+        "version": "1.4.2",
+        "license": "MIT",
+        "package_integrity": "sha512-l3jWwYNvrEa6NTCt7BECfCm48GvwuZzkoeG3gBL2w4CHeOXW3eKFmf9UNYkNfYc3mxMrthMnxjIE07MT0zLBQA==",
+        "filename": "input-otp-1.4.2-license.txt",
+        "sha256": "079031192fea535a245aa64a637d8433c406b82a14f91c3606b1d63e41c00152"
+      },
+      {
+        "package": "copy-to-clipboard",
+        "version": "3.3.3",
+        "license": "MIT",
+        "package_integrity": "sha512-2KV8NhB5JqC3ky0r9PMCAZKbUHSwtEo4CwCs0KXgruG43gX5PMqDEBbVU4OUzw2MuAWUfsuFmWvEKG5QRfSnJA==",
+        "filename": "copy-to-clipboard-3.3.3-license.txt",
+        "sha256": "771e50e27b24269923639e8e0cc650e7187ffeab5726f6a6f47d9ea83865089d"
+      },
+      {
+        "package": "qrcode.react",
+        "version": "4.2.0",
+        "license": "ISC",
+        "package_integrity": "sha512-QpgqWi8rD9DsS9EP3z7BT+5lY5SFhsqGjpgW5DY/i3mK4M9DTBNz3ErMi8BWYEfI3L0d8GIbGmcdFAS1uIRGjA==",
+        "filename": "qrcode-react-4.2.0-license.txt",
+        "sha256": "908a4454d01d77cd6a0ae1eea0bafaa74a2e3befdbc4b7b714de2499a22351ce",
+        "generator_notice": {
+          "source_commit": "f91d2bdcc39def6c5c77178743a44f935a740992",
+          "source_path": "src/third-party/qrcodegen/LICENSE",
+          "license": "MIT",
+          "filename": "qrcode-generator-license.txt",
+          "sha256": "ba5a977288ff7463c51ea0cc5bf5a34372707985655c1ccc054f2a0caa3d9bff"
+        }
+      },
+      {
+        "package": "core-js",
+        "version": "3.47.0",
+        "license": "MIT",
+        "package_integrity": "sha512-c3Q2VVkGAUyupsjRnaNX6u8Dq2vAdzm9iuPj5FW0fRxzlxgq9Q39MDq10IvmQSpLgHQNyQzQmOo6bgGHmH3NNg==",
+        "filename": "core-js-3.47.0-license.txt",
+        "sha256": "1f9573d2dd24dbeed40bd90f76e08f7b2ce178259d33c3636d20d71f03eea067"
+      },
+      {
+        "package": "crypto-js",
+        "version": "4.2.0",
+        "license": "MIT",
+        "package_integrity": "sha512-KALDyEYgpY+Rlob/iriUtjV6d5Eq+Y191A5g4UqLAi8CyGP9N1+FdVbkc1SxKc2r4YAYqG8JzO2KGL+AizD70Q==",
+        "filename": "crypto-js-4.2.0-license.txt",
+        "sha256": "f729d14b7e1bf8adca0dcc38b93b929d14d53fcd5db56c3d1c9b2daa7aa69396"
+      },
+      {
+        "package": "@floating-ui/react",
+        "version": "0.27.20",
+        "license": "MIT",
+        "package_integrity": "sha512-CMqMy7OaXl9W0eq1Uy7L7i2Y/anPvHmFmESd2CEw0t5YvZhcVCeo4MBevAmswRllX7Y2dEidA4ozGPunLSTQpw==",
+        "filename": "floating-ui-react-0.27.20-license.txt",
+        "sha256": "0e4c9a9b6c71019cbbea3bdc20b01223110a9035700f9c960c8fcbf78c2325ce"
+      },
+      {
+        "package": "@emotion/react",
+        "version": "11.11.1",
+        "license": "MIT",
+        "package_integrity": "sha512-5mlW1DquU5HaxjLkfkGN1GA/fvVGdyHURRiX/0FHl2cfIfRxSOfmxEH5YS43edp0OldZrZ+dkBKbngxcNCdZvA==",
+        "filename": "emotion-license.txt",
+        "sha256": "6e8d23763cf7cb707ad8f6677aa502ebeca1dda447e6d6e57f6549c1625b9c4a"
+      },
+      {
+        "package": "@emotion/cache",
+        "version": "11.11.0",
+        "license": "MIT",
+        "package_integrity": "sha512-P34z9ssTCBi3e9EI1ZsWpNHcfY1r09ZO0rZbRO2ob3ZQMnFI35jB536qoXbkdesr5EUhYi22anuEJuyxifaqAQ==",
+        "filename": "emotion-license.txt",
+        "sha256": "6e8d23763cf7cb707ad8f6677aa502ebeca1dda447e6d6e57f6549c1625b9c4a"
+      },
+      {
+        "package": "@wallet-standard/app",
+        "version": "1.1.0",
+        "license": "Apache-2.0",
+        "package_integrity": "sha512-3CijvrO9utx598kjr45hTbbeeykQrQfKmSnxeWOgU25TOEpvcipD/bYDQWIqUv1Oc6KK4YStokSMu/FBNecGUQ==",
+        "filename": "apache-2.0-license.txt",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+      }
+    ]
+  },
   "hosted_services": [
     {
       "name": "Cloudflare",

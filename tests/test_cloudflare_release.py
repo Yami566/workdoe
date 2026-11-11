@@ -3,17 +3,29 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import hashlib
 import importlib.util
 import io
+import itertools
 import json
 import os
+import re
+import shutil
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
+from email.message import Message
+from html import escape
+from html.parser import HTMLParser
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from unittest import mock
+from urllib.parse import parse_qs, urlsplit
+
+from worker_http_fixture import BodyStream
 
 from workdoe.content_privacy import (
     contains_disallowed_personal_data as flask_contains_disallowed_personal_data,
@@ -32,6 +44,56 @@ RELEASE_EVIDENCE_SCRIPT_PATH = ROOT / "scripts" / "cloudflare_release_evidence.p
 D1_ID_APPLY_SCRIPT_PATH = ROOT / "scripts" / "apply_cloudflare_d1_ids.py"
 RESOURCE_BOOTSTRAP_SCRIPT_PATH = ROOT / "scripts" / "cloudflare_resource_bootstrap.py"
 PRODUCTION_DEPLOY_SCRIPT_PATH = ROOT / "scripts" / "cloudflare_production_deploy.py"
+DEPLOY_FIXTURE_COMMIT = "1" * 40
+DEPLOY_FIXTURE_VERSION = "11111111-1111-4111-8111-111111111111"
+DEPLOY_UPLOADED_VERSION = "22222222-2222-4222-8222-222222222222"
+DEPLOY_FIXTURE_DEPLOYMENT = "44444444-4444-4444-8444-444444444444"
+DEPLOY_FIXTURE_IDENTITY = {
+    "expected_commit": DEPLOY_FIXTURE_COMMIT, "previous_worker_version": DEPLOY_FIXTURE_VERSION,
+    "check_hosted_ingress": lambda: None,
+}
+ENTRY_HEADER_FIXTURE = {
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "Content-Security-Policy": (
+        "default-src 'self'; base-uri 'self'; object-src 'none'; "
+        "frame-ancestors 'none'; form-action 'self'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+    "Content-Type": "text/html; charset=utf-8",
+}
+
+
+def deploy_smoke_report(module, *, failed=(), warned=()):
+    return {
+        "service": "workdoe",
+        "domain": "workdoe.com",
+        "base_url": "https://workdoe.com",
+        "asset_commit": DEPLOY_FIXTURE_COMMIT,
+        "public_launch_approval": "not_evaluated",
+        "readiness_scope": module.RELEASE_SMOKE_SCOPE,
+        "ready": not failed,
+        "checks": [
+            {
+                "name": name, "required": name in module.RELEASE_SMOKE_REQUIRED,
+                "status": "failed" if name in failed else "warning" if name in warned else "ready",
+                "summary": "unexpected private detail " * 20, "status_code": 503 if name in failed else None,
+                "url": "https://workdoe.com/login?ticket=private",
+            }
+            for name in module.RELEASE_SMOKE_REQUIRED + module.RELEASE_SMOKE_OPTIONAL
+        ],
+    }
+
+
+def deploy_smoke_reply(module, *, failed=(), warned=()):
+    return subprocess.CompletedProcess(
+        [], int(bool(failed)), json.dumps(deploy_smoke_report(module, failed=failed, warned=warned)),
+        "unexpected private stderr",
+    )
+
+
 TOKEN_STAGING_SCRIPT_PATH = ROOT / "scripts" / "stage_cloudflare_deploy_token.py"
 GITHUB_RELEASE_STATUS_SCRIPT_PATH = ROOT / "scripts" / "github_release_status.py"
 GITHUB_DEPLOY_DISPATCH_SCRIPT_PATH = ROOT / "scripts" / "github_deploy_dispatch.py"
@@ -45,6 +107,7 @@ CLERK_ONBOARDING_PATH = ROOT / "cloudflare" / "worker" / "clerk_onboarding.py"
 CLERK_SESSIONS_PATH = ROOT / "cloudflare" / "worker" / "clerk_sessions.py"
 CLERK_PROXY_PATH = ROOT / "cloudflare" / "worker" / "clerk_proxy.py"
 CLERK_WEBHOOKS_PATH = ROOT / "cloudflare" / "worker" / "clerk_webhooks.py"
+JSON_VALUES_PATH = ROOT / "cloudflare" / "worker" / "json_values.py"
 EMAIL_PAYLOADS_PATH = ROOT / "cloudflare" / "worker" / "email_payloads.py"
 EMAIL_CODE_AUTH_PATH = ROOT / "cloudflare" / "worker" / "email_code_auth.py"
 ADMIN_MODERATION_PATH = ROOT / "cloudflare" / "worker" / "admin_moderation.py"
@@ -245,6 +308,14 @@ def load_clerk_proxy_proof_script():
     return module
 
 
+def clerk_proof_fixture(**overrides):
+    proof = load_clerk_proxy_proof_script()
+    return proof.build_proof(
+        confirmed=True, public_sign_up_enabled=True, email_code_sign_in=True,
+        password_sign_in_disabled=True, express_legal_consent=True, checked_by="release-test",
+    ) | overrides
+
+
 def load_secret_evidence_script():
     spec = importlib.util.spec_from_file_location(
         "cloudflare_secret_evidence",
@@ -274,7 +345,8 @@ def load_d1_id_apply_script():
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    with mock.patch.object(sys, "path", [str(D1_ID_APPLY_SCRIPT_PATH.parent), *sys.path]):
+        spec.loader.exec_module(module)
     return module
 
 
@@ -387,7 +459,18 @@ def load_workdoe_production_smoke_script():
     return module
 
 
+def load_clerk_identity_module():
+    spec = importlib.util.spec_from_file_location("clerk_identity", CLERK_ONBOARDING_PATH.with_name("clerk_identity.py"))
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_clerk_webhooks_module():
+    load_clerk_identity_module()
+    load_json_values_module()
     spec = importlib.util.spec_from_file_location("clerk_webhooks", CLERK_WEBHOOKS_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -397,6 +480,7 @@ def load_clerk_webhooks_module():
 
 
 def load_clerk_sessions_module():
+    load_json_values_module()
     spec = importlib.util.spec_from_file_location("clerk_sessions", CLERK_SESSIONS_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -405,8 +489,19 @@ def load_clerk_sessions_module():
     return module
 
 
+def load_json_values_module():
+    spec = importlib.util.spec_from_file_location("json_values", JSON_VALUES_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_clerk_onboarding_module():
+    load_clerk_identity_module()
     load_content_privacy_module()
+    load_email_payloads_module()
     spec = importlib.util.spec_from_file_location("clerk_onboarding", CLERK_ONBOARDING_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -420,7 +515,8 @@ def load_clerk_proxy_module():
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    with mock.patch.object(sys, "path", [str(CLERK_PROXY_PATH.parent), *sys.path]):
+        spec.loader.exec_module(module)
     return module
 
 
@@ -444,6 +540,7 @@ def load_public_jobs_module():
 
 
 def load_public_job_query_module():
+    load_location_pins_module()
     spec = importlib.util.spec_from_file_location("public_job_query", PUBLIC_JOB_QUERY_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -465,7 +562,14 @@ def load_demo_projects_module():
 
 def load_entry_shell_module():
     load_asset_release_module()
+    load_public_job_query_module()
     load_public_jobs_module()
+    load_clerk_proxy_module()
+    map_spec = importlib.util.spec_from_file_location("map_tiles", ENTRY_SHELL_PATH.with_name("map_tiles.py"))
+    map_tiles = importlib.util.module_from_spec(map_spec)
+    assert map_spec.loader is not None
+    sys.modules[map_spec.name] = map_tiles
+    map_spec.loader.exec_module(map_tiles)
     spec = importlib.util.spec_from_file_location("entry_shell", ENTRY_SHELL_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -497,6 +601,7 @@ def load_app_shell_module():
 def load_job_details_module():
     load_job_posts_module()
     load_project_readiness_module()
+    load_project_access_module()
     spec = importlib.util.spec_from_file_location("job_details", JOB_DETAILS_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -523,8 +628,19 @@ def load_content_privacy_module():
     return module
 
 
-def load_job_posts_module():
+def load_location_pins_module():
     load_content_privacy_module()
+    spec = importlib.util.spec_from_file_location("location_pins", WORKER_ENTRY_PATH.with_name("location_pins.py"))
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_job_posts_module():
+    load_request_security_module()
+    load_location_pins_module()
     load_service_taxonomy_module()
     load_service_policy_module()
     load_service_scope_module()
@@ -749,6 +865,7 @@ def load_contractor_proposal_templates_module():
 
 
 def load_contractor_public_profiles_module():
+    load_request_security_module()
     load_market_fit_module()
     load_contractor_profiles_module()
     load_contractor_credentials_module()
@@ -777,6 +894,7 @@ def load_client_jobs_module():
 
 
 def load_client_requests_module():
+    load_request_security_module()
     load_job_posts_module()
     load_match_completions_module()
     load_bid_comparison_module()
@@ -789,6 +907,7 @@ def load_client_requests_module():
 
 
 def load_bid_comparison_module():
+    load_content_privacy_module()
     load_contractor_reputation_module()
     spec = importlib.util.spec_from_file_location(
         "bid_comparison", BID_COMPARISON_PATH
@@ -835,7 +954,17 @@ def load_match_completions_module():
     return module
 
 
+def load_project_access_module():
+    spec = importlib.util.spec_from_file_location("project_access", WORKER_ENTRY_PATH.with_name("project_access.py"))
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_media_access_module():
+    load_project_access_module()
     spec = importlib.util.spec_from_file_location("media_access", MEDIA_ACCESS_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -890,7 +1019,94 @@ def fake_session_token(
     )
 
 
+def d1_ledger_reply(names=None, *, schema_changes="", success=True):
+    module = load_production_deploy_script()
+    files = sorted((ROOT / "cloudflare" / "d1" / "migrations").glob("*.sql"))
+    names = [path.name for path in files] if names is None else names
+    with contextlib.closing(sqlite3.connect(":memory:")) as connection:
+        connection.row_factory = sqlite3.Row
+        for migration in files[:len(names)]:
+            connection.executescript(migration.read_text(encoding="utf-8"))
+        connection.executescript(schema_changes)
+        connection.execute("CREATE TABLE d1_migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+        connection.executemany("INSERT INTO d1_migrations (name) VALUES (?)", ((name,) for name in names))
+        rows = [dict(row) for row in connection.execute(module.D1_STATE_SQL)]
+    return subprocess.CompletedProcess([], 0, json.dumps([{
+        "success": success, "results": rows,
+    }]), "")
+
+
 class CloudflareReleasePrepTests(unittest.TestCase):
+    def test_r2_missing_objects_accept_python_and_native_null_for_get_and_head(self):
+        module = load_worker_entry_module()
+        null = object()
+
+        class MissingR2:
+            def __init__(self, value):
+                self.value = value
+
+            async def get(self, _key):
+                return self.value
+
+            async def head(self, _key):
+                return self.value
+
+        with mock.patch.object(module, "JS_NULL", null):
+            for value in (None, null):
+                for method in ("GET", "HEAD"):
+                    with self.subTest(native_null=value is null, method=method):
+                        worker = module.Default()
+                        worker.env = SimpleNamespace(MEDIA=MissingR2(value))
+                        response = asyncio.run(worker.r2_media_response(
+                            SimpleNamespace(method=method), "jobs/1/missing.webp", {"id": 1}
+                        ))
+                        self.assertEqual(response.status, 404)
+                        self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+    def test_r2_head_uses_metadata_and_never_reads_the_object_body(self):
+        module = load_worker_entry_module()
+        calls = []
+
+        class MetadataR2:
+            async def get(self, _key):
+                raise AssertionError("HEAD must not request an R2 object body.")
+
+            async def head(self, key):
+                calls.append(key)
+                return SimpleNamespace(httpEtag='"fixture-etag"')
+
+        worker = module.Default()
+        worker.env = SimpleNamespace(MEDIA=MetadataR2())
+        response = asyncio.run(worker.r2_media_response(
+            SimpleNamespace(method="HEAD"), "jobs/1/native.webp",
+            {"id": 1, "content_type": "image/webp"},
+        ))
+        self.assertEqual(response.status, 200)
+        self.assertIsNone(response.body)
+        self.assertEqual(response.headers["ETag"], '"fixture-etag"')
+        self.assertEqual(response.headers["Cache-Control"], "private, no-store")
+        self.assertEqual(calls, ["jobs/1/native.webp"])
+
+    def test_native_d1_rows_normalize_nulls_before_shared_presenters(self):
+        module = load_worker_entry_module()
+        null = object()
+        depths = []
+
+        class NativeRows:
+            def to_py(self, *, depth):
+                depths.append(depth)
+                return [{"budget_min": null, "budget_max": null, "count": 0,
+                         "label": "Fixture", "enabled": False}]
+
+        with mock.patch.object(module, "JS_NULL", null):
+            for result in ({"results": NativeRows()}, SimpleNamespace(results=NativeRows())):
+                rows = module.rows_from(result)
+                self.assertEqual(rows, [{"budget_min": None, "budget_max": None,
+                                         "count": 0, "label": "Fixture", "enabled": False}])
+        self.assertEqual(depths, [2, 2])
+        python_rows = [{"budget_min": None}]
+        self.assertIs(module.rows_from({"results": python_rows}), python_rows)
+
     def test_cloudflare_content_privacy_matches_flask_contract(self):
         worker = load_content_privacy_module()
         cases = {
@@ -1028,6 +1244,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
         )
         self.assertFalse(module.same_origin_api_write_allowed("POST", "/api/jobs", ""))
+        self.assertFalse(module.same_origin_api_write_allowed("POST", "/logout", ""))
+        self.assertTrue(module.same_origin_api_write_allowed("POST", "/logout", module.WORKDOE_REQUEST_MARKER))
         self.assertFalse(
             module.same_origin_api_write_allowed(
                 "POST", "/api/media/jobs/12/upload", "cross-site"
@@ -1055,6 +1273,40 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             module.authenticated_write_rate_limit_key(0)
+
+    def test_worker_draft_origin_is_exact_and_does_not_trust_a_sibling(self):
+        module = load_request_security_module()
+        apex = "https://workdoe.com"
+        for origin, referer, site, allowed in (
+            (apex, "", "same-origin", True),
+            ("", f"{apex}/post-project", "", True),
+            ("", "", "same-origin", False),
+            ("null", f"{apex}/post-project", "same-origin", False),
+            ("https://api.workdoe.com", "", "same-site", False),
+            (apex, "", "cross-site", False),
+            (apex + ":8443", "", "", False),
+            ("", "https://workdoe.com.outside.invalid/path", "", False),
+        ):
+            with self.subTest(origin=origin, referer=referer, site=site):
+                self.assertEqual(module.same_origin_form_write_allowed(
+                    f"{apex}/post-project", origin=origin, referer=referer, fetch_site=site,
+                ), allowed)
+
+    def test_worker_guest_draft_origin_rejection_does_not_read_the_session_or_form(self):
+        module = load_worker_entry_module()
+        worker = module.Default()
+        worker.optional_workdoe_user = mock.AsyncMock()
+        request = SimpleNamespace(method="POST", url="https://workdoe.com/post-project", headers={
+            "Origin": "https://outside.invalid", "Sec-Fetch-Site": "cross-site",
+        })
+        with mock.patch.object(module, "request_form_data") as read_form:
+            response = asyncio.run(worker.public_job_draft(request))
+        self.assertEqual(response.status, 403)
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertNotIn("Set-Cookie", response.headers)
+        self.assertNotIn("outside.invalid", response.body)
+        worker.optional_workdoe_user.assert_not_awaited()
+        read_form.assert_not_awaited()
 
     def test_release_prep_writes_d1_migration_and_manifest(self):
         module = load_release_script()
@@ -1156,7 +1408,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
             self.assertEqual(
                 manifest["cloudflare_targets"]["worker"]["versioned_static_assets"],
-                ["styles.css", "map.js", "project-composer.js", "clerk-entry.js"],
+                ["styles.css", "map.js", "project-composer.js", "clerk-entry.js", "site-dialogs.js"],
             )
             self.assertEqual(
                 manifest["cloudflare_targets"]["database"]["migrations_dir"],
@@ -1187,8 +1439,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "/map.js",
                     "/project-composer.js",
                     "/clerk-entry.js",
-                    "/vendor/*",
+                    "/vendor/leaflet/*",
+                    "/vendor/leaflet-markercluster/*",
+                    "/vendor/tabler-icons/*",
                     "/deer.svg",
+                    "/dmv-area-50fe6cd3.geojson",
                 ],
             )
             self.assertEqual(
@@ -1240,13 +1495,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "false",
             )
             self.assertEqual(
-                wrangler["vars"]["WORKDOE_MAP_TILE_URL"],
-                module.MAP_TILE_URL,
+                wrangler["vars"]["WORKDOE_MAP_MODE"],
+                module.PRODUCTION_MAP_MODE,
             )
             self.assertEqual(
-                wrangler["vars"]["WORKDOE_MAP_TILE_ATTRIBUTION"],
-                module.MAP_TILE_ATTRIBUTION,
+                manifest["cloudflare_targets"]["worker"]["public_map_mode"],
+                module.PRODUCTION_MAP_MODE,
             )
+            self.assertNotIn("WORKDOE_MAP_TILE_URL", wrangler["vars"])
+            self.assertNotIn("WORKDOE_MAP_TILE_ATTRIBUTION", wrangler["vars"])
             self.assertEqual(wrangler["vars"]["WORKDOE_EMAIL_FROM"], "no-reply@workdoe.com")
             self.assertEqual(wrangler["vars"]["WORKDOE_ADMIN_EMAIL"], "admin@workdoe.com")
             self.assertEqual(
@@ -1285,6 +1542,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "public, max-age=31556952, immutable",
                 )
             self.assertNotIn("cache-control", rules["/*"])
+            for notice_path in ("/vendor/clerk-notices/*", "/vendor/clerk-notices-v2/*"):
+                self.assertEqual(rules[notice_path]["cache-control"], "no-store")
 
             dev_vars_example = dev_vars_example_path.read_text(encoding="utf-8")
             self.assertIn("WORKDOE_AUTH_PROVIDER=clerk", dev_vars_example)
@@ -1292,13 +1551,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertIn("WORKDOE_ENFORCE_SERVICE_ACTIVATION=false", dev_vars_example)
             self.assertIn("WORKDOE_MEDIA_UPLOADS_ENABLED=false", dev_vars_example)
             self.assertIn(
-                f"WORKDOE_MAP_TILE_URL={module.MAP_TILE_URL}",
+                f"WORKDOE_MAP_MODE={module.PRODUCTION_MAP_MODE}",
                 dev_vars_example,
             )
-            self.assertIn(
-                f"WORKDOE_MAP_TILE_ATTRIBUTION={module.MAP_TILE_ATTRIBUTION}",
-                dev_vars_example,
-            )
+            self.assertNotIn("WORKDOE_MAP_TILE_", dev_vars_example)
             for env_name in required_env_names:
                 self.assertIn(f"{env_name}=replace-me", dev_vars_example)
 
@@ -1349,11 +1605,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 {"workdoe/asset_release.py", "cloudflare/worker/asset_release.py"},
             )
             self.assertTrue(all(changes.values()))
+            expected = release_module.asset_release_module_source(token).encode("utf-8")
             for relative_path in changes:
-                self.assertIn(
-                    token,
-                    (repo_root / relative_path).read_text(encoding="utf-8"),
-                )
+                path = repo_root / relative_path
+                self.assertEqual(path.read_bytes(), expected)
+                path.write_bytes(expected.replace(b"\n", b"\r\n"))
+            self.assertTrue(all(release_module.sync_asset_release_modules(repo_root, token).values()))
+            for relative_path in changes:
+                self.assertEqual((repo_root / relative_path).read_bytes(), expected)
+            self.assertFalse(any(release_module.sync_asset_release_modules(repo_root, token).values()))
 
     def test_fresh_d1_database_accepts_complete_migration_chain(self):
         migrations_dir = ROOT / "cloudflare" / "d1" / "migrations"
@@ -2067,20 +2327,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 encoding="utf-8",
             )
             proof_path.write_text(
-                json.dumps(
-                    {
-                        "domain": "workdoe.com",
-                        "frontend_api_proxy_url": "https://workdoe.com/__clerk",
-                        "confirmed": True,
-                        "public_sign_up_enabled": True,
-                        "email_code_sign_in": True,
-                        "password_sign_in_disabled": True,
-                        "custom_sign_up_url": "https://workdoe.com/create-account",
-                        "express_legal_consent": True,
-                        "terms_url": "https://workdoe.com/terms",
-                        "privacy_url": "https://workdoe.com/privacy",
-                    }
-                ),
+                json.dumps(clerk_proof_fixture()),
                 encoding="utf-8",
             )
             result = module.run_release_evidence(
@@ -2124,6 +2371,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             payload = module.plan_payload(
                 ROOT,
                 secret_list_json=Path(tmp) / "missing-secret-evidence.json",
+                migrations="apply",
             )
         self.assertTrue(payload["dry_run"])
         self.assertFalse(payload["executes_commands"])
@@ -2138,37 +2386,52 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "Cloudflare secret evidence must be sanitized with contains_values=false. Run `python scripts\\cloudflare_secret_evidence.py --execute --yes`.",
             payload["strict_blockers"],
         )
+        self.assertIn(module.D1_RECOVERY_REQUIRED, payload["strict_blockers"])
         names = [step["name"] for step in payload["steps"]]
         self.assertEqual(
             names,
             [
+                module.D1_PREFIX_LEDGER_STEP,
+                module.WORKER_UPLOAD_STEP,
+                module.D1_RECOVERY_STEP,
                 "apply-d1-migrations",
-                "deploy-worker",
+                module.D1_LEDGER_STEP,
+                module.WORKER_ACTIVATE_STEP,
                 "smoke-production",
             ],
         )
-        migration_command = payload["steps"][0]["command"]
+        self.assertEqual(payload["steps"][2]["command"][1:], [
+            "d1", "time-travel", "info", "workdoe", "--json", "--config", "wrangler.jsonc",
+        ])
+        migration_command = payload["steps"][3]["command"]
         self.assertIn("wrangler", Path(migration_command[0]).name.lower())
         self.assertEqual(
             migration_command[1:],
-            ["d1", "migrations", "apply", "workdoe", "--remote"],
+            ["d1", "migrations", "apply", "workdoe", "--remote", "--config", "wrangler.jsonc"],
         )
         deploy_command = payload["steps"][1]["command"]
         self.assertIn("wrangler", Path(deploy_command[0]).name.lower())
-        self.assertEqual(deploy_command[1:], ["deploy"])
+        self.assertEqual(deploy_command[1:], ["versions", "upload", "--config", "wrangler.jsonc", "--strict"])
         self.assertEqual(
-            payload["steps"][2]["command"],
+            payload["steps"][6]["command"],
             [
                 sys.executable,
                 str(ROOT / "scripts" / "workdoe_production_smoke.py"),
+                "--json",
                 "--fail-when-not-ready",
+                "--release-checkout",
+                str(ROOT),
+                "--expect-public-map-mode",
+                "area",
+                "--verify-clerk-browser-delivery",
                 "--attempts",
                 "6",
                 "--retry-delay",
                 "5",
             ],
         )
-        self.assertTrue(payload["steps"][2]["required"])
+        self.assertTrue(payload["steps"][6]["required"])
+        self.assertEqual(payload["steps"][5]["command"], [])
 
     def test_cloudflare_production_deploy_requires_execute_confirmation(self):
         module = load_production_deploy_script()
@@ -2180,6 +2443,1540 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         finally:
             sys.argv = original_argv
 
+    def test_cloudflare_deploy_plan_tags_only_a_full_reviewed_commit(self):
+        module = load_production_deploy_script()
+        with (
+            mock.patch.object(module, "readiness_payload", return_value={"ready": True, "blockers": [], "warnings": []}),
+            mock.patch.object(module, "release_source_blockers", return_value=[]),
+        ):
+            plan = module.plan_payload(
+                ROOT, migrations="skip", expected_commit=DEPLOY_FIXTURE_COMMIT,
+                expected_worker_version=DEPLOY_FIXTURE_VERSION,
+            )
+        command = next(step["command"] for step in plan["steps"] if step["name"] == module.WORKER_UPLOAD_STEP)
+        self.assertTrue(plan["ready_to_deploy"])
+        self.assertEqual(plan["readiness_scope"], "local_source_and_sanitized_proofs_only")
+        self.assertFalse(plan["hosted_checks_completed"])
+        self.assertEqual(plan["deployment_authorization"], "not_granted_by_plan")
+        self.assertEqual(plan["public_launch_authorization"], "not_granted_by_plan")
+        self.assertEqual(plan["expected_worker_version"], DEPLOY_FIXTURE_VERSION)
+        self.assertTrue(plan["checks_uploaded_worker_identity"])
+        self.assertTrue(plan["checks_worker_secret_inheritance_baseline"])
+        self.assertTrue(plan["checks_uploaded_worker_binding_and_runtime_configuration"])
+        self.assertTrue(plan["verifies_upload_before_d1_migration"])
+        self.assertTrue(plan["activates_only_verified_upload"])
+        self.assertFalse(plan["syncs_worker_triggers_or_script_settings"])
+        self.assertTrue(plan["checks_live_clerk_entry_bytes_before_writes"])
+        self.assertTrue(plan["checks_d1_application_schema"])
+        self.assertTrue(plan["checks_raw_release_input_bytes"])
+        self.assertEqual(command[-2:], ["--tag", DEPLOY_FIXTURE_COMMIT])
+        smoke = next(step for step in plan["steps"] if step["name"] == "smoke-production")
+        self.assertTrue(smoke["required"])
+        self.assertIn("--json", smoke["command"])
+        self.assertIn("--fail-when-not-ready", smoke["command"])
+        self.assertEqual(plan["expected_public_map_mode"], "area")
+        self.assertEqual(smoke["command"][smoke["command"].index("--expect-public-map-mode") + 1], "area")
+        self.assertEqual(smoke["command"][-2:], ["--asset-commit", DEPLOY_FIXTURE_COMMIT])
+        self.assertEqual(smoke["command"][smoke["command"].index("--release-checkout") + 1], str(ROOT))
+        self.assertNotIn("--verify-checkout-assets", smoke["command"])
+        self.assertNotIn("apply-d1-migrations", {step["name"] for step in plan["steps"]})
+        steps = module.build_deploy_steps(ROOT, expected_commit=DEPLOY_FIXTURE_COMMIT[:7])
+        self.assertNotIn("--tag", next(step.command for step in steps if step.name == module.WORKER_UPLOAD_STEP))
+        self.assertNotIn("--asset-commit", next(step.command for step in steps if step.name == "smoke-production"))
+
+    def test_isolated_clerk_beta_deploy_plan_is_read_only_and_uses_current_smoke(self):
+        module = load_production_deploy_script()
+        checkout = ROOT / "reviewed-beta-fixture"
+        with (
+            mock.patch.object(module, "isolated_beta_source_blockers", return_value=[]),
+            mock.patch.object(module, "isolated_beta_readiness_payload", return_value={"ready": True, "blockers": [], "warnings": []}),
+            mock.patch.object(module, "run_external") as run,
+        ):
+            plan = module.plan_payload(
+                checkout, migrations="skip", expected_commit=module.ISOLATED_CLERK_BETA_COMMIT,
+                expected_worker_version=module.ISOLATED_BETA_PRIOR_VERSION, isolated_clerk_beta=True,
+            )
+        run.assert_not_called()
+        self.assertFalse(plan["executes_commands"])
+        self.assertEqual([step["name"] for step in plan["steps"]], [
+            module.D1_LEDGER_STEP, module.WORKER_UPLOAD_STEP, module.D1_BETA_FINAL_STEP,
+            module.WORKER_ACTIVATE_STEP, "smoke-production",
+        ])
+        for index in (0, 2):
+            self.assertEqual(plan["steps"][index]["command"][-2:], ["--command", module.D1_STATE_SQL])
+        smoke = plan["steps"][-1]["command"]
+        self.assertEqual(smoke[1:3], ["-I", "-B"])
+        self.assertEqual(Path(smoke[3]), ROOT / "scripts/workdoe_production_smoke.py")
+        self.assertIn("--isolated-clerk-beta", smoke)
+        self.assertIn("--verify-clerk-browser-delivery", smoke)
+        self.assertEqual(smoke[smoke.index("--release-checkout") + 1], str(checkout))
+        self.assertEqual(plan["steps"][3]["command"], [])
+
+    def test_isolated_clerk_beta_cli_rejects_other_inputs_before_any_release_commands(self):
+        module = load_production_deploy_script()
+        base = [
+            "deploy", "--execute", "--yes", "--isolated-clerk-beta-checkout", str(ROOT),
+            "--expected-commit", module.ISOLATED_CLERK_BETA_COMMIT,
+            "--expected-worker-version", module.ISOLATED_BETA_PRIOR_VERSION, "--migrations", "skip",
+        ]
+        for extra in (
+            ["--migrations", "apply"], ["--expected-commit", DEPLOY_FIXTURE_COMMIT],
+            ["--expected-worker-version", DEPLOY_FIXTURE_VERSION], ["--no-smoke"],
+            ["--d1-recovery-output", "unused.json"], ["--env-file", "unused.vars"],
+        ):
+            with (
+                self.subTest(extra=extra), mock.patch.object(sys, "argv", [*base, *extra]),
+                mock.patch.object(module, "isolated_beta_source_blockers") as source,
+                mock.patch.object(module, "execute_steps") as execute,
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as caught,
+            ):
+                module.main()
+            self.assertEqual(caught.exception.code, 2)
+            source.assert_not_called()
+            execute.assert_not_called()
+
+    def test_isolated_clerk_beta_schema_drift_stops_activation_and_receipt_scope_is_exact(self):
+        module = load_production_deploy_script()
+        commit = module.ISOLATED_CLERK_BETA_COMMIT
+        for schema_error, scope, accepted in (
+            ("Schema drift", module.ISOLATED_BETA_SMOKE_SCOPE, False),
+            (None, module.RELEASE_SMOKE_SCOPE, False),
+            (None, module.ISOLATED_BETA_SMOKE_SCOPE, True),
+        ):
+            with self.subTest(schema_error=schema_error, scope=scope):
+                report = deploy_smoke_report(module) | {"asset_commit": commit, "readiness_scope": scope}
+                reply = subprocess.CompletedProcess([], 0, json.dumps(report), "")
+                with (
+                    mock.patch.object(module, "d1_state_error", side_effect=[None, schema_error]) as schema,
+                    mock.patch.object(module, "upload_and_verify_worker", return_value=DEPLOY_UPLOADED_VERSION) as upload,
+                    mock.patch.object(module, "activate_worker_version", return_value=DEPLOY_FIXTURE_DEPLOYMENT) as activate,
+                    mock.patch.object(module, "active_worker_deployment", return_value=(DEPLOY_UPLOADED_VERSION, DEPLOY_FIXTURE_DEPLOYMENT)),
+                    mock.patch.object(module, "run_external", return_value=reply) as external,
+                ):
+                    steps, errors, _ = module.execute_steps(
+                        module.build_deploy_steps(ROOT, expected_commit=commit, isolated_clerk_beta=True),
+                        deploy_env={"CI": "true"}, check_source=list, check_hosted_ingress=lambda: None,
+                        expected_commit=commit, previous_worker_version=module.ISOLATED_BETA_PRIOR_VERSION,
+                        expected_database_id=DEPLOY_FIXTURE_VERSION,
+                    )
+                self.assertEqual(not errors, accepted)
+                self.assertEqual(schema.call_count, 2)
+                upload.assert_called_once()
+                self.assertEqual(activate.call_count, int(not schema_error))
+                self.assertEqual([call.args[0].name for call in external.call_args_list], [
+                    module.D1_LEDGER_STEP, module.D1_BETA_FINAL_STEP, *([] if schema_error else ["smoke-production"]),
+                ])
+                self.assertEqual(steps[-1].status, "pending" if schema_error else "done" if accepted else "failed")
+
+    def test_isolated_clerk_beta_rejects_reactivation_of_the_same_serving_version(self):
+        module = load_production_deploy_script()
+        with (
+            mock.patch.object(module, "isolated_beta_source_blockers", return_value=[]),
+            mock.patch.object(module, "active_worker_deployment", return_value=(module.ISOLATED_BETA_PRIOR_VERSION, DEPLOY_FIXTURE_DEPLOYMENT)),
+            mock.patch.object(module, "read_worker_version_metadata") as metadata,
+            mock.patch.object(module, "clerk_environment_check") as environment,
+        ):
+            check = module.release_input_check(
+                ROOT, module.ISOLATED_CLERK_BETA_COMMIT, module.ISOLATED_BETA_PRIOR_VERSION, DEPLOY_FIXTURE_VERSION, {},
+            )
+            self.assertIn("exact serving deployment changed", check()[0])
+            metadata.assert_not_called()
+            environment.assert_not_called()
+
+    def test_isolated_edit_beta_plan_keeps_exact_source_and_no_migration_sequence(self):
+        module = load_production_deploy_script()
+        commit = module.ISOLATED_EDIT_BETA_COMMIT
+        checkout = ROOT / "reviewed-edit-fixture"
+        with (
+            mock.patch.object(module, "isolated_beta_source_blockers", return_value=[]) as source,
+            mock.patch.object(module, "isolated_beta_readiness_payload", return_value={"ready": True, "blockers": [], "warnings": []}),
+            mock.patch.object(module, "run_external") as external,
+        ):
+            plan = module.plan_payload(
+                checkout, expected_commit=commit, expected_worker_version=module.ISOLATED_BETA_BASELINES[commit][1],
+                migrations="skip", isolated_clerk_beta=True,
+            )
+        external.assert_not_called()
+        source.assert_called_once_with(checkout, commit)
+        self.assertTrue(plan["ready_to_deploy"])
+        self.assertFalse(plan["executes_commands"])
+        self.assertEqual([step["name"] for step in plan["steps"]], [
+            module.D1_LEDGER_STEP, module.WORKER_UPLOAD_STEP, module.D1_BETA_FINAL_STEP,
+            module.WORKER_ACTIVATE_STEP, "smoke-production",
+        ])
+        self.assertEqual(plan["steps"][1]["command"][-2:], ["--tag", commit])
+        smoke = plan["steps"][-1]["command"]
+        self.assertEqual(smoke[-2:], ["--asset-commit", commit])
+        self.assertIn("--verify-clerk-browser-delivery", smoke)
+        self.assertIn("--isolated-clerk-beta", smoke)
+        self.assertEqual(Path(smoke[3]), ROOT / "scripts/workdoe_production_smoke.py")
+
+    def test_isolated_edit_beta_cli_rejects_prior_profile_or_expanded_scope_before_commands(self):
+        module = load_production_deploy_script()
+        commit = module.ISOLATED_EDIT_BETA_COMMIT
+        base = [
+            "deploy", "--execute", "--yes", "--isolated-beta-checkout", str(ROOT),
+            "--expected-commit", commit, "--expected-worker-version", module.ISOLATED_BETA_BASELINES[commit][1],
+            "--migrations", "skip",
+        ]
+        for extra in (
+            ["--expected-worker-version", module.ISOLATED_BETA_PRIOR_VERSION],
+            ["--expected-commit", module.ISOLATED_CLERK_BETA_COMMIT],
+            ["--expected-commit", DEPLOY_FIXTURE_COMMIT], ["--migrations", "apply"],
+            ["--no-smoke"], ["--env-file", "unused.vars"], ["--d1-recovery-output", "unused.json"],
+        ):
+            with (
+                self.subTest(extra=extra), mock.patch.object(sys, "argv", [*base, *extra]),
+                mock.patch.object(module, "isolated_beta_source_blockers") as source,
+                mock.patch.object(module, "execute_steps") as execute,
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as caught,
+            ):
+                module.main()
+            self.assertEqual(caught.exception.code, 2)
+            source.assert_not_called()
+            execute.assert_not_called()
+
+    def test_isolated_edit_beta_requires_exact_parent_and_readiness_bytes(self):
+        module = load_production_deploy_script()
+        commit = module.ISOLATED_EDIT_BETA_COMMIT
+        with mock.patch.object(module, "release_source_blockers") as source:
+            self.assertTrue(module.isolated_beta_source_blockers(ROOT, DEPLOY_FIXTURE_COMMIT))
+            source.assert_not_called()
+        for parent, raw_match in ((module.ISOLATED_BETA_PARENT, True), (module.ISOLATED_CLERK_BETA_COMMIT, False)):
+            with (
+                self.subTest(parent=parent, raw_match=raw_match),
+                mock.patch.object(module, "release_source_blockers", return_value=[]),
+                mock.patch.object(module, "git_read", return_value=f"{commit} {parent}"),
+                mock.patch.object(module, "release_input_bytes_match", return_value=raw_match),
+            ):
+                self.assertTrue(module.isolated_beta_source_blockers(ROOT, commit))
+
+    def test_isolated_edit_beta_stops_on_serving_deployment_change(self):
+        module = load_production_deploy_script()
+        commit = module.ISOLATED_EDIT_BETA_COMMIT
+        baseline = module.ISOLATED_BETA_BASELINES[commit]
+        for actual in ((module.ISOLATED_BETA_PRIOR_VERSION, baseline[2]), (baseline[1], DEPLOY_FIXTURE_DEPLOYMENT)):
+            with (
+                self.subTest(actual=actual),
+                mock.patch.object(module, "isolated_beta_source_blockers", return_value=[]),
+                mock.patch.object(module, "active_worker_deployment", return_value=actual),
+                mock.patch.object(module, "read_worker_version_metadata") as metadata,
+            ):
+                guard = module.release_input_check(ROOT, commit, baseline[1], DEPLOY_FIXTURE_VERSION, {})
+                self.assertIn("exact serving deployment changed", guard()[0])
+                metadata.assert_not_called()
+
+    def test_isolated_edit_beta_checks_parent_identity_and_requires_existing_entry_integrity(self):
+        module = load_production_deploy_script()
+        commit = module.ISOLATED_EDIT_BETA_COMMIT
+        baseline = module.ISOLATED_BETA_BASELINES[commit]
+        ready = SimpleNamespace(status="ready")
+        with (
+            mock.patch.object(module, "isolated_beta_source_blockers", return_value=[]),
+            mock.patch.object(module, "active_worker_deployment", return_value=baseline[1:3]),
+            mock.patch.object(module, "read_worker_version_metadata", return_value="fixture"),
+            mock.patch.object(module, "worker_version_metadata", return_value={}),
+            mock.patch.object(module, "verify_worker_d1_binding"),
+            mock.patch.object(module, "verify_worker_normal_write_mode"),
+            mock.patch.object(module, "verify_worker_media_binding"),
+            mock.patch.object(module, "verify_uploaded_worker_configuration"),
+            mock.patch.object(module, "verify_worker_commit_tag") as identity,
+            mock.patch.object(module, "worker_version_number", return_value=baseline[3]),
+            mock.patch.object(module, "clerk_browser_entry_check", return_value=ready) as entry,
+            mock.patch.object(module, "clerk_environment_check", return_value=ready),
+            mock.patch.object(module, "clerk_proxy_check", return_value=ready),
+        ):
+            guard = module.release_input_check(ROOT, commit, baseline[1], DEPLOY_FIXTURE_VERSION, {})
+            self.assertEqual(guard(), [])
+        identity.assert_called_once_with("fixture", baseline[1], module.ISOLATED_CLERK_BETA_COMMIT)
+        self.assertTrue(entry.call_args.kwargs["require_integrity"])
+
+    def test_isolated_edit_beta_schema_and_smoke_failure_do_not_pass_release(self):
+        module = load_production_deploy_script()
+        commit = module.ISOLATED_EDIT_BETA_COMMIT
+        for schema_error, scope, accepted in (
+            ("Schema drift", module.ISOLATED_BETA_SMOKE_SCOPE, False),
+            (None, module.RELEASE_SMOKE_SCOPE, False), (None, module.ISOLATED_BETA_SMOKE_SCOPE, True),
+        ):
+            with self.subTest(schema_error=schema_error, scope=scope):
+                report = deploy_smoke_report(module) | {"asset_commit": commit, "readiness_scope": scope}
+                with (
+                    mock.patch.object(module, "d1_state_error", side_effect=[None, schema_error]),
+                    mock.patch.object(module, "upload_and_verify_worker", return_value=DEPLOY_UPLOADED_VERSION),
+                    mock.patch.object(module, "activate_worker_version", return_value=DEPLOY_FIXTURE_DEPLOYMENT) as activate,
+                    mock.patch.object(module, "active_worker_deployment", return_value=(DEPLOY_UPLOADED_VERSION, DEPLOY_FIXTURE_DEPLOYMENT)),
+                    mock.patch.object(module, "run_external", return_value=subprocess.CompletedProcess([], 0, json.dumps(report), "")),
+                ):
+                    _, errors, _ = module.execute_steps(
+                        module.build_deploy_steps(ROOT, expected_commit=commit, isolated_clerk_beta=True),
+                        deploy_env={"CI": "true"}, check_source=list, check_hosted_ingress=lambda: None,
+                        expected_commit=commit, previous_worker_version=module.ISOLATED_BETA_BASELINES[commit][1],
+                        expected_database_id=DEPLOY_FIXTURE_VERSION,
+                    )
+                self.assertEqual(not errors, accepted)
+                self.assertEqual(activate.call_count, int(not schema_error))
+
+    def test_isolated_edit_beta_rejects_wrong_sequence_before_any_commands(self):
+        module = load_production_deploy_script()
+        commit = module.ISOLATED_EDIT_BETA_COMMIT
+        steps = module.build_deploy_steps(ROOT, expected_commit=commit, isolated_clerk_beta=True)
+        for selected, prior in ((steps[:-1], module.ISOLATED_BETA_BASELINES[commit][1]), (steps, module.ISOLATED_BETA_PRIOR_VERSION)):
+            with self.subTest(prior=prior, count=len(selected)), mock.patch.object(module, "run_external") as external:
+                _, errors, _ = module.execute_steps(
+                    selected, expected_commit=commit, previous_worker_version=prior,
+                    expected_database_id=DEPLOY_FIXTURE_VERSION, check_source=list, check_hosted_ingress=lambda: None,
+                )
+            self.assertTrue(errors)
+            external.assert_not_called()
+
+    def test_cloudflare_production_deploy_requires_reviewed_commit_and_migration_choice(self):
+        module = load_production_deploy_script()
+        for extra in ([], ["--expected-commit", DEPLOY_FIXTURE_COMMIT], ["--migrations", "skip"]):
+            with (
+                self.subTest(extra=extra),
+                mock.patch.object(sys, "argv", ["deploy", "--execute", "--yes", *extra]),
+                mock.patch.object(module, "readiness_payload") as readiness,
+                mock.patch.object(module, "git_read", side_effect=[f"{ROOT}\n{DEPLOY_FIXTURE_COMMIT}\n", "", "", ""]),
+                mock.patch.object(module, "release_input_bytes_match", return_value=True),
+                mock.patch.object(module, "execute_steps") as execute,
+                contextlib.redirect_stdout(io.StringIO()) as output,
+            ):
+                self.assertEqual(module.main(), 2)
+                readiness.assert_not_called()
+                execute.assert_not_called()
+                payload = json.loads(output.getvalue())
+                self.assertFalse(payload["executes_commands"])
+                if "--expected-commit" not in extra:
+                    self.assertTrue(any("full reviewed Git commit" in blocker for blocker in payload["blockers"]))
+                if "--migrations" not in extra:
+                    self.assertTrue(any("Choose --migrations" in blocker for blocker in payload["blockers"]))
+                self.assertIn(module.WORKER_BASELINE_REQUIRED, payload["blockers"])
+
+    def test_cloudflare_worker_rollback_evidence_rejects_split_or_invalid_status(self):
+        module = load_production_deploy_script()
+        valid = {"version_id": DEPLOY_FIXTURE_VERSION, "percentage": 100}
+        self.assertEqual(module.single_active_worker_version(json.dumps({"versions": [valid]})), DEPLOY_FIXTURE_VERSION)
+        for invalid in (
+            [], [valid, {**valid, "percentage": 0}], [{**valid, "percentage": 70}],
+            [{**valid, "percentage": "100"}], [{**valid, "version_id": "unexpected private detail"}],
+            [{**valid, "version_id": "00000000-0000-0000-0000-000000000000"}],
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError) as failure:
+                module.single_active_worker_version(json.dumps({"versions": invalid}))
+            self.assertNotIn("private detail", str(failure.exception))
+        with self.assertRaisesRegex(ValueError, "Could not parse Worker deployment status"):
+            module.single_active_worker_version("unexpected private detail")
+
+    def test_worker_traffic_evidence_cli_omits_personal_metadata_and_rejects_ambiguous_state(self):
+        script = ROOT / "scripts" / "cloudflare_worker_recovery.py"
+        version = {"version_id": DEPLOY_FIXTURE_VERSION, "percentage": 100}
+        source = {
+            "id": DEPLOY_FIXTURE_DEPLOYMENT,
+            "author_email": "operator@fixture.invalid",
+            "annotations": {"workers/message": "private operator note"},
+            "versions": [{**version, "extra": "private nested metadata"}],
+        }
+        command = [sys.executable, "-I", "-S", str(script), "--traffic-evidence"]
+        completed = subprocess.run(
+            command, input=json.dumps(source), text=True, capture_output=True, check=True, timeout=10,
+        )
+        self.assertEqual(json.loads(completed.stdout), {"id": DEPLOY_FIXTURE_DEPLOYMENT, "versions": [version]})
+        self.assertEqual(completed.stderr, "")
+        for payload in (
+            json.dumps({**source, "id": None}),
+            json.dumps({**source, "versions": [version, version]}),
+            json.dumps({**source, "versions": [{**version, "percentage": 99}]}),
+            json.dumps({**source, "note": "private" * 12000}),
+            "[" * 5000 + "]" * 5000,
+        ):
+            with self.subTest(input_length=len(payload)):
+                failed = subprocess.run(
+                    command, input=payload, text=True, capture_output=True, check=False, timeout=10,
+                )
+                self.assertEqual(failed.returncode, 1)
+                self.assertEqual(failed.stdout, "")
+                for private in ("operator@fixture.invalid", "private", "Traceback"):
+                    self.assertNotIn(private, failed.stderr)
+
+    def test_cloudflare_worker_rollback_guard_rechecks_active_version_before_deploy(self):
+        module = load_production_deploy_script()
+        steps = module.build_deploy_steps(ROOT, migrations="apply")
+
+        def deployment(version):
+            return subprocess.CompletedProcess([], 0, json.dumps({"versions": [{"version_id": version, "percentage": 100}]}), "")
+
+        next_version = "22222222-2222-4222-8222-222222222222"
+        bookmark = subprocess.CompletedProcess([], 0, '{"bookmark":"fixture-bookmark-0123456789"}', "")
+        prior = deployment(DEPLOY_FIXTURE_VERSION)
+        replies = [prior, d1_ledger_reply(), prior, bookmark, prior, subprocess.CompletedProcess([], 0, "", ""), prior,
+                   d1_ledger_reply(), deployment(next_version)]
+        env = {"FIXTURE": "true"}
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            mock.patch.object(module, "upload_and_verify_worker", return_value=DEPLOY_UPLOADED_VERSION),
+            mock.patch.object(module, "run_external", side_effect=replies) as run,
+        ):
+            steps, errors, _ = module.execute_steps(
+                steps, deploy_env=env,
+                check_source=lambda: module.worker_baseline_blockers(ROOT, DEPLOY_FIXTURE_VERSION, env),
+                d1_recovery_output=Path(temp) / "recovery.json",
+                **DEPLOY_FIXTURE_IDENTITY,
+            )
+        self.assertEqual(
+            [call.args[0].name for call in run.call_args_list],
+            [module.WORKER_BASELINE_STEP, module.D1_PREFIX_LEDGER_STEP, module.WORKER_BASELINE_STEP, module.D1_RECOVERY_STEP,
+             module.WORKER_BASELINE_STEP, "apply-d1-migrations", module.WORKER_BASELINE_STEP,
+             module.D1_LEDGER_STEP, module.WORKER_BASELINE_STEP],
+        )
+        self.assertEqual([step.status for step in steps], ["done", "done", "done", "done", "done", "failed", "pending"])
+        self.assertIn("no longer matches", errors[0])
+        self.assertNotIn(next_version, errors[0])
+
+    def test_cloudflare_worker_rollback_guard_stops_before_remote_writes_on_unavailable_evidence(self):
+        module = load_production_deploy_script()
+        env = {"FIXTURE": "true"}
+        for reply in (
+            subprocess.CompletedProcess([], 0, '{"versions":[]}', ""),
+            subprocess.CompletedProcess([], 1, "", "unexpected private detail"),
+            subprocess.TimeoutExpired([], 30, output="unexpected private detail"),
+        ):
+            with (
+                self.subTest(reply=reply), tempfile.TemporaryDirectory() as directory,
+                mock.patch.object(module, "run_external", side_effect=[reply]) as run,
+            ):
+                steps, errors, _ = module.execute_steps(
+                    module.build_deploy_steps(ROOT, migrations="apply"), deploy_env=env,
+                    check_source=lambda: module.worker_baseline_blockers(ROOT, DEPLOY_FIXTURE_VERSION, env),
+                    d1_recovery_output=Path(directory) / "recovery.json",
+                )
+                self.assertEqual([call.args[0].name for call in run.call_args_list], [module.WORKER_BASELINE_STEP])
+                self.assertEqual([step.status for step in steps], ["failed"] + ["pending"] * (len(steps) - 1))
+                self.assertNotIn("private detail", errors[0])
+
+    def test_cloudflare_deploy_refuses_wrong_active_d1_before_any_d1_command(self):
+        module = load_production_deploy_script()
+        preview = load_release_script().RESERVED_STAGING_D1_ID
+        args = [
+            "deploy", "--execute", "--yes", "--json", "--migrations", "skip",
+            "--expected-commit", DEPLOY_FIXTURE_COMMIT, "--expected-worker-version", DEPLOY_FIXTURE_VERSION,
+        ]
+        active = subprocess.CompletedProcess([], 0, json.dumps({"versions": [
+            {"version_id": DEPLOY_FIXTURE_VERSION, "percentage": 100},
+        ]}), "")
+        metadata = subprocess.CompletedProcess([], 0, json.dumps({
+            "id": DEPLOY_FIXTURE_VERSION,
+            "resources": {"bindings": [{"name": "DB", "type": "d1", "database_id": preview}]},
+        }), "")
+
+        def read_only(step, **_kwargs):
+            if step.name == module.WORKER_BASELINE_STEP:
+                return active
+            self.assertEqual(step.name, "verify-active-worker-d1-binding", "A mismatched database reached a D1 command")
+            self.assertIn(DEPLOY_FIXTURE_VERSION, step.command)
+            return metadata
+
+        with (
+            mock.patch.object(sys, "argv", args),
+            mock.patch.object(module, "release_source_blockers", return_value=[]),
+            mock.patch.object(module, "readiness_payload", return_value={"ready": True, "blockers": [], "warnings": []}),
+            mock.patch.object(module, "verify_dependency_provenance", return_value=[]),
+            mock.patch.object(module, "clerk_release_proof_digest", return_value="fixture-proof-digest"),
+            mock.patch.object(module, "wrangler_env", return_value={"CLOUDFLARE_ACCOUNT_ID": "a" * 32}),
+            mock.patch.object(module, "cloudflare_api_token_present", return_value=True),
+            mock.patch.object(module, "run_external", side_effect=read_only) as run,
+            mock.patch.object(module, "verify_hosted_worker_ingress") as ingress,
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            self.assertEqual(module.main(), 1)
+        self.assertEqual([call.args[0].name for call in run.call_args_list], [
+            module.WORKER_BASELINE_STEP, "verify-active-worker-d1-binding",
+        ])
+        ingress.assert_not_called()
+        payload = json.loads(output.getvalue())
+        self.assertFalse(payload["ok"])
+        self.assertIn("D1 binding does not match", payload["errors"][0])
+        self.assertNotIn(preview, output.getvalue())
+
+    def test_cloudflare_release_rechecks_traffic_but_reads_matching_d1_metadata_once(self):
+        module = load_production_deploy_script()
+        database_id = module.reviewed_d1_database_id(ROOT / "cloudflare")
+        metadata = json.dumps({
+            "id": DEPLOY_FIXTURE_VERSION,
+            "resources": {"bindings": [
+                {"name": "DB", "type": "d1", "database_id": database_id},
+                {"name": "MEDIA", "type": "r2_bucket", "bucket_name": "workdoe-media"},
+            ]},
+        })
+        with (
+            mock.patch.object(module, "release_source_blockers", return_value=[]) as source,
+            mock.patch.object(module, "worker_baseline_blockers", side_effect=[[], [], ["Traffic changed."]]) as active,
+            mock.patch.object(module, "read_worker_version_metadata", return_value=metadata) as version,
+            mock.patch.object(module, "clerk_browser_entry_check", return_value=SimpleNamespace(status="ready")) as entry,
+            mock.patch.object(module, "clerk_environment_check", return_value=SimpleNamespace(status="ready")) as environment,
+            mock.patch.object(module, "clerk_proxy_check", return_value=SimpleNamespace(status="ready")) as clerk,
+        ):
+            check = module.release_input_check(ROOT, DEPLOY_FIXTURE_COMMIT, DEPLOY_FIXTURE_VERSION, database_id, {})
+            self.assertEqual(check(), [])
+            self.assertEqual(check(), [])
+            self.assertEqual(check(), ["Traffic changed."])
+        self.assertEqual((source.call_count, active.call_count), (3, 3))
+        version.assert_called_once_with(ROOT, DEPLOY_FIXTURE_VERSION, {}, step_name=module.WORKER_D1_BINDING_STEP)
+        entry.assert_called_once_with("https://workdoe.com", module.DEFAULT_TIMEOUT, require_integrity=False)
+        environment.assert_called_once_with("https://workdoe.com", module.DEFAULT_TIMEOUT)
+        clerk.assert_called_once_with("https://workdoe.com", module.DEFAULT_TIMEOUT)
+
+    def test_cloudflare_release_requires_live_clerk_checks_before_migration_or_upload(self):
+        module = load_production_deploy_script()
+        database_id = module.reviewed_d1_database_id(ROOT / "cloudflare")
+        metadata = json.dumps({
+            "id": DEPLOY_FIXTURE_VERSION,
+            "resources": {"bindings": [
+                {"name": "DB", "type": "d1", "database_id": database_id},
+                {"name": "MEDIA", "type": "r2_bucket", "bucket_name": "workdoe-media"},
+            ]},
+        })
+        ready = SimpleNamespace(status="ready")
+        failed = SimpleNamespace(status="failed", summary="Clerk did not match the reviewed settings.")
+        for migrations, failure in itertools.product(("apply", "skip"), ("browser entry", "configuration", "integrity")):
+            with (
+                self.subTest(migrations=migrations, failure=failure),
+                tempfile.TemporaryDirectory() as directory,
+                mock.patch.object(module, "release_source_blockers", return_value=[]),
+                mock.patch.object(module, "worker_baseline_blockers", return_value=[]),
+                mock.patch.object(module, "read_worker_version_metadata", return_value=metadata),
+                mock.patch.object(module, "clerk_browser_entry_check", return_value=failed if failure == "browser entry" else ready) as entry,
+                mock.patch.object(module, "clerk_environment_check", return_value=failed if failure == "configuration" else ready) as environment,
+                mock.patch.object(module, "clerk_proxy_check", return_value=failed if failure == "integrity" else ready) as clerk,
+                mock.patch.object(module, "run_external") as run,
+            ):
+                recovery = Path(directory) / "recovery.json"
+                check = module.release_input_check(ROOT, DEPLOY_FIXTURE_COMMIT, DEPLOY_FIXTURE_VERSION, database_id, {})
+                steps, errors, warnings = module.execute_steps(
+                    module.build_deploy_steps(ROOT, migrations=migrations), check_source=check,
+                    d1_recovery_output=recovery,
+                )
+                self.assertFalse(recovery.exists())
+                self.assertEqual(
+                    (entry.call_count, environment.call_count, clerk.call_count),
+                    {"browser entry": (1, 0, 0), "configuration": (1, 1, 0), "integrity": (1, 1, 1)}[failure],
+                )
+                run.assert_not_called()
+                self.assertFalse(warnings)
+                self.assertEqual(len(errors), 1)
+                self.assertIn(f"Pre-deployment Clerk {failure} check failed", errors[0])
+                self.assertIn("No release writes were attempted", errors[0])
+                self.assertEqual([step.status for step in steps], ["failed"] + ["pending"] * (len(steps) - 1))
+
+    def test_cloudflare_release_does_not_run_during_active_worker_write_pause(self):
+        module = load_production_deploy_script()
+        database_id = module.reviewed_d1_database_id(ROOT / "cloudflare")
+        active_db = {"name": "DB", "type": "d1", "database_id": database_id}
+        mode = {"name": "WORKDOE_WRITE_MODE", "type": "plain_text"}
+        for modes in (
+            [{**mode, "text": "paused"}],
+            [{**mode, "text": "unreviewed private detail"}],
+            [{**mode, "type": "secret_text"}],
+            [{**mode, "text": "normal"}, {**mode, "text": "paused"}],
+        ):
+            metadata = json.dumps({
+                "id": DEPLOY_FIXTURE_VERSION,
+                "resources": {"bindings": [active_db, *modes]},
+            })
+            for migrations in ("apply", "skip"):
+                with (
+                    self.subTest(modes=modes, migrations=migrations),
+                    tempfile.TemporaryDirectory() as directory,
+                    mock.patch.object(module, "release_source_blockers", return_value=[]),
+                    mock.patch.object(module, "worker_baseline_blockers", return_value=[]),
+                    mock.patch.object(module, "read_worker_version_metadata", return_value=metadata),
+                    mock.patch.object(module, "clerk_proxy_check", return_value=SimpleNamespace(status="ready")) as clerk,
+                    mock.patch.object(module, "run_external") as run,
+                ):
+                    recovery = Path(directory) / "recovery.json"
+                    check = module.release_input_check(ROOT, DEPLOY_FIXTURE_COMMIT, DEPLOY_FIXTURE_VERSION, database_id, {})
+                    steps, errors, warnings = module.execute_steps(
+                        module.build_deploy_steps(ROOT, migrations=migrations),
+                        check_source=check, d1_recovery_output=recovery,
+                    )
+                    self.assertFalse(recovery.exists())
+                    clerk.assert_not_called()
+                    run.assert_not_called()
+                    self.assertFalse(warnings)
+                    self.assertEqual(len(errors), 1)
+                    self.assertIn("write mode", errors[0])
+                    self.assertNotIn("private detail", errors[0])
+                    self.assertEqual([step.status for step in steps], ["failed"] + ["pending"] * (len(steps) - 1))
+
+    def test_cloudflare_normal_worker_write_mode_uses_runtime_default_and_explicit_value(self):
+        module = load_production_deploy_script()
+        database_id = module.reviewed_d1_database_id(ROOT / "cloudflare")
+        active_db = {"name": "DB", "type": "d1", "database_id": database_id}
+        normal = {"name": "WORKDOE_WRITE_MODE", "type": "plain_text", "text": "normal"}
+        for bindings in ([active_db], [active_db, normal]):
+            with self.subTest(bindings=bindings):
+                module.verify_worker_normal_write_mode({"resources": {"bindings": bindings}})
+        for bindings in (None, [], [active_db, None], [active_db, {"type": "plain_text"}]):
+            with self.subTest(bindings=bindings), self.assertRaisesRegex(ValueError, "write mode"):
+                module.verify_worker_normal_write_mode({"resources": {"bindings": bindings}})
+
+    def test_cloudflare_worker_d1_evidence_rejects_ambiguous_or_malformed_bindings(self):
+        module = load_production_deploy_script()
+        database_id = module.reviewed_d1_database_id(ROOT / "cloudflare")
+        valid = {"name": "DB", "type": "d1", "database_id": database_id}
+        for bindings in (None, [], [valid, valid], [{**valid, "type": "plain_text"}], [{**valid, "database_id": "unexpected private detail"}]):
+            with self.subTest(bindings=bindings), self.assertRaises(ValueError) as failure:
+                module.verify_worker_d1_binding({"resources": {"bindings": bindings}}, database_id)
+            self.assertNotIn("private detail", str(failure.exception))
+
+    def test_cloudflare_release_stops_when_active_media_binding_is_not_the_reviewed_bucket(self):
+        module = load_production_deploy_script()
+        database_id = module.reviewed_d1_database_id(ROOT / "cloudflare")
+        db = {"name": "DB", "type": "d1", "database_id": database_id}
+        media = {"name": "MEDIA", "type": "r2_bucket", "bucket_name": "workdoe-media"}
+        for media_bindings in (
+            [], [media, media], [{**media, "type": "secret_text"}],
+            [{**media, "bucket_name": "unreviewed-private-bucket"}], [{**media, "jurisdiction": "eu"}],
+        ):
+            metadata = json.dumps({"id": DEPLOY_FIXTURE_VERSION, "resources": {"bindings": [db, *media_bindings]}})
+            with (
+                self.subTest(media_bindings=media_bindings),
+                mock.patch.object(module, "release_source_blockers", return_value=[]),
+                mock.patch.object(module, "worker_baseline_blockers", return_value=[]),
+                mock.patch.object(module, "read_worker_version_metadata", return_value=metadata),
+                mock.patch.object(module, "clerk_browser_entry_check") as clerk,
+                mock.patch.object(module, "run_external") as run,
+            ):
+                check = module.release_input_check(ROOT, DEPLOY_FIXTURE_COMMIT, DEPLOY_FIXTURE_VERSION, database_id, {})
+                steps, errors, _ = module.execute_steps(module.build_deploy_steps(ROOT), check_source=check)
+                self.assertEqual(steps[0].status, "failed")
+                self.assertIn("MEDIA binding does not match the reviewed production R2 bucket", errors[0])
+                self.assertNotIn("unreviewed-private-bucket", errors[0])
+                clerk.assert_not_called()
+                run.assert_not_called()
+
+    def test_cloudflare_reviewed_d1_config_requires_one_distinct_production_target(self):
+        module = load_production_deploy_script()
+        database = {
+            "binding": "DB", "database_name": "workdoe",
+            "database_id": "11111111-1111-4111-8111-111111111111",
+            "preview_database_id": "22222222-2222-4222-8222-222222222222",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "wrangler.jsonc"
+            config.write_text(json.dumps({"d1_databases": [database]}), encoding="utf-8")
+            self.assertEqual(module.reviewed_d1_database_id(root), database["database_id"])
+            for invalid in (
+                [], [database, database], [{**database, "database_name": "staging"}],
+                [{**database, "preview_database_id": database["database_id"]}],
+                [{**database, "database_id": "00000000-0000-0000-0000-000000000000"}],
+            ):
+                config.write_text(json.dumps({"d1_databases": invalid}), encoding="utf-8")
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    module.reviewed_d1_database_id(root)
+
+    def test_cloudflare_worker_deploy_receipt_requires_one_upload_of_workdoe(self):
+        module = load_production_deploy_script()
+        event = {"type": "version-upload", "version": 1, "worker_name": "workdoe", "version_id": DEPLOY_FIXTURE_VERSION}
+        session = {"type": "wrangler-session", "version": 1}
+        def encode(events):
+            return "\n".join(json.dumps(item) for item in events)
+
+        self.assertEqual(module.uploaded_worker_version(encode([session, event]), "workdoe"), DEPLOY_FIXTURE_VERSION)
+        for records in (
+            [session], [event, event], [{**event, "version_id": None}], [{**event, "worker_name": "other"}],
+            [{**event, "version": 2}], [event, {"type": "command-failed", "error": "private detail"}],
+            [{**event, "type": "deploy"}], [event, {"type": "version-deploy"}],
+            [event | {"preview_url": "https://private-detail.invalid/"}],
+            [event | {"preview_alias_url": "https://private-detail.invalid/"}],
+        ):
+            with self.subTest(records=records), self.assertRaises(ValueError) as failure:
+                module.uploaded_worker_version(encode(records), "workdoe")
+            self.assertNotIn("private detail", str(failure.exception))
+        with self.assertRaisesRegex(ValueError, "not valid NDJSON"):
+            module.uploaded_worker_version("invalid\n", "workdoe")
+
+    def test_cloudflare_worker_activation_receipt_requires_one_workdoe_deployment(self):
+        module = load_production_deploy_script()
+        deployment = "44444444-4444-4444-8444-444444444444"
+        event = {"type": "version-deploy", "version": 1, "worker_name": "workdoe", "deployment_id": deployment}
+        session = {"type": "wrangler-session", "version": 1}
+
+        def encode(events):
+            return "\n".join(json.dumps(item) for item in events)
+
+        self.assertEqual(module.activated_worker_deployment(encode([session, event]), "workdoe"), deployment)
+        for records in (
+            [session], [event, event], [event | {"deployment_id": "private detail"}],
+            [event | {"deployment_id": "00000000-0000-0000-0000-000000000000"}],
+            [event | {"worker_name": "other"}], [event | {"version": 2}],
+            [event, {"type": "command-failed", "error": "private detail"}],
+            [event, {"type": "deploy"}], [event, {"type": "version-upload"}],
+        ):
+            with self.subTest(records=records), self.assertRaises(ValueError) as failure:
+                module.activated_worker_deployment(encode(records), "workdoe")
+            self.assertNotIn("private detail", str(failure.exception))
+
+    def test_cloudflare_worker_version_list_rejects_ambiguous_or_malformed_evidence(self):
+        module = load_production_deploy_script()
+        earlier = {"id": DEPLOY_FIXTURE_VERSION, "number": 19}
+        latest = {"id": DEPLOY_UPLOADED_VERSION, "number": 20}
+        self.assertEqual(
+            module.latest_deployable_worker_version(json.dumps([latest, earlier])),
+            (DEPLOY_UPLOADED_VERSION, 20),
+        )
+        for entries in (
+            [], {}, [None], [earlier] * 11, [earlier, earlier | {"number": 20}],
+            [earlier, latest | {"number": 19}],
+            *([latest | {"number": number}] for number in (None, False, 0, -1, 1.5, "20")),
+            *([latest | {"id": version_id}] for version_id in (None, "not-a-uuid", "00000000-0000-0000-0000-000000000000")),
+        ):
+            with self.subTest(entries=entries), self.assertRaisesRegex(ValueError, "(deployable|sequential)"):
+                module.latest_deployable_worker_version(json.dumps(entries))
+
+    def test_cloudflare_guarded_deploy_verifies_uploaded_worker_before_and_after_smoke(self):
+        module = load_production_deploy_script()
+        current = DEPLOY_FIXTURE_VERSION
+        uploaded = "22222222-2222-4222-8222-222222222222"
+        other = "33333333-3333-4333-8333-333333333333"
+        database_id = module.reviewed_d1_database_id(ROOT / "cloudflare")
+        config = json.loads((ROOT / "cloudflare" / "wrangler.jsonc").read_text(encoding="utf-8"))
+        ledger = d1_ledger_reply()
+
+        deployment = "44444444-4444-4444-8444-444444444444"
+
+        def active(version, deployment_id=None):
+            return {
+                "id": deployment_id or (deployment if version == uploaded else version),
+                "versions": [{"version_id": version, "percentage": 100}],
+            }
+
+        split = {"id": other, "versions": [
+            {"version_id": uploaded, "percentage": 90}, {"version_id": current, "percentage": 10},
+        ]}
+        for label, traffic, receipt_id, expected_error, activate_expected, smoke_expected in (
+            ("healthy", [active(current), active(uploaded), active(uploaded)], uploaded, "", True, True),
+            ("propagating", [active(current), active(current), active(uploaded), active(uploaded)], uploaded, "", True, True),
+            ("propagation timeout", [active(current)] * 5, uploaded, "not the only active version", True, False),
+            ("activation failed", [active(current), active(current)], uploaded, "traffic activation", True, False),
+            ("missing activation receipt", [active(current), active(uploaded), active(uploaded)],
+             uploaded, "activation receipt", True, False),
+            ("replaced before smoke", [active(current), active(uploaded, other), active(uploaded, other)],
+             uploaded, "not the active deployment", True, False),
+            ("wrong Worker", [active(current), active(other), active(other)], uploaded, "not the only active version", True, False),
+            ("split", [active(current), split, split], uploaded, "one active version", True, False),
+            ("baseline drift", [active(other)] * 2, uploaded, "Pre-activation check failed", False, False),
+            ("latest version drift", [active(current)], None, "Stop before upload and review secret inheritance", False, False),
+            ("version gap", [active(current)], uploaded, "not the immediate successor", False, False),
+            ("missing version number", [active(current)], uploaded, "valid sequential version number", False, False),
+            ("checkout drift", [active(current)], uploaded, "The checkout changed", False, False),
+            ("wrong tag", [active(current)], uploaded, "tag does not match", False, False),
+            ("wrong database", [active(current)], uploaded, "D1 binding does not match", False, False),
+            ("wrong media", [active(current)], uploaded, "binding MEDIA does not match", False, False),
+            ("wrong media jurisdiction", [active(current)], uploaded, "MEDIA binding does not match", False, False),
+            ("wrong queue", [active(current)], uploaded, "binding EMAIL_QUEUE does not match", False, False),
+            ("wrong rate limit", [active(current)], uploaded, "binding WRITE_RATE_LIMITER does not match", False, False),
+            ("wrong sender", [active(current)], uploaded, "binding EMAIL does not match", False, False),
+            ("uploads enabled", [active(current)], uploaded, "binding WORKDOE_MEDIA_UPLOADS_ENABLED does not match", False, False),
+            ("missing secret", [active(current)], uploaded, "binding CLERK_SECRET_KEY does not match", False, False),
+            ("duplicate binding", [active(current)], uploaded, "duplicate binding", False, False),
+            ("extra binding", [active(current)], uploaded, "unexpected, invalid, or duplicate binding", False, False),
+            ("wrong runtime", [active(current)], uploaded, "runtime compatibility does not match", False, False),
+            ("direct assets", [active(current)], uploaded, "asset routing does not match", False, False),
+            ("paused upload", [active(current)], uploaded, "write mode", False, False),
+            ("still previous", [active(current)], current, "not a new release", False, False),
+            ("missing receipt", [active(other)], None, "Could not read", False, False),
+            ("changed during smoke", [active(current), active(uploaded), active(other)], uploaded, "changed during smoke", True, True),
+            ("same version redeployed during smoke", [active(current), active(uploaded), active(uploaded, other)],
+             uploaded, "deployment changed during smoke", True, True),
+            ("missing deployment identity", [active(current), active(uploaded), active(uploaded) | {"id": None}],
+             uploaded, "Could not recheck", True, True),
+        ):
+            with self.subTest(label=label):
+                statuses = iter(traffic)
+                env = {"FIXTURE": "true"}
+                receipt_path = None
+                activation_path = None
+                source_check = mock.Mock(side_effect=[[], [], ["The checkout changed."]]) if label == "checkout drift" else None
+
+                version_database = other if label == "wrong database" else database_id
+
+                def fake_external(step, deploy_env=None, *, label=label, receipt_id=receipt_id, env=env, statuses=statuses, version_database=version_database):
+                    nonlocal receipt_path, activation_path
+                    if step.name == module.D1_LEDGER_STEP:
+                        return ledger
+                    if step.name == module.WORKER_UPLOAD_STEP:
+                        receipt_path = Path(deploy_env["WRANGLER_OUTPUT_FILE_PATH"])
+                        if receipt_id:
+                            receipt_path.write_text(json.dumps({
+                                "type": "version-upload", "version": 1, "worker_name": "workdoe", "version_id": receipt_id,
+                            }) + "\n", encoding="utf-8")
+                        result = ""
+                    else:
+                        if step.name != module.WORKER_ACTIVATE_STEP:
+                            self.assertEqual(deploy_env, env)
+                        if step.name == module.WORKER_BASELINE_STEP:
+                            result = json.dumps(next(statuses))
+                        elif step.name == module.WORKER_INHERITANCE_STEP:
+                            self.assertEqual(step.command[1:], ["versions", "list", "--json", "--config", "wrangler.jsonc"])
+                            newest = other if label == "latest version drift" else current
+                            result = json.dumps([{"id": newest, "number": 71}])
+                        elif step.name == module.WORKER_VERSION_STEP:
+                            self.assertIn(uploaded, step.command)
+                            tag = "unexpected private detail" if label == "wrong tag" else DEPLOY_FIXTURE_COMMIT
+                            bindings = [
+                                {"name": "DB", "type": "d1", "database_id": version_database},
+                                {"name": "ASSETS", "type": "assets"},
+                                {"name": "MEDIA", "type": "r2_bucket", "bucket_name": "workdoe-media"},
+                                {"name": "EMAIL_QUEUE", "type": "queue", "queue_name": "workdoe-email"},
+                                {"name": "MEDIA_QUEUE", "type": "queue", "queue_name": "workdoe-media-review"},
+                                {"name": "EMAIL", "type": "send_email", "allowed_sender_addresses": ["no-reply@workdoe.com"]},
+                                {"name": "WRITE_RATE_LIMITER", "type": "ratelimit", "namespace_id": "949417",
+                                 "simple": {"limit": 40, "period": 60}},
+                                *({"name": name, "type": "secret_text"} for name in config["secrets"]["required"]),
+                                *({"name": name, "type": "plain_text", "text": value} for name, value in config["vars"].items()),
+                            ]
+                            by_name = {item["name"]: item for item in bindings}
+                            for changed, name, field, value in (
+                                ("wrong media", "MEDIA", "bucket_name", "private detail"),
+                                ("wrong media jurisdiction", "MEDIA", "jurisdiction", "eu"),
+                                ("wrong queue", "EMAIL_QUEUE", "queue_name", "private detail"),
+                                ("wrong rate limit", "WRITE_RATE_LIMITER", "simple", {"limit": 1, "period": 10}),
+                                ("wrong sender", "EMAIL", "allowed_sender_addresses", ["private detail"]),
+                                ("uploads enabled", "WORKDOE_MEDIA_UPLOADS_ENABLED", "text", "true"),
+                            ):
+                                if label == changed:
+                                    by_name[name][field] = value
+                            if label == "missing secret":
+                                bindings.remove(by_name["CLERK_SECRET_KEY"])
+                            if label == "duplicate binding":
+                                bindings.append(by_name["MEDIA"].copy())
+                            if label == "extra binding":
+                                bindings.append({"name": "private detail", "type": "secret_text"})
+                            if label == "paused upload":
+                                bindings.append({"name": "WORKDOE_WRITE_MODE", "type": "plain_text", "text": "paused"})
+                            runtime = {
+                                "compatibility_date": config["compatibility_date"],
+                                "compatibility_flags": list(reversed(config["compatibility_flags"])) if label != "wrong runtime" else [],
+                                "assets": {"raw_run_worker_first": True, "serve_directly": label == "direct assets"},
+                            }
+                            result = json.dumps({
+                                "id": uploaded, "annotations": {"workers/tag": tag},
+                                "number": None if label == "missing version number" else 73 if label == "version gap" else 72,
+                                "resources": {"bindings": bindings, "script_runtime": runtime},
+                            })
+                        elif step.name == module.WORKER_ACTIVATE_STEP:
+                            self.assertEqual(step.command[1:-1], ["versions", "deploy", f"{uploaded}@100%", "--yes", "--config"])
+                            activation_path = Path(step.command[-1])
+                            self.assertEqual(json.loads(activation_path.read_text(encoding="utf-8")), {"name": "workdoe"})
+                            activation_receipt = Path(deploy_env["WRANGLER_OUTPUT_FILE_PATH"])
+                            self.assertEqual(activation_receipt.parent, activation_path.parent)
+                            self.assertEqual({key: deploy_env[key] for key in env}, env)
+                            if label != "missing activation receipt":
+                                activation_receipt.write_text(json.dumps({
+                                    "type": "version-deploy", "version": 1, "worker_name": "workdoe",
+                                    "deployment_id": deployment, "version_traffic": {},
+                                }) + "\n", encoding="utf-8")
+                            return subprocess.CompletedProcess([], int(label == "activation failed"), "", "private detail")
+                        else:
+                            return deploy_smoke_reply(module)
+                    return subprocess.CompletedProcess([], 0, result, "")
+
+                with (
+                    mock.patch.object(module, "run_external", side_effect=fake_external) as run,
+                    mock.patch.object(module.time, "sleep") as sleep,
+                ):
+                    steps, errors, warnings = module.execute_steps(
+                        module.build_deploy_steps(ROOT), deploy_env=env, expected_commit=DEPLOY_FIXTURE_COMMIT,
+                        previous_worker_version=current, expected_database_id=database_id, check_source=source_check,
+                        check_hosted_ingress=lambda: None,
+                    )
+                if source_check:
+                    self.assertEqual(source_check.call_count, 3)
+                self.assertFalse(warnings)
+                if label == "latest version drift":
+                    self.assertIsNone(receipt_path)
+                else:
+                    self.assertFalse(receipt_path.exists())
+                calls = [call.args[0].name for call in run.call_args_list]
+                self.assertEqual(calls.count(module.WORKER_UPLOAD_STEP), int(label != "latest version drift"))
+                self.assertEqual(calls.count(module.WORKER_ACTIVATE_STEP), int(activate_expected))
+                if activate_expected:
+                    self.assertEqual(calls[:6], [
+                        module.D1_LEDGER_STEP, module.WORKER_INHERITANCE_STEP, module.WORKER_UPLOAD_STEP, module.WORKER_VERSION_STEP,
+                        module.WORKER_BASELINE_STEP, module.WORKER_ACTIVATE_STEP,
+                    ])
+                    self.assertFalse(activation_path.exists())
+                self.assertEqual("smoke-production" in calls, smoke_expected)
+                self.assertEqual(sleep.call_count, {"propagating": 1, "propagation timeout": 2}.get(label, 0))
+                if expected_error:
+                    self.assertTrue(errors)
+                    self.assertIn(expected_error, errors[0])
+                    if label != "checkout drift":
+                        self.assertIn("No rollback was attempted.", errors[0])
+                    self.assertNotIn("private detail", errors[0])
+                    self.assertEqual(sum(step.status == "failed" for step in steps), 1)
+                else:
+                    self.assertFalse(errors)
+                    self.assertIn(uploaded, steps[1].output_excerpt)
+                    self.assertIn(deployment, steps[2].output_excerpt)
+                    self.assertEqual([step.status for step in steps], ["done"] * 4)
+
+    def test_cloudflare_failed_upload_observes_traffic_without_retrying(self):
+        module = load_production_deploy_script()
+        current = DEPLOY_FIXTURE_VERSION
+        different = "33333333-3333-4333-8333-333333333333"
+        env = {"FIXTURE": "true"}
+        ledger = d1_ledger_reply()
+        for active, note in (
+            (current, f"pre-release Worker {current}"),
+            (different, f"different Worker {different}"),
+            (None, "Could not confirm a single active Worker"),
+        ):
+            with self.subTest(active=active):
+                def fake_external(step, deploy_env=None, *, active=active):
+                    if step.name == module.D1_LEDGER_STEP:
+                        return ledger
+                    if step.name == module.WORKER_INHERITANCE_STEP:
+                        return subprocess.CompletedProcess([], 0, json.dumps([{"id": current, "number": 71}]), "")
+                    if step.name == module.WORKER_UPLOAD_STEP:
+                        raise subprocess.TimeoutExpired(["unexpected private detail"], 1)
+                    self.assertEqual(step.name, module.WORKER_BASELINE_STEP)
+                    self.assertEqual(deploy_env, env)
+                    return subprocess.CompletedProcess([], 0 if active else 1, json.dumps({
+                        "versions": [{"version_id": active, "percentage": 100}],
+                    }), "unexpected private detail")
+
+                with mock.patch.object(module, "run_external", side_effect=fake_external) as run:
+                    steps, errors, warnings = module.execute_steps(
+                        module.build_deploy_steps(ROOT), deploy_env=env, expected_commit=DEPLOY_FIXTURE_COMMIT,
+                        previous_worker_version=current, check_hosted_ingress=lambda: None,
+                    )
+                self.assertEqual([step.status for step in steps], ["done", "failed", "pending", "pending"])
+                self.assertEqual([call.args[0].name for call in run.call_args_list], [
+                    module.D1_LEDGER_STEP, module.WORKER_INHERITANCE_STEP, module.WORKER_UPLOAD_STEP, module.WORKER_BASELINE_STEP,
+                ])
+                self.assertEqual(len(errors), 1)
+                self.assertIn("Could not complete or verify the Worker release step", errors[0])
+                self.assertIn(note, errors[0])
+                self.assertIn("Review traffic and D1 state", errors[0])
+                self.assertNotIn("private detail", errors[0])
+                self.assertFalse(warnings)
+
+    def test_cloudflare_failed_smoke_observes_traffic_and_preserves_failure(self):
+        module = load_production_deploy_script()
+        uploaded = "22222222-2222-4222-8222-222222222222"
+        deployment = "44444444-4444-4444-8444-444444444444"
+        env = {"FIXTURE": "true"}
+        ledger = d1_ledger_reply()
+        for result, status, detail, note in (
+            (deploy_smoke_reply(module, failed=("commit-asset-parity",)), (uploaded, deployment),
+             "Failed: commit-asset-parity (HTTP 503)", f"verified release Worker {uploaded}"),
+            (deploy_smoke_reply(module, failed=("public-map-snapshots",)), (DEPLOY_FIXTURE_VERSION, deployment),
+             "Failed: public-map-snapshots (HTTP 503)", "The verified Worker deployment changed during smoke testing."),
+            (subprocess.CompletedProcess([], 0, "unexpected private detail", ""), (uploaded, deployment),
+             "No valid production smoke report", f"verified release Worker {uploaded}"),
+            (subprocess.TimeoutExpired(["unexpected private detail"], 1), DEPLOY_FIXTURE_VERSION,
+             "Could not complete production smoke testing", f"pre-release Worker {DEPLOY_FIXTURE_VERSION}"),
+            (deploy_smoke_reply(module), ValueError("unexpected private detail"),
+             "Could not recheck the verified Worker deployment", "Could not confirm a single active Worker"),
+        ):
+            observation = "active_worker_version" if isinstance(result, subprocess.TimeoutExpired) else "active_worker_deployment"
+            with (
+                self.subTest(detail=detail),
+                mock.patch.object(module, "upload_and_verify_worker", return_value=uploaded),
+                mock.patch.object(module, "activate_worker_version", return_value=deployment),
+                mock.patch.object(module, observation, side_effect=[status]) as observe,
+                mock.patch.object(module, "run_external", side_effect=[ledger, result]) as run,
+            ):
+                steps, errors, warnings = module.execute_steps(
+                    module.build_deploy_steps(ROOT), deploy_env=env, check_source=list, **DEPLOY_FIXTURE_IDENTITY,
+                )
+                observe.assert_called_once_with(ROOT, env)
+                self.assertEqual([call.args[0].name for call in run.call_args_list], [module.D1_LEDGER_STEP, "smoke-production"])
+                self.assertEqual([step.status for step in steps], ["done", "done", "done", "failed"])
+                self.assertEqual(len(errors), 1)
+                self.assertIn(detail, errors[0])
+                self.assertIn(note, errors[0])
+                self.assertNotIn("private detail", errors[0])
+                self.assertFalse(warnings)
+
+    def test_cloudflare_production_deploy_checks_real_git_source(self):
+        module = load_production_deploy_script()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+
+            git("init", "--quiet")
+            (root / ".gitignore").write_text("*.local.json\n__pycache__/\n", encoding="utf-8")
+            name = "cloudflare/worker/worker.py"
+            script = root / name
+            script.parent.mkdir(parents=True)
+            script.write_bytes(b"# Review fixture\n")
+            git("add", ".")
+            git("-c", "user.email=fixture@example.invalid", "-c", "user.name=Release fixture", "commit", "--quiet", "-m", "Reviewed fixture")
+            approved = git("rev-parse", "HEAD")
+            self.assertEqual(module.release_source_blockers(root, approved), [])
+            self.assertIn("full reviewed Git commit", module.release_source_blockers(root, approved[:7])[0])
+            self.assertIn("does not match", module.release_source_blockers(root, "0" * len(approved))[0])
+            for flag in ("assume-unchanged", "skip-worktree"):
+                with self.subTest(flag=flag):
+                    git("update-index", f"--{flag}", name)
+                    try:
+                        script.write_bytes(b"# Hidden unreviewed edit\n")
+                        self.assertEqual(git("status", "--porcelain=v1"), "")
+                        self.assertEqual(
+                            module.release_source_blockers(root, approved),
+                            ["Use a full checkout without assume-unchanged or skip-worktree index flags."],
+                        )
+                    finally:
+                        script.write_bytes(b"# Review fixture\n")
+                        git("update-index", f"--no-{flag}", name)
+            script.write_bytes(b"# Unreviewed edit\n")
+            self.assertIn("clean checkout", module.release_source_blockers(root, approved)[0])
+            git("add", name)
+            self.assertIn("clean checkout", module.release_source_blockers(root, approved)[0])
+            git("-c", "user.email=fixture@example.invalid", "-c", "user.name=Release fixture", "commit", "--quiet", "-m", "Next fixture")
+            self.assertIn("does not match", module.release_source_blockers(root, approved)[0])
+            approved = git("rev-parse", "HEAD")
+            (root / "clerk-proxy-proof.local.json").write_text("{}", encoding="utf-8")
+            cache = root / "cloudflare" / "worker" / "__pycache__"
+            cache.mkdir(parents=True)
+            (cache / "worker.cpython-313.pyc").write_bytes(b"synthetic bytecode")
+            self.assertEqual(module.release_source_blockers(root, approved), [])
+            static = root / "workdoe" / "static"
+            static.mkdir(parents=True)
+            (static / "unreviewed.local.json").write_text("{}", encoding="utf-8")
+            self.assertIn("ignored files", module.release_source_blockers(root, approved)[0])
+            (static / "unreviewed.txt").write_text("fixture", encoding="utf-8")
+            self.assertIn("clean checkout", module.release_source_blockers(root, approved)[0])
+
+    def test_cloudflare_production_deploy_rejects_replaced_commit_and_filtered_runtime_bytes(self):
+        module = load_production_deploy_script()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+
+            git("init", "--quiet")
+            git("config", "core.autocrlf", "false")
+            git("config", "user.email", "fixture@example.invalid")
+            git("config", "user.name", "Release fixture")
+            git("config", "filter.reviewed.clean", "sed 's/Changed/Approved/g'")
+            (root / ".gitattributes").write_bytes(b"*.py text eol=lf filter=reviewed\n*.txt text eol=lf filter=reviewed\n")
+            source = root / "cloudflare/worker/entry.py"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"# Approved bytes\n")
+            wheel_lock = root / ".github/python/audit.txt"
+            wheel_lock.parent.mkdir(parents=True)
+            wheel_lock.write_bytes(b"# Approved lock bytes\n")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "Reviewed fixture")
+            reviewed = git("rev-parse", "HEAD")
+            self.assertEqual(module.release_source_blockers(root, reviewed), [])
+
+            wheel_lock.write_bytes(b"# Changed lock bytes\n")
+            git("add", ".github/python/audit.txt")
+            self.assertEqual(git("status", "--porcelain=v1"), "")
+            with self.subTest(case="raw audit lock bytes"):
+                self.assertIn("Release input bytes do not match", module.release_source_blockers(root, reviewed)[0])
+            wheel_lock.write_bytes(b"# Approved lock bytes\n")
+            git("add", ".github/python/audit.txt")
+
+            source.write_bytes(b"# Changed bytes\n")
+            git("add", "cloudflare/worker/entry.py")
+            self.assertEqual(git("status", "--porcelain=v1"), "")
+            with self.subTest(case="raw bytes"):
+                self.assertIn("Release input bytes do not match", module.release_source_blockers(root, reviewed)[0])
+
+            source.write_bytes(b"# Unreviewed content\n")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "Unreviewed fixture")
+            replacement = git("rev-parse", "HEAD")
+            git("replace", reviewed, replacement)
+            git("update-ref", "HEAD", reviewed, replacement)
+            self.assertEqual(git("rev-parse", "HEAD"), reviewed)
+            self.assertEqual(git("status", "--porcelain=v1"), "")
+            with self.subTest(case="replacement object"):
+                self.assertIn("clean checkout", module.release_source_blockers(root, reviewed)[0])
+
+    def test_cloudflare_production_deploy_git_timeout_fails_closed(self):
+        module = load_production_deploy_script()
+        with mock.patch.object(module, "git_read", side_effect=subprocess.TimeoutExpired("private detail", 15)):
+            self.assertEqual(
+                module.release_source_blockers(ROOT, DEPLOY_FIXTURE_COMMIT),
+                ["Could not verify the reviewed Git checkout."],
+            )
+
+    def test_cloudflare_production_deploy_rechecks_source_after_migration(self):
+        module = load_production_deploy_script()
+        steps = module.build_deploy_steps(ROOT, migrations="apply")
+        replies = [
+            d1_ledger_reply(),
+            subprocess.CompletedProcess([], 0, '{"bookmark":"fixture-bookmark-0123456789"}', ""),
+            subprocess.CompletedProcess([], 0, "", ""),
+            d1_ledger_reply(),
+        ]
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            mock.patch.object(module, "upload_and_verify_worker", return_value=DEPLOY_UPLOADED_VERSION),
+            mock.patch.object(module, "run_external", side_effect=replies) as run,
+        ):
+            checks = iter([[], [], [], [], ["The release checkout changed."]])
+            steps, errors, _ = module.execute_steps(
+                steps, check_source=lambda: next(checks), d1_recovery_output=Path(temp) / "recovery.json",
+                **DEPLOY_FIXTURE_IDENTITY,
+            )
+        self.assertEqual(run.call_args_list, [mock.call(step) for step in [steps[0], *steps[2:5]]])
+        self.assertEqual([step.status for step in steps], ["done"] * 5 + ["failed", "pending"])
+        self.assertEqual(errors, [f"{module.WORKER_ACTIVATE_STEP}: The release checkout changed.", module.D1_AFTER_APPLY_NOTICE])
+
+    def test_cloudflare_production_migration_requires_a_saved_fresh_bookmark(self):
+        module = load_production_deploy_script()
+        database_id = module.reviewed_d1_database_id(ROOT / "cloudflare")
+        valid = subprocess.CompletedProcess(
+            [], 0, '{"bookmark":"fixture-bookmark-0123456789","unreviewed":"private response detail"}', "",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "recovery.json"
+
+            def run_step(step):
+                if step.name == module.D1_PREFIX_LEDGER_STEP:
+                    return d1_ledger_reply()
+                if step.name == module.D1_RECOVERY_STEP:
+                    self.assertFalse(output.exists())
+                    return valid
+                self.assertEqual(step.name, "apply-d1-migrations")
+                receipt = json.loads(output.read_text(encoding="utf-8"))
+                self.assertEqual(set(receipt), {"database", "database_id", "bookmark", "captured_at", "release_commit", "previous_worker_version"})
+                self.assertEqual(receipt["database_id"], database_id)
+                self.assertEqual(receipt["bookmark"], "fixture-bookmark-0123456789")
+                self.assertEqual(receipt["release_commit"], DEPLOY_FIXTURE_COMMIT)
+                self.assertEqual(receipt["previous_worker_version"], DEPLOY_FIXTURE_VERSION)
+                return subprocess.CompletedProcess([], 0, "", "")
+
+            with (
+                mock.patch.object(module, "upload_and_verify_worker", return_value=DEPLOY_UPLOADED_VERSION),
+                mock.patch.object(module, "run_external", side_effect=run_step) as run,
+            ):
+                steps, errors, warnings = module.execute_steps(
+                    module.build_deploy_steps(ROOT, migrations="apply")[:4],
+                    d1_recovery_output=output, expected_commit=DEPLOY_FIXTURE_COMMIT,
+                    previous_worker_version=DEPLOY_FIXTURE_VERSION, expected_database_id=database_id,
+                    check_hosted_ingress=lambda: None,
+                )
+            self.assertEqual([call.args[0].name for call in run.call_args_list], [module.D1_PREFIX_LEDGER_STEP, module.D1_RECOVERY_STEP, "apply-d1-migrations"])
+            self.assertEqual([step.status for step in steps], ["done"] * 4)
+            self.assertFalse(errors)
+            self.assertFalse(warnings)
+            self.assertNotIn("fixture-bookmark-0123456789", steps[1].output_excerpt)
+
+            for path, reply, accepted_path in (
+                (None, valid, False),
+                (output, valid, False),
+                (Path(directory) / "missing" / "recovery.json", valid, False),
+                (Path(directory) / "not-json.txt", valid, False),
+                (Path(directory) / "invalid.json", subprocess.CompletedProcess([], 0, '[]', ""), True),
+                (Path(directory) / "oversize.json", subprocess.CompletedProcess([], 0, " " * 4097, ""), True),
+                (Path(directory) / "rejected.json", subprocess.CompletedProcess([], 1, "private response detail", ""), True),
+                (Path(directory) / "timeout.json", subprocess.TimeoutExpired(["private response detail"], 1), True),
+            ):
+                with (
+                    self.subTest(path=path),
+                    mock.patch.object(module, "upload_and_verify_worker", return_value=DEPLOY_UPLOADED_VERSION) as upload,
+                    mock.patch.object(module, "run_external", side_effect=[d1_ledger_reply(), reply]) as run,
+                ):
+                    existing = output.read_bytes()
+                    steps, errors, _ = module.execute_steps(
+                        module.build_deploy_steps(ROOT, migrations="apply"), d1_recovery_output=path,
+                        **DEPLOY_FIXTURE_IDENTITY,
+                    )
+                    finished = ["done", "done", "failed"] if accepted_path else ["failed"]
+                    self.assertEqual([step.status for step in steps], finished + ["pending"] * (7 - len(finished)))
+                    self.assertEqual(run.call_count, 2 if accepted_path else 0)
+                    self.assertEqual(upload.call_count, int(accepted_path))
+                    self.assertNotIn("private response detail", errors[0])
+                    self.assertEqual(output.read_bytes(), existing)
+
+    def test_cloudflare_migration_rejects_unignored_receipt_before_any_remote_step(self):
+        module = load_production_deploy_script()
+        output = ROOT / "unignored-recovery-receipt-fixture.json"
+        self.assertFalse(output.exists())
+        with (
+            mock.patch.object(module, "readiness_payload", return_value={"ready": True, "blockers": [], "warnings": []}),
+            mock.patch.object(module, "release_source_blockers", return_value=[]),
+            mock.patch.object(module, "run_external", return_value=subprocess.CompletedProcess([], 1, "", "")) as run,
+            mock.patch.object(module, "upload_and_verify_worker") as upload,
+        ):
+            plan = module.plan_payload(
+                ROOT, migrations="apply", d1_recovery_output=output,
+                expected_commit=DEPLOY_FIXTURE_COMMIT, expected_worker_version=DEPLOY_FIXTURE_VERSION,
+            )
+            steps, errors, _ = module.execute_steps(
+                module.build_deploy_steps(ROOT, migrations="apply"), d1_recovery_output=output,
+                **DEPLOY_FIXTURE_IDENTITY,
+            )
+        self.assertFalse(plan["ready_to_deploy"])
+        self.assertEqual(steps[0].status, "failed")
+        self.assertIn("Git-ignored", errors[0])
+        run.assert_not_called()
+        upload.assert_not_called()
+        self.assertFalse(output.exists())
+
+    def test_cloudflare_migration_recovery_target_allows_ignored_receipt_but_not_release_inputs(self):
+        module = load_production_deploy_script()
+        ignored = ROOT / "private-recovery-fixture.local.json"
+        self.assertEqual(module.d1_recovery_target(ROOT, ignored), ignored)
+        for parent in ("cloudflare/worker", "cloudflare/d1/migrations", "workdoe/static"):
+            with self.subTest(parent=parent), self.assertRaisesRegex(ValueError, "release inputs"):
+                module.d1_recovery_target(ROOT, ROOT / parent / ignored.name)
+        self.assertFalse(ignored.exists())
+
+    def test_cloudflare_migration_checks_saved_recovery_receipt_before_apply(self):
+        module = load_production_deploy_script()
+        reply = subprocess.CompletedProcess([], 0, '{"bookmark":"fixture-bookmark-0123456789"}', "")
+        for disturbance in ("deleted", "changed"):
+            with (
+                self.subTest(disturbance=disturbance),
+                tempfile.TemporaryDirectory() as directory,
+                mock.patch.object(module, "run_external", side_effect=[
+                    d1_ledger_reply(), reply, subprocess.CompletedProcess([], 1, "", ""),
+                ]) as run,
+                mock.patch.object(module, "upload_and_verify_worker", return_value=DEPLOY_UPLOADED_VERSION),
+            ):
+                output = Path(directory) / "recovery.json"
+
+                def source_check(path=output, action=disturbance):
+                    if path.exists():
+                        if action == "deleted":
+                            path.unlink()
+                        else:
+                            path.write_text("unexpected private receipt content", encoding="utf-8")
+                    return []
+
+                steps, errors, warnings = module.execute_steps(
+                    module.build_deploy_steps(ROOT, migrations="apply"), d1_recovery_output=output,
+                    check_source=source_check, **DEPLOY_FIXTURE_IDENTITY,
+                )
+                self.assertEqual([step.status for step in steps], ["done"] * 3 + ["failed"] + ["pending"] * 3)
+                self.assertEqual([call.args[0].name for call in run.call_args_list], [module.D1_PREFIX_LEDGER_STEP, module.D1_RECOVERY_STEP])
+                self.assertIn("receipt is missing or changed", errors[0])
+                self.assertNotIn("private receipt content", errors[0])
+                self.assertFalse(warnings)
+
+    def test_cloudflare_migration_refuses_divergent_prefix_before_bookmark_or_write(self):
+        module = load_production_deploy_script()
+        names = sorted(path.name for path in (ROOT / "cloudflare" / "d1" / "migrations").glob("*.sql"))
+        for remote in ([], names[1:], [names[0], names[2]], [*names, "0099_unreviewed_private_detail.sql"]):
+            reply = d1_ledger_reply(remote)
+            with (
+                self.subTest(migration_count=len(remote)), tempfile.TemporaryDirectory() as directory,
+                mock.patch.object(module, "run_external", return_value=reply) as run,
+            ):
+                receipt = Path(directory) / "recovery.json"
+                steps, errors, warnings = module.execute_steps(
+                    module.build_deploy_steps(ROOT, migrations="apply"), d1_recovery_output=receipt,
+                )
+                self.assertEqual([call.args[0].name for call in run.call_args_list], ["verify-d1-migration-prefix"])
+                self.assertEqual(steps[0].status, "failed")
+                self.assertTrue(all(step.status == "pending" for step in steps[1:]))
+                self.assertFalse(receipt.exists())
+                self.assertIn("ordered prefix", errors[0])
+                self.assertNotIn("unreviewed_private_detail", errors[0])
+                self.assertFalse(warnings)
+
+    def test_cloudflare_migration_never_starts_when_inactive_upload_cannot_be_verified(self):
+        module = load_production_deploy_script()
+        for failure in (ValueError("Uploaded Worker binding does not match"), subprocess.TimeoutExpired([], 30)):
+            with (
+                self.subTest(failure=failure),
+                tempfile.TemporaryDirectory() as directory,
+                mock.patch.object(module, "run_external", return_value=d1_ledger_reply()) as run,
+                mock.patch.object(module, "upload_and_verify_worker", side_effect=failure) as upload,
+                mock.patch.object(module, "activate_worker_version") as activate,
+                mock.patch.object(module, "observe_worker_version", return_value=DEPLOY_FIXTURE_VERSION),
+            ):
+                receipt = Path(directory) / "recovery.json"
+                steps, errors, warnings = module.execute_steps(
+                    module.build_deploy_steps(ROOT, migrations="apply"), deploy_env={"FIXTURE": "true"},
+                    d1_recovery_output=receipt, check_source=list, **DEPLOY_FIXTURE_IDENTITY,
+                )
+                run.assert_called_once_with(steps[0], deploy_env={"FIXTURE": "true"})
+                upload.assert_called_once()
+                activate.assert_not_called()
+                self.assertEqual([step.status for step in steps], ["done", "failed"] + ["pending"] * 5)
+                self.assertFalse(receipt.exists())
+                self.assertEqual(len(errors), 1)
+                self.assertFalse(warnings)
+
+    def test_cloudflare_migration_requires_complete_ledger_after_apply_before_activation(self):
+        module = load_production_deploy_script()
+        names = sorted(path.name for path in (ROOT / "cloudflare" / "d1" / "migrations").glob("*.sql"))
+
+        for post_apply, accepted in (
+            (d1_ledger_reply(names), True), (d1_ledger_reply(names[:-1]), False),
+            (d1_ledger_reply([*names, "0099_unreviewed_private_detail.sql"]), False),
+            (d1_ledger_reply(names, schema_changes="DROP INDEX idx_jobs_open_geo;"), False),
+            (subprocess.CompletedProcess([], 0, " " * (module.D1_LEDGER_RESPONSE_MAX + 1), ""), False),
+            (subprocess.TimeoutExpired([], 30, output="unexpected private detail"), False),
+        ):
+            with self.subTest(accepted=accepted), tempfile.TemporaryDirectory() as directory:
+                receipt = Path(directory) / "recovery.json"
+                replies = {
+                    "verify-d1-migration-prefix": d1_ledger_reply(names[:-1]),
+                    module.D1_RECOVERY_STEP: subprocess.CompletedProcess([], 0, '{"bookmark":"fixture-bookmark-0123456789"}', ""),
+                    "apply-d1-migrations": subprocess.CompletedProcess([], 0, "", ""),
+                    module.D1_LEDGER_STEP: post_apply,
+                }
+
+                def run_step(step, replies=replies):
+                    result = replies[step.name]
+                    if isinstance(result, Exception):
+                        raise result
+                    return result
+
+                with (
+                    mock.patch.object(module, "upload_and_verify_worker", return_value=DEPLOY_UPLOADED_VERSION),
+                    mock.patch.object(module, "activate_worker_version") as activate,
+                    mock.patch.object(module, "run_external", side_effect=run_step) as run,
+                ):
+                    steps, errors, warnings = module.execute_steps(
+                        module.build_deploy_steps(ROOT, include_smoke=False, migrations="apply"),
+                        d1_recovery_output=receipt, check_source=list, **DEPLOY_FIXTURE_IDENTITY,
+                    )
+                expected = ["verify-d1-migration-prefix", module.D1_RECOVERY_STEP, "apply-d1-migrations", module.D1_LEDGER_STEP]
+                self.assertEqual([call.args[0].name for call in run.call_args_list], expected)
+                self.assertEqual(activate.call_count, int(accepted))
+                self.assertTrue(receipt.is_file())
+                self.assertEqual(steps[-1].status, "done" if accepted else "pending")
+                self.assertFalse(warnings)
+                if accepted:
+                    self.assertFalse(errors)
+                else:
+                    self.assertIn("D1 may already have changed", errors[0])
+                    self.assertNotIn("private detail", errors[0])
+                    self.assertNotIn("unreviewed_private_detail", errors[0])
+
+    def test_cloudflare_migration_blocks_matching_prefix_with_schema_drift(self):
+        module = load_production_deploy_script()
+        names = sorted(path.name for path in (ROOT / "cloudflare" / "d1" / "migrations").glob("*.sql"))
+        reply = d1_ledger_reply(
+            names[:-1], schema_changes="DROP INDEX idx_messages_thread;",
+        )
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch.object(module, "run_external", return_value=reply) as run,
+        ):
+            receipt = Path(directory) / "recovery.json"
+            steps, errors, warnings = module.execute_steps(
+                module.build_deploy_steps(ROOT, migrations="apply"), d1_recovery_output=receipt,
+            )
+            run.assert_called_once_with(steps[0])
+            self.assertFalse(receipt.exists())
+        self.assertEqual(steps[0].status, "failed")
+        self.assertIn("application schema does not match", errors[0])
+        self.assertNotIn("idx_messages_thread", errors[0])
+        self.assertFalse(warnings)
+
+    def test_cloudflare_d1_schema_compares_definitions_and_normalizes_only_line_endings(self):
+        module = load_production_deploy_script()
+        cloudflare_dir = ROOT / "cloudflare"
+        changed = d1_ledger_reply(schema_changes=(
+            "DROP INDEX idx_messages_thread; "
+            "CREATE INDEX idx_messages_thread ON messages(created_at, thread_id);"
+        ))
+        self.assertIn("application schema does not match", module.d1_state_error(cloudflare_dir, changed))
+
+        reply = d1_ledger_reply()
+        data = json.loads(reply.stdout)
+        schema_row = next(row for row in data[0]["results"] if row["kind"] == "schema" and "\n" in row["sql"])
+        schema_row["sql"] = schema_row["sql"].replace("\n", "\r\n")
+        reply.stdout = json.dumps(data)
+        self.assertIsNone(module.d1_state_error(cloudflare_dir, reply))
+
+        schema_row["type"] = ["unexpected private response detail"]
+        reply.stdout = json.dumps(data)
+        error = module.d1_state_error(cloudflare_dir, reply)
+        self.assertIn("Unexpected response", error)
+        self.assertNotIn("private response detail", error)
+
+    def test_cloudflare_migration_stops_on_failed_apply_or_missing_post_apply_check(self):
+        module = load_production_deploy_script()
+        for status, failure in ((1, "Wrangler did not report migration success"), (0, "Verify the complete D1 ledger")):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                receipt = Path(directory) / "recovery.json"
+                steps = [step for step in module.build_deploy_steps(ROOT, migrations="apply") if step.name != module.D1_LEDGER_STEP]
+                replies = [
+                    d1_ledger_reply(),
+                    subprocess.CompletedProcess([], 0, '{"bookmark":"fixture-bookmark-0123456789"}', ""),
+                    subprocess.CompletedProcess([], status, "unexpected private detail", ""),
+                ]
+                with (
+                    mock.patch.object(module, "upload_and_verify_worker", return_value=DEPLOY_UPLOADED_VERSION),
+                    mock.patch.object(module, "run_external", side_effect=replies) as run,
+                ):
+                    steps, errors, warnings = module.execute_steps(steps, d1_recovery_output=receipt, **DEPLOY_FIXTURE_IDENTITY)
+                self.assertEqual(run.call_args_list, [mock.call(step) for step in [steps[0], *steps[2:4]]])
+                self.assertTrue(receipt.is_file())
+                self.assertIn(failure, errors[0])
+                self.assertTrue(any("D1 may already have changed" in error for error in errors))
+                self.assertNotIn("private detail", errors[0])
+                self.assertFalse(warnings)
+
+    def test_cloudflare_production_deploy_skip_verifies_remote_ledger_before_deploy(self):
+        module = load_production_deploy_script()
+        steps = module.build_deploy_steps(ROOT, migrations="skip")
+        self.assertEqual([step.name for step in steps], [module.D1_LEDGER_STEP, module.WORKER_UPLOAD_STEP,
+                                                       module.WORKER_ACTIVATE_STEP, "smoke-production"])
+        self.assertEqual(
+            steps[0].command[1:],
+            [
+                "d1", "execute", "workdoe", "--remote", "--config", "wrangler.jsonc", "--json",
+                "--command", module.D1_STATE_SQL,
+            ],
+        )
+        replies = [
+            d1_ledger_reply(),
+            deploy_smoke_reply(module),
+        ]
+        with (
+            mock.patch.object(module, "upload_and_verify_worker", return_value=DEPLOY_UPLOADED_VERSION),
+            mock.patch.object(module, "activate_worker_version", return_value=DEPLOY_FIXTURE_DEPLOYMENT) as activate,
+            mock.patch.object(module, "active_worker_deployment", return_value=(DEPLOY_UPLOADED_VERSION, DEPLOY_FIXTURE_DEPLOYMENT)),
+            mock.patch.object(module, "run_external", side_effect=replies) as run,
+        ):
+            steps, errors, warnings = module.execute_steps(steps, check_source=list, **DEPLOY_FIXTURE_IDENTITY)
+        self.assertEqual(run.call_args_list, [mock.call(steps[0]), mock.call(steps[-1])])
+        activate.assert_called_once()
+        self.assertEqual([step.status for step in steps], ["done"] * 4)
+        self.assertIn("application schema match", steps[0].output_excerpt)
+        self.assertEqual((errors, warnings), ([], []))
+
+    def test_cloudflare_deploy_stops_before_upload_or_activation_if_ingress_is_unverified(self):
+        module = load_production_deploy_script()
+        for check, expected_uploads, failed_step in (
+            (None, 0, module.WORKER_UPLOAD_STEP),
+            (mock.Mock(side_effect=[None, ValueError("Hosted ingress changed.")]), 1, module.WORKER_ACTIVATE_STEP),
+        ):
+            with (
+                self.subTest(step=failed_step),
+                mock.patch.object(module, "run_external", return_value=d1_ledger_reply()) as run,
+                mock.patch.object(module, "upload_and_verify_worker", return_value=DEPLOY_UPLOADED_VERSION) as upload,
+                mock.patch.object(module, "activate_worker_version") as activate,
+                mock.patch.object(module, "observe_worker_version", return_value=DEPLOY_FIXTURE_VERSION),
+            ):
+                steps, errors, warnings = module.execute_steps(
+                    module.build_deploy_steps(ROOT, migrations="skip"), deploy_env={"FIXTURE": "true"},
+                    check_source=list, **{**DEPLOY_FIXTURE_IDENTITY, "check_hosted_ingress": check},
+                )
+            run.assert_called_once_with(steps[0], deploy_env={"FIXTURE": "true"})
+            activate.assert_not_called()
+            self.assertEqual(upload.call_count, expected_uploads)
+            self.assertEqual(steps[1 + expected_uploads].status, "failed")
+            self.assertIn(failed_step, errors[0])
+            self.assertFalse(warnings)
+
+    def test_cloudflare_deploy_rechecks_ingress_before_applying_migrations(self):
+        module = load_production_deploy_script()
+        reply = subprocess.CompletedProcess([], 0, '{"bookmark":"fixture-bookmark-0123456789"}', "")
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch.object(module, "run_external", side_effect=[d1_ledger_reply(), reply]) as run,
+            mock.patch.object(module, "upload_and_verify_worker", return_value=DEPLOY_UPLOADED_VERSION) as upload,
+            mock.patch.object(module, "activate_worker_version") as activate,
+        ):
+            check = mock.Mock(side_effect=[None, ValueError("Hosted ingress changed.")])
+            steps, errors, warnings = module.execute_steps(
+                module.build_deploy_steps(ROOT, migrations="apply"), deploy_env={"FIXTURE": "true"},
+                check_source=list, d1_recovery_output=Path(directory) / "recovery.json",
+                **{**DEPLOY_FIXTURE_IDENTITY, "check_hosted_ingress": check},
+            )
+        self.assertEqual([call.args[0].name for call in run.call_args_list], [module.D1_PREFIX_LEDGER_STEP, module.D1_RECOVERY_STEP])
+        self.assertEqual(check.call_count, 2)
+        upload.assert_called_once()
+        activate.assert_not_called()
+        self.assertEqual([step.status for step in steps], ["done"] * 3 + ["failed"] + ["pending"] * 3)
+        self.assertIn("Migrations were not attempted", errors[0])
+        self.assertFalse(warnings)
+
+    def test_cloudflare_deploy_requires_hosted_privacy_readback_after_traffic_switch(self):
+        module = load_production_deploy_script()
+        for after_switch in (None, ValueError("Request query-string redaction is unverified.")):
+            if after_switch is None:
+                observation = mock.patch.object(
+                    module, "active_worker_deployment", return_value=(DEPLOY_UPLOADED_VERSION, DEPLOY_FIXTURE_DEPLOYMENT),
+                )
+            else:
+                observation = mock.patch.object(module, "observe_worker_version", return_value=DEPLOY_UPLOADED_VERSION)
+            with (
+                self.subTest(after_switch=after_switch),
+                mock.patch.object(module, "run_external", side_effect=[
+                    d1_ledger_reply(), deploy_smoke_reply(module),
+                ]) as run,
+                mock.patch.object(module, "upload_and_verify_worker", return_value=DEPLOY_UPLOADED_VERSION) as upload,
+                mock.patch.object(module, "activate_worker_version", return_value=DEPLOY_FIXTURE_DEPLOYMENT) as activate,
+                observation as observe,
+            ):
+                check = mock.Mock(side_effect=[None, None, after_switch])
+                order = mock.Mock()
+                order.attach_mock(check, "hosted")
+                order.attach_mock(upload, "upload")
+                order.attach_mock(activate, "activate")
+                order.attach_mock(run, "command")
+                order.attach_mock(observe, "observe")
+                steps, errors, warnings = module.execute_steps(
+                    module.build_deploy_steps(ROOT, migrations="skip"), deploy_env={"FIXTURE": "true"},
+                    check_source=list, **{**DEPLOY_FIXTURE_IDENTITY, "check_hosted_ingress": check},
+                )
+                expected = ["command", "hosted", "upload", "hosted", "activate", "hosted"]
+                if after_switch is None:
+                    expected.append("command")
+                expected.append("observe")
+                self.assertEqual([call[0] for call in order.mock_calls], expected)
+                self.assertFalse(warnings)
+                if after_switch is None:
+                    self.assertEqual([step.status for step in steps], ["done"] * 4)
+                    self.assertFalse(errors)
+                else:
+                    self.assertEqual([step.status for step in steps], ["done", "done", "failed", "pending"])
+                    self.assertIn("Post-activation hosted ingress and privacy verification failed", errors[0])
+                    self.assertIn(f"Observed the verified release Worker {DEPLOY_UPLOADED_VERSION} at 100%", errors[0])
+                    self.assertIn("No rollback was attempted", errors[0])
+                observe.assert_called_once()
+
+    def test_cloudflare_production_deploy_skip_blocks_ledger_drift_and_unavailability(self):
+        module = load_production_deploy_script()
+        names = sorted(path.name for path in (ROOT / "cloudflare" / "d1" / "migrations").glob("*.sql"))
+
+        cases = {
+            "missing": d1_ledger_reply(names[:-1]),
+            "extra": d1_ledger_reply([*names, "0099_unreviewed_private_detail.sql"]),
+            "wrong order": d1_ledger_reply(list(reversed(names))),
+            "schema drift": d1_ledger_reply(schema_changes="ALTER TABLE users ADD COLUMN unreviewed_private_detail TEXT;"),
+            "failed": d1_ledger_reply(names, success=False),
+            "malformed": subprocess.CompletedProcess([], 0, "unexpected private detail", ""),
+            "auth error": subprocess.CompletedProcess([], 1, "", "unexpected private detail"),
+            "timeout": subprocess.TimeoutExpired([], 30, output="unexpected private detail"),
+        }
+        for label, reply in cases.items():
+            with self.subTest(label=label), mock.patch.object(module, "run_external", side_effect=[reply]) as run:
+                steps = module.build_deploy_steps(ROOT, migrations="skip")
+                steps, errors, warnings = module.execute_steps(steps, check_source=list)
+                run.assert_called_once_with(steps[0])
+                self.assertEqual([step.status for step in steps], ["failed", "pending", "pending", "pending"])
+                self.assertEqual(len(errors), 1)
+                self.assertIn(
+                    "production d1 application schema" if label == "schema drift" else "production d1 migration",
+                    errors[0].lower(),
+                )
+                self.assertNotIn("private detail", errors[0])
+                self.assertNotIn("private_detail", errors[0])
+                self.assertEqual(steps[0].output_excerpt, "")
+                self.assertFalse(warnings)
+
     def test_cloudflare_production_deploy_blocks_when_strict_readiness_fails(self):
         module = load_production_deploy_script()
         original_argv = sys.argv
@@ -2190,10 +3987,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "--execute",
                     "--yes",
                     "--json",
+                    "--expected-commit", DEPLOY_FIXTURE_COMMIT,
+                    "--expected-worker-version", DEPLOY_FIXTURE_VERSION,
+                    "--migrations", "skip",
                     "--secret-list-json",
                     str(Path(tmp) / "missing-secret-evidence.json"),
                 ]
-                with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                with mock.patch.object(module, "release_source_blockers", return_value=[]), contextlib.redirect_stdout(io.StringIO()) as stdout:
                     self.assertEqual(module.main(), 1)
                 payload = json.loads(stdout.getvalue())
             finally:
@@ -2205,40 +4005,132 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             payload["blockers"],
         )
 
-    def test_cloudflare_production_deploy_records_capped_smoke_output(self):
+    def test_cloudflare_production_deploy_requires_live_dependency_gates(self):
         module = load_production_deploy_script()
-        steps = [
-            module.DeployStep(
-                name="smoke-production",
-                command=[sys.executable, "scripts/workdoe_production_smoke.py"],
-                cwd=str(ROOT),
-                required=True,
+        args = ["cloudflare_production_deploy.py", "--execute", "--yes", "--json",
+                "--expected-commit", DEPLOY_FIXTURE_COMMIT,
+                "--expected-worker-version", DEPLOY_FIXTURE_VERSION,
+                "--migrations", "apply", "--d1-recovery-output", "private-recovery-fixture.local.json",
+                "--api-token-file", "private-deploy-token-fixture.txt"]
+        for failure in (
+            "Browser advisory registry returned HTTP 503", "Review 1 npm advisory record(s)",
+            "Tooling advisory registry returned HTTP 503", "Review OSV records for npm wrangler",
+        ):
+            with (
+                self.subTest(failure=failure),
+                mock.patch.object(sys, "argv", args),
+                mock.patch.object(module, "release_source_blockers", return_value=[]),
+                mock.patch.object(module, "readiness_payload", return_value={"ready": True, "warnings": []}),
+                mock.patch.object(module, "verify_dependency_provenance", return_value=[failure]) as verify,
+                mock.patch.object(module, "cloudflare_api_token_from_file") as read_token,
+                mock.patch.object(module, "wrangler_env") as wrangler_env,
+                mock.patch.object(module, "execute_steps") as deploy,
+                contextlib.redirect_stdout(io.StringIO()) as stdout,
+            ):
+                self.assertEqual(module.main(), 1)
+                verify.assert_called_once_with(ROOT / "DEPENDENCY_PROVENANCE.json", verify_release_advisories=True)
+                read_token.assert_not_called()
+                wrangler_env.assert_not_called()
+                deploy.assert_not_called()
+                payload = json.loads(stdout.getvalue())
+                self.assertFalse(payload["executes_commands"])
+                self.assertEqual(payload["blockers"], [failure])
+
+    def test_cloudflare_production_deploy_plan_does_not_query_browser_advisories(self):
+        module = load_production_deploy_script()
+        with (
+            mock.patch.object(sys, "argv", ["cloudflare_production_deploy.py", "--json"]),
+            mock.patch.object(module, "verify_dependency_provenance") as verify,
+            contextlib.redirect_stdout(io.StringIO()) as stdout,
+        ):
+            self.assertEqual(module.main(), 0)
+        verify.assert_not_called()
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["checks_live_browser_advisories_before_writes"])
+        self.assertTrue(payload["checks_live_tooling_advisories_before_writes"])
+        self.assertTrue(payload["checks_hosted_ingress_before_writes"])
+        self.assertTrue(payload["checks_hosted_query_redaction_before_writes"])
+        self.assertTrue(payload["checks_hosted_ingress_and_query_redaction_after_activation"])
+        self.assertTrue(payload["checks_active_and_uploaded_worker_media_binding"])
+        self.assertTrue(payload["checks_hosted_r2_privacy_before_writes_and_after_activation"])
+        self.assertTrue(payload["checks_hosted_queue_routing_before_writes_and_after_activation"])
+        self.assertNotIn("browser_dependency_gate", payload)
+        self.assertNotIn("tooling_dependency_gate", payload)
+
+    def test_cloudflare_production_deploy_records_only_safe_failure_ids(self):
+        module = load_production_deploy_script()
+        failed = ("public-map-snapshots", "clerk-browser-entry", "commit-asset-parity")
+        warned = ("public-discovery-files",)
+        result = deploy_smoke_reply(module, failed=failed, warned=warned)
+        self.assertGreater(len(result.stdout), 1200)
+        ready, receipt = module.release_smoke_result(result, DEPLOY_FIXTURE_COMMIT)
+        self.assertFalse(ready)
+        self.assertEqual(
+            receipt, "Failed: public-map-snapshots (HTTP 503), clerk-browser-entry (HTTP 503), "
+            "commit-asset-parity (HTTP 503). Warning: public-discovery-files.",
+        )
+        result = deploy_smoke_reply(module, warned=warned)
+        ready, receipt = module.release_smoke_result(result, DEPLOY_FIXTURE_COMMIT)
+        self.assertTrue(ready)
+        self.assertEqual(receipt, "All required commit-bound public smoke checks passed. Warning: public-discovery-files.")
+
+    def test_cloudflare_production_deploy_rejects_unbound_or_inconsistent_smoke_success(self):
+        module = load_production_deploy_script()
+        original = deploy_smoke_report(module)
+        checks = original["checks"]
+        for output in (
+            "not JSON", "x" * (module.SMOKE_JSON_MAX + 1), "[]",
+            json.dumps(dict(original, asset_commit="2" * 40)),
+            json.dumps(dict(original, domain="other.example")),
+            json.dumps(dict(original, readiness_scope="public_http_smoke")),
+            json.dumps(dict(original, checks=[])),
+            json.dumps(dict(original, checks=[check for check in checks if check["name"] != "clerk-browser-file-delivery"])),
+            json.dumps(dict(original, checks=checks[1:] + [checks[-1]])),
+            json.dumps(dict(original, checks=[dict(checks[0], required=False), *checks[1:]])),
+            json.dumps(dict(original, checks=[dict(checks[0], status="failed"), *checks[1:]])),
+        ):
+            with self.subTest(payload_size=len(output)):
+                self.assertEqual(
+                    module.release_smoke_result(subprocess.CompletedProcess([], 0, output, ""), DEPLOY_FIXTURE_COMMIT),
+                    (False, "No valid production smoke report for the reviewed commit."),
+                )
+        self.assertFalse(module.release_smoke_result(deploy_smoke_reply(module), None)[0])
+        self.assertFalse(module.release_smoke_result(
+            subprocess.CompletedProcess([], 1, json.dumps(original), ""), DEPLOY_FIXTURE_COMMIT,
+        )[0])
+
+    def test_cloudflare_production_deploy_accepts_real_area_smoke_report_format(self):
+        module = load_production_deploy_script()
+        smoke = load_workdoe_production_smoke_script()
+        unavailable = smoke.FetchResult(ok=False, status_code=503)
+        area = smoke.ReviewedAreaMap("/dmv.geojson", "0" * 64)
+        assets = {name: b"fixture" for name in smoke.VERSIONED_STATIC_ASSET_FILES}
+        with (
+            mock.patch.object(
+                smoke, "read_reviewed_smoke_release", return_value=smoke.ReviewedSmokeRelease(assets, {}, area),
             ),
-        ]
+            mock.patch.object(smoke, "dns_lookup", return_value=(True, ["192.0.2.1"], "")),
+            mock.patch.object(smoke, "fetch_url", return_value=unavailable),
+        ):
+            report = smoke.build_smoke_payload_with_retries(
+                asset_commit=DEPLOY_FIXTURE_COMMIT, release_checkout=ROOT, expect_public_map_mode="area",
+                verify_clerk_browser_delivery=True,
+            )
+        result = subprocess.CompletedProcess([], 1, json.dumps(report), "")
+        ready, receipt = module.release_smoke_result(result, DEPLOY_FIXTURE_COMMIT)
+        self.assertFalse(ready)
+        self.assertIn("public-map-snapshots (HTTP 503)", receipt)
+        self.assertIn("commit-asset-parity", receipt)
+        self.assertIn("clerk-browser-file-delivery", receipt)
 
-        class SmokeResult:
-            returncode = 0
-            stdout = "HTTP/2 200 OK\ncache-control: no-store"
-            stderr = ""
-
-        original_run_external = module.run_external
-        try:
-            module.run_external = lambda step: SmokeResult()
-            executed, errors, warnings = module.execute_steps(steps)
-        finally:
-            module.run_external = original_run_external
-
-        self.assertEqual(errors, [])
-        self.assertEqual(warnings, [])
-        self.assertEqual([step.status for step in executed], ["done"])
-        self.assertIn("HTTP/2 200 OK", executed[0].output_excerpt)
-
-        long_result = type(
-            "LongSmokeResult",
-            (),
-            {"returncode": 0, "stdout": "x" * (module.SMOKE_OUTPUT_MAX + 20), "stderr": ""},
-        )()
-        self.assertTrue(module.smoke_output_excerpt(long_result).endswith("[truncated]"))
+        with mock.patch.object(smoke, "read_reviewed_smoke_release", side_effect=ValueError("private detail")):
+            report = smoke.build_smoke_payload(
+                asset_commit=DEPLOY_FIXTURE_COMMIT, release_checkout=ROOT, expect_public_map_mode="area",
+            )
+        result = subprocess.CompletedProcess([], 1, json.dumps(report), "")
+        self.assertEqual(
+            module.release_smoke_result(result, DEPLOY_FIXTURE_COMMIT), (False, "Failed: reviewed-release-inputs."),
+        )
 
     def test_cloudflare_production_deploy_rejects_smoke_bypass(self):
         module = load_production_deploy_script()
@@ -2277,9 +4169,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "warnings": ["Confirm admin@workdoe.com is monitored."],
             }
             module.execute_steps = lambda *args, **kwargs: self.fail("execute_steps should not run")
-            sys.argv = ["cloudflare_production_deploy.py", "--execute", "--yes", "--json"]
+            sys.argv = ["cloudflare_production_deploy.py", "--execute", "--yes", "--json",
+                        "--expected-commit", DEPLOY_FIXTURE_COMMIT,
+                        "--expected-worker-version", DEPLOY_FIXTURE_VERSION, "--migrations", "skip"]
             output = io.StringIO()
-            with contextlib.redirect_stdout(output):
+            with (
+                mock.patch.object(module, "release_source_blockers", return_value=[]),
+                mock.patch.object(module, "verify_dependency_provenance", return_value=[]),
+                contextlib.redirect_stdout(output),
+            ):
                 self.assertEqual(module.main(), 1)
             payload = json.loads(output.getvalue())
         finally:
@@ -2304,6 +4202,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             token_path = Path(tmp) / ".deploy-token"
             token_path.write_text(f"{token}\n", encoding="utf-8")
+            proof_path = Path(tmp) / "clerk-proxy-proof.json"
+            proof_path.write_text(json.dumps(clerk_proof_fixture()), encoding="utf-8")
             try:
                 module.readiness_payload = lambda *args, **kwargs: {
                     "ready": True,
@@ -2311,8 +4211,18 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "warnings": [],
                 }
 
-                def fake_execute(steps, deploy_env=None):
+                def fake_execute(steps, deploy_env=None, *, check_source, check_hosted_ingress, check_clerk_settings, **identity):
+                    self.assertTrue(callable(check_source))
+                    self.assertTrue(callable(check_clerk_settings))
+                    self.assertEqual(identity, {
+                        "expected_commit": DEPLOY_FIXTURE_COMMIT, "previous_worker_version": DEPLOY_FIXTURE_VERSION,
+                        "d1_recovery_output": None,
+                        "expected_database_id": module.reviewed_d1_database_id(ROOT / "cloudflare"),
+                    })
                     captured["token"] = deploy_env["CLOUDFLARE_API_TOKEN"]
+                    captured["steps"] = [step.name for step in steps]
+                    self.assertEqual(steps[-1].command[-2:], ["--asset-commit", DEPLOY_FIXTURE_COMMIT])
+                    check_hosted_ingress()
                     return steps, [], []
 
                 module.execute_steps = fake_execute
@@ -2321,12 +4231,26 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "--execute",
                     "--yes",
                     "--json",
+                    "--expected-commit", DEPLOY_FIXTURE_COMMIT,
+                    "--expected-worker-version", DEPLOY_FIXTURE_VERSION,
+                    "--migrations", "skip",
                     "--api-token-file",
                     str(token_path),
+                    "--clerk-proxy-proof-json", str(proof_path),
                 ]
                 output = io.StringIO()
-                with contextlib.redirect_stdout(output):
+                with (
+                    mock.patch.object(module, "release_source_blockers", return_value=[]),
+                    mock.patch.object(module, "verify_dependency_provenance", return_value=[]) as verify,
+                    mock.patch.dict(os.environ, {"CLOUDFLARE_ACCOUNT_ID": "a" * 32}),
+                    mock.patch.object(module, "verify_hosted_worker_ingress") as ingress,
+                    contextlib.redirect_stdout(output),
+                ):
                     self.assertEqual(module.main(), 0)
+                    verify.assert_called_once_with(ROOT / "DEPENDENCY_PROVENANCE.json", verify_release_advisories=True)
+                    ingress.assert_called_once()
+                    self.assertEqual(ingress.call_args.args[0], "a" * 32)
+                    self.assertEqual(ingress.call_args.args[1]["CLOUDFLARE_API_TOKEN"], token)
                 payload = json.loads(output.getvalue())
             finally:
                 module.execute_steps = original_execute_steps
@@ -2335,6 +4259,13 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
         self.assertTrue(payload["ok"])
         self.assertEqual(captured["token"], token)
+        self.assertEqual(captured["steps"], [module.D1_LEDGER_STEP, module.WORKER_UPLOAD_STEP,
+                                             module.WORKER_ACTIVATE_STEP, "smoke-production"])
+        self.assertEqual(payload["browser_dependency_gate"], "passed")
+        self.assertEqual(payload["tooling_dependency_gate"], "passed")
+        self.assertEqual(payload["release_commit"], DEPLOY_FIXTURE_COMMIT)
+        self.assertEqual(payload["steps"][1]["command"][-2:], ["--tag", DEPLOY_FIXTURE_COMMIT])
+        self.assertEqual(payload["migrations"], "skip")
         self.assertNotIn(token, output.getvalue())
 
     def test_token_staging_helper_validates_and_preserves_the_token_value(self):
@@ -2370,7 +4301,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "warnings": [],
                 }
 
-                def fake_execute(steps, deploy_env=None):
+                def fake_execute(steps, deploy_env=None, *, check_source=None, **_identity):
                     captured["token"] = deploy_env["CLOUDFLARE_API_TOKEN"]
                     return steps, [], []
 
@@ -2380,10 +4311,19 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     "--execute",
                     "--yes",
                     "--json",
+                    "--expected-commit", DEPLOY_FIXTURE_COMMIT,
+                    "--expected-worker-version", DEPLOY_FIXTURE_VERSION,
+                    "--migrations", "skip",
                     "--use-staged-api-token-if-present",
                 ]
                 output = io.StringIO()
-                with contextlib.redirect_stdout(output):
+                with (
+                    mock.patch.object(module, "release_source_blockers", return_value=[]),
+                    mock.patch.object(module, "verify_dependency_provenance", return_value=[]),
+                    mock.patch.object(module, "clerk_release_proof_digest", return_value="fixture-proof-digest"),
+                    mock.patch.dict(os.environ, {"CLOUDFLARE_ACCOUNT_ID": "a" * 32}),
+                    contextlib.redirect_stdout(output),
+                ):
                     self.assertEqual(module.main(), 0)
                 payload = json.loads(output.getvalue())
             finally:
@@ -2398,47 +4338,58 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(captured["token"], token)
         self.assertNotIn(token, output.getvalue())
 
-    def test_cloudflare_production_deploy_allows_explicit_local_wrangler_oauth(self):
+    def test_cloudflare_production_deploy_does_not_allow_oauth_in_github_actions(self):
         module = load_production_deploy_script()
-        original_argv = sys.argv
-        original_readiness_payload = module.readiness_payload
-        original_execute_steps = module.execute_steps
-        original_oauth_ready = module.ambient_wrangler_oauth_ready
-        original_token = os.environ.pop("CLOUDFLARE_API_TOKEN", None)
-        captured = {}
-        try:
-            module.readiness_payload = lambda *args, **kwargs: {
-                "ready": True,
-                "blockers": [],
-                "warnings": [],
-            }
-            module.ambient_wrangler_oauth_ready = lambda *args, **kwargs: True
+        args = ["cloudflare_production_deploy.py", "--execute", "--yes", "--json",
+                "--expected-commit", DEPLOY_FIXTURE_COMMIT,
+                "--expected-worker-version", DEPLOY_FIXTURE_VERSION,
+                "--migrations", "skip", "--allow-wrangler-oauth"]
+        with (
+            mock.patch.object(sys, "argv", args),
+            mock.patch.object(module, "readiness_payload", return_value={"ready": True, "warnings": []}),
+            mock.patch.object(module, "release_source_blockers", return_value=[]),
+            mock.patch.object(module, "verify_dependency_provenance", return_value=[]),
+            mock.patch.object(module, "wrangler_env", return_value={"GITHUB_ACTIONS": "true"}),
+            mock.patch.object(module, "execute_steps") as deploy,
+            contextlib.redirect_stdout(io.StringIO()) as stdout,
+        ):
+            self.assertEqual(module.main(), 1)
+        deploy.assert_not_called()
+        payload = json.loads(stdout.getvalue())
+        self.assertFalse(payload["executes_commands"])
+        self.assertIn("CLOUDFLARE_API_TOKEN is required", payload["error"])
 
-            def fake_execute(steps, deploy_env=None):
-                captured["has_token"] = "CLOUDFLARE_API_TOKEN" in deploy_env
-                captured["config_home"] = deploy_env.get("XDG_CONFIG_HOME")
-                return steps, [], []
+    def test_cloudflare_production_deploy_local_oauth_verifies_hosted_ingress(self):
+        module = load_production_deploy_script()
+        args = ["cloudflare_production_deploy.py", "--execute", "--yes", "--json",
+                "--expected-commit", DEPLOY_FIXTURE_COMMIT,
+                "--expected-worker-version", DEPLOY_FIXTURE_VERSION,
+                "--migrations", "skip", "--allow-wrangler-oauth"]
+        account = "a" * 32
+        token = "fixture-oauth-credential"
 
-            module.execute_steps = fake_execute
-            sys.argv = [
-                "cloudflare_production_deploy.py",
-                "--execute",
-                "--yes",
-                "--json",
-                "--allow-wrangler-oauth",
-            ]
-            with contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(module.main(), 0)
-        finally:
-            module.execute_steps = original_execute_steps
-            module.readiness_payload = original_readiness_payload
-            module.ambient_wrangler_oauth_ready = original_oauth_ready
-            sys.argv = original_argv
-            if original_token is not None:
-                os.environ["CLOUDFLARE_API_TOKEN"] = original_token
+        def execute(steps, deploy_env=None, *, check_hosted_ingress, **_identity):
+            self.assertNotIn("CLOUDFLARE_API_TOKEN", deploy_env)
+            check_hosted_ingress()
+            return steps, [], []
 
-        self.assertFalse(captured["has_token"])
-        self.assertNotEqual(captured["config_home"], str(ROOT / ".wrangler-config"))
+        with (
+            mock.patch.object(sys, "argv", args),
+            mock.patch.object(module, "readiness_payload", return_value={"ready": True, "warnings": []}),
+            mock.patch.object(module, "release_source_blockers", return_value=[]),
+            mock.patch.object(module, "verify_dependency_provenance", return_value=[]),
+            mock.patch.object(module, "wrangler_env", return_value={"CLOUDFLARE_ACCOUNT_ID": account}),
+            mock.patch.object(module, "clerk_release_proof_digest", return_value="fixture-proof-digest"),
+            mock.patch.object(module, "ambient_wrangler_env", return_value={"CLOUDFLARE_ACCOUNT_ID": account}),
+            mock.patch.object(module, "wrangler_oauth_access_token", return_value=token) as oauth,
+            mock.patch.object(module, "verify_hosted_worker_ingress") as ingress,
+            mock.patch.object(module, "execute_steps", side_effect=execute),
+            contextlib.redirect_stdout(io.StringIO()) as stdout,
+        ):
+            self.assertEqual(module.main(), 0)
+        oauth.assert_called_once()
+        ingress.assert_called_once_with(account, oauth.call_args.args[1], oauth_token=token)
+        self.assertNotIn(token, stdout.getvalue())
 
     def test_package_deploy_uses_a_staged_token_only_when_it_exists(self):
         scripts = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["scripts"]
@@ -2522,13 +4473,79 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             self.assertEqual(saved["privacy_url"], "https://workdoe.com/privacy")
             self.assertEqual(saved["checked_by"], "release-test")
 
+    def test_clerk_release_proof_rejects_stale_future_ambiguous_and_extra_data(self):
+        module = load_readiness_script()
+        now = datetime(2026, 11, 9, 12, tzinfo=timezone.utc)
+        proof = clerk_proof_fixture(confirmed_at_utc="2026-11-09T11:00:00Z", checked_by="github:release-test")
+        good = json.dumps(proof)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "proof.json"
+            path.write_text(good, encoding="utf-8")
+            self.assertEqual(module.clerk_release_proof_digest(path, now=now), hashlib.sha256(good.encode()).hexdigest())
+            cases = (
+                (json.dumps(proof | {"confirmed_at_utc": "2026-11-08T11:59:59Z"}), "stale or dated"),
+                (json.dumps(proof | {"confirmed_at_utc": "2026-11-09T12:05:01Z"}), "stale or dated"),
+                (json.dumps(proof | {"confirmed_at_utc": "2026-11-09T11:00:00+00:00"}), "exact UTC"),
+                (json.dumps(proof | {"checked_by": "fixture@example.invalid"}), "non-secret operator label"),
+                (json.dumps(proof | {"unexpected": "fixture-private-value"}), "non-secret confirmation format"),
+                (good[:-1] + ', "confirmed": true}', "ambiguous"),
+                (good + " " * module.CLERK_RELEASE_PROOF_MAX_BYTES, "oversized"),
+            )
+            for value, message in cases:
+                with self.subTest(message=message), self.assertRaisesRegex(ValueError, message) as caught:
+                    path.write_text(value, encoding="utf-8")
+                    module.clerk_release_proof_digest(path, now=now)
+                self.assertNotIn("fixture-private-value", str(caught.exception))
+
+    def test_isolated_clerk_beta_rejects_stale_proof_and_guard_rejects_replacement(self):
+        module = load_production_deploy_script()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "proof.json"
+            fresh = json.dumps(clerk_proof_fixture())
+            path.write_text(fresh, encoding="utf-8")
+            fingerprint = module.clerk_release_proof_digest(path)
+            self.assertFalse(module.clerk_proof_guard(path, fingerprint))
+            path.write_text(fresh + "\n", encoding="utf-8")
+            self.assertIn("proof changed", module.clerk_proof_guard(path, fingerprint)[0])
+            path.write_text(json.dumps(clerk_proof_fixture(confirmed_at_utc="2026-01-01T00:00:00Z")), encoding="utf-8")
+            with mock.patch.object(module.subprocess, "run") as child:
+                result = module.isolated_beta_readiness_payload(ROOT, None, path)
+            child.assert_not_called()
+            self.assertFalse(result["ready"])
+            self.assertIn("proof is stale", result["blockers"][0])
+
+    def test_clerk_settings_drift_after_inactive_upload_stops_traffic_switch(self):
+        module = load_production_deploy_script()
+        prior = DEPLOY_FIXTURE_VERSION
+        steps = module.build_deploy_steps(ROOT, expected_commit=DEPLOY_FIXTURE_COMMIT)
+        with (
+            mock.patch.object(module, "d1_state_error", return_value=None),
+            mock.patch.object(module, "run_external", return_value=d1_ledger_reply()) as external,
+            mock.patch.object(module, "upload_and_verify_worker", return_value=DEPLOY_UPLOADED_VERSION) as upload,
+            mock.patch.object(module, "activate_worker_version") as activate,
+            mock.patch.object(module, "observe_worker_version", return_value=prior),
+            mock.patch.object(module, "clerk_environment_check", return_value=SimpleNamespace(
+                status="failed", summary="Clerk sign-up mode changed.",
+            )) as settings,
+        ):
+            steps, errors, _ = module.execute_steps(
+                steps, deploy_env={"CI": "true"}, check_source=list,
+                check_clerk_settings=module.check_clerk_before_activation, **DEPLOY_FIXTURE_IDENTITY,
+            )
+        upload.assert_called_once()
+        settings.assert_called_once_with(module.DEFAULT_BASE_URL, module.DEFAULT_TIMEOUT)
+        activate.assert_not_called()
+        self.assertEqual([call.args[0].name for call in external.call_args_list], [module.D1_LEDGER_STEP])
+        self.assertEqual([step.status for step in steps], ["done", "done", "failed", "pending"])
+        self.assertIn("Pre-activation Clerk settings check failed", errors[0])
+        self.assertIn("No traffic switch was attempted", errors[0])
+
     def test_cloudflare_worker_entrypoint_covers_automation_handlers(self):
         entrypoint = (ROOT / "cloudflare" / "worker" / "entry.py").read_text(
             encoding="utf-8"
         )
         self.assertIn("class Default(WorkerEntrypoint)", entrypoint)
         self.assertIn("async def scheduled(self, controller, env, ctx):", entrypoint)
-        self.assertIn("async def queue(self, batch):", entrypoint)
         self.assertIn("def json_response", entrypoint)
         self.assertIn("authenticated_write_rate_limit_response", entrypoint)
         self.assertIn("WRITE_RATE_LIMITER", entrypoint)
@@ -2544,7 +4561,6 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("Webhook requests must include Content-Length.", entrypoint)
         self.assertIn("Webhook request body is too large.", entrypoint)
         self.assertIn("verify_svix_signature", entrypoint)
-        self.assertIn("clerk-webhook-rejected", entrypoint)
         self.assertIn("clerk-webhook-verified", entrypoint)
         self.assertIn("sync_linked_clerk_user", entrypoint)
         self.assertIn("email-conflict", entrypoint)
@@ -2560,7 +4576,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("public_job_filters_from_query", entrypoint)
         self.assertIn("public_jobs_payload", entrypoint)
         self.assertIn("jobs.status = 'open'", entrypoint)
-        self.assertIn("jobs.zip_code LIKE ?", entrypoint)
+        self.assertIn("literal_project_search", entrypoint)
         self.assertIn("Cache-Control", entrypoint)
         self.assertIn("public_https_redirect_url", entrypoint)
         self.assertIn("PUBLIC_HTTPS_HOSTS", entrypoint)
@@ -2572,7 +4588,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("/post-project", entrypoint)
         self.assertIn("entry_shell", entrypoint)
         self.assertIn("build_entry_shell_html", entrypoint)
-        self.assertIn("entry_shell_jobs", entrypoint)
+        self.assertIn("read_public_project_page", entrypoint)
         self.assertIn("Entry pages accept GET only.", entrypoint)
         self.assertIn("clerk_production_configuration_ready", entrypoint)
         self.assertIn("Clerk production authentication is not configured.", entrypoint)
@@ -2654,7 +4670,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("match_request_payload", entrypoint)
         self.assertIn("Only contractor accounts can send mini bids.", entrypoint)
         self.assertIn("match-request-created", entrypoint)
-        self.assertIn("INSERT OR IGNORE INTO match_requests", entrypoint)
+        self.assertIn("ON CONFLICT(job_id, contractor_id) DO NOTHING", entrypoint)
         self.assertIn("AND jobs.status = 'open'", entrypoint)
         self.assertIn("decide_match_request", entrypoint)
         self.assertIn("parse_match_decision_path", entrypoint)
@@ -2663,7 +4679,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("APPROVAL_THREAD_MESSAGE", entrypoint)
         self.assertIn("match-request-approved", entrypoint)
         self.assertIn("match-request-rejected", entrypoint)
-        self.assertIn("INSERT OR IGNORE INTO threads", entrypoint)
+        self.assertIn("ON CONFLICT(match_request_id) DO NOTHING", entrypoint)
         self.assertIn("/api/messages/threads", entrypoint)
         self.assertIn("message_threads_api", entrypoint)
         self.assertIn("message_threads_listing_payload", entrypoint)
@@ -2738,7 +4754,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("public_contractor_for_profile", entrypoint)
         self.assertIn("visible_contractor_profile_photos", entrypoint)
         self.assertIn("env.EMAIL.send", entrypoint)
-        self.assertIn("self.env.EMAIL_QUEUE.send", entrypoint)
+        self.assertIn("self.env.EMAIL_QUEUE,", entrypoint)
         self.assertIn("process_email_queue_message", entrypoint)
         self.assertIn("email-message-sent", entrypoint)
         self.assertIn("email-message-invalid", entrypoint)
@@ -2760,7 +4776,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("request.formData", entrypoint)
         self.assertIn("self.env.MEDIA.put", entrypoint)
         self.assertIn("self.env.MEDIA.delete", entrypoint)
-        self.assertIn("MEDIA_QUEUE.send", entrypoint)
+        self.assertIn("send_queue_json(self.env.MEDIA_QUEUE", entrypoint)
         self.assertIn("await self.media_upload_quota_error(scope, owner_id, user)", entrypoint)
         self.assertIn("async def media_upload_quota_error", entrypoint)
         self.assertIn("FROM automation_events", entrypoint)
@@ -2784,11 +4800,6 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         class StubRequest:
             def __init__(self, headers):
                 self.headers = headers
-                self.form_calls = 0
-
-            async def formData(self):
-                self.form_calls += 1
-                return {"service_slug": "lawn-mowing"}
 
         missing_length = StubRequest(
             {"Content-Type": "application/x-www-form-urlencoded"}
@@ -2798,7 +4809,6 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "Request body must include Content-Length",
         ):
             asyncio.run(module.request_form_data(missing_length, max_bytes=128))
-        self.assertEqual(missing_length.form_calls, 0)
 
         oversized = StubRequest(
             {
@@ -2808,24 +4818,26 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(module.OnboardingError, "too large"):
             asyncio.run(module.request_form_data(oversized, max_bytes=128))
-        self.assertEqual(oversized.form_calls, 0)
 
         wrong_type = StubRequest(
             {"Content-Type": "text/plain", "Content-Length": "20"}
         )
         with self.assertRaisesRegex(module.OnboardingError, "form encoding"):
             asyncio.run(module.request_form_data(wrong_type, max_bytes=128))
-        self.assertEqual(wrong_type.form_calls, 0)
 
-        accepted = StubRequest(
-            {
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "Content-Length": "64",
-            }
-        )
-        parsed = asyncio.run(module.request_form_data(accepted, max_bytes=128))
-        self.assertEqual(parsed["service_slug"], "lawn-mowing")
-        self.assertEqual(accepted.form_calls, 1)
+        accepted = StubRequest({"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"})
+        accepted.body = object()
+        valid = b"service_slug=lawn-mowing&service_slug=other&title=Glass+caf%C3%A9"
+        accepted.headers["Content-Length"] = str(len(valid))
+        with mock.patch.object(module, "read_json_stream_bytes", return_value=valid) as read:
+            parsed = asyncio.run(module.request_form_data(accepted, max_bytes=128))
+            self.assertEqual(parsed, {"service_slug": "lawn-mowing", "title": "Glass caf\xe9"})
+            self.assertEqual(read.await_args.kwargs["max_bytes"], len(valid))
+        for body, claimed in ((b"title=%FF", 9), (b"title=ok", 9)):
+            with self.subTest(body=body), mock.patch.object(module, "read_json_stream_bytes", return_value=body):
+                accepted.headers["Content-Length"] = str(claimed)
+                with self.assertRaisesRegex(module.OnboardingError, "could not be read"):
+                    asyncio.run(module.request_form_data(accepted, max_bytes=128))
 
     def test_successful_email_is_acked_before_best_effort_audit(self):
         entrypoint = (ROOT / "cloudflare" / "worker" / "entry.py").read_text(
@@ -2839,6 +4851,81 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         audit_index = consumer.index('"email-message-sent"', ack_index)
         self.assertLess(send_index, ack_index)
         self.assertLess(ack_index, audit_index)
+
+    def test_email_consumer_does_not_retry_after_delivery_when_audit_fails(self):
+        entry = load_worker_entry_module()
+        sender = mock.AsyncMock(return_value={"messageId": "synthetic-delivery"})
+        env = SimpleNamespace(EMAIL=SimpleNamespace(send=sender))
+        receipt = SimpleNamespace(ack=mock.Mock(), retry=mock.Mock(), attempts=1)
+        payload = {"type": "moderation-digest", "to": "mailbox@example.invalid"}
+
+        async def fail_audit(*_args, **_kwargs):
+            receipt.ack.assert_called_once_with()
+            raise RuntimeError("Synthetic audit failure after delivery.")
+
+        with (
+            mock.patch.object(
+                entry, "record_event", new=mock.AsyncMock(side_effect=fail_audit)
+            ),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            asyncio.run(
+                entry.process_email_queue_message(env, receipt, payload, "workdoe-email")
+            )
+        sender.assert_awaited_once()
+        receipt.ack.assert_called_once_with()
+        receipt.retry.assert_not_called()
+        self.assertIn("automation-event-write-failed-after-delivery", output.getvalue())
+        self.assertNotIn(payload["to"], output.getvalue())
+
+    def test_email_consumer_retries_binding_failure_without_logging_recipient(self):
+        entry = load_worker_entry_module()
+        sender = mock.AsyncMock(side_effect=RuntimeError("Synthetic binding rejection."))
+        env = SimpleNamespace(EMAIL=SimpleNamespace(send=sender))
+        receipt = SimpleNamespace(ack=mock.Mock(), retry=mock.Mock(), attempts=2)
+        payload = {"type": "moderation-digest", "to": "mailbox@example.invalid"}
+        with mock.patch.object(entry, "record_event", new=mock.AsyncMock()) as audit:
+            asyncio.run(
+                entry.process_email_queue_message(env, receipt, payload, "workdoe-email")
+            )
+        receipt.ack.assert_not_called()
+        receipt.retry.assert_called_once_with()
+        self.assertEqual(audit.await_args.args[1], "email-message-send-failed")
+        metadata = audit.await_args.kwargs["payload"]
+        self.assertEqual(metadata["error_type"], "RuntimeError")
+        self.assertEqual(metadata["attempts"], 2)
+        self.assertNotIn(payload["to"], json.dumps(metadata))
+        self.assertNotIn("Synthetic binding rejection", json.dumps(metadata))
+
+    def test_email_consumer_retries_missing_binding(self):
+        entry = load_worker_entry_module()
+        receipt = SimpleNamespace(ack=mock.Mock(), retry=mock.Mock(), attempts=1)
+        payload = {"type": "moderation-digest", "to": "mailbox@example.invalid"}
+        with mock.patch.object(entry, "record_event", new=mock.AsyncMock()) as audit:
+            asyncio.run(
+                entry.process_email_queue_message(
+                    SimpleNamespace(), receipt, payload, "workdoe-email"
+                )
+            )
+        receipt.ack.assert_not_called()
+        receipt.retry.assert_called_once_with()
+        self.assertEqual(audit.await_args.args[1], "email-message-missing-binding")
+
+    def test_email_consumer_acks_invalid_payload_without_sending(self):
+        entry = load_worker_entry_module()
+        sender = mock.AsyncMock()
+        env = SimpleNamespace(EMAIL=SimpleNamespace(send=sender))
+        receipt = SimpleNamespace(ack=mock.Mock(), retry=mock.Mock(), attempts=1)
+        with mock.patch.object(entry, "record_event", new=mock.AsyncMock()) as audit:
+            asyncio.run(
+                entry.process_email_queue_message(
+                    env, receipt, {"type": "unsupported-native-fixture"}, "workdoe-email"
+                )
+            )
+        receipt.ack.assert_called_once_with()
+        receipt.retry.assert_not_called()
+        sender.assert_not_awaited()
+        self.assertEqual(audit.await_args.args[1], "email-message-invalid")
 
     def test_cloudflare_media_access_helper_keeps_r2_routes_private(self):
         module = load_media_access_module()
@@ -2909,11 +4996,45 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         public_photo = {"contractor_id": 3, "status": "active", "is_hidden": 0}
         hidden_photo = {"contractor_id": 3, "status": "active", "is_hidden": 1}
         inactive_photo = {"contractor_id": 3, "status": "suspended", "is_hidden": 0}
-        self.assertTrue(module.can_view_contractor_photo(None, public_photo))
+        self.assertFalse(module.can_view_contractor_photo(None, public_photo))
         self.assertFalse(module.can_view_contractor_photo(None, hidden_photo))
         self.assertFalse(module.can_view_contractor_photo(None, inactive_photo))
+        self.assertTrue(module.can_view_contractor_photo(client, public_photo))
+        self.assertFalse(module.can_view_contractor_photo({**contractor, "status": "suspended"}, public_photo))
+        self.assertFalse(module.can_view_contractor_photo({**admin, "status": "suspended"}, hidden_photo))
         self.assertTrue(module.can_view_contractor_photo(contractor, hidden_photo))
         self.assertTrue(module.can_view_contractor_photo(admin, inactive_photo))
+
+    def test_contractor_media_requires_active_auth_before_storage_lookup(self):
+        entry = load_worker_entry_module()
+        for method in ("GET", "HEAD"):
+            for user, expected in ((None, 401), ({"id": 3, "status": "suspended"}, 403)):
+                with self.subTest(method=method, user=user):
+                    worker = entry.Default()
+                    worker.env = SimpleNamespace()
+                    worker.optional_workdoe_user = mock.AsyncMock(return_value=user)
+                    with mock.patch.object(
+                        entry, "db_run", new=mock.AsyncMock(side_effect=AssertionError("Storage must not be read"))
+                    ) as db:
+                        response = asyncio.run(
+                            worker.private_contractor_photo(SimpleNamespace(method=method), 7)
+                        )
+                    self.assertEqual(response.status, expected)
+                    self.assertEqual(response.headers["Cache-Control"], "no-store")
+                    db.assert_not_awaited()
+
+    def test_anonymous_contractor_profile_omits_retained_photo_urls(self):
+        module = load_contractor_public_profiles_module()
+        profile = {"id": 42, "status": "active", "business_name": "Fixture exterior care"}
+        photos = [{"id": 7, "created_at": "2026-10-30"}]
+        for viewer in (None, {"id": 9, "role": "client", "status": "suspended"}):
+            with self.subTest(viewer=viewer):
+                payload = module.public_contractor_profile_payload(profile, photos, viewer)
+                self.assertEqual(payload["contractor"]["photos"], [])
+                self.assertEqual(payload["contractor"]["business_name"], "Fixture exterior care")
+        active = {"id": 9, "role": "client", "status": "active"}
+        payload = module.public_contractor_profile_payload(profile, photos, active)
+        self.assertEqual(payload["contractor"]["photos"][0]["url"], "/media/contractors/7")
 
     def test_cloudflare_media_upload_helper_validates_r2_uploads_and_review_payloads(self):
         module = load_media_uploads_module()
@@ -3349,8 +5470,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         async def no_existing_thread(env, request_id):
             return None
 
-        async def repair_thread(env, match, created_at):
-            repaired.append((match["id"], created_at))
+        async def repair_thread(env, match, created_at, *, actor_id):
+            repaired.append((match["id"], created_at, actor_id))
             return 77
 
         module.existing_thread_id_for_match = no_existing_thread
@@ -3367,17 +5488,20 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 approved_match,
                 42,
                 requested_status="approved",
+                actor_id=8,
             )
         )
         self.assertEqual(repeated.status, 200)
         self.assertEqual(json.loads(repeated.body)["thread_id"], 77)
         self.assertEqual(repaired[0][0], 42)
+        self.assertEqual(repaired[0][2], 8)
 
         conflicting = asyncio.run(
             worker.existing_match_decision_response(
                 approved_match,
                 42,
                 requested_status="rejected",
+                actor_id=8,
             )
         )
         self.assertEqual(conflicting.status, 409)
@@ -3388,7 +5512,6 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         worker = module.Default()
         worker.env = SimpleNamespace(DB=object())
         calls = []
-        events = []
 
         async def signed_in_client(_request):
             return {"id": 8, "role": "client", "status": "active"}
@@ -3402,22 +5525,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "status": "pending",
             }
 
-        async def fake_db_run(_env, query, *bindings):
-            calls.append((query, bindings))
-            changes = 2 if "AND id != ?" in query else 1
-            return {"meta": {"changes": changes}}
-
-        async def create_thread(_env, _match, _created_at):
-            return 77
-
-        async def capture_event(_env, event_type, **kwargs):
-            events.append((event_type, kwargs))
+        async def fake_db_batch(_env, commands):
+            calls.extend(commands)
+            return [
+                {"meta": {"changes": changes, "last_row_id": last_row_id}}
+                for changes, last_row_id in ((1, 0), (1, 77), (1, 88), (1, 99), (2, 0))
+            ]
 
         worker.optional_workdoe_user = signed_in_client
         module.match_request_for_decision = pending_match
-        module.db_run = fake_db_run
-        module.ensure_thread_for_match = create_thread
-        module.record_event = capture_event
+        module.db_batch = fake_db_batch
 
         response = asyncio.run(
             worker.decide_match_request(
@@ -3429,13 +5546,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(payload["status"], "approved")
         self.assertEqual(payload["thread_id"], 77)
+        self.assertEqual(len(calls), 5)
         self.assertIn("approved_request.status = 'approved'", calls[0][0])
-        self.assertIn("AND id != ?", calls[1][0])
-        self.assertEqual(calls[1][1][1:], (12, 42))
-        self.assertEqual(
-            events[0][1]["payload"]["closed_offer_count"],
-            2,
-        )
+        self.assertIn("closed_offer_count", calls[3][0])
+        self.assertIn("AND id != ?", calls[4][0])
+        self.assertEqual(calls[4][1][1:], (12, 42))
 
     def test_cloudflare_email_payloads_are_transactional_and_sanitized(self):
         module = load_email_payloads_module()
@@ -3675,7 +5790,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
         module.db_run = fake_db_run
         module.record_event_best_effort = fake_record_event_best_effort
-        env = SimpleNamespace(EMAIL_QUEUE=EmailQueue(), WORKDOE_SECRET_KEY="s" * 32)
+        env = SimpleNamespace(
+            EMAIL_QUEUE=EmailQueue(), WORKDOE_SECRET_KEY="s" * 32,
+            WORKDOE_MARKETPLACE_EMAIL_ENABLED="true",
+        )
         queued = asyncio.run(
             module.queue_repeat_provider_invitation_email(
                 env,
@@ -3703,6 +5821,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         failed_env = SimpleNamespace(
             EMAIL_QUEUE=FailingEmailQueue(),
             WORKDOE_SECRET_KEY="s" * 32,
+            WORKDOE_MARKETPLACE_EMAIL_ENABLED="true",
         )
         queued = asyncio.run(
             module.queue_repeat_provider_invitation_email(
@@ -3854,7 +5973,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
         module.db_run = fake_db_run
         module.record_event_best_effort = fake_record_event_best_effort
-        env = SimpleNamespace(EMAIL_QUEUE=EmailQueue(), WORKDOE_SECRET_KEY="s" * 32)
+        env = SimpleNamespace(
+            EMAIL_QUEUE=EmailQueue(), WORKDOE_SECRET_KEY="s" * 32,
+            WORKDOE_MARKETPLACE_EMAIL_ENABLED="true",
+        )
         queued_count = asyncio.run(
             module.process_contractor_lead_alert_fanout(env, 72)
         )
@@ -3904,6 +6026,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         trusted_claims = module.claims_with_verified_clerk_email(
             {"sub": "user_123", "sid": "sess_123"},
             {
+                "id": "user_123",
                 "primary_email_address_id": "idn_123",
                 "email_addresses": [
                     {
@@ -3920,6 +6043,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             module.claims_with_verified_clerk_email(
                 {"sub": "user_123"},
                 {
+                    "id": "user_123",
+                    "primary_email_address_id": "idn_bad",
                     "email_addresses": [
                         {
                             "id": "idn_bad",
@@ -3929,17 +6054,15 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                     ]
                 },
             )
-        payload = module.onboarding_payload(
-            {
-                "sub": "user_workdoe_123",
-                "email": " Contractor@Workdoe.com ",
-                "email_verified": True,
-            },
+        profile = module.onboarding_profile(
             {
                 "role": " Contractor ",
                 "display_name": "  Jordan   Rivera  ",
                 "company_name": "  Rivera   Exterior Care  ",
             },
+        )
+        payload = module.onboarding_payload(
+            {"sub": "user_workdoe_123", "email": " Contractor@Workdoe.com ", "email_verified": True}, profile,
         )
         self.assertEqual(
             payload,
@@ -3952,20 +6075,16 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(module.OnboardingError, "public business name"):
-            module.onboarding_payload(
-                {"primary_email": "client@workdoe.com", "name": "Avery Client"},
-                {"role": "client"},
-            )
+            module.onboarding_profile({"role": "client"})
 
         with self.assertRaisesRegex(module.OnboardingError, "exact street addresses"):
-            module.onboarding_payload(
-                {"email": "client@workdoe.com", "email_verified": True},
+            module.onboarding_profile(
                 {"role": "client", "display_name": "100 Private Street Services"},
             )
 
         with self.assertRaisesRegex(module.OnboardingError, "email"):
             module.onboarding_payload(
-                {"sub": "user_123"},
+                {"sub": "user_123", "email_verified": True},
                 {"role": "client", "display_name": "Public client"},
             )
         with self.assertRaisesRegex(module.OnboardingError, "verified"):
@@ -3974,10 +6093,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 {"role": "client", "display_name": "Public client"},
             )
         with self.assertRaisesRegex(module.OnboardingError, "Role"):
-            module.onboarding_payload(
-                {"email": "client@workdoe.com"},
-                {"role": "admin"},
-            )
+            module.onboarding_profile({"role": "admin"})
 
     def test_clerk_session_helper_extracts_and_validates_session_tokens(self):
         module = load_clerk_sessions_module()
@@ -4117,6 +6233,664 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 now=1700000000,
             )
 
+    def test_worker_json_requests_preserve_size_guards_and_reject_excessive_nesting(self):
+        entry = load_worker_entry_module()
+
+        def request_for(raw, declared=None, content_type="application/json"):
+            raw = raw.encode() if isinstance(raw, str) else raw
+            return SimpleNamespace(
+                headers={
+                    "Content-Type": content_type,
+                    "Content-Length": str(len(raw) if declared is None else declared),
+                },
+                body=BodyStream([raw[:4], raw[4:]]),
+            )
+
+        valid = {"scope_answers": {"access": ["ground-floor"]}, "description": 'Caf\u00e9 [brackets] and "quotes"'}
+        request = request_for(json.dumps(valid, ensure_ascii=False))
+        self.assertEqual(asyncio.run(entry.request_json_object(request)), valid)
+        deep = '{"details":' + "[" * 3000 + "0" + "]" * 3000 + "}"
+        for raw in (deep, '{"value":NaN}', '{"value":1e999}', b'{"value":"\xff"}'):
+            request = request_for(raw)
+            with self.subTest(raw_length=len(raw)), self.assertRaises(entry.OnboardingError):
+                asyncio.run(entry.request_json_object(request))
+        for declared, content_type in ((9000, "application/json"), (0, "application/json"), (10, "text/plain")):
+            request = request_for("{}", declared, content_type)
+            with self.subTest(declared=declared, content_type=content_type):
+                with self.assertRaises(entry.OnboardingError):
+                    asyncio.run(entry.request_json_object(request))
+                self.assertEqual(request.body.reads, 0)
+        for body, canceled in (
+            (BodyStream([b"{} "]), True), (BodyStream([b"{"]), False),
+            (BodyStream([b""] * entry.MAX_REQUEST_JSON_BODY_CHUNKS), True),
+            (BodyStream([OSError("synthetic disconnect")]), True), (BodyStream([], stall=True), True),
+        ):
+            request = request_for("{}")
+            request.body = body
+            with (
+                self.subTest(body=body),
+                mock.patch.object(entry, "REQUEST_JSON_BODY_TIMEOUT_SECONDS", 0.05),
+                self.assertRaises(entry.OnboardingError),
+            ):
+                asyncio.run(entry.request_json_object(request))
+            self.assertTrue(body.released)
+            self.assertEqual(body.canceled, canceled)
+
+    def test_worker_provider_json_rejects_oversize_before_reading_and_avoids_sdk_json(self):
+        entry = load_worker_entry_module()
+        def response_for(raw, declared="", status=200):
+            return SimpleNamespace(headers={"Content-Length": declared}, status=status, body=BodyStream([raw.encode()]))
+
+        expected = {"email_addresses": [{"verification": {"status": "verified"}}]}
+        self.assertEqual(asyncio.run(entry.response_json_object(response_for(json.dumps(expected)))), expected)
+        for raw in ("[]", "invalid", '{"value":1e999}', '{"data":' + "[" * 3000 + "0" + "]" * 3000 + "}"):
+            with self.subTest(raw_length=len(raw)), self.assertRaises(entry.JsonDataError):
+                asyncio.run(entry.response_json_object(response_for(raw)))
+        for declared in ("99999999", "-1", "bad"):
+            response = response_for("{}", declared)
+            with self.subTest(declared=declared), self.assertRaises(entry.JsonDataError):
+                asyncio.run(entry.response_json_object(response))
+            self.assertEqual(response.body.reads, 0)
+        with self.assertRaises(entry.JsonDataError):
+            asyncio.run(entry.response_json_object(response_for(" " * 101, "2"), max_bytes=100))
+        response = response_for('{"success":true}', status=503)
+        with self.assertRaises(entry.JsonDataError):
+            asyncio.run(entry.response_json_object(response))
+        self.assertTrue(response.body.canceled)
+        self.assertEqual(response.body.reads, 0)
+
+    def test_clerk_jwks_json_reader_rejects_invalid_shape_depth_and_size(self):
+        module = load_clerk_sessions_module()
+        responses = []
+        async def fake_fetch(url, options):
+            self.assertEqual(url, module.CLERK_BACKEND_JWKS_URL)
+            self.assertEqual(options["redirect"], "error")
+            return responses.pop(0)
+
+        def response_for(raw, *, ok=True):
+            return SimpleNamespace(status=200 if ok else 403, body=BodyStream([raw.encode()]))
+
+        js = ModuleType("js")
+        js.fetch = fake_fetch
+        js.Object = SimpleNamespace(fromEntries=lambda value: value)
+        ffi = ModuleType("pyodide.ffi")
+        ffi.to_js = lambda value, **_options: value
+        with mock.patch.dict(sys.modules, {"js": js, "pyodide.ffi": ffi}):
+            expected = {"keys": [{"kid": "fixture", "kty": "RSA", "use": "sig"}]}
+            responses.append(response_for(json.dumps(expected)))
+            self.assertEqual(asyncio.run(module.fetch_clerk_jwks("unused-unit-fixture")), expected)
+            for raw in (
+                "[]", '{"keys":{}}', '{"keys":NaN}',
+                '{"keys":' + "[" * 3000 + "0" + "]" * 3000 + "}",
+                " " * (module.MAX_CLERK_JWKS_BODY_BYTES + 1),
+            ):
+                responses.append(response_for(raw))
+                with self.subTest(raw_length=len(raw)), self.assertRaises(module.SessionVerificationError):
+                    asyncio.run(module.fetch_clerk_jwks("unused-unit-fixture"))
+            unavailable = response_for("{}", ok=False)
+            responses.append(unavailable)
+            with self.assertRaises(module.SessionVerificationError):
+                asyncio.run(module.fetch_clerk_jwks("unused-unit-fixture"))
+            self.assertTrue(unavailable.body.canceled)
+            self.assertEqual(unavailable.body.reads, 0)
+            stalled = SimpleNamespace(status=200, body=BodyStream([], stall=True))
+            responses.append(stalled)
+            with (
+                mock.patch.object(module, "CLERK_JWKS_TIMEOUT_SECONDS", 0.05),
+                self.assertRaises(module.SessionVerificationError),
+            ):
+                asyncio.run(module.fetch_clerk_jwks("unused-unit-fixture"))
+            self.assertTrue(stalled.body.canceled)
+
+    def test_webhook_signature_rejects_before_decoding(self):
+        module = load_clerk_webhooks_module()
+        fixture = "whsec_" + base64.b64encode(b"synthetic fixture only").decode("ascii")
+        with (
+            mock.patch.object(module, "parse_json_value", side_effect=AssertionError("Must verify first")),
+            self.assertRaisesRegex(module.SvixVerificationError, "does not match"),
+        ):
+            module.verify_svix_signature(
+                secret=fixture, headers={
+                    "svix-id": "msg_fixture", "svix-timestamp": "1700000000",
+                    "svix-signature": "v1,invalid",
+                }, raw_body=b"not-json", now=1700000000,
+            )
+
+    def test_signed_webhook_json_rejects_invalid_shapes_encoding_and_depth(self):
+        module = load_clerk_webhooks_module()
+        fixture = "whsec_" + base64.b64encode(b"synthetic fixture only").decode("ascii")
+        for raw in (
+            b"[]", b"null", b"\xff", b'{"object":"event","type":"user.updated","data":NaN}',
+            b'{"object":"event","type":"user.updated","data":' + b"[" * 3000 + b"0" + b"]" * 3000 + b"}",
+        ):
+            signature = module.svix_signature(
+                secret=fixture, message_id="msg_fixture", timestamp="1700000000", raw_body=raw,
+            )
+            with self.subTest(raw_length=len(raw)), self.assertRaises(module.SvixVerificationError):
+                module.verify_svix_signature(
+                    secret=fixture, headers={
+                        "svix-id": "msg_fixture", "svix-timestamp": "1700000000",
+                        "svix-signature": f"v1,{signature}",
+                    }, raw_body=raw, now=1700000000,
+                )
+
+    def test_clerk_malformed_signatures_return_a_clean_unauthenticated_response(self):
+        module = load_clerk_sessions_module()
+        prefix = fake_session_token().rsplit(".", 1)[0]
+        for signature in ("a", "not base64", "@@@", "\u00e9", ""):
+            with self.subTest(signature=signature), self.assertRaises(module.SessionVerificationError):
+                module.decode_unverified_jwt(f"{prefix}.{signature}")
+
+        entry = load_worker_entry_module()
+        worker = entry.Default()
+        worker.env = SimpleNamespace(
+            WORKDOE_ENV="development", WORKDOE_AUTH_PROVIDER="clerk", DB=object()
+        )
+        request = SimpleNamespace(
+            method="GET", url="https://workdoe.com/api/auth/session",
+            headers={"Authorization": f"Bearer {prefix}.a"},
+        )
+        logs = io.StringIO()
+        with contextlib.redirect_stdout(logs):
+            response = asyncio.run(worker.auth_session(request))
+            optional_user = asyncio.run(worker.optional_workdoe_user(request))
+        self.assertEqual(response.status, 401)
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(json.loads(response.body)["error"], "Session token not verified.")
+        self.assertIsNone(optional_user)
+        self.assertNotIn(prefix, logs.getvalue())
+
+    def test_clerk_json_parser_normalizes_encoding_and_depth_errors(self):
+        module = load_clerk_sessions_module()
+        raw_segments = (
+            b"not-json", b"\xff", b"[]", b"null", b'"not-an-object"',
+            b"[" * 10000 + b"0" + b"]" * 10000,
+        )
+        for index, raw in enumerate(raw_segments):
+            encoded = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+            with self.subTest(case=index), self.assertRaises(module.SessionVerificationError):
+                module.decode_json_part(encoded)
+
+    def test_clerk_native_json_parser_uses_shallow_conversion_and_safe_errors(self):
+        module = load_clerk_sessions_module()
+        depths = []
+
+        class NativeValue:
+            def to_py(self, *, depth):
+                depths.append(depth)
+                return {"alg": "RS256"}
+
+        class NativeParseError(Exception):
+            pass
+
+        js = ModuleType("js")
+        js.JSON = SimpleNamespace(parse=lambda value: NativeValue())
+        ffi = ModuleType("pyodide.ffi")
+        ffi.JsException = NativeParseError
+        ffi.jsnull = object()
+        with mock.patch.dict(sys.modules, {"js": js, "pyodide.ffi": ffi}):
+            self.assertEqual(module.decode_json_part(jwt_segment({"alg": "RS256"})), {"alg": "RS256"})
+            self.assertEqual(depths, [1])
+
+            def reject_input(value):
+                raise NativeParseError("untrusted parser diagnostic")
+
+            js.JSON.parse = reject_input
+            with self.assertRaises(module.SessionVerificationError) as rejected:
+                module.decode_json_part(jwt_segment({}))
+            self.assertEqual(str(rejected.exception), "JWT segment is not valid JSON.")
+            js.JSON.parse = lambda value: True
+            with self.assertRaises(module.SessionVerificationError):
+                module.decode_json_part(jwt_segment({}))
+
+    def test_clerk_invalid_claims_skip_signature_and_remote_key_lookup(self):
+        module = load_clerk_sessions_module()
+        for claims in (
+            {"exp": 10}, {"nbf": 1700001000},
+            {"azp": "https://untrusted.example"}, {"sts": "pending"},
+            {"sub": "not-a-clerk-user"}, {"exp": float("inf")},
+            {"sub": {"toString": "user_untrusted"}}, {"sid": []},
+            {"exp": []}, {"nbf": "1699999700"}, {"azp": []}, {"sts": {}},
+        ):
+            calls = []
+
+            def verify_signature(*args, calls=calls):
+                calls.append("signature")
+                return False
+
+            def fetch_keys(*args, calls=calls):
+                calls.append("jwks")
+                return {"keys": [{"kid": "kid_workdoe"}]}
+
+            with self.subTest(claims=claims):
+                with self.assertRaises(module.SessionVerificationError):
+                    asyncio.run(module.verify_clerk_session_token(
+                        fake_session_token(payload=claims),
+                        jwt_key="synthetic-pem",
+                        secret_key="test-fixture",  # pragma: allowlist secret - unusable mock key; no network.
+                        authorized_parties=["https://workdoe.com"], now=1700000000,
+                        signature_verifier=verify_signature,
+                        jwks_fetcher=fetch_keys,
+                        jwk_signature_verifier=lambda *args: True,
+                    ))
+                self.assertEqual(calls, [])
+
+    def test_clerk_session_envelope_rejects_unusable_tokens_before_provider_work(self):
+        module = load_clerk_sessions_module()
+        normal = fake_session_token()
+        header, claims, signature = normal.split(".")
+        cases = (
+            "A" * (module.MAX_CLERK_SESSION_TOKEN_BYTES + 1),
+            f"{header}.{claims}.{signature}=",
+            f"{header}.{claims}.AA+/",
+            fake_session_token(header={"alg": "RS256", "kid": ""}),
+            fake_session_token(header={"alg": "RS256", "kid": "x" * (module.MAX_CLERK_SIGNING_KEY_ID_BYTES + 1)}),
+            fake_session_token(header={"alg": "RS256", "kid": "invalid\nkey"}),
+            fake_session_token(header={"alg": "RS256", "kid": "fixture", "crit": ["unknown"]}),
+        )
+        signature_check = mock.Mock(return_value=False)
+        fetch_keys = mock.AsyncMock()
+        fixture_key = "fixture"
+        for index, token in enumerate(cases):
+            with self.subTest(index=index), self.assertRaises(module.SessionVerificationError):
+                asyncio.run(module.verify_clerk_session_token(
+                    token, jwt_key=fixture_key, secret_key=fixture_key,
+                    authorized_parties=["https://workdoe.com"], now=1700000000,
+                    signature_verifier=signature_check, jwks_fetcher=fetch_keys,
+                ))
+        signature_check.assert_not_called()
+        no_key_id = fake_session_token(header={"alg": "RS256", "oiat": 1700000000})
+        with self.assertRaisesRegex(module.SessionVerificationError, "signature"):
+            asyncio.run(module.verify_clerk_session_token(
+                no_key_id, jwt_key=fixture_key, secret_key=fixture_key,
+                authorized_parties=["https://workdoe.com"], now=1700000000,
+                signature_verifier=signature_check, jwks_fetcher=fetch_keys,
+            ))
+        signature_check.assert_called_once()
+        fetch_keys.assert_not_awaited()
+
+    def test_clerk_jwks_rejects_duplicate_and_non_rsa_key_matches(self):
+        module = load_clerk_sessions_module()
+        key = {"kid": "kid_workdoe", "kty": "RSA"}
+        self.assertEqual(module.clerk_jwk_for_key_id({"keys": [None, key]}, "kid_workdoe"), key)
+        for keys in ([], [key, key], [key | {"kty": "EC"}]):
+            with self.subTest(keys=keys), self.assertRaises(module.SessionVerificationError):
+                module.clerk_jwk_for_key_id({"keys": keys}, "kid_workdoe")
+
+    def test_clerk_jwks_cache_only_reuses_fresh_public_keys_from_the_same_scope(self):
+        module = load_clerk_sessions_module()
+        keys = {"keys": [{"kid": "kid_workdoe", "kty": "RSA", "n": "public", "e": "AQAB"}]}
+        stored = {}
+
+        async def store(key, response):
+            stored[key] = response
+
+        class CacheResponse:
+            @staticmethod
+            def new(body, options):
+                self.assertEqual(options["headers"]["Cache-Control"], "max-age=60")
+                return body.encode()
+
+        cache = SimpleNamespace(
+            match=mock.AsyncMock(side_effect=stored.get),
+            put=mock.AsyncMock(side_effect=store),
+        )
+        js = ModuleType("js")
+        js.Response = CacheResponse
+        js.caches = SimpleNamespace(open=mock.AsyncMock(return_value=cache))
+        js.Object = SimpleNamespace(fromEntries=dict)
+        ffi = ModuleType("pyodide.ffi")
+        ffi.to_js = lambda value, **_kwargs: value
+        lookup = mock.AsyncMock(return_value=keys)
+        with (
+            mock.patch.dict(sys.modules, {"js": js, "pyodide.ffi": ffi}),
+            mock.patch.object(module, "read_json_response_bytes", mock.AsyncMock(side_effect=lambda raw, **_kwargs: raw)),
+            mock.patch.object(module, "parse_json_value", json.loads),
+            mock.patch.object(module.time, "time", return_value=1000) as now,
+        ):
+            for scope in ("first", "first", "second"):
+                self.assertEqual(asyncio.run(module.cached_clerk_jwks(scope, lookup)), keys)
+            self.assertEqual(lookup.await_count, 2)
+            self.assertEqual(len(stored), 2)
+            now.return_value = 1060
+            self.assertEqual(asyncio.run(module.cached_clerk_jwks("first", lookup)), keys)
+            self.assertEqual(lookup.await_count, 3)
+            # Unexpected fields do not enter the cache or change the caller's verification path.
+            lookup.return_value = {"keys": [keys["keys"][0] | {"d": "private-key-fixture"}]}
+            self.assertEqual(asyncio.run(module.cached_clerk_jwks("unexpected", lookup)), lookup.return_value)
+            self.assertEqual(len(stored), 2)
+            js.caches.open.assert_awaited_with("workdoe-clerk-jwks-v1")
+
+    def test_worker_clerk_jwks_budget_is_fixed_and_fails_closed_in_production(self):
+        module = load_worker_entry_module()
+        keys = {"keys": []}
+        for limit_reply, expect_lookup in (
+            (None, False),
+            ({"success": True}, True),
+            ({"success": False}, False),
+            ({"success": "true"}, False),
+            (RuntimeError("internal fixture"), False),
+        ):
+            with self.subTest(reply=limit_reply), mock.patch.object(
+                module, "fetch_clerk_jwks", mock.AsyncMock(return_value=keys),
+            ) as fetch_keys:
+                env = SimpleNamespace(WORKDOE_ENV="production")
+                if limit_reply is not None:
+                    if isinstance(limit_reply, Exception):
+                        limit = mock.AsyncMock(side_effect=limit_reply)
+                    else:
+                        limit = mock.AsyncMock(return_value=limit_reply)
+                    env.WRITE_RATE_LIMITER = SimpleNamespace(limit=limit)
+                if expect_lookup:
+                    self.assertEqual(asyncio.run(module.budgeted_clerk_jwks(env, "fixture")), keys)
+                    fetch_keys.assert_awaited_once_with("fixture")
+                else:
+                    with self.assertRaisesRegex(module.SessionVerificationError, "temporarily unavailable"):
+                        asyncio.run(module.budgeted_clerk_jwks(env, "fixture"))
+                    fetch_keys.assert_not_awaited()
+                if limit_reply is not None:
+                    limit.assert_awaited_once_with({"key": "clerk-jwks-lookup"})
+
+    def test_public_entry_map_retains_controls_and_live_sample_disclosure(self):
+        module = load_entry_shell_module()
+        rows = [
+            {"id": "demo-fixture", "title": "Sample cleaning", "category": "Window cleaning",
+             "city": "Washington", "state": "DC", "approx_lat": 38.91, "approx_lng": -77.04,
+             "is_demo": True},
+            {"id": 9, "title": "Open painting", "category": "Painting", "city": "Arlington",
+             "state": "VA", "zip_code": "22201", "approx_lat": 38.8871, "approx_lng": -77.0932},
+            {"id": 10, "title": "Open window cleaning", "category": "Window cleaning",
+             "city": "Arlington", "state": "VA", "zip_code": "22201", "approx_lat": None, "approx_lng": None},
+        ]
+        for path in ("/", "/login", "/create-account", "/post-project"):
+            with self.subTest(path=path):
+                html = module.build_entry_shell_html(path, {}, rows, "", "")
+                self.assertIn('data-show-map-area', html)
+                self.assertIn('data-reset-map-view', html)
+                self.assertIn('data-map-result-count>2 projects mapped</strong>', html)
+                self.assertIn('data-map-source-counts>1 live / 1 sample</span>', html)
+                self.assertIn('data-map-list-only-count>; 1 list only</span>', html)
+                self.assertIn("Sample listings are not active requests.", html)
+                self.assertIn(
+                    f'href="{module.entry_clear_url(path, {})}" data-clear-market-filters data-clear-market-url=',
+                    html,
+                )
+                self.assertNotIn('navigator.geolocation', html)
+
+    def test_area_map_bounds_match_the_public_search_viewport(self):
+        load_request_security_module()
+        module = load_app_shell_module()
+        pilot = load_public_job_query_module().PILOT_VIEWPORT
+        expected = [[pilot["south"], pilot["west"]], [pilot["north"], pilot["east"]]]
+        user = {"id": 2, "role": "contractor"}
+        html = (
+            sys.modules["entry_shell"].build_entry_shell_html("/", {}, [], "", "", map_mode="area"),
+            module.lead_board_html(user, {"jobs": []}, map_mode="area", access_protected_map=True),
+        )
+        for page in html:
+            match = re.search(r'data-area-map-bounds="([^"]+)"', page)
+            self.assertIsNotNone(match)
+            self.assertEqual(json.loads(match[1]), expected)
+        self.assertNotIn("data-area-map-access", html[0])
+        self.assertIn("data-area-map-access", html[1])
+        self.assertNotIn("data-area-map-bounds", module.lead_board_html(user, {"jobs": []}))
+
+    def test_public_entry_tabs_name_existing_panels_and_preserve_policy_links(self):
+        class EntryMarkup(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.elements = []
+
+            def handle_starttag(self, tag, attrs):
+                self.elements.append((tag, dict(attrs)))
+
+        module = load_entry_shell_module()
+        for path, details in (
+            ("/", "market-details-panel"),
+            ("/login", "signin"),
+            ("/create-account", "start-account"),
+            ("/post-project", "start-account"),
+        ):
+            with self.subTest(path=path):
+                markup = EntryMarkup()
+                markup.feed(module.build_entry_shell_html(path, {}, [], "", ""))
+                elements = markup.elements
+                headings = [attrs for tag, attrs in elements if tag == "h1"]
+                self.assertEqual(headings, [{"class": "sr-only"}])
+                tabs = [attrs for _, attrs in elements if attrs.get("role") == "tab"]
+                self.assertEqual(
+                    [tab["aria-controls"] for tab in tabs],
+                    ["market-projects-panel", "market-map-panel", details],
+                )
+                for tab in tabs:
+                    targets = [attrs for _, attrs in elements if attrs.get("id") == tab["aria-controls"]]
+                    self.assertEqual(len(targets), 1)
+                    self.assertEqual(targets[0]["data-market-panel"], tab["data-mobile-panel-target"])
+                    self.assertIn(targets[0]["role"], {"complementary", "region"})
+                self.assertEqual(
+                    [attrs["href"] for tag, attrs in elements
+                     if tag == "a" and attrs.get("href") in {"/safety", "/privacy", "/terms"}],
+                    ["/safety", "/privacy", "/terms"],
+                )
+                self.assertTrue(any(
+                    tag == "nav" and attrs.get("aria-label") == "Policies"
+                    for tag, attrs in elements
+                ))
+        fragment = module.build_entry_shell_html("/login", {"embed": ["1"]}, [], "", "")
+        self.assertIn('id="signin"', fragment)
+        self.assertIn("data-dialog-fragment", fragment)
+        self.assertNotIn('aria-label="Policies"', fragment)
+
+    def test_public_entry_search_keeps_get_fallback_for_selected_service_family(self):
+        module = load_entry_shell_module()
+        html = module.build_entry_shell_html(
+            "/", {"family": ["cleaning-upkeep"], "q": ["window"]}, [], "", "",
+        )
+        self.assertIn('method="get" data-market-filters', html)
+        self.assertIn('type="hidden" name="family" value="cleaning-upkeep"', html)
+        self.assertIn('name="q" type="search" value="window"', html)
+        self.assertIn('name="service" data-market-service', html)
+        self.assertIn('name="sort" data-market-sort', html)
+        self.assertIn('class="sr-only" for="market-sort">Sort', html)
+        self.assertIn('class="button compact" type="submit">Filter', html)
+        self.assertIn('class="sample-data-note">Sample listings are not active requests.', html)
+
+    def test_account_entry_family_and_get_filter_links_keep_only_safe_return_context(self):
+        class EntryLinks(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.links = []
+                self.hidden = {}
+
+            def handle_starttag(self, tag, attributes):
+                attrs = dict(attributes)
+                if tag == "a" and "service-family-filter-link" in attrs.get("class", "").split():
+                    self.links.append(parse_qs(urlsplit(attrs["href"]).query))
+                if tag == "input" and attrs.get("type") == "hidden":
+                    self.hidden[attrs["name"]] = attrs["value"]
+
+        load_request_security_module()
+        module = load_entry_shell_module()
+        for path in ("/login", "/create-account"):
+            with self.subTest(path=path):
+                params = {
+                    "next": ["/leads?family=outdoor-yard&service=pressure-washing&view=sent"],
+                    "intent": ["find-work"], "__clerk_ticket": ["synthetic-ticket"],
+                }
+                html = module.build_entry_shell_html(path, params, [], "", "")
+                page = EntryLinks()
+                page.feed(html)
+                self.assertEqual(page.hidden, {
+                    "family": "outdoor-yard", "intent": "find-work", "next": "/leads?view=sent",
+                })
+                all_work = next(link for link in page.links if "family" not in link)
+                self.assertEqual(all_work["next"], ["/leads?view=sent"])
+                self.assertEqual(module.entry_job_filters(all_work)["family"], "")
+                self.assertEqual(module.entry_job_filters(all_work)["service"], "")
+                self.assertNotIn("__clerk_ticket", all_work)
+
+        unsafe = EntryLinks()
+        unsafe.feed(module.build_entry_shell_html(
+            "/login", {"next": ["//outside.invalid/leads"], "intent": ["outside"]}, [], "", "",
+        ))
+        self.assertNotIn("next", unsafe.hidden)
+        self.assertNotIn("intent", unsafe.hidden)
+        self.assertTrue(all("next" not in link for link in unsafe.links))
+
+    def test_public_sample_actions_are_view_only_in_both_entry_modes(self):
+        module = load_entry_shell_module()
+        demo = {
+            "id": "demo-01", "title": "Sample cleaning", "category": "Window cleaning",
+            "city": "Washington", "state": "DC", "is_demo": True,
+            "desired_date": "2000-01-01", "approx_lat": 38.91, "approx_lng": -77.04,
+        }
+        live = {**demo, "id": 9, "is_demo": False, "title": "Live cleaning"}
+        for target, live_action, live_url in (
+            ("start", "Create account to respond", "/create-account?intent=find-work&job_id=9"),
+            ("login", "Sign in", "/login?next=/jobs/9"),
+        ):
+            with self.subTest(target=target):
+                sample_job, live_job = module.public_jobs_payload([demo, live], {}, target=target)["jobs"]
+                self.assertEqual(sample_job["url"], "/?job_id=demo-01")
+                self.assertEqual(sample_job["url"], sample_job["detail_url"])
+                self.assertEqual(sample_job["action_label"], "View sample")
+                self.assertEqual(sample_job["desired_date"], "")
+                self.assertEqual((live_job["url"], live_job["action_label"]), (live_url, live_action))
+                detail = module.project_detail_html(demo, target)
+                self.assertIn("This sample does not accept bids.", detail)
+                self.assertIn("Sample timing", detail)
+                self.assertNotIn("href=", detail)
+                self.assertNotIn("<time", detail)
+                self.assertIn('aria-label="View sample: Sample cleaning"', module.job_row(demo, "", target))
+                self.assertIn(f'href="{escape(live_url)}"', module.project_detail_html(live, target))
+
+    def test_shared_palette_defines_resolved_accessible_focus_tokens(self):
+        styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
+        root = styles.split(":root {", 1)[1].split("}", 1)[0]
+        tokens = dict(re.findall(r"(--[a-z-]+):\s*([^;]+);", root))
+        required = {"--focus", "--accent-soft", "--surface-soft", "--line-soft", "--line-strong", "--ink-soft", "--success"}
+        self.assertTrue(required.issubset(tokens), f"Undefined palette tokens: {sorted(required - tokens.keys())}")
+
+        def color(name):
+            value = tokens[name]
+            alias = re.fullmatch(r"var\((--[a-z-]+)\)", value)
+            return color(alias[1]) if alias else value
+
+        def luminance(hex_color):
+            channels = [int(hex_color[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+            linear = [value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4 for value in channels]
+            return sum(weight * value for weight, value in zip((0.2126, 0.7152, 0.0722), linear, strict=True))
+
+        def contrast(first, second):
+            light, dark = sorted((luminance(color(first)), luminance(color(second))), reverse=True)
+            return (light + 0.05) / (dark + 0.05)
+
+        for surface in ("--bg", "--surface", "--surface-soft", "--surface-strong", "--accent-soft"):
+            with self.subTest(surface=surface):
+                self.assertGreaterEqual(contrast("--focus", surface), 3)
+                self.assertGreaterEqual(contrast("--ink", surface), 4.5)
+                self.assertGreaterEqual(contrast("--ink-soft", surface), 4.5)
+
+    def test_shared_keyboard_focus_uses_opaque_design_token(self):
+        styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
+        self.assertIsNone(re.search(r"outline:\s*3px solid rgba\(", styles), "Focus outlines must use the opaque design token")
+        link_row = styles.split(".link-row:focus-visible {", 1)[1].split("}", 1)[0]
+        self.assertIn("outline: 3px solid var(--focus);", link_row)
+        for selector in (".brand:focus-visible", ".project-review-edit:focus-visible", ".choice-grid input:focus-visible + span"):
+            rule = styles.split(selector + " {", 1)[1].split("}", 1)[0]
+            self.assertIn("outline: 3px solid var(--focus);", rule)
+
+    def test_history_rows_wrap_long_project_titles_without_hiding_content(self):
+        title = "ExteriorWindowFrameRestorationAndWeatherproofingBeforeSeasonalGardenMaintenance"
+        module = load_app_shell_module()
+        job = {"id": 7, "title": title, "category": "Window cleaning", "status": "closed"}
+        consumer = module.client_dashboard_html(
+            {"role": "client"}, {"view": "history", "history": [job]}
+        )
+        contractor = module.contractor_dashboard_html(
+            {"role": "contractor"}, {"completed_work": [job]}
+        )
+        for html, row_class in (
+            (consumer, "history-row repeat-history-row"),
+            (contractor, "history-row completed-work-row"),
+        ):
+            with self.subTest(row_class=row_class):
+                self.assertIn(f'class="{row_class}"', html)
+                self.assertIn(f"<h3>{title}</h3>", html)
+        styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
+        row = styles.split(".history-row {", 1)[1].split("}", 1)[0]
+        self.assertIn("overflow-wrap: anywhere;", row)
+        self.assertNotRegex(row, r"overflow(?:-x)?:\s*(?:hidden|clip)")
+
+    def test_market_family_filters_reflow_without_a_horizontal_carousel(self):
+        styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
+        rail = styles.split(".market-filter-rail .service-family-filter {", 1)[1].split("}", 1)[0]
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr));", rail)
+        self.assertIn("grid-auto-flow: row;", rail)
+        self.assertIn("overflow: visible;", rail)
+        self.assertNotIn("152px", rail)
+        narrow = styles.split("@media (min-width: 901px) and (max-width: 1120px) {", 1)[1]
+        self.assertRegex(
+            narrow,
+            r"\.market-filter-rail \.service-family-filter-link\s*\{[^}]*"
+            r"grid-template-columns: minmax\(0, 1fr\);[^}]*min-height: 72px;",
+        )
+        self.assertRegex(
+            styles,
+            r"\.market-filter-rail \.service-family-filter-link:first-child\s*\{[^}]*"
+            r"grid-column: 1 / -1;[^}]*min-height: 44px;",
+        )
+        self.assertRegex(
+            styles,
+            r"\.market-filter-rail \.service-family-filter-copy strong\s*\{[^}]*"
+            r"overflow-wrap: anywhere;",
+        )
+        module = load_entry_shell_module()
+        for path in ("/", "/login", "/create-account", "/post-project"):
+            with self.subTest(path=path):
+                html = module.service_family_filter_html(path, {}, {"family": "outdoor-yard"})
+                self.assertEqual(html.count('class="service-family-filter-link'), 7)
+                self.assertEqual(html.count('aria-current="page"'), 1)
+                self.assertIn('aria-label="Filter projects by work family"', html)
+                for number in range(1, 7):
+                    self.assertIn(f"<span>{number:02d}</span>", html)
+
+    def test_map_count_and_task_post_link_execute_in_sync(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("Node.js is required for the executable map-controller contract")
+        result = subprocess.run(
+            [node, str(ROOT / "tests" / "native_worker" / "map_lane_contract.cjs")],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PASS: actual map count", result.stdout)
+
+    def test_filtered_families_keep_mobile_projects_selected(self):
+        entry = load_entry_shell_module()
+        for params, expected in (
+            ({}, "map"),
+            ({"family": ["outdoor-yard"]}, "filters"),
+            ({"family": ["not-a-family"]}, "map"),
+        ):
+            with self.subTest(params=params):
+                html = entry.build_entry_shell_html("/", params, [], "", "")
+                self.assertIn(f'data-mobile-panel="{expected}"', html)
+        for path in ("/login", "/start", "/create-account", "/post-project"):
+            with self.subTest(path=path):
+                html = entry.build_entry_shell_html(
+                    path, {"family": ["outdoor-yard"]}, [], "", ""
+                )
+                self.assertIn('data-mobile-panel="details"', html)
+
+        app = load_app_shell_module()
+        for filters, expected in (({}, "map"), ({"family": "outdoor-yard"}, "filters")):
+            with self.subTest(filters=filters):
+                html = app.lead_board_html(
+                    {"id": 2, "role": "contractor"}, {"filters": filters}
+                )
+                self.assertIn(f'data-mobile-panel="{expected}"', html)
+
     def test_cloudflare_public_jobs_payload_matches_map_privacy_contract(self):
         module = load_public_jobs_module()
         self.assertEqual(module.parse_public_limit("999"), 50)
@@ -4211,7 +6985,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             filters=filters,
             target="login",
         )
-        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual(payload["mapped_count"], 1)
+        self.assertIsNone(payload["jobs"][1]["lat"])
+        self.assertIsNone(payload["jobs"][1]["lng"])
         self.assertEqual(payload["view"], "all")
         self.assertEqual(
             payload["location_privacy"],
@@ -4318,9 +7095,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "idx_contractor_photos_public_contractor",
                 "idx_job_photos_public_job",
                 "idx_jobs_open_geo",
+                "idx_match_requests_job",
             ],
         )
         self.assertEqual(plan["table_scans"], [])
+        self.assertTrue(any("SEARCH bid_slots USING" in detail for detail in plan["plan"]))
         self.assertEqual(
             plan["last_migration"],
             "0036_media_upload_audit_window.sql",
@@ -4330,7 +7109,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         source = WORKER_ENTRY_PATH.read_text(encoding="utf-8")
 
         entry_jobs = source[
-            source.index("async def entry_shell_jobs") : source.index(
+            source.index("async def read_public_project_page") : source.index(
                 "\n\nasync def contractor_leads_for_user"
             )
         ]
@@ -4355,13 +7134,18 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
         ]
 
-        for query_block in (entry_jobs, contractor_leads):
+        self.assertIn("build_public_open_jobs_query", entry_jobs)
+        for query_block in (load_public_job_query_module().PUBLIC_OPEN_JOBS_SELECT, contractor_leads):
             with self.subTest(query=query_block.splitlines()[0]):
                 self.assertIn("JOIN users AS clients", query_block)
                 self.assertIn("clients.status = 'active'", query_block)
         self.assertIn("JOIN users AS clients", create_match)
         self.assertIn("AND clients.status = 'active'", create_match)
-        self.assertIn("AND EXISTS (", create_match)
+        save_match = source[
+            source.index("async def save_match_request") : source.index("\n\nasync def job_for_detail")
+        ]
+        self.assertIn("clients.status = 'active'", save_match)
+        self.assertIn("contractor.role = 'contractor' AND contractor.status = 'active'", save_match)
         self.assertIn("clients.status AS client_status", private_photo)
         self.assertIn("users.status AS client_status", job_detail)
 
@@ -4440,6 +7224,21 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         map_script = (ROOT / "workdoe" / "static" / "map.js").read_text(encoding="utf-8")
         self.assertIn("Sample timing", map_script)
         self.assertIn("projectDateLabel", map_script)
+
+    def test_worker_links_to_existing_data_requests_without_requiring_clerk(self):
+        entry = load_entry_shell_module()
+        shell = load_app_shell_module()
+        link = 'href="/privacy#privacy-choices">Account data requests</a>'
+        for params in ({}, {"embed": ["1"]}):
+            with self.subTest(params=params):
+                self.assertIn(link, entry.build_entry_shell_html("/login", params, [], "", ""))
+                self.assertNotIn(link, entry.build_entry_shell_html("/create-account", params, [], "", ""))
+        for role, label in (("client", "Consumer"), ("contractor", "Contractor")):
+            with self.subTest(role=role):
+                account = shell.account_security_html({"id": 1, "role": role, "status": "active"})
+                self.assertIn(f"<dt>Role</dt><dd>{label}</dd>", account)
+                self.assertIn(link, account)
+        self.assertIn('id="privacy-choices"', shell.privacy_page_html())
 
     def test_cloudflare_entry_shell_mounts_same_domain_clerk_and_live_jobs(self):
         module = load_entry_shell_module()
@@ -4605,7 +7404,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('class="market-filter-rail"', html)
         self.assertIn('class="market-map-stage"', html)
         self.assertIn('id="start-account" class="market-detail-rail market-auth-rail"', html)
-        self.assertIn('data-mobile-panel-target="details">Account</button>', html)
+        self.assertIn('aria-controls="start-account">Account</button>', html)
         self.assertIn('data-project-results aria-label="Available projects" role="list"', html)
         self.assertIn("/api/jobs/open?limit=50&amp;target=start", html)
         self.assertIn("Paint &lt;stairwell&gt;", html)
@@ -4638,7 +7437,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertEqual(
             module.map_tile_configuration("http://tiles.example/{z}/{x}/{y}.png", ""),
-            (module.DEFAULT_MAP_TILE_URL, module.DEFAULT_MAP_TILE_ATTRIBUTION),
+            ("", ""),
         )
         family_html = module.build_entry_shell_html(
             "/",
@@ -4659,8 +7458,11 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn('/vendor/tabler-icons/trees.svg', family_html)
         self.assertIn('class="market-lane-action"', family_html)
+        self.assertIn('data-market-lane data-lane-family="outdoor-yard"', family_html)
+        self.assertIn('data-lane-project-count', family_html)
+        self.assertIn('data-lane-post-project', family_html)
         self.assertIn("Lane selected", family_html)
-        self.assertIn('id="market-service" data-market-service', family_html)
+        self.assertIn('id="market-service" name="service" data-market-service', family_html)
         self.assertIn('value="pressure-washing" selected', family_html)
         self.assertNotIn('value="house-cleaning"', family_html)
         self.assertIn(
@@ -4748,7 +7550,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn('data-session-url="/api/auth/session"', login_html)
         self.assertIn('id="signin" class="market-detail-rail market-auth-rail"', login_html)
-        self.assertIn('data-mobile-panel-target="details">Account</button>', login_html)
+        self.assertIn('aria-controls="signin">Account</button>', login_html)
         self.assertIn('data-project-results aria-label="Available projects" role="list"', login_html)
         self.assertIn("/api/jobs/open?limit=50&amp;target=login", login_html)
         self.assertIn('data-redirect-url="/jobs/9"', login_html)
@@ -4936,6 +7738,189 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         with self.assertRaisesRegex(module.ClerkProxyError, "workdoe.com/__clerk"):
             module.normalize_proxy_url("https://evilworkdoe.com/__clerk")
 
+    def test_clerk_proxy_hides_workdoe_and_access_cookies_but_preserves_clerk_signin(self):
+        module = load_worker_entry_module()
+        worker = module.Default()
+        placeholder = "local-fixture-only"
+        worker.env = SimpleNamespace(WORKDOE_ENV="local", CLERK_SECRET_KEY=placeholder)
+        upstream = module.Response("", status=302, headers={"Location": "https://outside.invalid/"})
+        request = SimpleNamespace(
+            url="https://workdoe.com/__clerk/v1/client/sign_ins?fixture=a%2Fb",
+            method="POST", body=object(),
+            headers={
+                "CF-Connecting-IP": "2001:0db8::1",
+                "Cookie": (
+                    "__client=fixture; workdoe_job_draft=fixture; CF_Authorization=fixture; "
+                    "cf_APPsession=fixture; __session=fixture; workdoe_session=fixture"
+                ),
+                "Cf-Access-Jwt-Assertion": "fixture",
+                "Connection": "X-Fake-Hop",
+                "X-Fake-Hop": "do not forward",
+            },
+        )
+        with mock.patch.object(module, "fetch", new_callable=mock.AsyncMock, return_value=upstream) as fetch:
+            response = asyncio.run(worker.clerk_frontend_api_proxy(request))
+        fetch.assert_awaited_once_with(
+            "https://frontend-api.clerk.dev/v1/client/sign_ins?fixture=a%2Fb",
+            method="POST", redirect="manual", body=request.body,
+            headers={"Cookie": "__client=fixture; __session=fixture", "Clerk-Proxy-Url": "https://workdoe.com/__clerk",
+                     "Clerk-Secret-Key": placeholder, "X-Forwarded-For": "2001:db8::1"},
+        )
+        self.assertIs(response, upstream)
+
+    def test_clerk_proxy_preserves_valid_cookie_bytes_and_order(self):
+        module = load_clerk_proxy_module()
+        valid = '__client="fixture=="; __client_uat=0; __session=first; __session=second; __other=; cf_clearance=fixture'
+        self.assertEqual(module.headers_to_forward({"cookie": valid}), {"cookie": valid})
+        sensitive = "CF_Authorization=fixture; cf_binding=fixture; CF_Session=fixture; CF_Device=fixture; WORKDOE_session=fixture"
+        self.assertEqual(module.headers_to_forward({"Cookie": sensitive}), {})
+
+    def test_clerk_proxy_drops_ambiguous_cookie_fragments_without_losing_valid_pairs(self):
+        module = load_clerk_proxy_module()
+        merged = (
+            "__client=fixture, CF_Authorization=fixture; bad name=fixture; lone; "
+            'other="spaced value"; null=bad\x00; missing="quote; __session=fixture'
+        )
+        self.assertEqual(module.headers_to_forward({"Cookie": merged}), {"Cookie": "__session=fixture"})
+
+    def test_clerk_proxy_rejects_unreviewed_packages_and_ambiguous_paths(self):
+        module = load_clerk_proxy_module()
+        origin = "https://workdoe.com/__clerk"
+        sdk = "/npm/@clerk/clerk-js@6.40.1"
+        ui = "/npm/@clerk/ui@1.41.2"
+        for path in sorted(module.CLERK_PUBLIC_PACKAGE_PATHS):
+            for method in ("GET", "HEAD"):
+                with self.subTest(path=path, method=method):
+                    self.assertEqual(module.clerk_proxy_target_url(origin + path, method=method),
+                                     module.DEFAULT_CLERK_FAPI + path)
+        for path in (
+            "/npm/@clerk/clerk-js@6.40.0/dist/clerk.browser.js",
+            "/npm/lodash@4.17.21/lodash.js", ui + "/package.json", "/npm", ui + "/dist/",
+            "/NPM" + sdk.removeprefix("/npm") + "/dist/clerk.browser.js",
+            "/%6epm" + sdk.removeprefix("/npm") + "/dist/clerk.browser.js",
+            "/%256epm" + sdk.removeprefix("/npm") + "/dist/clerk.browser.js",
+            "/v1/.." + sdk + "/dist/clerk.browser.js",
+            sdk + "/dist/%2e%2e/package.json", sdk + "/dist//clerk.browser.js",
+            sdk + "/dist/clerk.browser.js;cache=1",
+            ui + "/dist/signin_ui_1.41.2.js", ui + "/dist/fake_ui_e564da_1.41.2.js",
+            ui + "/dist/server.js", ui + "/dist/index.js", ui + "/dist/common/DevOnly.js",
+            sdk + "/dist/clerk.native.js", sdk + "/dist/clerk.mjs", sdk + "/dist/clerk.no-rhc.js",
+        ):
+            with self.subTest(path=path), self.assertRaises(module.ClerkProxyError) as denied:
+                module.clerk_proxy_target_url(origin + path)
+            self.assertEqual(denied.exception.status, 404)
+
+    def test_clerk_proxy_rejects_package_writes_and_invalid_forwarding_before_fetch(self):
+        module = load_worker_entry_module()
+        worker = module.Default()
+        placeholder = "local-fixture-only"
+        worker.env = SimpleNamespace(WORKDOE_ENV="local", CLERK_SECRET_KEY=placeholder)
+        with mock.patch.object(module, "fetch", new_callable=mock.AsyncMock) as fetch:
+            for path, method, ip, status in (
+                ("/npm/@clerk/clerk-js@6.40.1/dist/clerk.browser.js", "POST", "203.0.113.5", 404),
+                ("/npm/@clerk/ui@1.41.2/dist/contexts/AcceptedUserInvitations.js.map", "GET", "203.0.113.5", 404),
+                ("/npm/@clerk/ui@1.41.2/dist/composed/UserProfile/Account.d.ts", "HEAD", "203.0.113.5", 404),
+                ("/npm/@clerk/ui@1.41.2/dist/server.js", "GET", "203.0.113.5", 404),
+                ("/npm/@clerk/clerk-js@6.40.1/dist/clerk.native.js", "HEAD", "203.0.113.5", 404),
+                ("/v1/client", "GET", "203.0.113.5, 198.51.100.3", 400),
+            ):
+                request = SimpleNamespace(url="https://workdoe.com/__clerk" + path, method=method, body=object(),
+                                          headers={"CF-Connecting-IP": ip})
+                denied = asyncio.run(worker.clerk_frontend_api_proxy(request))
+                self.assertEqual(denied.status, status)
+                self.assertEqual(denied.headers["Cache-Control"], "no-store")
+            fetch.assert_not_awaited()
+
+    def test_worker_clerk_proxy_times_out_and_aborts_without_replaying_post(self):
+        module = load_worker_entry_module()
+        worker = module.Default()
+        worker.env = SimpleNamespace(WORKDOE_ENV="local", CLERK_SECRET_KEY="native-fixture-only")
+        request = SimpleNamespace(
+            url="https://workdoe.com/__clerk/v1/client/sign_ins?marker=private-fixture",
+            method="POST", body=object(), headers={"CF-Connecting-IP": "203.0.113.5"},
+        )
+        controller = mock.Mock()
+
+        async def stalled_fetch(*args, **kwargs):
+            await asyncio.sleep(30)
+
+        async def run():
+            return await asyncio.wait_for(worker.clerk_frontend_api_proxy(request), timeout=0.5)
+
+        with (
+            mock.patch.dict(sys.modules, {"js": SimpleNamespace(AbortController=mock.Mock(new=lambda: controller))}),
+            mock.patch.object(module, "CLERK_PROXY_RESPONSE_TIMEOUT_SECONDS", 0.01, create=True),
+            mock.patch.object(module, "fetch", side_effect=stalled_fetch) as fetch,
+            mock.patch("builtins.print") as log,
+        ):
+            response = asyncio.run(run())
+        self.assertEqual(response.status, 504)
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(json.loads(response.body), {"ok": False, "error": "Sign-in is temporarily unavailable."})
+        fetch.assert_awaited_once()
+        self.assertIs(fetch.await_args.kwargs["signal"], controller.signal)
+        controller.abort.assert_called_once_with()
+        self.assertEqual(json.loads(log.call_args.args[0]), {"event": "clerk-proxy-upstream-failed", "reason": "timeout"})
+
+    def test_worker_clerk_proxy_redacts_transport_errors_and_respects_head(self):
+        module = load_worker_entry_module()
+        worker = module.Default()
+        worker.env = SimpleNamespace(WORKDOE_ENV="local", CLERK_SECRET_KEY="native-fixture-only")
+        for method in ("GET", "HEAD"):
+            request = SimpleNamespace(
+                url="https://workdoe.com/__clerk/v1/client?marker=private-fixture",
+                method=method, headers={"CF-Connecting-IP": "203.0.113.5"},
+            )
+            with (
+                self.subTest(method=method),
+                mock.patch.object(module, "fetch", side_effect=OSError("sensitive-provider-diagnostics")) as fetch,
+                mock.patch("builtins.print") as log,
+            ):
+                response = asyncio.run(worker.clerk_frontend_api_proxy(request))
+                self.assertEqual(response.status, 502)
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
+                if method == "HEAD":
+                    self.assertEqual(response.body, "")
+                else:
+                    self.assertEqual(json.loads(response.body), {"ok": False, "error": "Sign-in is temporarily unavailable."})
+                fetch.assert_awaited_once()
+                log.assert_called_once()
+                self.assertEqual(
+                    json.loads(log.call_args.args[0]), {"event": "clerk-proxy-upstream-failed", "reason": "transport"},
+                )
+
+    def test_worker_clerk_proxy_cancels_upstream_when_its_task_is_cancelled(self):
+        module = load_worker_entry_module()
+        worker = module.Default()
+        worker.env = SimpleNamespace(WORKDOE_ENV="local", CLERK_SECRET_KEY="native-fixture-only")
+        request = SimpleNamespace(
+            url="https://workdoe.com/__clerk/v1/client", method="GET", headers={"CF-Connecting-IP": "203.0.113.5"},
+        )
+        controller = mock.Mock()
+
+        async def run():
+            started = asyncio.Event()
+
+            async def stalled_fetch(*args, **kwargs):
+                started.set()
+                await asyncio.sleep(30)
+
+            with mock.patch.object(module, "fetch", side_effect=stalled_fetch) as fetch:
+                task = asyncio.create_task(worker.clerk_frontend_api_proxy(request))
+                await asyncio.wait_for(started.wait(), timeout=0.5)
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+                fetch.assert_awaited_once()
+
+        with (
+            mock.patch.dict(sys.modules, {"js": SimpleNamespace(AbortController=mock.Mock(new=lambda: controller))}),
+            mock.patch("builtins.print") as log,
+        ):
+            asyncio.run(run())
+        controller.abort.assert_called_once_with()
+        log.assert_not_called()
+
     def test_cloudflare_app_shell_renders_post_login_workflows(self):
         module = load_app_shell_module()
         entry_module = load_worker_entry_module()
@@ -5011,10 +7996,10 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         contractor_mobile_nav = module.mobile_task_nav_html(contractor, "/leads")
         self.assertIn('aria-label="Primary tasks"', contractor_mobile_nav)
         self.assertIn('href="/leads" aria-current="page"', contractor_mobile_nav)
-        self.assertIn("<span>Explore</span>", contractor_mobile_nav)
+        self.assertIn("<span>Find</span>", contractor_mobile_nav)
         self.assertIn("<span>Bids</span>", contractor_mobile_nav)
-        self.assertIn("<span>Messages</span>", contractor_mobile_nav)
-        self.assertIn('aria-label="Messages, 1 unread"', contractor_mobile_nav)
+        self.assertIn("<span>Inbox</span>", contractor_mobile_nav)
+        self.assertIn('aria-label="Inbox, 1 unread"', contractor_mobile_nav)
         self.assertIn('<span class="nav-unread-count" aria-hidden="true">1</span>', contractor_mobile_nav)
         self.assertIn("<span>Profile</span>", contractor_mobile_nav)
         self.assertEqual(module.parse_app_client_job_edit_id("/client/jobs/12/edit"), 12)
@@ -5381,7 +8366,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('id="job-photos-help"', form_html)
         self.assertIn('aria-label="Post project"', form_html)
         self.assertIn('src="/worker-actions.js"', form_html)
-        self.assertIn('class="cf-turnstile"', form_html)
+        self.assertIn('class="workdoe-turnstile"', form_html)
+        self.assertIn('data-workdoe-turnstile="true"', form_html)
         self.assertIn('data-sitekey="turnstile-site-key"', form_html)
         self.assertIn("Post project", form_html)
         embedded_form_html = module.job_form_html(
@@ -5821,7 +8807,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('name="target_id" value="9"', thread_html)
         self.assertIn('aria-label="Report message from Avery Client"', thread_html)
         self.assertIn('data-sitekey="turnstile-site-key"', thread_html)
-        self.assertIn('src="https://challenges.cloudflare.com/turnstile/v0/api.js"', thread_html)
+        self.assertIn('src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"', thread_html)
         self.assertIn("1 message", thread_html)
         self.assertNotIn("1 messages", thread_html)
         self.assertIn("Can you start Tuesday?", thread_html)
@@ -5949,7 +8935,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('data-json-action="/api/admin/photos/contractor/3/restore"', admin_html)
         self.assertIn('data-json-action="/api/admin/messages/9/hide"', admin_html)
         self.assertIn('data-json-action="/api/admin/messages/10/restore"', admin_html)
-        self.assertIn('href="/messages/5"', admin_html)
+        self.assertIn('href="/messages/5?through=9#message-9"', admin_html)
         self.assertNotIn("/api/admin/summary", admin_html)
 
         lead_html = module.lead_board_html(
@@ -6046,7 +9032,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('<details class="lead-tools" open>', lead_html)
         self.assertIn("Filters &amp; alerts", lead_html)
         self.assertIn("Window cleaning / Newest", lead_html)
-        self.assertIn('class="lead-tools-alert-state is-on">Email on</span>', lead_html)
+        self.assertIn('class="lead-tools-alert-state">Email paused</span>', lead_html)
         self.assertIn("License preferred", lead_html)
         self.assertIn(
             "Preference only. Confirm whether your license covers this work and jurisdiction.",
@@ -6081,8 +9067,8 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         )
         self.assertIn("Window cleaning near Alexandria", lead_html)
         self.assertIn('value="email" checked', lead_html)
-        self.assertIn("Email alerts on", lead_html)
-        self.assertIn("your services and DMV zones", lead_html)
+        self.assertIn("Email paused", lead_html)
+        self.assertIn("Email alerts are paused. Saved views still work.", lead_html)
         self.assertNotIn("22314", lead_html)
         marker = '<script id="map-jobs-data" type="application/json">'
         parsed = json.loads(lead_html.split(marker, 1)[1].split("</script>", 1)[0])
@@ -6447,7 +9433,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 self.assertLess(shell_html.index('<header class="site-header">'), shell_html.index('id="main-content"'))
         entrypoint = (ROOT / "cloudflare" / "worker" / "entry.py").read_text(encoding="utf-8")
         self.assertIn('"field_errors": exc.field_errors', entrypoint)
-        self.assertIn('environment != "production" and result_action == "test"', entrypoint)
+        self.assertIn('environment != "production" and not staging and result_action == "test"', entrypoint)
         self.assertIn('row_value(metadata, "result_with_testing_key", False)', entrypoint)
         self.assertIn('allowed_hosts.update({"localhost", "127.0.0.1", "0.0.0.0"})', entrypoint)
 
@@ -6486,6 +9472,39 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn('"X-Workdoe-Request": "same-origin"', email_code_script)
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
         self.assertIn(".clerk-entry-status", styles)
+
+    def test_dialog_hosts_allow_turnstile_without_eager_loading_or_unsafe_scripts(self):
+        module = load_app_shell_module()
+        html = module.layout(
+            {"id": 1, "role": "client", "name": "Consumer"},
+            "/client/dashboard", "Projects", "<p>No active projects</p>",
+        )
+        self.assertIn("data-site-dialog", html)
+        self.assertIn('href="/jobs/new"', html)
+        self.assertNotIn('src="https://challenges.cloudflare.com', html)
+        form = module.job_form_html({"id": 1, "role": "client", "name": "Consumer"})
+        local_composer = (ROOT / "workdoe/templates/_project_composer.html").read_text(encoding="utf-8")
+        for rendered in (form, local_composer):
+            self.assertIn("data-review-description", rendered)
+            self.assertIn("Only city/ZIP-level locations are shown.", rendered)
+            self.assertNotIn("pin is shown before a match is approved", rendered)
+
+        headers = module.app_shell_headers(include_turnstile=False)
+        directives = dict(
+            directive.strip().split(" ", 1)
+            for directive in headers["Content-Security-Policy"].split(";")
+        )
+        for directive in ("script-src", "frame-src", "connect-src"):
+            self.assertIn("https://challenges.cloudflare.com", directives[directive].split())
+        self.assertEqual(
+            directives["script-src"].split(), ["'self'", "https://challenges.cloudflare.com"]
+        )
+        self.assertEqual(directives["frame-ancestors"], "'none'")
+        self.assertEqual(directives["object-src"], "'none'")
+        self.assertEqual(headers["Cache-Control"], "no-store")
+
+        strict_headers = module.app_shell_headers(include_dialog_forms=False)
+        self.assertNotIn("https://challenges.cloudflare.com", strict_headers["Content-Security-Policy"])
 
     def test_cloudflare_app_shell_escapes_marketplace_content(self):
         module = load_app_shell_module()
@@ -6672,6 +9691,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             service_zone_slugs=["arlington-county-va"],
         )
         self.assertEqual(payload["view"], "sent")
+        self.assertEqual(payload["location_privacy"], "Approximate city or ZIP-level pins only, including after approval.")
         self.assertEqual(payload["stats"]["all_jobs"], 2)
         self.assertEqual(payload["stats"]["visible_jobs"], 1)
         self.assertEqual(payload["stats"]["new_jobs"], 1)
@@ -6697,7 +9717,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         new_payload = module.contractor_leads_payload(rows, filters=filters, view="new")
         self.assertEqual(len(new_payload["jobs"]), 1)
         self.assertEqual(new_payload["jobs"][0]["id"], 13)
-        self.assertEqual(new_payload["count"], 0)
+        self.assertEqual(new_payload["count"], 1)
+        self.assertEqual(new_payload["mapped_count"], 0)
+        self.assertIsNone(new_payload["map_jobs"][0]["lat"])
 
     def test_cloudflare_contractor_preferences_are_deterministic_and_private(self):
         module = load_contractor_preferences_module()
@@ -7391,6 +10413,71 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(approved["trades"], "Contractor profile")
         self.assertEqual(approved_payload["comparison"]["offers"], [])
 
+    def test_shared_project_title_alias_withholds_retained_contact_details(self):
+        module = load_content_privacy_module()
+        from workdoe.content_privacy import shared_project_record
+
+        row = {"job_title": "Ask title-fixture@example.invalid", "id": 42, "status": "approved"}
+        for projection in (module.shared_project_record, shared_project_record):
+            with self.subTest(projection=projection.__module__):
+                result = projection(row)
+                self.assertEqual(result["job_title"], "Project")
+                self.assertEqual(result["id"], 42)
+                self.assertEqual(result["status"], "approved")
+                self.assertEqual(row["job_title"], "Ask title-fixture@example.invalid")
+                self.assertEqual(projection({"job_title": "Kitchen cabinet repairs"})["job_title"], "Kitchen cabinet repairs")
+        profiles = load_contractor_public_profiles_module()
+        from workdoe.contractor_public_profiles import contractor_choice_context
+
+        client = {"id": 8, "role": "client", "status": "active"}
+        relationship = row | {"job_id": 42, "client_id": 8, "contractor_id": 7, "status": "pending", "request_id": 31}
+        for projection in (profiles.contractor_choice_context, contractor_choice_context):
+            with self.subTest(choice=projection.__module__):
+                result = projection(client, 7, relationship)
+                self.assertEqual(result["job_title"], "Project")
+                self.assertTrue(result["can_choose"])
+                self.assertEqual(result["back_url"], "/client/jobs/42#mini-bids")
+
+    def test_retained_bid_terms_do_not_disclose_contact_details_in_recipient_views(self):
+        requests_module = load_client_requests_module()
+        profiles_module = load_contractor_public_profiles_module()
+        threads_module = load_message_threads_module()
+        from workdoe.bid_comparison import bid_comparison
+        from workdoe.contractor_public_profiles import contractor_choice_context
+
+        consumer = {"id": 8, "role": "client", "status": "active"}
+        job = {"id": 42, "title": "Window cleaning", "status": "open"}
+        row = {
+            "id": 31, "request_id": 31, "job_id": 42, "client_id": 8,
+            "contractor_id": 7, "status": "pending",
+            "scope_note": "Please call (202) 555-0123 about the window screens.",
+            "price_range": "$120-$180", "timeline": "One morning",
+            "availability": "Meet at 123 Bid Fixture Street.",
+            "experience": "Ten years of window cleaning.", "questions": "Ask bid-fixture@example.invalid.",
+        }
+        payload = requests_module.client_job_requests_payload(job, [row], "all")
+        cases = (
+            (payload["requests"][0], ("scope_note", "availability", "questions")),
+            (payload["comparison"]["offers"][0], ("scope_note", "availability", "questions")),
+            (bid_comparison([row])["offers"][0], ("scope_note", "availability", "questions")),
+            (profiles_module.contractor_choice_context(consumer, 7, row), ("availability",)),
+            (contractor_choice_context(consumer, 7, row), ("availability",)),
+            (threads_module.message_thread_summary(row), ("availability",)),
+        )
+        for result, fields in cases:
+            with self.subTest(fields=fields):
+                self.assertEqual(result["price_range"], "$120-$180")
+                self.assertEqual(result["timeline"], "One morning")
+                for field in fields:
+                    self.assertEqual(result[field], "Withheld for privacy.")
+        self.assertIn("123 Bid Fixture Street", row["availability"])
+        self.assertTrue(payload["requests"][0]["can_approve"])
+        approved = requests_module.client_job_requests_payload(
+            job, [row | {"status": "approved", "thread_id": 55}], "all",
+        )["approved_request"]
+        self.assertEqual(approved["availability"], "Withheld for privacy.")
+        self.assertEqual(approved["thread_url"], "/messages/55")
+
     def test_cloudflare_bid_comparison_matches_local_received_order_contract(self):
         worker = load_bid_comparison_module()
         from workdoe.bid_comparison import bid_comparison
@@ -7540,8 +10627,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         ]
         self.assertTrue(module.can_view_job_detail(client, job))
         self.assertTrue(module.can_view_job_detail(contractor, job))
+        for restricted in ({**job, "status": "closed"}, {**job, "has_approved_match": True}):
+            self.assertFalse(module.can_view_job_detail(contractor, restricted))
+            self.assertTrue(module.can_view_job_detail(contractor, {**restricted, "has_viewer_request": True}))
+            self.assertTrue(module.can_view_job_detail(client, restricted))
         self.assertTrue(module.can_view_job_detail(admin, {**job, "status": "hidden"}))
-        self.assertFalse(module.can_view_job_detail(contractor, {**job, "status": "hidden"}))
+        self.assertFalse(module.can_view_job_detail(contractor, {**job, "status": "hidden", "has_viewer_request": True}))
         self.assertFalse(
             module.can_view_job_detail(
                 contractor,
@@ -7559,6 +10650,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertNotIn("zip_code", contractor_job)
         self.assertNotIn("close_note", contractor_job)
         self.assertNotIn("stored_path", contractor_payload["photos"][0])
+        self.assertNotIn("original_filename", contractor_payload["photos"][0])
         self.assertNotIn("is_hidden", contractor_payload["photos"][0])
 
         requested_payload = module.job_detail_payload(
@@ -7817,7 +10909,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("/api/client/locations", profile_html)
         self.assertIn("/api/client/locations/17/delete", profile_html)
         self.assertIn("200xx", profile_html)
-        self.assertIn("records your consent", profile_html)
+        self.assertIn("Email reminders are paused. Check Workdoe for bids.", profile_html)
         self.assertIn('id="bid-reminders"', profile_html)
         self.assertNotIn("name=\"phone\"", profile_html)
 
@@ -8062,6 +11154,32 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "doe-exterior.example",
         )
         self.assertNotIn("phone", related_payload["contractor"])
+
+    def test_public_contractor_payload_does_not_export_self_reported_credential_notes(self):
+        module = load_contractor_public_profiles_module()
+        row = {
+            "id": 42, "status": "active", "business_name": "Fixture Exterior",
+            "insurance_status": "Ask insurance-fixture@example.invalid",
+            "license_number": "123 Fixture Street",
+        }
+        credential = {
+            "id": 7, "status": "verified", "credential_type": "trade_license",
+            "jurisdiction": "VA", "source_url": "https://registry.example/records/7",
+        }
+        for viewer in (
+            None, {"id": 8, "role": "client", "status": "active"},
+            {"id": 42, "role": "contractor", "status": "active"},
+            {"id": 1, "role": "admin", "status": "active"},
+        ):
+            with self.subTest(viewer=viewer):
+                result = module.public_contractor_profile_payload(
+                    row, [], viewer, credentials=[credential],
+                )["contractor"]
+                self.assertEqual(result["business_name"], row["business_name"])
+                self.assertEqual([item["id"] for item in result["credentials"]], [7])
+                self.assertFalse({"insurance_status", "license_number"} & result.keys())
+                self.assertNotIn("insurance-fixture@example.invalid", json.dumps(result))
+                self.assertNotIn("123 Fixture Street", json.dumps(result))
 
     def test_cloudflare_contractor_credentials_fail_closed_and_publish_only_current_records(self):
         module = load_contractor_credentials_module()
@@ -8333,10 +11451,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 "    async def update_job"
             )
         ]
-        self.assertLess(
-            create_job.index("await record_service_policy_acknowledgement("),
-            create_job.index("await complete_idempotent_request("),
-        )
+        self.assertIn("await publish_job(", create_job)
         app_shell = APP_SHELL_PATH.read_text(encoding="utf-8")
         self.assertIn("Workdoe does not verify provider credentials.", app_shell)
         self.assertIn("Confirm before updating", app_shell)
@@ -8391,6 +11506,70 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             module.turnstile_token_from_payload({})
         with self.assertRaisesRegex(module.TurnstileError, "too long"):
             module.turnstile_token_from_payload({"turnstile_token": "x" * 2049})
+
+    def test_turnstile_transport_and_body_share_a_deadline(self):
+        module = load_worker_entry_module()
+        env = SimpleNamespace(WORKDOE_TURNSTILE_SECRET_KEY="test-only")  # pragma: allowlist secret
+        request = SimpleNamespace(headers={})
+
+        async def stall_headers(*_args, **_kwargs):
+            await asyncio.Event().wait()
+
+        body = BodyStream([], stall=True)
+        for transport in (stall_headers, mock.AsyncMock(return_value=SimpleNamespace(status=200, body=body, headers={}))):
+            with (
+                mock.patch.object(module, "TURNSTILE_VERIFY_TIMEOUT_SECONDS", 0.05),
+                mock.patch.object(module, "fetch", transport),
+                self.assertRaisesRegex(module.TurnstileError, r"^Turnstile verification failed\.$"),
+            ):
+                asyncio.run(module.verify_turnstile_for_request(env, request, {"turnstile_token": "fixture"}, "job-post"))
+        self.assertTrue(body.canceled)
+        self.assertTrue(body.released)
+
+    def test_turnstile_verification_uses_bounded_stream_and_preserves_production_checks(self):
+        module = load_worker_entry_module()
+        env = SimpleNamespace(
+            WORKDOE_TURNSTILE_SECRET_KEY="test-only",  # pragma: allowlist secret
+            WORKDOE_ENV="production",
+        )
+        request = SimpleNamespace(headers={})
+        valid = {"success": True, "hostname": "workdoe.com", "action": "job-post"}
+        cases = (
+            (valid, True),
+            ({**valid, "success": False, "error-codes": ["timeout-or-duplicate"]}, False),
+            ({**valid, "hostname": "other.example"}, False),
+            ({**valid, "hostname": ""}, False),
+            ({**valid, "action": "match-request"}, False),
+            ({**valid, "success": "true"}, False),
+            ([], False),
+        )
+        original_fetch = module.fetch
+        try:
+            for payload, allowed in cases:
+                with self.subTest(payload=payload):
+                    async def fetch_response(*_args, value=payload, **kwargs):
+                        self.assertEqual(kwargs["redirect"], "error")
+                        return SimpleNamespace(status=200, body=BodyStream([json.dumps(value).encode()]), headers={})
+
+                    module.fetch = fetch_response
+                    verification = module.verify_turnstile_for_request(
+                        env, request, {"turnstile_token": "fixture-response"}, action="job-post"
+                    )
+                    if allowed:
+                        self.assertEqual(asyncio.run(verification), valid)
+                    else:
+                        diagnostics = io.StringIO()
+                        with self.assertRaises(module.TurnstileError), contextlib.redirect_stdout(diagnostics):
+                            asyncio.run(verification)
+                        self.assertNotIn("fixture-response", diagnostics.getvalue())
+                        self.assertNotIn("test-only", diagnostics.getvalue())
+                        if diagnostics.getvalue():
+                            details = json.loads(diagnostics.getvalue())
+                            self.assertEqual(
+                                set(details), {"event", "codes", "hostname_allowed", "action_allowed"}
+                            )
+        finally:
+            module.fetch = original_fetch
 
     def test_cloudflare_match_request_payload_matches_local_bid_contract(self):
         module = load_match_requests_module()
@@ -8682,11 +11861,30 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn(
-            'if request.method != "HEAD" and row_value(user, "role") != "admin":',
+            'if request.method != "HEAD" and row_value(user, "role") != "admin" and through is None:',
             worker_source,
         )
         with self.assertRaisesRegex(module.MessageThreadError, "Unsupported"):
             module.parse_thread_id("/api/messages/threads/0")
+
+    def test_retained_message_text_is_only_visible_to_moderation(self):
+        module = load_message_threads_module()
+        for body in ("Contact legacy@example.test", "Call 202-555-0101", "Meet at 123 Private Street"):
+            with self.subTest(body=body):
+                thread = {"id": 42, "last_message": body, "last_message_id": 9, "last_sender_id": 7,
+                          "message_count": 1, "unread_count": 1}
+                message = {"id": 9, "body": body, "sender_id": 7}
+                inbox = module.message_threads_listing_payload([thread], viewer_id=8)
+                self.assertIn("Message withheld", inbox["threads"][0]["last_message"])
+                self.assertEqual(inbox["stats"]["unread"], 1)
+                self.assertTrue(inbox["threads"][0]["needs_reply"])
+                detail = module.thread_detail_payload(thread, [message])
+                self.assertEqual(detail["messages"][0]["id"], 9)
+                self.assertIn("Message withheld", detail["messages"][0]["body"])
+                self.assertNotIn(body, json.dumps(detail))
+                moderation = module.thread_detail_payload(thread, [message], include_moderation_evidence=True)
+                self.assertEqual(moderation["messages"][0]["body"], body)
+                self.assertEqual(message["body"], body)
 
     def test_cloudflare_moderation_report_helper_matches_local_report_contract(self):
         module = load_moderation_reports_module()
@@ -9016,7 +12214,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             result.checks,
         )
         self.assertIn("Wrangler keeps Clerk same-domain OTP mode", result.checks)
-        self.assertIn("Wrangler configures the reviewed map tile provider", result.checks)
+        self.assertIn("Wrangler selects the reviewed same-origin area map", result.checks)
         self.assertIn(
             "Wrangler requires Clerk, Workdoe, and Turnstile secrets",
             result.checks,
@@ -9278,12 +12476,12 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         for command in (
             "python ..\\scripts\\cloudflare_release_evidence.py",
             "python ..\\scripts\\cloudflare_readiness.py",
-            "python scripts\\cloudflare_production_deploy.py --json",
-            "python scripts\\cloudflare_production_deploy.py --execute --yes",
         ):
             matching = [step for step in local.next_steps if step.startswith(command)]
             self.assertEqual(len(matching), 1, command)
             self.assertIn("--clerk-proxy-proof-json", matching[0])
+        self.assertIn("npm run cf:deploy:plan", local.next_steps)
+        self.assertFalse(any("cloudflare_production_deploy.py --execute" in step for step in local.next_steps))
 
         strict = module.run_readiness(ROOT, strict_production=True)
         self.assertFalse(strict.ready)
@@ -9540,14 +12738,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             "python scripts\\cloudflare_release_evidence.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
             phases["deploy-gate"]["commands"],
         )
-        self.assertIn(
-            "python scripts\\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
-            phases["migrate-and-deploy"]["commands"],
-        )
-        self.assertIn(
-            "python scripts\\cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
-            phases["migrate-and-deploy"]["commands"],
-        )
+        self.assertEqual(phases["migrate-and-deploy"]["commands"], ["npm run cf:deploy:plan"])
         self.assertIn(
             "python scripts\\cloudflare_clerk_proxy_proof.py --confirm",
             phases["clerk-domain-proof"]["commands"][1],
@@ -9580,20 +12771,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
             proxy_proof_path = Path(tmp) / "clerk-proxy-proof.json"
             proxy_proof_path.write_text(
-                json.dumps(
-                    {
-                        "domain": "workdoe.com",
-                        "frontend_api_proxy_url": "https://workdoe.com/__clerk",
-                        "confirmed": True,
-                        "public_sign_up_enabled": True,
-                        "email_code_sign_in": True,
-                        "password_sign_in_disabled": True,
-                        "custom_sign_up_url": "https://workdoe.com/create-account",
-                        "express_legal_consent": True,
-                        "terms_url": "https://workdoe.com/terms",
-                        "privacy_url": "https://workdoe.com/privacy",
-                    }
-                ),
+                json.dumps(clerk_proof_fixture()),
                 encoding="utf-8",
             )
             plan = module.build_launch_plan(
@@ -9662,13 +12840,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("Validate manual deploy confirmation", workflow)
-        self.assertIn('test "${{ github.ref }}" = "refs/heads/main"', workflow)
+        self.assertIn('test "$GITHUB_REF" = "refs/heads/main"', workflow)
         self.assertIn("github.ref == 'refs/heads/main'", workflow)
-        self.assertIn('test "${{ inputs.deploy }}" = "DEPLOY"', workflow)
-        self.assertIn('test "${{ inputs.clerk_proxy_confirmed }}" = "true"', workflow)
-        self.assertIn('test "${{ inputs.public_signup_confirmed }}" = "true"', workflow)
-        self.assertIn('test "${{ inputs.email_code_only_confirmed }}" = "true"', workflow)
-        self.assertIn('test "${{ inputs.legal_consent_confirmed }}" = "true"', workflow)
+        self.assertIn('test "$DEPLOY_CONFIRMATION" = "DEPLOY"', workflow)
+        self.assertIn('test "$CLERK_PROXY_CONFIRMED" = "true"', workflow)
+        self.assertIn('test "$PUBLIC_SIGNUP_CONFIRMED" = "true"', workflow)
+        self.assertIn('test "$EMAIL_CODE_ONLY_CONFIRMED" = "true"', workflow)
+        self.assertIn('test "$LEGAL_CONSENT_CONFIRMED" = "true"', workflow)
+        self.assertNotIn('test "${{', workflow)
         self.assertNotIn("inputs.clerk_proxy_url", workflow)
         self.assertIn("Check Cloudflare credentials are configured", workflow)
         self.assertIn('test -n "$CLOUDFLARE_API_TOKEN"', workflow)
@@ -9685,22 +12864,33 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertIn("http://127.0.0.1:8787/health", workflow)
         self.assertIn("Verify current main release candidate", workflow)
         self.assertIn("url: https://workdoe.com", workflow)
-        self.assertIn("Capture pre-deployment recovery point", workflow)
-        self.assertIn("wrangler d1 time-travel info workdoe", workflow)
+        self.assertIn("Capture pre-deployment Worker identity", workflow)
+        self.assertIn("cloudflare_worker_recovery.py", workflow)
+        self.assertNotIn("wrangler d1 time-travel info workdoe", workflow)
         self.assertIn("wrangler deployments status --json", workflow)
+        for phase in ("before", "after"):
+            self.assertRegex(
+                workflow,
+                r"wrangler deployments status --json[^|>]+\| python -I -S "
+                r"scripts/cloudflare_worker_recovery\.py --traffic-evidence[^>]+> "
+                rf'"\$evidence_dir/worker-deployment-{phase}\.json"',
+            )
         self.assertIn("worker-rollback-version.txt", workflow)
-        self.assertIn("worker-rollback-command.txt", workflow)
+        self.assertIn("worker-rollback-review.txt", workflow)
+        self.assertNotIn("worker-rollback-command.txt", workflow)
+        self.assertNotIn("--migrations apply", workflow)
         self.assertIn("Capture deployed Worker state", workflow)
         self.assertIn("production-deploy.log", workflow)
         self.assertIn(
-            'npm run cf:deploy 2>&1 | tee "$evidence_dir/production-deploy.log"',
+            'npm run cf:deploy -- --expected-commit "$GITHUB_SHA" '
+            '--expected-worker-version "$WORKDOE_EXPECTED_WORKER_VERSION" --migrations skip',
             workflow,
         )
         self.assertIn("Retain release recovery evidence", workflow)
         self.assertIn("if: always()", workflow)
         self.assertIn("retention-days: 30", workflow)
         self.assertLess(
-            workflow.index("Capture pre-deployment recovery point"),
+            workflow.index("Capture pre-deployment Worker identity"),
             workflow.index("Deploy guarded production release"),
         )
         self.assertLess(
@@ -9745,8 +12935,21 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             package["scripts"]["provenance:verify"],
             "python scripts/verify_dependency_provenance.py",
         )
-        self.assertIn("python -m pip install ruff==0.16.4", workflow)
-        self.assertIn("npm run provenance:verify", workflow)
+        self.assertIn("python -m venv", workflow)
+        self.assertIn("python -m pip check", workflow)
+        self.assertIn("--require-hashes --only-binary=:all: -r .github/python/runtime.txt -r .github/python/ruff.txt", workflow)
+        self.assertIn("npm run security:install", workflow)
+        self.assertIn("--package-lock-only", package["scripts"]["security:node"])
+        for lock in ("runtime", "ruff", "audit"):
+            for script in ("security:install", "security:python"):
+                self.assertIn(f"-r .github/python/{lock}.txt", package["scripts"][script])
+        verify, deploy = workflow.split("\n  deploy:\n")
+        self.assertNotIn("pip install", deploy)
+        for job in (verify, deploy):
+            self.assertLess(
+                job.index("python -I -S scripts/verify_dependency_provenance.py"),
+                job.index("npm ci --ignore-scripts"),
+            )
         self.assertIn("npm run lint", workflow)
         self.assertIn("npm run cf:d1:query-plan", workflow)
         self.assertIn("Ruff 0.16.4", notices)
@@ -10156,7 +13359,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         module = load_workdoe_launch_handoff_script()
         original_doctor = module.build_doctor
         original_dispatch = module.build_dispatch_plan
-        original_proof_error = module.clerk_proxy_proof_error
+        original_proof_error = module.clerk_release_proof_error
         captured_confirmations = {}
         try:
             module.build_doctor = lambda *args, **kwargs: {
@@ -10193,7 +13396,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 }
 
             module.build_dispatch_plan = fake_dispatch
-            module.clerk_proxy_proof_error = lambda path: ""
+            module.clerk_release_proof_error = lambda path: ""
             payload = module.build_handoff_payload(
                 ROOT,
                 clerk_proxy_proof_json=ROOT / "clerk-proxy-proof.local.json",
@@ -10201,7 +13404,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         finally:
             module.build_doctor = original_doctor
             module.build_dispatch_plan = original_dispatch
-            module.clerk_proxy_proof_error = original_proof_error
+            module.clerk_release_proof_error = original_proof_error
 
         self.assertEqual(
             captured_confirmations,
@@ -10364,7 +13567,21 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
     def test_workdoe_production_smoke_accepts_ready_public_contract(self):
         module = load_workdoe_production_smoke_script()
+        shell = load_app_shell_module()
+        policy_pages = {
+            path: getattr(shell, f"{path[1:]}_page_html")()
+            for path in module.PUBLIC_POLICY_FINGERPRINTS
+        }
+        entry_shell = load_entry_shell_module()
+        sample = load_demo_projects_module().guest_project_rows([])[0]
+        sample_detail = entry_shell.project_detail_html(sample, "start")
         asset_release_token = load_release_script().static_asset_release_token(ROOT)
+        clerk_body = b"window.Clerk = window.Clerk || {};"
+        clerk_integrity = "sha384-" + base64.b64encode(hashlib.sha384(clerk_body).digest()).decode()
+        clerk_components = {
+            name: {**record, "script_integrity": clerk_integrity}
+            for name, record in module.PINNED_CLERK_BROWSER_COMPONENTS.items()
+        }
         original_dns_lookup = module.dns_lookup
         original_fetch_url = module.fetch_url
         try:
@@ -10381,30 +13598,57 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                 timeout=module.DEFAULT_TIMEOUT,
                 body_limit=20000,
                 follow_redirects=True,
+                binary=False,
             ):
                 headers = {}
                 body = ""
+                body_bytes = b""
                 status_code = 200
+                map_snapshot = (
+                    '<script id="map-jobs-data" type="application/json">'
+                    + json.dumps([self.public_smoke_job()]) + '</script>'
+                )
                 if url.startswith("http://"):
                     status_code = 308
                     headers = {"Location": url.replace("http://", "https://", 1)}
+                elif url.removeprefix("https://workdoe.com") in module.PRIVATE_PAGE_PATHS:
+                    status_code = 302
+                    path = url.removeprefix("https://workdoe.com")
+                    headers = {"Location": f"/login?next={path}", "Cache-Control": "No-Store"}
+                elif url.removeprefix("https://workdoe.com") in (*module.PRIVATE_API_PATHS, *module.PRIVATE_MEDIA_PATHS):
+                    status_code = 401
+                    headers = {"Cache-Control": "private, no-store"}
+                elif url.startswith("https://workdoe.com/vendor/") and url.endswith("/LICENSE"):
+                    self.assertTrue(binary)
+                    self.assertFalse(follow_redirects)
+                    asset = url.removeprefix("https://workdoe.com/")
+                    notice = (ROOT / "workdoe" / "static" / asset).read_bytes()
+                    body_bytes = notice.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+                elif url.startswith("https://workdoe.com/__clerk/npm/") and url.endswith("/LICENSE"):
+                    self.assertEqual((method, follow_redirects, binary), ("GET", False, True))
+                    component = next(
+                        record for record in clerk_components.values()
+                        if url.endswith(f"/npm/{record['package']}@{record['version']}/LICENSE")
+                    )
+                    body_bytes = (ROOT / component["retained_license"]).read_bytes().replace(b"\r\n", b"\n")
+                    headers = {"Content-Type": "text/plain; charset=utf-8"}
                 elif url.endswith("/login"):
-                    body = '<div data-clerk-publishable-key="pk_live_workdoe"></div>'
+                    body = '<div data-clerk-publishable-key="pk_live_workdoe"></div>' + map_snapshot
                     headers = {"Content-Type": "text/html; charset=utf-8"}
                 elif "/create-account?__clerk_status=sign_up" in url:
                     body = (
                         '<main data-clerk-entry="sign-up"></main>'
                         '<script data-clerk-publishable-key="pk_live_workdoe"></script>'
                     )
-                    headers = {"Content-Type": "text/html; charset=utf-8"}
+                    headers = {
+                        "Content-Type": "text/html; charset=utf-8",
+                        "Cache-Control": "no-store",
+                        "Referrer-Policy": "strict-origin",
+                    }
                 elif url.endswith("/start"):
                     headers = {
-                        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-                        "Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'",
-                        "X-Content-Type-Options": "nosniff",
-                        "X-Frame-Options": "DENY",
+                        **ENTRY_HEADER_FIXTURE,
                         "Referrer-Policy": "strict-origin-when-cross-origin",
-                        "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
                     }
                 elif "/styles.css?v=" in url:
                     headers = {
@@ -10417,6 +13661,9 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         {
                             "ok": True,
                             "service": "workdoe-cloudflare-worker",
+                            "domain": "workdoe.com",
+                            "auth_provider": "clerk",
+                            "login_mode": "same_domain_email_code",
                             "bindings": {
                                 "d1": True,
                                 "email_sender": True,
@@ -10428,30 +13675,42 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         }
                     )
                     headers = {"Content-Type": "application/json; charset=utf-8"}
-                elif url.endswith("/api/jobs/open?limit=3"):
-                    body = json.dumps(
-                        {
-                            "count": 1,
-                            "jobs": [{"id": 1, "title": "Window cleaning"}],
-                            "filters": {},
-                            "location_privacy": "Approximate city or ZIP-level pins only.",
-                        }
-                    )
-                    headers = {"Content-Type": "application/json; charset=utf-8"}
+                elif url.endswith("/api/jobs/open?limit=50"):
+                    body = json.dumps(self.public_smoke_payload([self.public_smoke_job()]))
+                    headers = {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"}
+                elif url.endswith(module.PUBLIC_SEARCH_SMOKE_PATH):
+                    filters = module.PUBLIC_JOBS_DEFAULT_FILTERS | {"q": module.PUBLIC_SEARCH_SMOKE_QUERY}
+                    body = json.dumps(self.public_smoke_payload([], filters=filters))
+                    headers = {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"}
                 elif url.endswith(module.SAMPLE_PROJECT_SMOKE_PATH):
-                    body = "<article>Demonstration project <dt>Timing</dt><dd>Sample timing</dd></article>"
+                    self.assertEqual((body_limit, follow_redirects, binary), (module.MAX_RELEASE_HTML_BYTES + 1, False, True))
+                    body = sample_detail
                     headers = {"Content-Type": "text/html; charset=utf-8"}
-                elif url.endswith("/safety"):
-                    body = "<h1>Safety</h1><p>Share only what the job needs.</p>"
+                elif url.removeprefix(module.DEFAULT_BASE_URL) in policy_pages:
+                    self.assertEqual((body_limit, follow_redirects, binary), (module.PUBLIC_POLICY_MAX_BYTES + 1, False, True))
+                    body = policy_pages[url.removeprefix(module.DEFAULT_BASE_URL)]
                     headers = {"Content-Type": "text/html; charset=utf-8"}
-                elif url.endswith("/privacy"):
-                    body = "<h1>Privacy Policy</h1>"
-                    headers = {"Content-Type": "text/html; charset=utf-8"}
-                elif url.endswith("/terms"):
-                    body = "<h1>Terms of Use</h1>"
-                    headers = {"Content-Type": "text/html; charset=utf-8"}
+                elif url.endswith(module.SECURITY_CONTACT_PATH):
+                    expires = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    body = (
+                        "Contact: mailto:admin@workdoe.com\nContact: https://workdoe.com/safety\n"
+                        f"Canonical: {url}\nExpires: {expires}\n"
+                    )
+                    headers = {"Content-Type": "text/plain; charset=utf-8"}
                 elif url.endswith("/workdoe-share.png"):
+                    self.assertEqual((method, body_limit, follow_redirects, binary), ("GET", 24, False, True))
                     headers = {"Content-Type": "image/png"}
+                    body_bytes = (ROOT / "workdoe" / "static" / "workdoe-share.png").read_bytes()[:body_limit]
+                elif url.endswith(("/robots.txt", "/sitemap.xml")):
+                    self.assertEqual((method, body_limit, follow_redirects, binary),
+                                     ("GET", module.DISCOVERY_MAX_BYTES + 1, False, True))
+                    app_shell = load_app_shell_module()
+                    if url.endswith("/robots.txt"):
+                        body = app_shell.public_robots_txt()
+                        headers = {"Content-Type": "text/plain; charset=utf-8"}
+                    else:
+                        body = app_shell.public_sitemap_xml()
+                        headers = {"Content-Type": "application/xml; charset=utf-8"}
                 elif url.rstrip("/") == "https://workdoe.com":
                     body = (
                         f'<link rel="stylesheet" href="/styles.css?v={asset_release_token}">'
@@ -10460,121 +13719,463 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         '<meta property="og:image:width" content="1200">'
                         '<meta property="og:image:height" content="630">'
                         '<meta name="twitter:card" content="summary_large_image">'
-                    )
+                    ) + map_snapshot
                     headers = {"Content-Type": "text/html; charset=utf-8"}
-                elif url.endswith(module.CLERK_ASSET_PATH):
-                    body = "window.Clerk = window.Clerk || {};"
+                elif any(url.endswith("/__clerk" + record["script_path"]) for record in clerk_components.values()):
+                    self.assertEqual((method, follow_redirects, binary), ("GET", False, True))
+                    body_bytes = clerk_body
                     headers = {"Content-Type": "application/javascript; charset=utf-8"}
+                if binary and not body_bytes:
+                    body_bytes = body.encode("utf-8")
                 return module.FetchResult(
                     ok=True,
                     status_code=status_code,
                     headers=headers,
                     body=body,
                     elapsed_ms=12,
+                    body_bytes=body_bytes,
                 )
 
             module.fetch_url = fake_fetch
-            payload = module.build_smoke_payload()
+            with mock.patch.object(module, "PINNED_CLERK_BROWSER_COMPONENTS", clerk_components):
+                payload = module.build_smoke_payload()
         finally:
             module.dns_lookup = original_dns_lookup
             module.fetch_url = original_fetch_url
 
         self.assertTrue(payload["ready"])
         self.assertEqual(payload["failures"], [])
+        self.assertEqual(payload["readiness_scope"], "public_http_smoke")
+        self.assertEqual(payload["public_launch_approval"], "not_evaluated")
+        self.assertIn("Public launch approval: not evaluated", module.render_text(payload))
         checks = {check["name"]: check for check in payload["checks"]}
         self.assertEqual(checks["dns"]["status"], "ready")
         self.assertEqual(checks["http-to-https"]["status"], "ready")
         self.assertEqual(checks["https-entry"]["status"], "ready")
         self.assertEqual(checks["health-json"]["status"], "ready")
         self.assertEqual(checks["public-jobs-api"]["status"], "ready")
+        self.assertEqual(checks["public-project-search"]["status"], "ready")
+        self.assertEqual(checks["public-map-snapshots"]["status"], "ready")
         self.assertEqual(checks["public-sample-presentation"]["status"], "ready")
         self.assertEqual(checks["entry-security-headers"]["status"], "ready")
         self.assertEqual(checks["static-asset-cache"]["status"], "ready")
         self.assertEqual(checks["public-trust-pages"]["status"], "ready")
         self.assertEqual(checks["social-share-card"]["status"], "ready")
         self.assertEqual(checks["public-discovery-files"]["status"], "ready")
+        self.assertEqual(checks["public-security-contact"]["status"], "ready")
+        self.assertTrue(checks["public-security-contact"]["required"])
         self.assertEqual(checks["clerk-production-key"]["status"], "ready")
         self.assertEqual(checks["clerk-invitation-entry"]["status"], "ready")
         self.assertEqual(checks["clerk-same-domain-proxy"]["status"], "ready")
 
+    def test_public_map_snapshot_requires_inert_bounded_and_privacy_safe_data(self):
+        module = load_workdoe_production_smoke_script()
+        job = self.public_smoke_job()
+
+        def snapshot(rows):
+            return '<script id="map-jobs-data" type="application/json">' + json.dumps(rows) + '</script>'
+
+        def result(body, *, mime="text/html; charset=utf-8", status=200):
+            return module.FetchResult(True, status, {"Content-Type": mime}, body_bytes=body.encode())
+
+        healthy = snapshot([job])
+        for valid in (snapshot([]), healthy):
+            with self.subTest(valid=valid):
+                self.assertEqual(module.public_map_snapshot_error(result(valid)), "")
+        for invalid in (
+            "", healthy + healthy, healthy.replace("application/json", "text/javascript"),
+            healthy.replace('id="map-jobs-data"', 'id="map-jobs-data" src=""'),
+            '<div id="map-jobs-data"></div>' + healthy, healthy.removesuffix("</script>"),
+            snapshot([job] * 51), snapshot({"jobs": [job]}),
+            snapshot([job | {"address": "123 Synthetic Street"}]),
+            snapshot([job | {"title": "Contact fixture@native.invalid"}]),
+            healthy.replace("[{", '[{"title": "fixture@native.invalid", ', 1),
+            healthy + " " * module.MAX_RELEASE_HTML_BYTES,
+        ):
+            with self.subTest(size=len(invalid)):
+                error = module.public_map_snapshot_error(result(invalid))
+                self.assertTrue(error)
+                self.assertNotIn("Synthetic", error)
+                self.assertNotIn("native.invalid", error)
+        self.assertTrue(module.public_map_snapshot_error(result(healthy, mime="application/json")))
+        self.assertTrue(module.public_map_snapshot_error(result(healthy, status=302)))
+        with mock.patch.object(module, "fetch_url", side_effect=[result(healthy), result("not a map")]) as fetch:
+            check = module.public_map_snapshot_check("https://workdoe.com", 8.0)
+        self.assertEqual(check.status, "failed")
+        self.assertEqual(check.url, "https://workdoe.com/login")
+        self.assertEqual(fetch.call_count, 2)
+        self.assertTrue(all(
+            call.kwargs == {"timeout": 8.0, "body_limit": module.MAX_RELEASE_HTML_BYTES + 1,
+                            "follow_redirects": False, "binary": True}
+            for call in fetch.call_args_list
+        ))
+
+    def test_isolated_clerk_beta_map_accepts_only_the_existing_street_configuration(self):
+        module = load_workdoe_production_smoke_script()
+        parser = module.PublicMapSnapshot()
+        parser.results_count = parser.map_roots = 1
+        parser.map_panels = [False]
+        parser.tile_urls = [module.BETA_TILE_ORIGIN + "/{z}/{x}/{y}.png"]
+        parser.map_attribution = module.BETA_TILE_ATTRIBUTION
+        parser.map_assets = set(module.BETA_MAP_ASSET_REFERENCES)
+        mode = module.ISOLATED_CLERK_BETA_MAP_MODE
+
+        def result(sources):
+            return module.FetchResult(True, 200, {"Content-Security-Policy": f"img-src {sources}"})
+
+        sources = f"'self' data: {module.BETA_TILE_ORIGIN} https://img.clerk.com"
+        self.assertEqual(module.public_map_mode_error(parser, result(sources), mode, None), "")
+        for invalid in ("'self' data:", sources + " https:", sources + "; img-src *"):
+            with self.subTest(sources=invalid):
+                self.assertTrue(module.public_map_mode_error(parser, result(invalid), mode, None))
+        for field, value in (
+            ("tile_urls", ["https://other.invalid/{z}/{x}/{y}.png"]), ("map_attribution", "OpenStreetMap"),
+            ("map_roots", 2), ("map_assets", set(module.AREA_MAP_ASSET_REFERENCES)), ("map_panels", [True]),
+        ):
+            with self.subTest(field=field), mock.patch.object(parser, field, value):
+                self.assertTrue(module.public_map_mode_error(parser, result(sources), mode, None))
+        area = module.ReviewedAreaMap("/area.geojson", "fixture")
+        self.assertTrue(module.public_map_mode_error(parser, result(sources), "area", area))
+
+    def test_clerk_package_boundary_probe_only_heads_the_known_unreviewed_path(self):
+        module = load_workdoe_production_smoke_script()
+        denied_headers = {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"}
+        for status, headers, expected in (
+            (404, denied_headers, "ready"),
+            (200, {"Content-Type": "application/javascript"}, "failed"),
+            (302, {"Location": "https://outside.invalid"}, "failed"),
+            (404, {"Content-Type": "text/html", "Cache-Control": "no-store"}, "failed"),
+            (404, {"Content-Type": "application/json", "Cache-Control": "public, max-age=300"}, "failed"),
+            (0, {}, "failed"),
+        ):
+            with self.subTest(status=status, headers=headers), mock.patch.object(
+                module, "fetch_url", return_value=module.FetchResult(ok=status < 400, status_code=status, headers=headers),
+            ) as fetch:
+                check = module.clerk_package_boundary_check("https://workdoe.com", 3.0)
+                self.assertEqual(check.status, expected)
+                self.assertEqual(check.name, "clerk-unpinned-package")
+                fetch.assert_called_once_with(
+                    "https://workdoe.com/__clerk/npm/@clerk/clerk-js@6.40.0/dist/clerk.browser.js",
+                    method="HEAD", timeout=3.0, body_limit=0, follow_redirects=False,
+                )
+
+    def test_clerk_developer_file_probe_is_head_only_on_both_production_hosts(self):
+        module = load_workdoe_production_smoke_script()
+        denied = module.FetchResult(False, 404, {
+            "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store",
+        })
+        for second, expected in (
+            (denied, "ready"),
+            (module.FetchResult(True, 200, {"Content-Type": "application/json"}), "failed"),
+            (module.FetchResult(False, 404, {"Content-Type": "text/html", "Cache-Control": "no-store"}), "failed"),
+            (module.FetchResult(False, 404, {"Content-Type": "application/json", "Cache-Control": "public"}), "failed"),
+            (module.FetchResult(False, 302, {"Location": "https://outside.invalid"}), "failed"),
+            (module.FetchResult(False, 404, denied.headers | {"Age": "0"}), "failed"),
+            (module.FetchResult(False, 404, denied.headers | {"CF-Cache-Status": "HIT"}), "failed"),
+            (module.FetchResult(False, 404, denied.headers | {"Cache-Control": "no-store, public"}), "failed"),
+        ):
+            with self.subTest(status=second.status_code, headers=second.headers), mock.patch.object(
+                module, "fetch_url", side_effect=[denied] * (2 * len(module.CLERK_DEVELOPER_FILE_PROBES) - 1) + [second],
+            ) as fetch:
+                check = module.clerk_developer_file_check("https://workdoe.com", 3.0)
+                self.assertEqual((check.name, check.status), ("clerk-developer-file-boundary", expected))
+                self.assertEqual(fetch.call_args_list, [
+                    mock.call(origin + path, method="HEAD", timeout=3.0,
+                              body_limit=0, follow_redirects=False)
+                    for origin in ("https://workdoe.com", "https://www.workdoe.com")
+                    for path in module.CLERK_DEVELOPER_FILE_PROBES
+                ])
+
+    def test_clerk_proxy_smoke_rejects_changed_or_redirected_sdk(self):
+        module = load_workdoe_production_smoke_script()
+        for status, mime, body in (
+            (200, "application/javascript", b"unreviewed script"),
+            (200, "text/html", b"unreviewed response"),
+            (302, "application/javascript", b""),
+            (200, "text/javascript", b"X" * (module.CLERK_ASSET_MAX_BYTES + 1)),
+        ):
+            with self.subTest(status=status, mime=mime, size=len(body)):
+                result = module.FetchResult(True, status, {"Content-Type": mime}, body_bytes=body)
+                with mock.patch.object(module, "fetch_url", return_value=result) as fetch:
+                    check = module.clerk_proxy_check("https://workdoe.com", 8.0)
+                self.assertEqual(check.status, "failed")
+                self.assertNotIn("unreviewed", check.summary)
+                fetch.assert_called_once_with(
+                    "https://workdoe.com/__clerk/npm/@clerk/ui@1.41.2/dist/ui.browser.js",
+                    timeout=8.0, follow_redirects=False, binary=True,
+                    body_limit=module.CLERK_ASSET_MAX_BYTES + 1,
+                )
+
     def test_workdoe_production_smoke_rejects_stale_demo_timing_presentation(self):
         module = load_workdoe_production_smoke_script()
-        original_fetch_url = module.fetch_url
-        try:
-            module.fetch_url = lambda *args, **kwargs: module.FetchResult(
+        response = module.FetchResult(
+            ok=True, status_code=200, headers={"Content-Type": "text/html; charset=utf-8"},
+            body_bytes=b"<article>Demonstration project <dt>Desired date</dt><dd>2026-08-20</dd></article>",
+            elapsed_ms=7,
+        )
+        with mock.patch.object(module, "fetch_url", return_value=response):
+            check = module.public_sample_presentation_check("https://workdoe.com", 8.0)
+        self.assertEqual(check.status, "failed")
+
+    def test_workdoe_production_smoke_verifies_view_only_sample_detail(self):
+        module = load_workdoe_production_smoke_script()
+        entry_shell = load_entry_shell_module()
+        rows = load_demo_projects_module().guest_project_rows([])
+        params = {"job_id": [module.SAMPLE_PROJECT_SMOKE_ID]}
+        html = entry_shell.build_entry_shell_html("/", params, rows, "", "")
+        detail = entry_shell.project_detail_html(rows[0], "start")
+        self.assertIn(detail, html)
+        cases = (
+            (200, "text/html", html.encode(), "view-only sample without response controls", "ready"),
+            (302, "text/html", html.encode(), "did not return direct HTTP 200", "failed"),
+            (200, "application/json", html.encode(), "did not return bounded HTML", "failed"),
+            (200, "text/html", b" " * (module.MAX_RELEASE_HTML_BYTES + 1), "did not return bounded HTML", "failed"),
+            (200, "text/html", b"\xff", "did not contain readable UTF-8 HTML", "failed"),
+            (200, "text/html", html.replace(detail, f"<template>{detail}</template>").encode(), "detail panel is missing", "failed"),
+            (200, "text/html", html.replace(detail, detail + detail).encode(), "detail panel is missing", "failed"),
+            (200, "text/html", html.replace(detail, detail.replace("Sample timing", '<time datetime="2026-08-20">Aug 20</time>')).encode(), "fixed fixture date", "failed"),
+            (200, "text/html", html.replace(detail, detail.replace("This sample does not accept bids.", "")).encode(), "no-bids notice is missing", "failed"),
+            (200, "text/html", html.replace(detail, detail.replace("</article>", '<a href="/create-account">Create account to respond</a></article>')).encode(), "contains an interactive action", "failed"),
+            (200, "text/html", html.replace(detail, detail.replace("</article>", '<form method="post"><button>Send bid</button></form></article>')).encode(), "contains an interactive action", "failed"),
+        )
+        for status_code, mime, body, expected, status in cases:
+            with self.subTest(expected=expected):
+                response = module.FetchResult(
+                    ok=status_code < 400, status_code=status_code,
+                    headers={"Content-Type": mime}, body_bytes=body, elapsed_ms=7,
+                )
+                with mock.patch.object(module, "fetch_url", return_value=response):
+                    check = module.public_sample_presentation_check(module.DEFAULT_BASE_URL, 8.0)
+                self.assertEqual(check.status, status)
+                self.assertIn(expected, check.summary)
+
+    @staticmethod
+    def public_smoke_job(*, demo=False):
+        job = {
+            "id": 1,
+            "title": "Window cleaning",
+            "category": "Cleaning",
+            "service_group_slug": "cleaning",
+            "service_slug": "window-cleaning",
+            "service_name": "Window cleaning",
+            "city": "Washington",
+            "state": "DC",
+            "budget": "",
+            "desired_date": "2026-08-20",
+            "url": "/login?next=/jobs/1",
+            "detail_url": "/?job_id=1",
+            "action_label": "Sign in",
+            "sample_label": "Open project",
+            "search_terms": ["windows"],
+            "license_preference": False,
+            "photo_count": 0,
+            "lat": 38.9072,
+            "lng": -77.0369,
+            "is_demo": False,
+        }
+        if demo:
+            job.update(
+                id="demo-01", is_demo=True, sample_label="Sample project",
+                description="Sample description", desired_date="",
+            )
+        return job
+
+    def public_smoke_payload(self, jobs, **metadata):
+        demo_count = sum(job.get("is_demo") is True for job in jobs)
+        return {
+            "count": len(jobs),
+            "result_count": len(jobs),
+            "demo_count": demo_count,
+            "live_count": len(jobs) - demo_count,
+            "jobs": jobs,
+            "next_cursor": "",
+            "truncated": False,
+            "viewport": None,
+            "filters": {"category": "", "family": "", "service": "", "q": "", "sort": "newest"},
+            "view": "all",
+            "location_privacy": "Approximate city or ZIP-level pins only.",
+            **metadata,
+        }
+
+    def public_smoke_jobs_check(self, jobs, *, cache_control="no-store", **metadata):
+        module = load_workdoe_production_smoke_script()
+        with mock.patch.object(
+            module,
+            "fetch_url",
+            return_value=module.FetchResult(
                 ok=True,
                 status_code=200,
-                headers={"Content-Type": "text/html; charset=utf-8"},
-                body="<article>Demonstration project <dt>Desired date</dt><dd>2026-08-20</dd></article>",
-                elapsed_ms=7,
-            )
-            check = module.public_sample_presentation_check("https://workdoe.com", 8.0)
-        finally:
-            module.fetch_url = original_fetch_url
+                headers={"Content-Type": "application/json; charset=utf-8", "Cache-Control": cache_control},
+                body=json.dumps(self.public_smoke_payload(jobs, **metadata)),
+                elapsed_ms=6,
+            ),
+        ):
+            return module.public_jobs_check("https://workdoe.com", 8.0)
 
+    def test_workdoe_production_smoke_fails_closed_on_long_search_regression(self):
+        module = load_workdoe_production_smoke_script()
+        self.assertEqual(len(module.PUBLIC_SEARCH_SMOKE_QUERY.encode()), 80)
+        filters = module.PUBLIC_JOBS_DEFAULT_FILTERS | {"q": module.PUBLIC_SEARCH_SMOKE_QUERY}
+        cases = (
+            (503, "private diagnostic", "no-store", "returned HTTP 503"),
+            (200, "private diagnostic", "no-store", "did not return valid JSON"),
+            (200, self.public_smoke_payload([]), "no-store", "unexpected filters"),
+            (200, self.public_smoke_payload([], filters=filters), "public", "with no-store"),
+            (200, self.public_smoke_payload([self.public_smoke_job()], filters=filters), "no-store", "returned unrelated results"),
+            (200, self.public_smoke_payload([], filters=filters), "no-store", "accepts an 80-character filter"),
+            (200, self.public_smoke_payload([self.public_smoke_job() | {"title": module.PUBLIC_SEARCH_SMOKE_QUERY}], filters=filters),
+             "no-store", "accepts an 80-character filter"),
+        )
+        for status, body, cache_control, summary in cases:
+            with self.subTest(summary=summary), mock.patch.object(
+                module, "fetch_url", return_value=module.FetchResult(
+                    ok=status == 200, status_code=status,
+                    headers={"Content-Type": "application/json", "Cache-Control": cache_control},
+                    body=json.dumps(body) if isinstance(body, dict) else body, elapsed_ms=6,
+                ),
+            ) as fetch:
+                check = module.public_search_check("https://workdoe.com", 8.0)
+                fetch.assert_called_once_with(
+                    "https://workdoe.com" + module.PUBLIC_SEARCH_SMOKE_PATH,
+                    timeout=8.0, body_limit=32_768, follow_redirects=False,
+                )
+                self.assertEqual(check.status, "ready" if summary.startswith("accepts") else "failed")
+                self.assertIn(summary, check.summary)
+                self.assertNotIn("private diagnostic", check.summary)
+
+    def test_workdoe_production_smoke_verifies_live_pin_provenance_without_echoing_data(self):
+        job = self.public_smoke_job()
+        for changes, summary in (
+            ({}, "live pins match"),
+            ({"lat": 38.8876, "lng": -76.9901}, "live pins match"),  # Reviewed DC ZIP point.
+            ({"lat": None, "lng": None}, "live pins match"),
+            ({"lat": 38.901234, "lng": -77.001234}, "outside the reviewed city and ZIP catalog"),
+            ({"lat": 38.8871, "lng": -77.0932}, "outside the reviewed city and ZIP catalog"),
+            ({"lat": 38.8876}, "outside the reviewed city and ZIP catalog"),
+            ({"city": "123 Example Street"}, "invalid public locality text"),
+            ({"title": "Call (202) 555-0199"}, "apparent direct contact or street-address text"),
+            ({"search_terms": ["private@example.test"]}, "apparent direct contact or street-address text"),
+        ):
+            with self.subTest(changes=changes):
+                check = self.public_smoke_jobs_check([job | changes])
+                self.assertEqual(check.status, "ready" if summary == "live pins match" else "failed")
+                self.assertIn(summary, check.summary)
+                for value in changes.values():
+                    self.assertNotIn(str(value), check.summary)
+
+    def test_workdoe_production_smoke_checks_the_share_image_bytes(self):
+        module = load_workdoe_production_smoke_script()
+        page = load_entry_shell_module().build_entry_shell_html("/", {}, [], "", "")
+        page_response = module.FetchResult(ok=True, status_code=200, body=page)
+        good_header = (ROOT / "workdoe" / "static" / "workdoe-share.png").read_bytes()[:24]
+        for status, mime, header, expected in (
+            (200, "image/png", good_header, "ready"),
+            (200, "image/png", b"<html>not an image</html>", "no PNG image header"),
+            (200, "image/png", good_header[:-1], "no PNG image header"),
+            (200, "image/png", good_header[:8] + b"\0\0\0\x0c" + good_header[12:], "no PNG image header"),
+            (200, "image/png", good_header[:16] + (640).to_bytes(4, "big") + good_header[20:], "dimensions do not match"),
+            (200, "text/html; image/png", good_header, "not served as image/png"),
+            (302, "image/png", good_header, "HTTP 302"),
+        ):
+            with self.subTest(status=status, mime=mime, expected=expected):
+                image_response = module.FetchResult(
+                    ok=status == 200, status_code=status, headers={"Content-Type": mime}, body_bytes=header,
+                )
+                with mock.patch.object(module, "fetch_url", side_effect=[page_response, image_response]):
+                    check = module.social_share_check("https://workdoe.com", 1)
+                if expected == "ready":
+                    self.assertEqual(check.status, "ready")
+                else:
+                    self.assertEqual(check.status, "failed")
+                    self.assertIn(expected, check.summary)
+
+    def test_workdoe_production_smoke_rejects_unreviewed_public_envelope_and_counts(self):
+        jobs = [self.public_smoke_job(), self.public_smoke_job(demo=True)]
+        cases = (
+            ({"debug": {"email": "private@example.com"}}, "reviewed response fields"),
+            ({"result_count": 8}, "bounded jobs list"),
+            ({"demo_count": 0}, "inconsistent live or sample"),
+            ({"live_count": True}, "inconsistent live or sample"),
+            ({"filters": {"q": "private@example.com"}}, "unexpected filters"),
+            ({"viewport": {"north": 39}}, "unexpected filters"),
+            ({"truncated": True}, "pagination metadata"),
+            ({"next_cursor": "unexpected", "truncated": True}, "pagination metadata"),
+            ({"cache_control": "public, max-age=600"}, "with no-store"),
+        )
+        for fields, expected in cases:
+            with self.subTest(expected=expected):
+                check = self.public_smoke_jobs_check(jobs, **fields)
+                self.assertEqual(check.status, "failed")
+                self.assertIn(expected, check.summary)
+                self.assertNotIn("private@example.com", check.summary)
+        self.assertEqual(self.public_smoke_jobs_check([]).status, "ready")
+        self.assertEqual(self.public_smoke_jobs_check([jobs[1]]).status, "ready")
+        page = [dict(jobs[0], id=job_id) for job_id in range(1, 51)]
+        self.assertEqual(self.public_smoke_jobs_check(page, next_cursor="djE6NTA", truncated=True).status, "ready")
+
+    def test_workdoe_production_smoke_does_not_log_unexpected_health_payload(self):
+        module = load_workdoe_production_smoke_script()
+        data = {
+            "ok": False, "service": "private@example.com", "diagnostic": "synthetic confidential value",
+        }
+        with mock.patch.object(module, "fetch_url", return_value=module.FetchResult(
+            ok=True, status_code=200, headers={"Content-Type": "application/json"},
+            body=json.dumps(data),
+        )) as fetch:
+            check = module.health_check("https://workdoe.com", 8.0)
         self.assertEqual(check.status, "failed")
-        self.assertIn("fixed fixture date", check.summary)
+        self.assertNotIn("private@example.com", check.summary)
+        self.assertNotIn("synthetic confidential value", check.summary)
+        self.assertFalse(fetch.call_args.kwargs["follow_redirects"])
 
     def test_workdoe_production_smoke_rejects_demo_dates_in_public_api(self):
-        module = load_workdoe_production_smoke_script()
-        original_fetch_url = module.fetch_url
-        try:
-            module.fetch_url = lambda *args, **kwargs: module.FetchResult(
-                ok=True,
-                status_code=200,
-                headers={"Content-Type": "application/json; charset=utf-8"},
-                body=json.dumps(
-                    {
-                        "count": 1,
-                        "jobs": [
-                            {
-                                "id": "demo-01",
-                                "is_demo": True,
-                                "desired_date": "2026-08-20",
-                            }
-                        ],
-                        "location_privacy": "Approximate city or ZIP-level pins only.",
-                    }
-                ),
-                elapsed_ms=6,
-            )
-            check = module.public_jobs_check("https://workdoe.com", 8.0)
-        finally:
-            module.fetch_url = original_fetch_url
-
+        check = self.public_smoke_jobs_check([
+            dict(self.public_smoke_job(demo=True), desired_date="2026-08-20"),
+        ])
         self.assertEqual(check.status, "failed")
-        self.assertIn("demo-01", check.summary)
+        self.assertIn("fixed desired dates", check.summary)
 
     def test_workdoe_production_smoke_rejects_private_fields_in_public_jobs(self):
-        module = load_workdoe_production_smoke_script()
-        original_fetch_url = module.fetch_url
-        try:
-            module.fetch_url = lambda *args, **kwargs: module.FetchResult(
-                ok=True,
-                status_code=200,
-                headers={"Content-Type": "application/json; charset=utf-8"},
-                body=json.dumps(
-                    {
-                        "count": 1,
-                        "jobs": [
-                            {
-                                "id": "demo-01",
-                                "email": "private@example.com",
-                                "exact_address": "100 Private Street",
-                            }
-                        ],
-                        "location_privacy": "Approximate city or ZIP-level pins only.",
-                    }
-                ),
-                elapsed_ms=6,
-            )
-            check = module.public_jobs_check("https://workdoe.com", 8.0)
-        finally:
-            module.fetch_url = original_fetch_url
+        for unexpected_field in ("email", "exact_address", "owner_record", "description"):
+            with self.subTest(field=unexpected_field):
+                check = self.public_smoke_jobs_check([
+                    dict(self.public_smoke_job(), **{unexpected_field: "private@example.com"}),
+                ])
+                self.assertEqual(check.status, "failed")
+                self.assertIn("reviewed public job fields", check.summary)
+                self.assertNotIn("private@example.com", check.summary)
 
-        self.assertEqual(check.status, "failed")
-        self.assertIn("email", check.summary)
-        self.assertIn("exact_address", check.summary)
+    def test_workdoe_production_smoke_accepts_reviewed_live_and_sample_rows(self):
+        deployed_job = self.public_smoke_job()
+        del deployed_job["search_terms"]
+        check = self.public_smoke_jobs_check([deployed_job, self.public_smoke_job(demo=True)])
+        self.assertEqual(check.status, "ready")
+
+    def test_workdoe_production_smoke_accepts_unpinned_live_rows_only(self):
+        unpinned = dict(self.public_smoke_job(), lat=None, lng=None)
+        self.assertEqual(self.public_smoke_jobs_check([unpinned], mapped_count=0).status, "ready")
+        self.assertIn("mapped count", self.public_smoke_jobs_check([unpinned], mapped_count=1).summary)
+        for invalid in (dict(unpinned, lat=38.9), dict(self.public_smoke_job(demo=True), lat=None, lng=None)):
+            with self.subTest(demo=invalid["is_demo"]):
+                check = self.public_smoke_jobs_check([invalid])
+                self.assertEqual(check.status, "failed")
+                self.assertIn("invalid map coordinates", check.summary)
+
+    def test_workdoe_production_smoke_rejects_nested_values_and_mislabeled_samples(self):
+        invalid_fields = (
+            {"city": {"contact": "private@example.com"}},
+            {"search_terms": [{"contact": "private@example.com"}]},
+            {"lat": True},
+            {"lng": 181},
+            {"is_demo": "true"},
+            {"sample_label": "Open project"},
+            {"id": 1},
+        )
+        for fields in invalid_fields:
+            with self.subTest(fields=tuple(fields)):
+                check = self.public_smoke_jobs_check([dict(self.public_smoke_job(demo=True), **fields)])
+                self.assertEqual(check.status, "failed")
+                self.assertNotIn("private@example.com", check.summary)
 
     def test_workdoe_production_smoke_rejects_unversioned_or_revalidated_stylesheet(self):
         module = load_workdoe_production_smoke_script()
@@ -10639,36 +14240,68 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(check.status, "failed")
         self.assertIn("workdoe.com/styles.css returned HTTP 200", check.summary)
 
-    def test_workdoe_production_smoke_rejects_missing_public_trust_page(self):
+    def test_workdoe_production_smoke_rejects_invalid_or_changed_public_trust_page(self):
         module = load_workdoe_production_smoke_script()
-        original_fetch_url = module.fetch_url
-        try:
-            def fake_fetch(url, **kwargs):
-                if url.endswith("/privacy"):
-                    return module.FetchResult(ok=False, status_code=404, elapsed_ms=4)
-                markers = {
-                    "/safety": "Share only what the job needs.",
-                    "/terms": "Terms of Use",
-                }
-                body = next((value for path, value in markers.items() if url.endswith(path)), "")
-                return module.FetchResult(
-                    ok=True,
-                    status_code=200,
-                    headers={"Content-Type": "text/html; charset=utf-8"},
-                    body=body,
-                    elapsed_ms=4,
-                )
-
-            module.fetch_url = fake_fetch
-            check = module.public_trust_pages_check(
-                "https://workdoe.com",
-                module.DEFAULT_TIMEOUT,
+        shell = load_app_shell_module()
+        privacy = shell.privacy_page_html()
+        responses = {
+            module.DEFAULT_BASE_URL + path: module.FetchResult(
+                ok=True, status_code=200, headers={"Content-Type": "text/html; charset=utf-8"},
+                body_bytes=getattr(shell, f"{path[1:]}_page_html")().encode(), elapsed_ms=4,
             )
-        finally:
-            module.fetch_url = original_fetch_url
+            for path in module.PUBLIC_POLICY_FINGERPRINTS
+        }
+        mutations = (
+            (404, "text/html", b"", "returned HTTP 404"),
+            (302, "text/html", privacy.encode(), "returned HTTP 302"),
+            (200, "text/plain", privacy.encode(), "did not return HTML"),
+            (200, "text/html", b" " * (module.PUBLIC_POLICY_MAX_BYTES + 1), "exceeded the policy response size limit"),
+            (200, "text/html", b"\xff", "did not contain readable UTF-8 policy markup"),
+            (200, "text/html", b"<title>Privacy Policy</title>", "did not contain readable UTF-8 policy markup"),
+            (200, "text/html", privacy.replace("1 to 5 business days", "within one hour").encode(), "differs from the recorded policy copy or contact links"),
+            (200, "text/html", privacy.replace("mailto:admin@", "mailto:wrong@").encode(), "differs from the recorded policy copy or contact links"),
+        )
+        for status_code, mime, body_bytes, expected in mutations:
+            with self.subTest(status_code=status_code, mime=mime, expected=expected):
+                responses[module.DEFAULT_BASE_URL + "/privacy"] = module.FetchResult(
+                    ok=status_code < 400, status_code=status_code,
+                    headers={"Content-Type": mime}, body_bytes=body_bytes, elapsed_ms=4,
+                )
+                with mock.patch.object(module, "fetch_url", side_effect=lambda url, **kwargs: responses[url]):
+                    check = module.public_trust_pages_check(module.DEFAULT_BASE_URL, module.DEFAULT_TIMEOUT)
+                self.assertEqual(check.status, "failed")
+                self.assertTrue(check.summary.endswith(f"/privacy {expected}"), check.summary)
 
-        self.assertEqual(check.status, "failed")
-        self.assertIn("/privacy returned HTTP 404", check.summary)
+    def test_public_policy_copy_matches_both_runtime_renderers(self):
+        from workdoe import create_app
+
+        module = load_workdoe_production_smoke_script()
+        shell = load_app_shell_module()
+        with tempfile.TemporaryDirectory() as directory:
+            app = create_app({
+                "TESTING": True, "PRODUCTION": False, "AUTH_PROVIDER": "local",
+                "DATABASE": str(Path(directory) / "workdoe.sqlite"),
+                "UPLOAD_ROOT": directory, "SEED_DEMO_DATA": False,
+            })
+            client = app.test_client()
+            for path, expected in module.PUBLIC_POLICY_FINGERPRINTS.items():
+                with self.subTest(path=path):
+                    self.assertEqual(module.public_policy_fingerprint(getattr(shell, f"{path[1:]}_page_html")()), expected)
+                    response = client.get(path)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(module.public_policy_fingerprint(response.get_data(as_text=True)), expected)
+
+    def test_public_policy_fingerprint_ignores_chrome_but_rejects_invalid_content(self):
+        module = load_workdoe_production_smoke_script()
+        policy = '<main id="main-content"><h1>Policy</h1><p>Email <a href="mailto:admin@workdoe.com">our team</a>.</p></main>'
+        cosmetic = policy.replace("<h1>Policy</h1>", "<nav><p>Table of contents</p></nav><h1>\n <span>Policy</span> </h1>")
+        self.assertEqual(
+            module.public_policy_fingerprint(f"<header><h1>Workdoe</h1></header>{cosmetic}<footer>Other links</footer>"),
+            module.public_policy_fingerprint(policy),
+        )
+        for invalid in (policy + policy, policy.removesuffix("</main>"), f"<template>{policy}</template>", f"<div hidden>{policy}</div>"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                module.public_policy_fingerprint(invalid)
 
     def test_workdoe_production_smoke_warns_on_missing_discovery_files(self):
         module = load_workdoe_production_smoke_script()
@@ -10688,7 +14321,94 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
         self.assertEqual(check.status, "warning")
         self.assertFalse(check.required)
-        self.assertIn("/.well-known/security.txt", check.summary)
+        self.assertIn("/robots.txt", check.summary)
+        self.assertIn("/sitemap.xml", check.summary)
+        self.assertIn("HTTP 404", check.summary)
+        self.assertEqual(check.status_code, 404)
+        self.assertNotIn("security.txt", check.summary)
+
+    def test_workdoe_production_smoke_checks_the_reviewed_discovery_content(self):
+        module = load_workdoe_production_smoke_script()
+        app_shell = load_app_shell_module()
+        robots = app_shell.public_robots_txt().encode("utf-8")
+        sitemap = app_shell.public_sitemap_xml().encode("utf-8")
+        for case, status, mime, body, warning in (
+            ("healthy", 200, "application/xml", sitemap, ""),
+            ("soft 404", 200, "text/html", b"<title>Not found</title>", "content type"),
+            ("redirect", 302, "application/xml", sitemap, "HTTP 302"),
+            ("edge failure", 503, "application/xml", b"", "HTTP 503"),
+            ("oversized", 200, "application/xml", b" " * (module.DISCOVERY_MAX_BYTES + 1), "oversized"),
+            ("non UTF-8", 200, "application/xml", b"\xff", "UTF-8"),
+            ("invalid XML", 200, "application/xml", b"<broken", "crawl profile"),
+            ("private URL", 200, "application/xml", sitemap.replace(b"/safety", b"/account"), "crawl profile"),
+            ("alternate host", 200, "application/xml", sitemap.replace(b"workdoe.com", b"example.test"), "crawl profile"),
+            ("duplicate URL", 200, "application/xml", sitemap.replace(b"/privacy", b"/safety"), "crawl profile"),
+        ):
+            with self.subTest(case=case), mock.patch.object(module, "fetch_url") as fetch:
+                fetch.side_effect = (
+                    module.FetchResult(True, 200, {"Content-Type": "text/plain"}, body_bytes=robots),
+                    module.FetchResult(status == 200, status, {"Content-Type": mime}, body_bytes=body),
+                )
+                check = module.discovery_files_check("https://workdoe.com", 3)
+                self.assertEqual(check.status, "warning" if warning else "ready")
+                self.assertFalse(check.required)
+                self.assertIn(warning, check.summary)
+                self.assertNotIn("example.test", check.summary)
+                self.assertEqual(fetch.call_args.kwargs, {
+                    "timeout": 3, "body_limit": module.DISCOVERY_MAX_BYTES + 1, "follow_redirects": False, "binary": True,
+                })
+        for unreviewed in (
+            robots.replace(b"Disallow: /account", b"Allow: /account"),
+            robots.replace(b"https://workdoe.com/sitemap.xml", b"http://workdoe.com/sitemap.xml"),
+            robots + b"\nUser-agent: *\nDisallow: /\n",
+        ):
+            self.assertFalse(module.reviewed_robots_profile(unreviewed.decode("utf-8")))
+        xml_declaration, _, xml_body = sitemap.partition(b"?>")
+        with mock.patch.object(module.ElementTree, "fromstring") as parse:
+            unsafe = xml_declaration + b'?><!DOCTYPE urlset SYSTEM "https://example.test/private">' + xml_body
+            self.assertFalse(module.reviewed_sitemap_profile(unsafe.decode("utf-8")))
+            parse.assert_not_called()
+
+    def test_workdoe_production_smoke_requires_current_public_security_contact(self):
+        module = load_workdoe_production_smoke_script()
+        now = datetime(2026, 11, 4, tzinfo=timezone.utc)
+        url = "https://workdoe.com/.well-known/security.txt"
+        mime = "text/plain; charset=UTF-8"
+        expiry = "2027-08-16T23:59:59Z"
+        body = (
+            "# Reporting contacts\r\nContact: mailto:admin@workdoe.com\r\n"
+            "Contact: https://workdoe.com/safety\r\n"
+            f"Canonical: {url}\r\nExpires: {expiry}\r\n"
+        )
+        cases = (
+            ("current", 200, mime, body, "ready", "2027-08-16"),
+            ("missing", 404, mime, "", "failed", "HTTP 200"),
+            ("redirect", 302, mime, body, "failed", "HTTP 200"),
+            ("HTML", 200, "text/html; charset=UTF-8", body, "failed", "text/plain"),
+            ("missing charset", 200, "text/plain", body, "failed", "UTF-8 charset"),
+            ("invalid encoding", 200, mime, body + "\ufffd", "failed", "valid UTF-8"),
+            ("oversized", 200, mime, body + "x" * 4096, "failed", "small"),
+            ("canonical", 200, mime, body.replace(url, "https://example.invalid"), "failed", "canonical"),
+            ("missing contact", 200, mime, body.replace("Contact: mailto:", "# Contact: mailto:"), "failed", "contacts"),
+            ("missing expiry", 200, mime, body.replace("Expires:", "# Expires:"), "failed", "one Expires"),
+            ("duplicate expiry", 200, mime, body + f"Expires: {expiry}\n", "failed", "one Expires"),
+            ("malformed expiry", 200, mime, body.replace(expiry, "2027-02-30T12:00:00Z"), "failed", "timestamp"),
+            ("expired", 200, mime, body.replace(expiry, "2026-11-04T00:00:00Z"), "failed", "has expired"),
+        )
+        for label, code, content_type, text, status, summary in cases:
+            with self.subTest(label=label):
+                result = module.FetchResult(ok=code < 400, status_code=code, headers={"Content-Type": content_type}, body=text)
+                with mock.patch.object(module, "fetch_url", return_value=result) as fetch:
+                    check = module.security_contact_check("https://workdoe.com", module.DEFAULT_TIMEOUT, now=now)
+                fetch.assert_called_once_with(url, timeout=module.DEFAULT_TIMEOUT, body_limit=4097, follow_redirects=False)
+                self.assertEqual(check.status, status)
+                self.assertTrue(check.required)
+                self.assertIn(summary, check.summary)
+
+        with mock.patch.object(module, "fetch_url") as fetch:
+            check = module.security_contact_check("http://workdoe.com", module.DEFAULT_TIMEOUT, now=now)
+        fetch.assert_not_called()
+        self.assertEqual(check.status, "failed")
 
     def test_workdoe_production_smoke_rejects_clerk_development_key(self):
         module = load_workdoe_production_smoke_script()
@@ -10756,6 +14476,601 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(check.status, "failed")
         self.assertIn("not using a Clerk production instance", check.summary)
 
+    def test_workdoe_production_smoke_requires_invitation_ticket_privacy(self):
+        module = load_workdoe_production_smoke_script()
+        shell = '<main data-clerk-entry="sign-up" data-clerk-publishable-key="pk_live_workdoe"></main>'
+        for policy, cache, body, expected in (
+            ("strict-origin", "private, no-store", shell, "ready"),
+            ("no-referrer", "no-store", shell, "ready"),
+            ("strict-origin-when-cross-origin", "no-store", shell, "failed"),
+            ("strict-origin", "public, max-age=300", shell, "failed"),
+            ("strict-origin", "no-store", shell + module.CLERK_INVITATION_SMOKE_TICKET, "failed"),
+        ):
+            with self.subTest(policy=policy, cache=cache, reflected=body != shell):
+                result = module.FetchResult(
+                    ok=True, status_code=200, body=body,
+                    headers={"Content-Type": "text/html", "Referrer-Policy": policy, "Cache-Control": cache},
+                )
+                with mock.patch.object(module, "fetch_url", return_value=result):
+                    check = module.clerk_invitation_entry_check("https://workdoe.com", 1)
+                self.assertEqual(check.status, expected)
+                self.assertNotIn(module.CLERK_INVITATION_SMOKE_TICKET, check.summary)
+
+    def test_workdoe_production_smoke_verifies_direct_and_dialog_clerk_bootstrap(self):
+        module = load_workdoe_production_smoke_script()
+        shell = load_entry_shell_module()
+        base = "https://workdoe.com"
+        proxy = base + "/__clerk"
+        public_key = "pk_live_" + module.b64encode(b"clerk.workdoe.com$").decode().rstrip("=")
+        headers = {"Cache-Control": "no-store", "Content-Type": "text/html; charset=utf-8"}
+        pages = {
+            base + route: shell.build_entry_shell_html(
+                route.split("?")[0], {"embed": ["1"]} if "?" in route else {}, [], public_key, proxy,
+            ).encode()
+            for route in module.CLERK_BROWSER_ENTRY_MODES
+        }
+
+        def run_check(require_integrity=True, **overrides):
+            def fetch(url, **kwargs):
+                self.assertEqual(kwargs, {
+                    "timeout": 1, "follow_redirects": False, "binary": True,
+                    "body_limit": module.MAX_RELEASE_HTML_BYTES + 1,
+                })
+                response = {"ok": True, "status_code": 200, "headers": headers, "body_bytes": pages[url]}
+                if url == base + "/login":
+                    response.update(overrides)
+                return module.FetchResult(**response)
+
+            with mock.patch.object(module, "fetch_url", side_effect=fetch) as requested:
+                result = module.clerk_browser_entry_check(base, 1, require_integrity=require_integrity)
+            self.assertNotIn(public_key, result.summary)
+            self.assertNotIn("unreviewed.invalid", result.summary)
+            return result, [call.args[0] for call in requested.call_args_list]
+
+        result, calls = run_check()
+        self.assertEqual(result.status, "ready")
+        self.assertEqual(calls, list(pages))
+        body = pages[base + "/login"]
+        unsigned = re.sub(rb' integrity="[^"]+"', b"", body)
+        self.assertNotEqual(unsigned, body)
+        self.assertEqual(run_check(body_bytes=unsigned)[0].status, "failed")
+        self.assertEqual(run_check(require_integrity=False, body_bytes=unsigned)[0].status, "ready")
+        bad_integrity = re.sub(rb' integrity="[^"]+"', b' integrity="invalid"', body)
+        self.assertEqual(run_check(require_integrity=False, body_bytes=bad_integrity)[0].status, "failed")
+        for overrides in (
+            {"status_code": 302},
+            {"headers": headers | {"Age": "0"}},
+            {"headers": headers | {"CF-Cache-Status": "HIT"}},
+            {"headers": headers | {"Cache-Control": "private"}},
+            {"body_bytes": b"x" * (module.MAX_RELEASE_HTML_BYTES + 1)},
+            {"body_bytes": b"\xff"},
+            {"body_bytes": body.replace(b'data-clerk-mode="signin"', b'data-clerk-mode="start"')},
+            {"body_bytes": body.replace(public_key.encode(), b"pk_live_unreviewed")},
+            {"body_bytes": body.replace(proxy.encode(), b"https://unreviewed.invalid/__clerk")},
+            {"body_bytes": body.replace(b" crossorigin=", b" data-invalid=")},
+            {"body_bytes": body + b"<div data-clerk-entry></div>"},
+            {"body_bytes": body + b'<base href="https://unreviewed.invalid/">'},
+        ):
+            with self.subTest(fields=tuple(overrides)):
+                result, calls = run_check(**overrides)
+                self.assertEqual(result.status, "failed")
+                self.assertEqual(calls, [base + "/login"])
+
+    def test_workdoe_production_smoke_checks_live_public_clerk_auth_settings(self):
+        module = load_workdoe_production_smoke_script()
+        base = "https://workdoe.com"
+        disabled = {"enabled": False, "used_for_first_factor": False, "first_factors": []}
+        environment = {
+            "auth_config": {
+                "test_mode": False, "password": "off",  # pragma: allowlist secret
+                "identification_strategies": ["email_address"],
+                "first_factors": ["email_code", "ticket"],
+                "email_address_verification_strategies": ["email_code"],
+            },
+            "display_config": {
+                "sign_in_url": base + "/login", "sign_up_url": base + "/create-account",
+                "terms_url": base + "/terms", "privacy_policy_url": base + "/privacy",
+                "google_one_tap_client_id": None,
+            },
+            "user_settings": {
+                "attributes": {
+                    **{key: dict(disabled) for key in module.CLERK_DISABLED_AUTH_ATTRIBUTES},
+                    "email_address": {
+                        "enabled": True, "required": True, "verify_at_sign_up": True,
+                        "used_for_first_factor": True, "first_factors": ["email_code"],
+                        "verifications": ["email_code"],
+                    },
+                    "ticket": disabled | {"enabled": True},
+                    "authenticator_app": disabled | {"enabled": True, "used_for_second_factor": True},
+                },
+                "sign_up": {"mode": "public", "legal_consent_enabled": True},
+                "saml": {"enabled": False},
+                "enterprise_sso": {"enabled": False},
+                "social": {},
+            },
+        }
+        headers = {"Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8"}
+
+        def check(body=None, **overrides):
+            result = module.FetchResult(**({
+                "ok": True, "status_code": 200, "headers": headers,
+                "body_bytes": json.dumps(environment if body is None else body).encode(),
+            } | overrides))
+            with mock.patch.object(module, "fetch_url", return_value=result) as fetch:
+                result = module.clerk_environment_check(base, 1)
+            fetch.assert_called_once_with(
+                base + "/__clerk/v1/environment", timeout=1, follow_redirects=False,
+                binary=True, body_limit=module.CLERK_ENVIRONMENT_MAX_BYTES + 1,
+            )
+            self.assertNotIn("fixture-private-value", result.summary)
+            self.assertTrue(result.required)
+            return result
+
+        self.assertEqual(check().status, "ready")
+        duplicate_config = b'{"auth_config":{},' + json.dumps(environment).encode()[1:]
+        self.assertEqual(check(body_bytes=duplicate_config).status, "failed")
+        self.assertIn("No account or policy approval was checked", check().summary)
+        settings = environment["user_settings"]
+        cases = (
+            (environment["auth_config"], "first_factors", ["email_code", "email_link"], "email-code-only"),
+            (environment["auth_config"], "test_mode", True, "email-code-only"),
+            (settings["attributes"]["email_address"], "verifications", ["email_link"], "email-code-only"),
+            (settings["attributes"]["password"], "enabled", True, "alternate public"),
+            (settings, "social", {"oauth_google": {"enabled": True}}, "alternate public"),
+            (settings["enterprise_sso"], "enabled", True, "alternate public"),
+            (settings["sign_up"], "legal_consent_enabled", False, "express legal consent"),
+            (settings["sign_up"], "mode", "restricted", "open sign-up"),
+            (environment["display_config"], "privacy_policy_url", "https://fixture-private-value.invalid", "reviewed URLs"),
+        )
+        for parent, key, new_value, failure in cases:
+            with self.subTest(field=key, failure=failure), mock.patch.dict(parent, {key: new_value}):
+                result = check()
+                self.assertEqual(result.status, "failed")
+                self.assertIn(failure, result.summary)
+
+        for overrides in (
+            {"status_code": 302, "headers": headers | {"Location": "https://fixture-private-value.invalid"}},
+            {"headers": headers | {"Cache-Control": "public, max-age=3600"}},
+            {"headers": headers | {"Age": "0"}},
+            {"headers": headers | {"cf-cache-status": "HIT"}},
+            {"headers": headers | {"Content-Type": "text/html"}},
+            {"body_bytes": b"x" * (module.CLERK_ENVIRONMENT_MAX_BYTES + 1)},
+            {"body_bytes": b"fixture-private-value"},
+        ):
+            with self.subTest(fields=tuple(overrides)):
+                self.assertEqual(check(**overrides).status, "failed")
+        self.assertEqual(check(body={"user_settings": []}).status, "failed")
+
+    def test_workdoe_production_smoke_rejects_redirected_changed_and_oversize_browser_notices(self):
+        module = load_workdoe_production_smoke_script()
+        clerk_ui = (ROOT / "licenses/clerk-ui.MIT").read_bytes().replace(b"\r\n", b"\n")
+        replies = [
+            module.FetchResult(ok=True, status_code=302, headers={"Location": "https://elsewhere.invalid/"}),
+            module.FetchResult(ok=True, status_code=200, body_bytes=b"Unexpected content"),
+            module.FetchResult(ok=True, status_code=200, body_bytes=b"x" * (module.LICENSE_NOTICE_MAX_BYTES + 1)),
+            module.FetchResult(ok=True, status_code=200, headers={"Content-Type": "text/html"}, body_bytes=clerk_ui),
+            module.FetchResult(ok=False, status_code=404),
+        ]
+        with mock.patch.object(module, "fetch_url", side_effect=replies) as fetch:
+            check = module.browser_license_notices_check("https://workdoe.com", 1)
+        self.assertEqual(check.status, "failed")
+        self.assertTrue(check.required)
+        self.assertEqual(fetch.call_count, 5)
+        self.assertIn("/vendor/leaflet/LICENSE did not return a direct HTTP 200", check.summary)
+        self.assertIn("/vendor/leaflet-markercluster/LICENSE did not match the reviewed license hash", check.summary)
+        self.assertIn("/vendor/tabler-icons/LICENSE exceeded the notice size limit", check.summary)
+        self.assertIn("/__clerk/npm/@clerk/ui@1.41.2/LICENSE did not return a plain-text notice", check.summary)
+        self.assertIn("/__clerk/npm/@clerk/clerk-js@6.40.1/LICENSE did not return a direct HTTP 200", check.summary)
+        self.assertNotIn("elsewhere.invalid", check.summary)
+        self.assertNotIn("Unexpected content", check.summary)
+
+    def test_workdoe_production_smoke_rejects_unreviewed_notice_paths_before_fetching(self):
+        module = load_workdoe_production_smoke_script()
+        payload = json.loads(module.DEPENDENCY_LEDGER.read_text(encoding="utf-8"))
+        payload["browser_components"][0]["retained_license"] = "workdoe/static//elsewhere.invalid/LICENSE"
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "notices.json"
+            ledger.write_text(json.dumps(payload), encoding="utf-8")
+            with (
+                mock.patch.object(module, "DEPENDENCY_LEDGER", ledger),
+                mock.patch.object(module, "fetch_url") as fetch,
+            ):
+                check = module.browser_license_notices_check("https://workdoe.com", 1)
+        self.assertEqual(check.status, "failed")
+        self.assertTrue(check.required)
+        self.assertNotIn("elsewhere.invalid", check.summary)
+        fetch.assert_not_called()
+
+    def test_workdoe_production_smoke_checks_known_build_notice_delivery(self):
+        module = load_workdoe_production_smoke_script()
+        base = "https://workdoe.com"
+        index_path = "/vendor/clerk-notices-v2/notices-1"
+        directory = ROOT / "workdoe/static/vendor/clerk-notices-v2"
+        responses = {
+            "/terms": module.FetchResult(
+                ok=True, status_code=200, headers={"Content-Type": "text/html; charset=utf-8"},
+                body_bytes=load_app_shell_module().terms_page_html().encode(),
+            ),
+        }
+        for asset in directory.iterdir():
+            mime = "text/html" if asset.suffix == ".html" else "text/plain"
+            path = f"/vendor/clerk-notices-v2/{asset.name.removesuffix('.html')}"
+            responses[path] = module.FetchResult(
+                ok=True, status_code=200, body_bytes=asset.read_bytes(),
+                headers={
+                    "Content-Type": mime + "; charset=utf-8", "X-Content-Type-Options": "nosniff",
+                    "Cache-Control": "no-store",
+                },
+            )
+        for path in module.BUILD_NOTICE_CACHE_PROBES:
+            responses[path] = module.FetchResult(
+                ok=False, status_code=404, headers={"Cache-Control": "no-store"},
+            )
+        apache = "/vendor/clerk-notices-v2/apache-2.0-license.txt"
+        tabs_lock = "/vendor/clerk-notices-v2/browser-tabs-lock-1.3.0-license.txt"
+        formkit = "/vendor/clerk-notices-v2/formkit-auto-animate-0.8.4-license.txt"
+        stripe = "/vendor/clerk-notices-v2/stripe-sdk-license.txt"
+        zxcvbn = "/vendor/clerk-notices-v2/zxcvbn-ts-3.0.4-license.txt"
+        eip712 = "/vendor/clerk-notices-v2/coinbase-eip712-isc-license.txt"
+        qr_generator = "/vendor/clerk-notices-v2/qrcode-generator-license.txt"
+        self.assertTrue({stripe, zxcvbn, eip712} <= responses.keys())
+        self.assertGreater(len(responses[apache].body_bytes), module.LICENSE_NOTICE_MAX_BYTES)
+
+        def fetch(url, *, timeout, body_limit, follow_redirects, binary=False):
+            path = url.removeprefix(base)
+            maximum = module.PUBLIC_POLICY_MAX_BYTES if path == "/terms" else module.BUILD_NOTICE_MAX_BYTES
+            expected = (0, False) if path in module.BUILD_NOTICE_CACHE_PROBES else (maximum + 1, True)
+            self.assertEqual((timeout, body_limit, follow_redirects, binary), (1, expected[0], False, expected[1]))
+            return responses[path]
+
+        with mock.patch.object(module, "fetch_url", side_effect=fetch) as stub:
+            result = module.clerk_build_notices_check(base, 1)
+            self.assertEqual(result.status, "ready")
+            self.assertCountEqual([call.args[0] for call in stub.call_args_list], [base + path for path in responses])
+        cacheable_headers = dict(responses[index_path].headers, **{"Cache-Control": "no-store, public"})
+        cases = (
+            ("/terms", {"body_bytes": f'<!-- <a href="{index_path}">Fake link</a> -->'.encode()}, "did not link"),
+            ("/terms", {"body_bytes": f'<p hidden><a href="{index_path}">Hidden link</a></p>'.encode()}, "did not link"),
+            ("/terms", {"body_bytes": f'<a href="/" href="{index_path}">Wrong link</a>'.encode()}, "did not link"),
+            (index_path, {"status_code": 302, "headers": {"Location": "https://elsewhere.invalid"}}, "direct HTTP 200"),
+            (index_path, {"headers": cacheable_headers}, "unambiguous no-store"),
+            (tabs_lock, {"status_code": 404}, "direct HTTP 200"),
+            (formkit, {"status_code": 404}, "direct HTTP 200"),
+            (stripe, {"status_code": 404}, "direct HTTP 200"),
+            (eip712, {"status_code": 404}, "direct HTTP 200"),
+            (qr_generator, {"status_code": 404}, "direct HTTP 200"),
+            (zxcvbn, {"body_bytes": b"unexpected document body"}, "reviewed build-notice bytes"),
+            (apache, {"headers": {"Content-Type": "text/html"}}, "expected MIME type and nosniff"),
+            (apache, {"headers": {"Content-Type": "text/plain"}}, "expected MIME type and nosniff"),
+            (apache, {"body_bytes": b"unexpected document body"}, "reviewed build-notice bytes"),
+            (apache, {"body_bytes": b"x" * (module.BUILD_NOTICE_MAX_BYTES + 1)}, "exceeded"),
+            (module.BUILD_NOTICE_CACHE_PROBES[0],
+             {"headers": {"Cache-Control": "public, max-age=31556952, immutable"}}, "uncached HTTP 404"),
+            (module.BUILD_NOTICE_CACHE_PROBES[1], {"status_code": 200}, "uncached HTTP 404"),
+        )
+        for path, changes, failure in cases:
+            with self.subTest(path=path, failure=failure):
+                original = responses[path]
+                responses[path] = module.FetchResult(**(vars(original) | changes))
+                try:
+                    with mock.patch.object(module, "fetch_url", side_effect=fetch):
+                        result = module.clerk_build_notices_check(base, 1)
+                finally:
+                    responses[path] = original
+                self.assertEqual(result.status, "failed")
+                self.assertTrue(result.required)
+                self.assertIn(failure, result.summary)
+                self.assertNotIn("unexpected document body", result.summary)
+                self.assertNotIn("elsewhere.invalid", result.summary)
+
+    def test_workdoe_production_smoke_refuses_altered_build_notice_ledger_before_fetching(self):
+        module = load_workdoe_production_smoke_script()
+        ledger = json.loads(module.DEPENDENCY_LEDGER.read_text(encoding="utf-8"))
+        ledger["clerk_build_notices"]["packages"][0]["filename"] = "//elsewhere.invalid"
+        ledger_file = mock.Mock(read_text=mock.Mock(return_value=json.dumps(ledger)))
+        with (
+            mock.patch.object(module, "DEPENDENCY_LEDGER", ledger_file),
+            mock.patch.object(module, "fetch_url") as fetch,
+        ):
+            result = module.clerk_build_notices_check("https://workdoe.com", 1)
+        self.assertEqual(result.status, "failed")
+        self.assertTrue(result.required)
+        self.assertNotIn("elsewhere.invalid", result.summary)
+        fetch.assert_not_called()
+
+    def test_reviewed_release_smoke_reads_one_commit_and_refuses_mixed_evidence_before_network(self):
+        module = load_workdoe_production_smoke_script()
+        ledger = json.loads(module.DEPENDENCY_LEDGER.read_text(encoding="utf-8"))
+        static = ROOT / "workdoe/static"
+        notice_dir = static / "vendor" / module.CLERK_NOTICE_DIRECTORY
+        assets = {name: f"/* reviewed fixture: {name} */\n".encode() for name in module.VERSIONED_STATIC_ASSET_FILES}
+        # Git retains LF for these notices even when a Windows checkout uses CRLF.
+        notices = {
+            path: (static / path.lstrip("/")).read_bytes().replace(b"\r\n", b"\n")
+            for path in module.VENDOR_LICENSE_PATHS
+        }
+        notices.update({module.BUILD_NOTICE_PREFIX + p.name: p.read_bytes() for p in notice_dir.iterdir()})
+        index = module.BUILD_NOTICE_PREFIX + module.CLERK_NOTICE_INDEX
+        notices[index] += b"\n<!-- Synthetic notice variant for another commit. -->\n"
+        ledger["clerk_build_notices"]["index_sha256"] = hashlib.sha256(notices[index]).hexdigest()
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def git(*args):
+                return subprocess.run(
+                    ["git", *args], cwd=root, check=True, capture_output=True, text=True, timeout=15,
+                ).stdout.strip()
+
+            git("init", "--quiet")
+            git("config", "core.autocrlf", "false")
+            git("config", "user.email", "fixture@example.invalid")
+            git("config", "user.name", "Smoke fixture")
+            git("config", "commit.gpgsign", "false")
+            for path, body in {**assets, **{name.lstrip("/"): body for name, body in notices.items()}}.items():
+                file = root / "workdoe/static" / path
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_bytes(body)
+            ledger_file = root / "DEPENDENCY_PROVENANCE.json"
+            ledger_file.write_text(json.dumps(ledger), encoding="utf-8")
+            (root / "licenses").mkdir()
+            for name in ("clerk-js.MIT", "clerk-ui.MIT"):
+                shutil.copyfile(ROOT / "licenses" / name, root / "licenses" / name)
+            git("add", ".")
+            git("commit", "--quiet", "-m", "Reviewed artifacts")
+            reviewed = git("rev-parse", "HEAD")
+            index_file = root / "workdoe/static" / index.lstrip("/")
+            index_file.write_bytes(b"Unexpected notice contents")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "Mismatched notice")
+            altered = git("rev-parse", "HEAD")
+            index_file.write_bytes(notices[index])
+            (root / "licenses" / "clerk-js.MIT").write_bytes(b"Unexpected SDK notice contents")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "Mismatched SDK notice")
+            altered_sdk_notice = git("rev-parse", "HEAD")
+            git("replace", reviewed, altered)
+            ledger_file.write_text("{}", encoding="utf-8")
+            index_file.write_bytes(notices[index])
+
+            release = module.read_reviewed_smoke_release(root, reviewed)
+            self.assertEqual((release.assets, release.ledger), (assets, ledger))
+            with (
+                mock.patch.object(module, "dns_lookup") as dns,
+                mock.patch.object(module, "fetch_url") as fetch,
+                mock.patch.object(module.time, "sleep") as sleep,
+            ):
+                for bad_commit in (altered, altered_sdk_notice, "0" * len(reviewed)):
+                    with self.subTest(commit=bad_commit):
+                        result = module.build_smoke_payload_with_retries(
+                            asset_commit=bad_commit, release_checkout=root, attempts=3,
+                        )
+                        self.assertFalse(result["ready"])
+                        self.assertEqual(result["attempt"], 1)
+                        self.assertEqual(result["checks"][0]["name"], "reviewed-release-inputs")
+                        self.assertNotIn("Unexpected notice contents", module.render_text(result))
+                dns.assert_not_called()
+                fetch.assert_not_called()
+                sleep.assert_not_called()
+
+    def test_entry_header_smoke_requires_origin_only_for_the_reviewed_release(self):
+        module = load_workdoe_production_smoke_script()
+        for policy, historic, strict in (
+            ("strict-origin", "ready", "ready"),
+            ("strict-origin-when-cross-origin", "ready", "failed"),
+            ("strict-origin, unsafe-url", "failed", "failed"),
+            ("unsafe-url", "failed", "failed"),
+            ("", "failed", "failed"),
+        ):
+            with self.subTest(policy=policy):
+                response = module.FetchResult(
+                    ok=True, status_code=200, headers={**ENTRY_HEADER_FIXTURE, "Referrer-Policy": policy},
+                )
+                with mock.patch.object(module, "fetch_url", return_value=response):
+                    self.assertEqual(module.security_headers_check("https://workdoe.com", 1).status, historic)
+                    self.assertEqual(module.security_headers_check(
+                        "https://workdoe.com", 1, require_origin_referrer=True,
+                    ).status, strict)
+
+    def test_entry_smoke_rejects_deceptive_header_values(self):
+        module = load_workdoe_production_smoke_script()
+        csp = ENTRY_HEADER_FIXTURE["Content-Security-Policy"]
+        for name, bad in (
+            ("Strict-Transport-Security", "max-age=0; includeSubDomains"),
+            ("Strict-Transport-Security", "max-age=31535999; includeSubDomains"),
+            ("Strict-Transport-Security", "max-age=31536000; max-age=0; includeSubDomains"),
+            ("Strict-Transport-Security", "max-age=31536000; includeSubDomains=false"),
+            ("Content-Security-Policy", "frame-ancestors *; " + csp),
+            ("Content-Security-Policy", csp.replace("default-src 'self'", "default-src 'self' https:")),
+            ("Content-Security-Policy", csp.replace("form-action 'self'", "report-uri /form-action 'self'")),
+            ("X-Frame-Options", "SAMEORIGIN, DENY"),
+            ("X-Content-Type-Options", "invalid-nosniff"),
+            ("X-Content-Type-Options", "nosniff\u00a0"),
+            ("Permissions-Policy", ENTRY_HEADER_FIXTURE["Permissions-Policy"] + ", camera=*"),
+            ("Permissions-Policy", ENTRY_HEADER_FIXTURE["Permissions-Policy"] + ", malformed=???"),
+            ("Content-Type", "text/plain"),
+        ):
+            with self.subTest(name=name, bad=bad):
+                response = module.FetchResult(True, 200, ENTRY_HEADER_FIXTURE | {name: bad})
+                with mock.patch.object(module, "fetch_url", return_value=response):
+                    check = module.security_headers_check(module.DEFAULT_BASE_URL, 1)
+                self.assertEqual(check.status, "failed")
+                self.assertIn(name, check.summary)
+        self.assertTrue(module.entry_hsts_valid('IncludeSubDomains; max-age="63072000"; preload'))
+        self.assertTrue(module.entry_permissions_valid("camera=(), geolocation=(), microphone=()"))
+
+    def test_entry_smoke_requires_direct_get_and_head_responses(self):
+        module = load_workdoe_production_smoke_script()
+        healthy = module.FetchResult(True, 200, ENTRY_HEADER_FIXTURE)
+        redirect = module.FetchResult(True, 302, ENTRY_HEADER_FIXTURE)
+        url = module.DEFAULT_BASE_URL + "/start"
+        for get, head, status, detail in (
+            (healthy, healthy, "ready", "GET and HEAD"),
+            (redirect, healthy, "failed", "GET did not return HTTP 200 directly"),
+            (healthy, redirect, "failed", "HEAD did not return HTTP 200 directly"),
+        ):
+            with self.subTest(get=get.status_code, head=head.status_code):
+                with mock.patch.object(module, "fetch_url", side_effect=(get, head)) as fetch:
+                    check = module.security_headers_check(module.DEFAULT_BASE_URL, 1)
+                calls = [mock.call(url, method="GET", timeout=1, body_limit=0, follow_redirects=False)]
+                if get.status_code == 200:
+                    calls.append(mock.call(url, method="HEAD", timeout=1, body_limit=0, follow_redirects=False))
+                self.assertEqual(fetch.call_args_list, calls)
+                self.assertEqual(check.status, status)
+                self.assertIn(detail, check.summary)
+
+    def test_entry_smoke_keeps_duplicate_header_fields_from_http_response(self):
+        module = load_workdoe_production_smoke_script()
+        headers = Message()
+        headers["Strict-Transport-Security"] = "max-age=0"
+        for name, value in ENTRY_HEADER_FIXTURE.items():
+            headers[name] = value
+        response = mock.MagicMock(status=200, headers=headers)
+        opener = mock.MagicMock()
+        opener.open.return_value.__enter__.return_value = response
+        with mock.patch.object(module.urllib.request, "build_opener", return_value=opener):
+            check = module.security_headers_check(module.DEFAULT_BASE_URL, 1)
+        self.assertEqual(check.status, "failed")
+        self.assertIn("Strict-Transport-Security", check.summary)
+        self.assertNotIn("max-age=0", check.summary)
+        response.read.assert_not_called()
+
+    def test_reviewed_release_smoke_passes_committed_inputs_to_each_check(self):
+        module = load_workdoe_production_smoke_script()
+        release = module.ReviewedSmokeRelease({"styles.css": b"fixture"}, {"review": True})
+        ready = module.SmokeCheck("fixture", "ready", "Fixture passed.")
+        base = "https://workdoe.com"
+        checkout = Path("other-local-release")
+        commit = "a" * 40
+        with (
+            mock.patch.object(module, "read_reviewed_smoke_release", return_value=release) as read,
+            mock.patch.object(module, "dns_lookup", return_value=(True, ["192.0.2.1"], "")),
+            mock.patch.object(module, "fetch_url", return_value=module.FetchResult(ok=False, status_code=404)),
+            mock.patch.object(module, "security_headers_check", return_value=ready) as security_headers,
+            mock.patch.object(module, "browser_license_notices_check", return_value=ready) as vendor,
+            mock.patch.object(module, "clerk_build_notices_check", return_value=ready) as build_notices,
+            mock.patch.object(module, "checkout_asset_parity_check", return_value=ready) as assets,
+            mock.patch.object(module, "clerk_browser_entry_check", return_value=ready) as browser_entry,
+            mock.patch.object(module, "clerk_environment_check", return_value=ready) as environment,
+            mock.patch.object(module, "clerk_package_boundary_check", return_value=ready) as boundary,
+            mock.patch.object(module, "clerk_developer_file_check", return_value=ready) as developer_files,
+            mock.patch.object(module, "redirect_privacy_check", return_value=ready) as redirects,
+        ):
+            result = module.build_smoke_payload(
+                base_url=base, timeout=1, asset_commit=commit, release_checkout=checkout,
+            )
+        read.assert_called_once_with(checkout, commit)
+        security_headers.assert_called_once_with(base, 1, require_origin_referrer=True)
+        vendor.assert_called_once_with(base, 1, reviewed_ledger=release.ledger)
+        build_notices.assert_called_once_with(base, 1, reviewed_ledger=release.ledger)
+        assets.assert_called_once_with(
+            base, 1, checkout, asset_commit=commit, reviewed_assets=release.assets, require_clerk_entry_integrity=True,
+        )
+        environment.assert_called_once_with(base, 1)
+        browser_entry.assert_called_once_with(base, 1)
+        boundary.assert_called_once_with(base, 1)
+        developer_files.assert_called_once_with(base, 1)
+        redirects.assert_called_once_with("workdoe.com", 1)
+        self.assertEqual(result["asset_commit"], commit)
+        self.assertTrue(result["readiness_scope"].endswith("_and_commit_bound_notices"))
+        self.assertEqual(result["public_launch_approval"], "not_evaluated")
+
+    def test_workdoe_production_smoke_refuses_private_route_regressions_without_echoing_data(self):
+        module = load_workdoe_production_smoke_script()
+        no_store = {"Cache-Control": "no-store"}
+        photo_path = f"/media/jobs/{module.PRIVATE_PROBE_ID}"
+        responses = {
+            ("GET", "/account"): (302, no_store | {"Location": "https://elsewhere.invalid/private-token"}),
+            ("GET", "/dashboard"): (302, {"Location": "/login?next=/dashboard", "Cache-Control": "x-no-store"}),
+            ("GET", "/messages"): (302, no_store | {"Location": "/login?next=/messages", "Age": "0"}),
+            ("GET", "/api/client/jobs"): (200, no_store),
+            ("GET", "/api/messages/threads"): (401, no_store | {"cf-cache-status": "Revalidated"}),
+            ("HEAD", photo_path): (200, no_store),
+        }
+
+        def fetch(url, *, method, timeout, body_limit, follow_redirects):
+            self.assertEqual((timeout, body_limit, follow_redirects), (1, 0, False))
+            path = url.removeprefix("https://workdoe.com")
+            expected = (302, no_store | {"Location": f"/login?next={path}"}) if path in module.PRIVATE_PAGE_PATHS else (401, no_store)
+            status_code, headers = responses.get((method, path), expected)
+            return module.FetchResult(ok=status_code < 400, status_code=status_code, headers=headers, body="private-data")
+
+        with mock.patch.object(module, "fetch_url", side_effect=fetch) as requested:
+            check = module.anonymous_private_routes_check("https://workdoe.com", 1)
+        self.assertEqual(requested.call_count, 18)
+        self.assertEqual(
+            {(call.kwargs["method"], call.args[0].removeprefix("https://workdoe.com")) for call in requested.call_args_list},
+            {("GET", path) for path in (*module.PRIVATE_PAGE_PATHS, *module.PRIVATE_API_PATHS, *module.PRIVATE_MEDIA_PATHS)}
+            | {("HEAD", path) for path in module.PRIVATE_MEDIA_PATHS},
+        )
+        self.assertTrue(check.required)
+        self.assertEqual(check.status, "failed")
+        for path, detail in (
+            ("/account", "did not redirect"),
+            ("/dashboard", "did not declare unambiguous no-store"),
+            ("/messages", "indicated caching"),
+            ("/api/client/jobs", "did not directly refuse"),
+            ("/api/messages/threads", "indicated caching"),
+        ):
+            self.assertIn(f"{path} {detail}", check.summary)
+        self.assertIn(f"HEAD {photo_path} did not directly refuse", check.summary)
+        self.assertNotIn("private-token", check.summary)
+        self.assertNotIn("private-data", check.summary)
+
+    def test_private_route_smoke_rejects_cache_overrides_and_duplicate_headers(self):
+        module = load_workdoe_production_smoke_script()
+        for fields, expected in (
+            ((("Cache-Control", "Private, No-Store"), ("CF-Cache-Status", "BYPASS")), "ready"),
+            ((("Cache-Control", "no-store"), ("CDN-Cache-Control", "no-store")), "ready"),
+            ((("Cache-Control", "public, no-store"),), "failed"),
+            ((("Cache-Control", 'ext="synthetic,no-store,value"'),), "failed"),
+            ((("Cache-Control", "max-age=3600"), ("Cache-Control", "no-store")), "failed"),
+            ((("Cache-Control", "no-store"), ("CDN-Cache-Control", "max-age=3600")), "failed"),
+            ((("Cache-Control", "no-store"), ("Cloudflare-CDN-Cache-Control", "public")), "failed"),
+            ((("Cache-Control", "no-store"), ("CF-Cache-Status", "MISS")), "failed"),
+            ((("Cache-Control", "no-store"), ("CF-Cache-Status", "EXPIRED")), "failed"),
+            ((("Cache-Control", "no-store"), ("CF-Cache-Status", "HIT"), ("CF-Cache-Status", "BYPASS")), "failed"),
+        ):
+            with self.subTest(fields=fields):
+                def fetch(url, *, fields=fields, **_kwargs):
+                    path = url.removeprefix(module.DEFAULT_BASE_URL)
+                    if path in module.PRIVATE_PAGE_PATHS:
+                        return module.FetchResult(True, 302, {
+                            "Location": f"/login?next={path}", "Cache-Control": "no-store",
+                        })
+                    return module.FetchResult(False, 401, dict(fields), header_fields=fields)
+
+                with mock.patch.object(module, "fetch_url", side_effect=fetch):
+                    check = module.anonymous_private_routes_check(module.DEFAULT_BASE_URL, 1)
+                self.assertEqual(check.status, expected)
+                self.assertNotIn("ext=", check.summary)
+
+    def test_workdoe_production_smoke_headers_only_probe_never_reads_a_body(self):
+        module = load_workdoe_production_smoke_script()
+        headers = module.Message()
+        headers["Cache-Control"] = "no-store"
+        for status in (200, 302, 401):
+            with self.subTest(status=status):
+                with mock.patch.object(module.urllib.request, "build_opener") as build:
+                    opener = build.return_value
+                    stream = mock.MagicMock()
+                    stream.closed = False
+                    if status >= 300:
+                        opener.open.side_effect = module.urllib.error.HTTPError(
+                            "https://workdoe.com/account", status, "fixture", headers, stream,
+                        )
+                    else:
+                        opener.open.return_value.__enter__.return_value = stream
+                        stream.headers = headers
+                        stream.status = status
+                    result = module.fetch_url("https://workdoe.com/account", body_limit=0, follow_redirects=False)
+                stream.read.assert_not_called()
+                self.assertEqual(result.status_code, status)
+                self.assertEqual(result.body, "")
+                self.assertEqual(result.headers, {"Cache-Control": "no-store"})
+                if status >= 300:
+                    stream.close.assert_called_once()
+
     def test_workdoe_production_smoke_reports_dns_and_header_failures(self):
         module = load_workdoe_production_smoke_script()
         original_dns_lookup = module.dns_lookup
@@ -10781,7 +15096,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertFalse(payload["ready"])
         self.assertIn("workdoe.com does not resolve: mock dns failure", payload["failures"])
         self.assertIn(
-            "Entry shell is missing required security headers:",
+            "GET has missing, ambiguous or unsafe headers:",
             "\n".join(payload["failures"]),
         )
         rendered = module.render_text(payload)
@@ -10819,6 +15134,129 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         self.assertEqual(payload["attempt"], 2)
         self.assertEqual(payload["attempts"], 3)
         self.assertEqual(calls[1], {"sleep": 5})
+
+    def test_isolated_clerk_beta_smoke_cannot_drop_delivery_or_change_release_target(self):
+        module = load_workdoe_production_smoke_script()
+        commit = module.ISOLATED_CLERK_BETA_COMMIT
+        options = {
+            "asset_commit": commit, "release_checkout": ROOT,
+            "verify_clerk_browser_delivery": True, "isolated_clerk_beta": True,
+        }
+        with mock.patch.object(module, "fetch_url") as fetch, mock.patch.object(module, "dns_lookup") as dns:
+            for override in (
+                {"asset_commit": DEPLOY_FIXTURE_COMMIT}, {"base_url": "https://example.invalid"},
+                {"domain": "example.invalid"}, {"verify_clerk_browser_delivery": False},
+                {"release_checkout": None}, {"expect_public_map_mode": "list"},
+            ):
+                with self.subTest(override=override), self.assertRaises(ValueError):
+                    module.build_smoke_payload_with_retries(**(options | override))
+            fetch.assert_not_called()
+            dns.assert_not_called()
+
+        fast = {"readiness_scope": "isolated-fixture", "ready": True, "checks": [], "failures": []}
+        failed = module.SmokeCheck("clerk-browser-file-delivery", "failed", "Fixture notice mismatch.")
+        with (
+            mock.patch.object(module, "build_smoke_payload", return_value=fast) as smoke,
+            mock.patch.object(module, "clerk_browser_file_delivery_check", return_value=failed) as delivery,
+        ):
+            payload = module.build_smoke_payload_with_retries(**options)
+        self.assertTrue(smoke.call_args.kwargs["isolated_clerk_beta"])
+        delivery.assert_called_once_with(ROOT, commit, isolated_clerk_beta=True)
+        self.assertFalse(payload["ready"])
+        self.assertEqual(payload["readiness_scope"], "isolated-fixture_with_clerk_browser_file_delivery")
+
+    def test_isolated_edit_beta_smoke_requires_canonical_host_and_full_delivery(self):
+        module = load_workdoe_production_smoke_script()
+        options = {
+            "asset_commit": module.ISOLATED_EDIT_BETA_COMMIT, "release_checkout": ROOT,
+            "verify_clerk_browser_delivery": True, "isolated_clerk_beta": True,
+        }
+        with mock.patch.object(module, "fetch_url") as fetch, mock.patch.object(module, "dns_lookup") as dns:
+            for override in (
+                {"asset_commit": DEPLOY_FIXTURE_COMMIT}, {"base_url": "https://example.invalid"},
+                {"domain": "example.invalid"}, {"verify_clerk_browser_delivery": False},
+                {"release_checkout": None}, {"expect_public_map_mode": "list"},
+            ):
+                with self.subTest(override=override), self.assertRaises(ValueError):
+                    module.build_smoke_payload_with_retries(**(options | override))
+            fetch.assert_not_called()
+            dns.assert_not_called()
+        fast = {"readiness_scope": "isolated-fixture", "ready": True, "checks": [], "failures": []}
+        failed = module.SmokeCheck("clerk-browser-file-delivery", "failed", "Fixture notice mismatch.")
+        with (
+            mock.patch.object(module, "build_smoke_payload", return_value=fast),
+            mock.patch.object(module, "clerk_browser_file_delivery_check", return_value=failed) as delivery,
+        ):
+            payload = module.build_smoke_payload_with_retries(**options)
+        delivery.assert_called_once_with(ROOT, module.ISOLATED_EDIT_BETA_COMMIT, isolated_clerk_beta=True)
+        self.assertFalse(payload["ready"])
+
+    def test_isolated_clerk_beta_archive_identity_requires_all_committed_package_digests(self):
+        module = load_workdoe_production_smoke_script()
+        ledger = json.loads(module.DEPENDENCY_LEDGER.read_text(encoding="utf-8"))
+        fields = {"name", "package", "version", "script_path", "license", "package_integrity"}
+        committed = {
+            "hosted_browser_components": [
+                {key: row[key] for key in fields} for row in ledger["hosted_browser_components"]
+            ],
+        }
+        self.assertEqual(module.isolated_beta_archive_ledger(committed), ledger)
+        committed["hosted_browser_components"][0]["package_integrity"] = "sha512-unreviewed"
+        with self.assertRaisesRegex(ValueError, "reviewed Clerk archives"):
+            module.isolated_beta_archive_ledger(committed)
+
+    def test_clerk_full_delivery_runs_once_after_fast_smoke_succeeds(self):
+        module = load_workdoe_production_smoke_script()
+        for ready in (False, True):
+            for delivery_ok in (False, True):
+                with self.subTest(ready=ready, delivery_ok=delivery_ok):
+                    fast = {"readiness_scope": "public_http_smoke", "ready": ready, "checks": [], "failures": []}
+                    check = module.SmokeCheck("clerk-browser-file-delivery", "ready" if delivery_ok else "failed", "fixture")
+                    with (
+                        mock.patch.object(module, "build_smoke_payload", side_effect=[dict(fast, ready=False), fast]) as smoke,
+                        mock.patch.object(module, "clerk_browser_file_delivery_check", return_value=check) as delivery,
+                        mock.patch.object(module.time, "sleep"),
+                    ):
+                        payload = module.build_smoke_payload_with_retries(
+                            asset_commit=DEPLOY_FIXTURE_COMMIT, release_checkout=ROOT, attempts=2,
+                            verify_clerk_browser_delivery=True,
+                        )
+                    self.assertEqual(smoke.call_count, 2)
+                    self.assertEqual(payload["ready"], ready and delivery_ok)
+                    self.assertEqual(payload["readiness_scope"], "public_http_smoke_with_clerk_browser_file_delivery")
+                    self.assertEqual(payload["checks"][0]["status"], "ready" if ready and delivery_ok else "failed")
+                    if ready:
+                        delivery.assert_called_once_with(ROOT, DEPLOY_FIXTURE_COMMIT)
+                    else:
+                        delivery.assert_not_called()
+
+    def test_clerk_full_delivery_uses_committed_inventory_and_rejects_partial_readback(self):
+        module = load_workdoe_production_smoke_script()
+        ledger = {"example": "committed ledger"}
+        source = b'CLERK_BROWSER_FILES = {"fixture": ("browser.js",)}'
+        reader = mock.Mock(side_effect=[json.dumps(ledger).encode(), source])
+        pins = {"first": object(), "second": object()}
+        with (
+            mock.patch.object(module, "committed_release_reader", return_value=reader) as committed,
+            mock.patch.object(module, "pinned_archive_files", return_value=pins) as archives,
+            mock.patch.object(module, "compare_live_files", return_value=1) as compare,
+        ):
+            result = module.clerk_browser_file_delivery_check(ROOT, DEPLOY_FIXTURE_COMMIT)
+        self.assertEqual(result.status, "failed")
+        committed.assert_called_once_with(ROOT, DEPLOY_FIXTURE_COMMIT)
+        self.assertEqual([call.args[0] for call in reader.call_args_list], [
+            "DEPENDENCY_PROVENANCE.json", "cloudflare/worker/clerk_browser_files.py",
+        ])
+        archives.assert_called_once_with(ledger, {"fixture": ("browser.js",)})
+        compare.assert_called_once_with(pins)
+
+        with (
+            mock.patch.object(module, "committed_release_reader", return_value=mock.Mock(side_effect=[b"{}", b"load_code()"])),
+            mock.patch.object(module, "pinned_archive_files") as archives,
+        ):
+            result = module.clerk_browser_file_delivery_check(ROOT, DEPLOY_FIXTURE_COMMIT)
+        self.assertEqual(result.status, "failed")
+        archives.assert_not_called()
 
     def test_workdoe_launch_doctor_combines_release_blockers(self):
         module = load_workdoe_launch_doctor_script()
@@ -11355,20 +15793,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
             )
             proxy_proof_path = tmp_path / "clerk-proxy-proof.local.json"
             proxy_proof_path.write_text(
-                json.dumps(
-                    {
-                        "domain": "workdoe.com",
-                        "frontend_api_proxy_url": "https://workdoe.com/__clerk",
-                        "confirmed": True,
-                        "public_sign_up_enabled": True,
-                        "email_code_sign_in": True,
-                        "password_sign_in_disabled": True,
-                        "custom_sign_up_url": "https://workdoe.com/create-account",
-                        "express_legal_consent": True,
-                        "terms_url": "https://workdoe.com/terms",
-                        "privacy_url": "https://workdoe.com/privacy",
-                    }
-                ),
+                json.dumps(clerk_proof_fixture()),
                 encoding="utf-8",
             )
             original_wrangler_available = module.wrangler_available
@@ -11492,6 +15917,61 @@ class CloudflareReleasePrepTests(unittest.TestCase):
         helper = (ROOT / "scripts" / "cloudflare_wrangler.py").read_text(encoding="utf-8")
         self.assertIn("GitHub production environment secret", helper)
 
+
+    def test_project_dialog_focus_starts_at_the_step_title_with_action_clearance(self):
+        class StepHeadingParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.headings = []
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if tag == "h2" and "data-project-step-title" in attrs:
+                    self.headings.append(attrs)
+
+        shell = load_app_shell_module()
+        client = {"id": 1, "role": "client", "status": "active"}
+        sources = [
+            (ROOT / "workdoe" / "templates" / "_project_composer.html").read_text(
+                encoding="utf-8"
+            )
+        ]
+        for embedded in (False, True):
+            sources.extend(
+                [
+                    shell.job_form_html(client, embedded=embedded),
+                    shell.public_job_draft_html(embedded=embedded),
+                ]
+            )
+        for source in sources:
+            with self.subTest(source=source[:50]):
+                parser = StepHeadingParser()
+                parser.feed(source)
+                self.assertEqual(len(parser.headings), 1)
+                self.assertIn("data-dialog-focus", parser.headings[0])
+                self.assertEqual(parser.headings[0].get("tabindex"), "-1")
+        css = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
+        self.assertIsNotNone(
+            re.search(
+                r'\.site-dialog\[data-dialog-kind="project"\] \.site-dialog-content\s*\{'
+                r'[^}]*scroll-padding-block:\s*16px 92px;',
+                css,
+            ),
+            "Project dialogs must reserve scroll clearance above their sticky actions.",
+        )
+        for selector in ("service-family-copy", "service-option-copy"):
+            self.assertIsNotNone(
+                re.search(rf"\.{selector} strong\s*\{{[^}}]*overflow-wrap: anywhere;", css),
+                f"{selector} labels must wrap long words inside narrow choices.",
+            )
+        self.assertIsNotNone(
+            re.search(
+                r"@media \(max-width: 374px\)\s*\{\s*\.service-family-grid,"
+                r"\s*\.service-option-grid\s*\{\s*grid-template-columns: minmax\(0, 1fr\);",
+                css,
+            ),
+            "Very narrow composers must leave a readable single-column choice layout.",
+        )
 
     def test_cloudflare_dialog_shell_and_work_history_match_local_contract(self):
         entry_shell = load_entry_shell_module()
@@ -12355,7 +16835,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
     def test_cloudflare_pilot_metrics_match_local_contract_and_render_privately(self):
         worker_metrics = load_pilot_metrics_module()
-        from workdoe.pilot_metrics import pilot_cell_metrics
+        from workdoe.pilot_metrics import (
+            MARKETPLACE_OUTCOMES_SQL,
+            REPEAT_INVITATION_OUTCOMES_SQL,
+            pilot_cell_metrics,
+        )
+
+        self.assertEqual(worker_metrics.MARKETPLACE_OUTCOMES_SQL, MARKETPLACE_OUTCOMES_SQL)
+        self.assertEqual(worker_metrics.REPEAT_INVITATION_OUTCOMES_SQL, REPEAT_INVITATION_OUTCOMES_SQL)
 
         projects = [
             {

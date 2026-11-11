@@ -1,0 +1,5 @@
+{% if project_map_enabled() %}
+  <script id="map-jobs-data" type="application/json">{{ map_jobs|tojson }}</script>
+  <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+  <script src="{{ url_for('static', filename='map.js') }}?v={{ asset_release_token }}"></script>
+{% endif %}

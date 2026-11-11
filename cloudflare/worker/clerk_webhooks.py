@@ -3,9 +3,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-import json
 import time
 from collections.abc import Mapping
+
+from clerk_identity import CLERK_RESTRICTION_FLAGS, primary_email_from_clerk_user
+from json_values import JsonDataError, parse_json_value
 
 DEFAULT_TIMESTAMP_TOLERANCE_SECONDS = 5 * 60
 SYNCABLE_USER_EVENTS = {"user.created", "user.updated", "user.deleted"}
@@ -94,48 +96,36 @@ def verify_svix_signature(
     ]
     if not signatures:
         raise SvixVerificationError("Webhook signature header has no v1 signatures.")
-    if not any(hmac.compare_digest(expected, signature) for signature in signatures):
+    if not any(signature.isascii() and hmac.compare_digest(expected, signature) for signature in signatures):
         raise SvixVerificationError("Webhook signature does not match.")
 
-    body_text = raw_body.decode("utf-8") if isinstance(raw_body, bytes) else raw_body
     try:
-        event = json.loads(body_text)
-    except json.JSONDecodeError as exc:
+        event = parse_json_value(raw_body, max_depth=16)
+    except JsonDataError as exc:
         raise SvixVerificationError("Webhook payload is not valid JSON.") from exc
-    if event.get("object") != "event" or not event.get("type"):
+    if (
+        not isinstance(event, dict) or event.get("object") != "event"
+        or not isinstance(event.get("type"), str) or not event["type"]
+        or not isinstance(event.get("data"), dict)
+    ):
         raise SvixVerificationError("Webhook payload is not a Clerk event.")
     return event
-
-
-def primary_email_from_clerk_user(user_data: dict) -> tuple[str, bool]:
-    primary_id = user_data.get("primary_email_address_id")
-    addresses = user_data.get("email_addresses") or []
-    selected = None
-    if primary_id:
-        selected = next((item for item in addresses if item.get("id") == primary_id), None)
-    if selected is None and addresses:
-        selected = addresses[0]
-    if not selected:
-        return "", False
-    email = str(selected.get("email_address") or "").strip().lower()
-    verification = selected.get("verification") or {}
-    verified = verification.get("status") == "verified"
-    return email, verified
 
 
 def clerk_user_status(event_type: str, user_data: dict) -> str:
     if event_type == "user.deleted":
         return "suspended"
-    if any(user_data.get(flag) is True for flag in ("banned", "locked", "disabled")):
+    if any(user_data.get(flag) is True for flag in CLERK_RESTRICTION_FLAGS):
         return "suspended"
     return "active"
 
 
 def clerk_user_sync_payload(event: dict) -> dict:
     event_type = str(event.get("type") or "")
-    user_data = event.get("data") or {}
-    clerk_user_id = str(user_data.get("id") or "")
-    if event_type not in SYNCABLE_USER_EVENTS or not clerk_user_id:
+    user_data = event.get("data")
+    user_data = user_data if isinstance(user_data, dict) else {}
+    clerk_user_id = user_data.get("id")
+    if event_type not in SYNCABLE_USER_EVENTS or not isinstance(clerk_user_id, str) or not clerk_user_id:
         return {
             "syncable": False,
             "event_type": event_type,

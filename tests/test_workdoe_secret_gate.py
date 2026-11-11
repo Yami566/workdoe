@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -55,11 +57,22 @@ class WorkdoeSecretGateTests(unittest.TestCase):
             baseline = self.write_baseline(root, {**finding, "is_secret": False})
             self.assertEqual(self.module.baseline_audit_error(baseline), "")
 
+            for verdict in ("false", 0, [], {}):
+                with self.subTest(verdict=verdict):
+                    baseline = self.write_baseline(root, {**finding, "is_secret": verdict})
+                    self.assertIn("1 unaudited finding", self.module.baseline_audit_error(baseline))
+
     def test_baseline_audit_rejects_malformed_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             baseline = Path(tmp) / ".secrets.baseline"
             baseline.write_text("not-json", encoding="utf-8")
             self.assertIn("invalid JSON", self.module.baseline_audit_error(baseline))
+
+    def test_baseline_audit_rejects_non_object_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            baseline = Path(tmp) / ".secrets.baseline"
+            baseline.write_text("[]", encoding="utf-8")
+            self.assertIn("must be a JSON object", self.module.baseline_audit_error(baseline))
 
     def test_file_arguments_are_batched_without_reordering_or_omission(self):
         files = ["one.py", "two-long.py", "three.py", "four-long.py"]
@@ -125,7 +138,7 @@ class WorkdoeSecretGateTests(unittest.TestCase):
                 payload = json.loads(scan_baseline.read_text(encoding="utf-8"))
                 payload["results"]["example.py"][0]["line_number"] = 2
                 scan_baseline.write_text(json.dumps(payload), encoding="utf-8")
-                return mock.Mock(returncode=1, stdout="", stderr="baseline updated")
+                return mock.Mock(returncode=3, stdout="", stderr="baseline updated")
 
             with (
                 mock.patch.object(
@@ -230,6 +243,92 @@ class WorkdoeSecretGateTests(unittest.TestCase):
             self.assertFalse(payload["ok"])
             self.assertEqual(payload["file_count"], 2)
             self.assertIn("secret found", payload["error"])
+
+    def test_metadata_refresh_cannot_hide_scanner_failures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            baseline = root / ".secrets.baseline"
+            baseline.write_text(json.dumps({"results": {}}), encoding="utf-8")
+
+            def metadata_refresh(command, **_kwargs):
+                scan_baseline = root / command[2]
+                payload = json.loads(scan_baseline.read_text(encoding="utf-8"))
+                payload["generated_at"] = "updated-metadata"
+                scan_baseline.write_text(json.dumps(payload), encoding="utf-8")
+                return mock.Mock(returncode=3, stdout="baseline updated", stderr="")
+
+            for returncode in (1, 2, -1):
+                with (
+                    self.subTest(returncode=returncode),
+                    mock.patch.object(self.module.shutil, "which", return_value="detect-secrets-hook"),
+                    mock.patch.object(self.module, "repository_files", return_value=["one.py", "two.py"]),
+                    mock.patch.object(
+                        self.module, "file_argument_batches", return_value=[["one.py"], ["two.py"]]
+                    ),
+                ):
+                    def refresh_then_fail(command, *, failure_code=returncode, **kwargs):
+                        if command[-1] == "one.py":
+                            return metadata_refresh(command, **kwargs)
+                        return mock.Mock(returncode=failure_code, stdout="", stderr="scanner failed")
+
+                    with mock.patch.object(
+                        self.module.subprocess, "run",
+                        side_effect=refresh_then_fail,
+                    ):
+                        result = self.module.run_gate(root, baseline)
+                    self.assertFalse(result["ok"])
+                    self.assertIn("scanner failed", result["error"])
+
+
+@unittest.skipUnless(
+    shutil.which("detect-secrets") and shutil.which("detect-secrets-hook"),
+    "Install requirements-audit.txt to run real secret-scanner integration tests.",
+)
+class WorkdoeSecretGateIntegrationTests(unittest.TestCase):
+    def test_metadata_refresh_cannot_hide_a_new_secret_in_a_later_batch(self):
+        module = load_secret_gate_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "--quiet", str(root)], check=True, capture_output=True)
+            reviewed_path = root / "reviewed.py"
+            reviewed_content = 'password = "scanner-fixture-reviewed"\n'  # pragma: allowlist secret
+            reviewed_path.write_text(reviewed_content, encoding="utf-8")
+            scan = subprocess.run(
+                [shutil.which("detect-secrets"), "scan", "--no-verify", "reviewed.py"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+            baseline_payload = json.loads(scan.stdout)
+            self.assertTrue(baseline_payload["results"], "Fixture must trigger the real scanner.")
+            for findings in baseline_payload["results"].values():
+                for finding in findings:
+                    finding["is_secret"] = False
+            baseline = root / ".secrets.baseline"
+            baseline.write_text(json.dumps(baseline_payload), encoding="utf-8")
+            original = baseline.read_bytes()
+            reviewed_path.write_text("\n" + reviewed_content, encoding="utf-8")
+            with mock.patch.object(
+                module, "file_argument_batches", return_value=[["reviewed.py"]]
+            ):
+                metadata_result = module.run_gate(root, baseline)
+            self.assertTrue(metadata_result["ok"], metadata_result)
+            self.assertEqual(baseline.read_bytes(), original)
+
+            new_content = 'password = "scanner-fixture-unreviewed"\n'  # pragma: allowlist secret
+            (root / "new.py").write_text(new_content, encoding="utf-8")
+
+            for batches in ((["reviewed.py"], ["new.py"]), (["new.py"], ["reviewed.py"])):
+                with (
+                    self.subTest(batches=batches),
+                    mock.patch.object(module, "file_argument_batches", return_value=list(batches)),
+                ):
+                    result = module.run_gate(root, baseline)
+                self.assertFalse(result["ok"], result)
+                self.assertIn("new.py", result["error"])
+                self.assertEqual(baseline.read_bytes(), original)
 
 
 if __name__ == "__main__":

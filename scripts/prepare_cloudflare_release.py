@@ -15,6 +15,9 @@ DEV_VARS_EXAMPLE_RELATIVE_PATH = Path("cloudflare/.dev.vars.example")
 STATIC_HEADERS_RELATIVE_PATH = Path("workdoe/static/_headers")
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 D1_ID_FIELDS = ("database_id", "preview_database_id")
+RESERVED_STAGING_D1_NAME = "workdoe-preview"
+RESERVED_STAGING_D1_ID = "ba816597-68ba-40a9-830e-751f44e4f54b"
+REVIEWED_PRODUCTION_D1_ID = "fe8c22a8-1585-46dd-916e-2913c60d139a"
 IMMUTABLE_D1_BASELINE_SHA256 = "dd46194b4f45811901a8fe1718a482ea286863a4a87e3bcdce66cf60967c479e"
 UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -28,23 +31,28 @@ REQUIRED_WORKER_SECRETS = [
     "WORKDOE_TURNSTILE_SECRET_KEY",
     "WORKDOE_TURNSTILE_SITE_KEY",
 ]
-MAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-MAP_TILE_ATTRIBUTION = (
-    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-)
+PRODUCTION_MAP_MODE = "area"
+PRODUCTION_MEDIA_BUCKET = "workdoe-media"
+PRODUCTION_EMAIL_QUEUE = "workdoe-email"
+PRODUCTION_MEDIA_QUEUE = "workdoe-media-review"
+PRODUCTION_QUEUE_CONSUMER_OPTIONS = {"max_batch_size": 10, "max_batch_timeout": 30, "max_retries": 5}
 IMMUTABLE_STATIC_ASSET_PATHS = [
     "/styles.css",
     "/map.js",
     "/project-composer.js",
     "/clerk-entry.js",
-    "/vendor/*",
+    "/vendor/leaflet/*",
+    "/vendor/leaflet-markercluster/*",
+    "/vendor/tabler-icons/*",
     "/deer.svg",
+    "/dmv-area-50fe6cd3.geojson",
 ]
 VERSIONED_STATIC_ASSET_FILES = [
     "styles.css",
     "map.js",
     "project-composer.js",
     "clerk-entry.js",
+    "site-dialogs.js",
 ]
 ASSET_RELEASE_MODULE_RELATIVE_PATHS = [
     Path("workdoe/asset_release.py"),
@@ -54,6 +62,29 @@ ASSET_RELEASE_MODULE_RELATIVE_PATHS = [
 
 def valid_d1_id(value: str | None) -> bool:
     return bool(value and value != ZERO_UUID and UUID_RE.fullmatch(str(value)))
+
+
+def production_d1_ids(config: object) -> tuple[str, str | None]:
+    bindings = config.get("d1_databases") if isinstance(config, dict) else None
+    if not isinstance(bindings, list) or len(bindings) != 1 or not isinstance(bindings[0], dict):
+        raise ValueError("The reviewed config must identify exactly one production D1 database.")
+    binding = bindings[0]
+    if binding.get("binding") != "DB" or binding.get("database_name") != "workdoe":
+        raise ValueError("The reviewed DB binding must name the workdoe database.")
+    primary, preview = binding.get("database_id"), binding.get("preview_database_id")
+    if not isinstance(primary, str) or not valid_d1_id(primary):
+        raise ValueError("The production D1 database_id must be a non-placeholder UUID.")
+    primary = primary.lower()
+    if primary == RESERVED_STAGING_D1_ID or (
+        isinstance(preview, str) and preview.lower() == RESERVED_STAGING_D1_ID
+    ):
+        raise ValueError("The reserved staging D1 identity must not appear in production bindings.")
+    # Absence falls back to production in Wrangler remote dev; retain an explicit sentinel.
+    if preview == ZERO_UUID:
+        return primary, None
+    if not isinstance(preview, str) or not valid_d1_id(preview) or preview.lower() == primary:
+        raise ValueError("Production preview must be explicitly disabled or a valid distinct D1 identity.")
+    return primary, preview.lower()
 
 
 def existing_d1_ids(wrangler_path: Path) -> dict[str, str]:
@@ -82,15 +113,22 @@ def migration_chain_sha256(migrations_dir: Path) -> str:
     return digest.hexdigest()
 
 
-def static_asset_release_token(repo_root: Path) -> str:
+def versioned_asset_release_token(assets: dict[str, bytes]) -> str:
     digest = hashlib.sha256()
-    static_root = repo_root / "workdoe" / "static"
     for filename in VERSIONED_STATIC_ASSET_FILES:
         digest.update(filename.encode("utf-8"))
         digest.update(b"\0")
-        digest.update((static_root / filename).read_bytes())
+        digest.update(assets[filename])
         digest.update(b"\0")
     return f"asset-{digest.hexdigest()[:16]}"
+
+
+def static_asset_release_token(repo_root: Path) -> str:
+    static_root = repo_root / "workdoe" / "static"
+    return versioned_asset_release_token({
+        filename: (static_root / filename).read_bytes()
+        for filename in VERSIONED_STATIC_ASSET_FILES
+    })
 
 
 def asset_release_module_source(asset_release_token: str) -> str:
@@ -135,7 +173,7 @@ def build_manifest(
             "Python",
             "server-rendered HTML",
             "SQLite-compatible SQL",
-            "Leaflet/OpenStreetMap embed",
+            "Leaflet with same-origin Census boundaries",
         ],
         "cloudflare_targets": {
             "worker": {
@@ -146,6 +184,7 @@ def build_manifest(
                 "asset_release_token": asset_release_token,
                 "versioned_static_assets": VERSIONED_STATIC_ASSET_FILES,
                 "immutable_static_asset_paths": IMMUTABLE_STATIC_ASSET_PATHS,
+                "public_map_mode": PRODUCTION_MAP_MODE,
                 "custom_domains": ["workdoe.com", "www.workdoe.com"],
                 "custom_domain_management": "preconfigured_outside_routine_deploys",
                 "compatibility_date": "2026-08-23",
@@ -193,7 +232,7 @@ def build_manifest(
                 "service": "Private R2 media (uploads disabled for beta)",
                 "binding": "MEDIA",
                 "uploads_enabled": False,
-                "bucket": "workdoe-media",
+                "bucket": PRODUCTION_MEDIA_BUCKET,
                 "private": True,
                 "future_sanitizer": {
                     "service": "Cloudflare Images",
@@ -259,7 +298,7 @@ def build_manifest(
                 "queues": [
                     {
                         "binding": "EMAIL_QUEUE",
-                        "queue": "workdoe-email",
+                        "queue": PRODUCTION_EMAIL_QUEUE,
                         "uses": [
                             "match reminders",
                             "new matching project alerts",
@@ -270,7 +309,7 @@ def build_manifest(
                     },
                     {
                         "binding": "MEDIA_QUEUE",
-                        "queue": "workdoe-media-review",
+                        "queue": PRODUCTION_MEDIA_QUEUE,
                         "uses": [
                             "photo metadata checks",
                             "moderation review tasks",
@@ -304,6 +343,8 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
     for field in D1_ID_FIELDS:
         if d1_ids and valid_d1_id(d1_ids.get(field)):
             d1_config[field] = d1_ids[field]
+    if valid_d1_id(d1_config["database_id"]):
+        production_d1_ids({"d1_databases": [d1_config]})
     config = {
         "$schema": "../node_modules/wrangler/config-schema.json",
         "name": "workdoe",
@@ -339,9 +380,7 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
             "consumers": [
                 {
                     "queue": queue["queue"],
-                    "max_batch_size": 10,
-                    "max_batch_timeout": 30,
-                    "max_retries": 5,
+                    **PRODUCTION_QUEUE_CONSUMER_OPTIONS,
                 }
                 for queue in queues
             ],
@@ -354,8 +393,7 @@ def build_wrangler_config(manifest: dict, d1_ids: dict[str, str] | None = None) 
             "WORKDOE_AUTH_PROVIDER": "clerk",
             "WORKDOE_DOMAIN": manifest["domain"],
             "WORKDOE_PUBLIC_URL": f"https://{manifest['domain']}",
-            "WORKDOE_MAP_TILE_URL": MAP_TILE_URL,
-            "WORKDOE_MAP_TILE_ATTRIBUTION": MAP_TILE_ATTRIBUTION,
+            "WORKDOE_MAP_MODE": PRODUCTION_MAP_MODE,
             "WORKDOE_LOGIN_MODE": "same_domain_email_code",
             "WORKDOE_ENFORCE_SERVICE_ACTIVATION": "false",
             "WORKDOE_MEDIA_UPLOADS_ENABLED": "false",
@@ -393,8 +431,7 @@ def build_dev_vars_example(manifest: dict) -> str:
         "WORKDOE_AUTH_PROVIDER=clerk",
         "WORKDOE_DOMAIN=workdoe.com",
         "WORKDOE_PUBLIC_URL=https://workdoe.com",
-        f"WORKDOE_MAP_TILE_URL={MAP_TILE_URL}",
-        f"WORKDOE_MAP_TILE_ATTRIBUTION={MAP_TILE_ATTRIBUTION}",
+        f"WORKDOE_MAP_MODE={PRODUCTION_MAP_MODE}",
         "WORKDOE_LOGIN_MODE=same_domain_email_code",
         "WORKDOE_ENFORCE_SERVICE_ACTIVATION=false",
         "WORKDOE_MEDIA_UPLOADS_ENABLED=false",
@@ -413,10 +450,11 @@ def build_dev_vars_example(manifest: dict) -> str:
 
 
 def write_text_if_changed(path: Path, content: str) -> bool:
-    if path.exists() and path.read_text(encoding="utf-8") == content:
+    expected = content.encode("utf-8")
+    if path.exists() and path.read_bytes() == expected:
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    path.write_bytes(expected)
     return True
 
 

@@ -58,4 +58,4 @@ def turnstile_result_allowed(result: dict, allowed_hosts: set[str]) -> bool:
     if not isinstance(result, dict) or result.get("success") is not True:
         return False
     hostname = compact_spaces(result.get("hostname")).lower()
-    return not hostname or hostname in allowed_hosts
+    return hostname in allowed_hosts

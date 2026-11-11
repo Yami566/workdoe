@@ -3,6 +3,9 @@ from __future__ import annotations
 import re
 import uuid
 
+from media_access import MediaAccessError, safe_media_key
+from request_security import parse_url_record_id
+
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
 ALLOWED_IMAGE_MIME = {
     "gif": "image/gif",
@@ -23,6 +26,12 @@ SANITIZED_IMAGE_EXTENSION = "webp"
 SANITIZED_IMAGE_MIME = "image/webp"
 SANITIZED_IMAGE_MAX_DIMENSION = 1600
 SANITIZED_IMAGE_QUALITY = 76
+MEDIA_REVIEW_CHECKS = (
+    "cloudflare-images-decode",
+    "metadata-stripped",
+    "animation-flattened",
+    "moderation",
+)
 MEDIA_UPLOAD_PATH_RE = re.compile(
     r"^/api/media/(?P<kind>jobs|contractors)/(?P<owner_id>[1-9][0-9]*)/upload/?$"
 )
@@ -40,10 +49,11 @@ def row_value(row, key: str, default=None):
 
 def media_upload_scope_from_path(path: str) -> tuple[str, int]:
     match = MEDIA_UPLOAD_PATH_RE.match(path or "")
-    if not match:
+    record_id = parse_url_record_id(match.group("owner_id")) if match else 0
+    if not record_id:
         raise MediaUploadError("Unsupported media upload route.")
     scope = "job" if match.group("kind") == "jobs" else "contractor"
-    return scope, int(match.group("owner_id"))
+    return scope, record_id
 
 
 def normalize_upload_filename(original_filename: str) -> tuple[str, str]:
@@ -285,12 +295,7 @@ def media_review_payload(
         "stored_path": stored_path,
         "content_type": details["content_type"],
         "size_bytes": int(details["size_bytes"]),
-        "checks": [
-            "cloudflare-images-decode",
-            "metadata-stripped",
-            "animation-flattened",
-            "moderation",
-        ],
+        "checks": list(MEDIA_REVIEW_CHECKS),
     }
 
 
@@ -298,23 +303,29 @@ def validated_media_review_payload(body: dict) -> dict:
     if not isinstance(body, dict) or body.get("type") != "media-review":
         raise MediaUploadError("Unsupported media review payload.")
     scope = body.get("scope")
-    if scope not in {"job", "contractor"}:
+    if scope not in ("job", "contractor"):
         raise MediaUploadError("Media review scope is invalid.")
-    photo_id = int(body.get("photo_id") or 0)
-    owner_id = int(body.get("owner_id") or 0)
-    uploaded_by = int(body.get("uploaded_by") or 0)
-    if min(photo_id, owner_id, uploaded_by) <= 0:
+    photo_id, owner_id, uploaded_by = (body.get(key) for key in ("photo_id", "owner_id", "uploaded_by"))
+    if any(type(value) is not int or not 0 < value < 2**53 for value in (photo_id, owner_id, uploaded_by)):
         raise MediaUploadError("Media review identifiers are invalid.")
-    stored_path = str(body.get("stored_path") or "")
+    stored_path = body.get("stored_path")
     expected_prefix = "jobs" if scope == "job" else "contractors"
-    if not stored_path.startswith(f"{expected_prefix}/{owner_id}/"):
-        raise MediaUploadError("Media review key does not match its owner.")
-    details = safe_upload_metadata(
-        f"review.{str(body.get('content_type', '')).rsplit('/', 1)[-1]}",
-        body.get("content_type", ""),
-        body.get("size_bytes", 0),
-        MAX_SANITIZED_IMAGE_BYTES,
-    )
+    try:
+        if not isinstance(stored_path, str) or safe_media_key(stored_path, f"{expected_prefix}/{owner_id}") != stored_path:
+            raise MediaUploadError("Media review key is invalid.")
+    except MediaAccessError as exc:
+        raise MediaUploadError("Media review key is invalid.") from exc
+    content_type = body.get("content_type")
+    if content_type not in ALLOWED_IMAGE_MIME.values():
+        raise MediaUploadError("Media review content type is invalid.")
+    size_bytes = body.get("size_bytes")
+    if type(size_bytes) is not int or not 0 < size_bytes <= MAX_SANITIZED_IMAGE_BYTES:
+        raise MediaUploadError("Media review size is invalid.")
+    checks = body.get("checks", [])
+    if not isinstance(checks, list) or len(checks) > len(MEDIA_REVIEW_CHECKS) or any(
+        check not in MEDIA_REVIEW_CHECKS for check in checks
+    ):
+        raise MediaUploadError("Media review checks are invalid.")
     return {
         "type": "media-review",
         "scope": scope,
@@ -322,9 +333,9 @@ def validated_media_review_payload(body: dict) -> dict:
         "owner_id": owner_id,
         "uploaded_by": uploaded_by,
         "stored_path": stored_path,
-        "content_type": details["content_type"],
-        "size_bytes": details["size_bytes"],
-        "checks": list(body.get("checks") or []),
+        "content_type": content_type,
+        "size_bytes": size_bytes,
+        "checks": checks,
     }
 
 

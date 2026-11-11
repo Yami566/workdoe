@@ -17,7 +17,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from cloudflare_readiness import (
     DEFAULT_CLERK_PROXY_PROOF_PATH,
-    clerk_proxy_proof_error,
+    clerk_release_proof_error,
 )
 from github_deploy_dispatch import build_dispatch_plan
 from workdoe_launch_doctor import (
@@ -221,7 +221,7 @@ def group_blockers(blockers: list[str]) -> list[dict]:
 
 
 def clerk_confirmations_from_proof(proof_path: Path) -> dict[str, bool]:
-    confirmed = not clerk_proxy_proof_error(proof_path)
+    confirmed = not clerk_release_proof_error(proof_path)
     return {
         "clerk_proxy_confirmed": confirmed,
         "public_signup_confirmed": confirmed,

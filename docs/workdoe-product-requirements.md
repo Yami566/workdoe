@@ -16,6 +16,14 @@ immediately see sample or live projects in a searchable list and approximate
 map, understand whether they are acting as a consumer or contractor, and enter
 the relevant workflow through a same-domain email-code sign-in.
 
+**DMV map decision, 2026-11-09:** The pilot uses county and city-level
+context with approximate project pins, served from Workdoe without a
+street-tile provider. The map does not show streets, addresses, parcel
+boundaries, or routes. Users can still search and open projects through
+the list when the map is unavailable or JavaScript is disabled. This
+decision qualifies a release candidate; it does not authorize a live
+configuration change.
+
 ## Users and jobs to be done
 
 ### Consumer
@@ -26,6 +34,11 @@ the relevant workflow through a same-domain email-code sign-in.
   category, coarse project setting, city/ZIP, short description, desired date,
   and optional budget range. Public photo uploads are disabled for the current
   beta.
+- Edit an owned project's details without having to replace an unchanged,
+  valid requested date merely because it has elapsed. New postings and changed
+  dates still use the existing today-or-future rule. The preserved-date
+  exception must come from the server's owned record, not submitted metadata;
+  it must not reopen the project or extend its bidding window.
 - Choose one of six numbered work families, then choose a canonical task from
   numbered family-scoped tiles. Each family presents six common tasks first
   and keeps the remaining canonical services behind a plainly labeled
@@ -111,6 +124,10 @@ the relevant workflow through a same-domain email-code sign-in.
 - Report inappropriate jobs, profiles, or messages. Flask and Cloudflare
   participant threads expose the same rate-limited, Turnstile-protected message
   report control without exposing the message to unrelated users.
+- Continue reading older replies in private conversations. Each view shows up
+  to 50 replies; older views preserve unread state and link back to the latest
+  view to reply. Moderation reports open the exact message, even when it is
+  older than the first page or hidden from participants.
 
 ### Contractor
 
@@ -446,12 +463,12 @@ available with its applicable policy acknowledgement and public disclaimer.
 
 ## Owner decisions still required
 
-- What legal person/entity operates Workdoe and what contact details should
-  appear in Privacy and Terms?
+- What approved legal display and public mailing-address format should appear
+  in Privacy and Terms for the confirmed operator?
 - What minimum age, geographic eligibility, prohibited jobs, and contractor
   qualification language should apply?
-- Which inboxes are monitored for administration, privacy, security, and user
-  support, and what response targets apply?
+- What urgent security and safety triage, reliable delivery, and backup
+  coverage will apply beyond the ordinary admin response target?
 - What retention and deletion periods apply to accounts, jobs, media,
   messages, moderation records, and logs?
 - Which qualified counsel will review Workdoe's marketplace role and define the
@@ -460,6 +477,17 @@ available with its applicable policy acknowledgement and public disclaimer.
 
 ## Resolved owner decisions
 
+- Moose Bay and Company LLC in Virginia is the Workdoe operator. The owner
+  monitors `admin@workdoe.com` for ordinary requests with a 1-5 business-day
+  response target. This does not approve public wording or establish urgent
+  coverage or reliable delivery.
+- Existing accounts keep one Consumer or Contractor role. Sign-in uses an
+  email code only; no passwords or email links. Consumer projects collect
+  city and ZIP, not a street address. The chosen DMV launch candidate uses
+  a same-origin county map without streets.
+- The owner selected a single Workdoe request covering app data and sign-in
+  deletion. Retention periods, provider changes, recovery handling, and
+  policy approval are still open.
 - Workdoe's first-party source code, product copy, visual design, and original
   assets are proprietary. The top-level `LICENSE`, third-party notices, and
   machine-readable dependency provenance ledger record this posture.

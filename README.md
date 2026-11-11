@@ -15,7 +15,7 @@ own licenses and notices; the repository itself is not an open-source project.
 - Server-rendered HTML templates and CSS
 - SQLite for local structured data
 - Development-only private local upload storage for job and contractor photos
-- Vendored Leaflet 1.9.4 + OpenStreetMap tiles only for the embedded map view
+- Vendored Leaflet 1.9.4 for the project map
 - Leaflet's BSD 2-Clause license is retained at `workdoe/static/vendor/leaflet/LICENSE`
 - Deer logo mark from Tabler Icons, an MIT-licensed open-source icon set
 - Third-party provenance and retained notices are documented in
@@ -57,7 +57,18 @@ numbers, or a household field during account setup. An email address remains
 necessary personal information for authentication and transactional account
 operations; the beta must not be described as a non-PII service.
 
-The homepage, `/login`, `/create-account`, and `/post-project` screens show the live open-job map/list so users can see current leads before creating or opening an account. These entry screens and the contractor lead board share a deterministic `00` all-work plus numbered `01`-`06` work-family filter, then category, search, and sort controls. Public map pins refresh from `/api/jobs/open`, which preserves the validated family filter and returns only approximate city/ZIP-level coordinates and lead metadata. Contractors can save the canonical family with their private lead view; opted-in alert matching rechecks it without embeddings or inferred classification. The Worker receives its HTTPS tile URL and required attribution through `WORKDOE_MAP_TILE_URL` and `WORKDOE_MAP_TILE_ATTRIBUTION`; missing configuration leaves the project list usable instead of silently choosing a map provider. The beta default is the standard OpenStreetMap tile endpoint, so the operator must monitor usage and move to a reviewed supported provider before traffic exceeds that service's policy.
+The public board, direct sign-in and create-account pages, and contractor
+leads show approximate project locations. Embedded sign-in and project
+forms omit the map. The selected DMV pilot release uses
+`WORKDOE_MAP_MODE=area` with a pinned U.S. Census Bureau boundary file
+served by Workdoe. It has no street detail or external tile requests.
+Search, filters, and the project list remain available when the map fails.
+Public pins refresh from `/api/jobs/open`, which returns approximate
+locations and public lead metadata, not street addresses.
+
+For a disposable, same-origin local preview, use
+`python scripts/preview_workdoe_map.py --mode area`.
+See the [map decision and release checks](docs/workdoe-public-launch-gates.md#internal-records).
 
 ## Optional Turnstile
 
@@ -74,6 +85,12 @@ When Clerk mode is active, `/login`, `/create-account`, and `/post-project` moun
 ```powershell
 python -m unittest discover -s tests
 ```
+
+With the pinned npm development dependencies installed,
+`npm run test:worker:recovery` additionally exercises the native local marketplace
+and restores synthetic D1/R2 data into independent local stores. It never
+qualifies production restoration or real authentication/email providers. See
+[the recovery evidence](docs/workdoe-public-launch-gates.md#internal-records).
 
 ## Data Separation
 
@@ -94,11 +111,12 @@ See [docs/cloudflare-migration.md](docs/cloudflare-migration.md).
 See [docs/cloudflare-automation-auth.md](docs/cloudflare-automation-auth.md) for the same-domain Clerk email-code login plan and Cloudflare automation targets.
 See [docs/workdoe-operations-runbook.md](docs/workdoe-operations-runbook.md)
 for incident response, credential rotation, D1/R2 recovery, data requests, and
-moderation drills. The runbook is documented; its drill table is still pending.
+moderation drills. Current-schema synthetic local recovery passes; production
+recovery and the other operational drills remain pending in its drill table.
 See [docs/workdoe-data-inventory.md](docs/workdoe-data-inventory.md) for the
 current personal-data map, visibility boundaries, cookies, providers, and
 unresolved retention/deletion decisions.
-See [docs/workdoe-dmv-competition-commercial-launch-study-2026-08-16.md](docs/workdoe-dmv-competition-commercial-launch-study-2026-08-16.md)
+See [docs/workdoe-dmv-competition-commercial-launch-study-2026-08-16.md](docs/workdoe-public-launch-gates.md#internal-records)
 for the public-source competitor analysis, DMV service-entry decisions, launch
 economics, 90-day evidence plan, and commercial beta gates.
 
@@ -197,7 +215,6 @@ npm run cf:clerk:proof
 npm run cf:clerk:proof:confirm
 npm run cf:deploy:plan
 npm run cf:token:stage
-npm run cf:deploy
 npm run github:deploy:plan
 npm run github:deploy -- --confirm-clerk-proxy --confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent
 npm run launch:handoff
@@ -322,7 +339,7 @@ cd ..
 python scripts\cloudflare_clerk_proxy_proof.py --confirm --confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent
 python scripts\cloudflare_release_evidence.py --json
 python scripts\cloudflare_readiness.py --strict-production --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
-python scripts\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
+npm run cf:deploy:plan
 python scripts\github_deploy_dispatch.py
 python scripts\github_deploy_dispatch.py --execute --yes --confirm-clerk-proxy --confirm-public-sign-up --confirm-email-code-only --confirm-legal-consent
 ```

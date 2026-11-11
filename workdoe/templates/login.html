@@ -1,8 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Sign in - Workdoe{% endblock %}
-{% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
-{% endblock %}
 {% block content %}
 <section class="login-market">
   {% if clerk_entry_enabled() %}
@@ -22,9 +19,13 @@
           </div>
         {% endif %}
       </div>
+      {% with retry_url=url_for('login', next=next_url or none, job_id=selected_job.id if selected_job else none) %}
+        {% include "_clerk_load_fallback.html" %}
+      {% endwith %}
       <div
         id="clerk-sign-in"
         class="clerk-entry-mount"
+        hidden
         data-clerk-entry
         data-clerk-mode="signin"
         data-redirect-url="{{ next_url or url_for('dashboard') }}"
@@ -43,10 +44,8 @@
         <span>No password needed. Your one-time code arrives by email.</span>
       </div>
       <p class="account-entry-switch">New to Workdoe? <a href="{{ login_sign_up_url }}">Create account</a></p>
+      <div class="account-entry-switch">{% include "_account_data_request_link.html" %}</div>
       <p class="help-text clerk-entry-status" role="status" aria-live="polite" data-clerk-onboarding-message></p>
-      <noscript>
-        <p class="help-text">Enable JavaScript to use Clerk email-code sign-in.</p>
-      </noscript>
     </section>
   {% elif local_password_auth_enabled() %}
     <form id="signin" class="form-panel login-form-panel" method="post" data-dialog-fragment>
@@ -87,12 +86,14 @@
         </div>
       </details>
       <p class="account-entry-switch">New to Workdoe? <a href="{{ login_sign_up_url }}">Create account</a></p>
+      <div class="account-entry-switch">{% include "_account_data_request_link.html" %}</div>
     </form>
   {% else %}
     <section id="signin" class="form-panel login-form-panel" data-dialog-fragment aria-labelledby="signin-title">
       <p class="eyebrow">Secure sign-in</p>
       <h1 id="signin-title">Sign-in setup unavailable</h1>
       <p class="help-text">Secure email-code sign-in is not configured for this environment.</p>
+      <div class="account-entry-switch">{% include "_account_data_request_link.html" %}</div>
     </section>
   {% endif %}
 
@@ -105,7 +106,7 @@
     {% set login_clear_url = url_for('login', next=clear_next_url) if clear_next_url else url_for('login') %}
     {% set family_filter_label = "Filter projects at sign in by work family" %}
     {% include "_service_family_filter.html" %}
-    <form class="filter-bar compact-filter entry-filter" method="get" role="search" aria-label="Filter open jobs before signing in" aria-controls="login-open-jobs lead-map">
+    <form class="filter-bar compact-filter entry-filter" method="get" role="search" aria-label="Filter open jobs before signing in" aria-controls="login-open-jobs{% if project_map_enabled() %} lead-map{% endif %}">
       {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
       {% if filters.family %}<input type="hidden" name="family" value="{{ filters.family }}">{% endif %}
       {% if selected_family %}
@@ -121,7 +122,7 @@
       {% endif %}
       <label for="login-search">
         Search
-        <input name="q" type="search" id="login-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}">
+        <input name="q" type="search" id="login-search" enterkeyhint="search" value="{{ filters.q }}" placeholder="City, ZIP, title" maxlength="{{ filter_query_max }}" pattern="{{ project_search_input_pattern }}" title="{{ project_search_input_hint }}">
       </label>
       <label for="login-sort">
         Sort
@@ -138,12 +139,14 @@
         {% endif %}
       </div>
     </form>
-    <div class="login-board">
+    <div class="login-board{% if not project_map_enabled() %} login-board-list{% endif %}">
+      {% if project_map_enabled() %}
       <div class="map-panel login-map-panel">
         {% with map_jobs_api_url=map_jobs_api_url(filters, entry_job_limit, target='login'), map_label="Approximate DMV job map at login" %}
           {% include "_lead_map.html" %}
         {% endwith %}
       </div>
+      {% endif %}
       <div id="login-open-jobs" class="job-list login-job-list" aria-label="Open jobs at login" {% if open_jobs %}role="list"{% endif %}>
         {% for job in open_jobs %}
           {% set is_selected = selected_job and selected_job.id == job.id %}
@@ -185,12 +188,9 @@
   </div>
 </section>
 
-<script id="map-jobs-data" type="application/json">{{ map_jobs|tojson }}</script>
-<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
-<script src="{{ url_for('static', filename='map.js') }}?v={{ asset_release_token }}"></script>
+{% include "_lead_map_scripts.html" %}
 {% if clerk_entry_enabled() %}
-  <script defer crossorigin="anonymous" src="{{ clerk_ui_script_url() }}"></script>
-  <script defer crossorigin="anonymous" data-clerk-publishable-key="{{ clerk_publishable_key() }}" {% if clerk_proxy_url() %}data-clerk-proxy-url="{{ clerk_proxy_url() }}"{% endif %} src="{{ clerk_js_script_url() }}"></script>
+  {% include "_clerk_browser_scripts.html" %}
   <script defer src="{{ url_for('static', filename='clerk-entry.js') }}?v={{ asset_release_token }}"></script>
 {% endif %}
 {% endblock %}

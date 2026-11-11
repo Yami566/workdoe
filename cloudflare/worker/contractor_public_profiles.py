@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from content_privacy import public_contractor_profile_text, shared_project_record
 from contractor_credentials import public_credential_responses
 from contractor_preferences import availability_response
 from contractor_profiles import normalized_profile_website, profile_website_label
@@ -13,6 +14,7 @@ from market_fit import (
     normalize_service_slugs,
     normalize_zone_slugs,
 )
+from request_security import parse_url_record_id
 from service_taxonomy import SERVICE_BY_SLUG
 
 CONTRACTOR_PROFILE_PATH_RE = re.compile(r"^/api/contractors/([1-9][0-9]*)/?$")
@@ -33,9 +35,10 @@ def row_value(row, key: str, default=None):
 
 def parse_public_contractor_id(path: str) -> int:
     match = CONTRACTOR_PROFILE_PATH_RE.match(path or "")
-    if not match:
+    record_id = parse_url_record_id(match.group(1)) if match else 0
+    if not record_id:
         raise ContractorPublicProfileError("Unsupported contractor profile route.")
-    return int(match.group(1))
+    return record_id
 
 
 def is_active_admin(user) -> bool:
@@ -92,7 +95,7 @@ def contractor_choice_context(viewer, contractor_id: int, relationship) -> dict 
     ):
         return None
     status = str(row_value(relationship, "status", "") or "")
-    return {
+    return shared_project_record({
         "job_id": job_id,
         "job_title": str(
             row_value(relationship, "job_title", "Project") or "Project"
@@ -105,16 +108,7 @@ def contractor_choice_context(viewer, contractor_id: int, relationship) -> dict 
         "timeline": str(row_value(relationship, "timeline", "") or ""),
         "availability": str(row_value(relationship, "availability", "") or ""),
         "thread_url": f"/messages/{thread_id}" if status == "approved" and thread_id else "",
-    }
-
-
-def public_contractor_name(contractor) -> str:
-    return (
-        row_value(contractor, "business_name")
-        or row_value(contractor, "company_name")
-        or row_value(contractor, "display_name")
-        or "Workdoe contractor"
-    )
+    })
 
 
 def contractor_public_photo_payload(photo) -> dict:
@@ -154,12 +148,10 @@ def public_contractor_profile_payload(
     )
     profile = {
         "id": contractor_id,
-        "business_name": public_contractor_name(contractor),
-        "trades": row_value(contractor, "trades", "") or "",
-        "service_area": row_value(contractor, "service_area", "") or "DMV area",
-        "intro": row_value(contractor, "intro", "") or "This contractor is still completing their profile.",
-        "insurance_status": row_value(contractor, "insurance_status", "") or "Available on request",
-        "license_number": row_value(contractor, "license_number", "") or "Not listed",
+        **public_contractor_profile_text({
+            field: row_value(contractor, field)
+            for field in ("business_name", "trades", "service_area", "intro")
+        }),
         "years_in_business": row_value(contractor, "years_in_business"),
         "verified_completions": int(
             row_value(contractor, "verified_completions", 0) or 0
@@ -167,7 +159,11 @@ def public_contractor_profile_payload(
         "updated_at": row_value(contractor, "updated_at", "") or "",
         "url": f"/contractors/{contractor_id}",
         "contact_policy": PUBLIC_CONTRACTOR_CONTACT_POLICY,
-        "photos": [contractor_public_photo_payload(photo) for photo in photos],
+        "photos": (
+            [contractor_public_photo_payload(photo) for photo in photos]
+            if viewer and row_value(viewer, "status") == "active"
+            else []
+        ),
         "services": [SERVICE_BY_SLUG[slug] for slug in service_slugs],
         "service_zones": [ZONE_BY_SLUG[slug] for slug in zone_slugs],
         "credentials": public_credentials,

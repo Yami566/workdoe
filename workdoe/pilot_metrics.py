@@ -10,6 +10,55 @@ NO_MATCH_OR_CANCELLED_REASONS = frozenset(
     {"plans-changed", "no-qualified-bid", "scope-changed", "duplicate"}
 )
 
+# Each completion belongs to one bid. Count it only inside the approval cohort.
+MARKETPLACE_OUTCOMES_SQL = """
+    WITH project_counts AS (
+        SELECT COUNT(*) AS published_projects,
+               COUNT(CASE WHEN status = 'closed' THEN 1 END) AS closed_projects,
+               COUNT(CASE WHEN status = 'closed' AND close_reason = 'workdoe-match'
+                          THEN 1 END) AS workdoe_match_outcomes
+        FROM jobs WHERE status != 'hidden'
+    ), bid_counts AS (
+        SELECT COUNT(*) AS total_bids,
+               COUNT(DISTINCT bid.job_id) AS projects_with_bids,
+               COUNT(DISTINCT CASE WHEN bid.status = 'approved' THEN bid.job_id END)
+                   AS matched_projects,
+               COUNT(CASE WHEN bid.status = 'approved' THEN 1 END) AS approved_matches,
+               COUNT(CASE WHEN bid.status = 'approved'
+                               AND (completion.client_confirmed_at IS NOT NULL
+                                    OR completion.contractor_confirmed_at IS NOT NULL)
+                          THEN 1 END) AS completion_signals,
+               COUNT(CASE WHEN bid.status = 'approved' THEN completion.verified_at END)
+                   AS verified_completions
+        FROM match_requests AS bid
+        JOIN jobs ON jobs.id = bid.job_id AND jobs.status != 'hidden'
+        LEFT JOIN match_completions AS completion ON completion.match_request_id = bid.id
+    )
+    SELECT project_counts.*, bid_counts.*,
+           (SELECT COUNT(*) FROM job_lead_feedback AS feedback
+            JOIN jobs ON jobs.id = feedback.job_id AND jobs.status != 'hidden')
+               AS lead_quality_signals
+    FROM project_counts CROSS JOIN bid_counts
+"""
+
+REPEAT_INVITATION_OUTCOMES_SQL = """
+    SELECT COUNT(*) AS invitations_created,
+           COUNT(CASE WHEN invite.status = 'pending' THEN 1 END) AS invitations_pending,
+           COUNT(CASE WHEN invite.status = 'bid_sent' THEN 1 END) AS invitations_bid_sent,
+           COUNT(CASE WHEN invite.status = 'declined' THEN 1 END) AS invitations_declined,
+           COUNT(CASE WHEN invite.status = 'withdrawn' THEN 1 END) AS invitations_withdrawn,
+           COUNT(CASE WHEN invite.status = 'bid_sent' AND EXISTS (
+               SELECT 1
+               FROM match_requests AS bid
+               JOIN match_completions AS completion ON completion.match_request_id = bid.id
+               WHERE bid.job_id = invite.job_id
+                 AND bid.contractor_id = invite.contractor_id
+                 AND bid.status = 'approved'
+                 AND completion.verified_at IS NOT NULL
+           ) THEN 1 END) AS verified_repeat_projects
+    FROM repeat_provider_invitations AS invite
+"""
+
 
 def row_value(row, key: str, default=None):
     if isinstance(row, dict):

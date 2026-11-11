@@ -8,6 +8,7 @@ import sqlite3
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -36,6 +37,7 @@ from workdoe.content_privacy import contains_disallowed_personal_data
 from workdoe.contractor_proposal_templates import PROPOSAL_TEMPLATE_LIMIT
 from workdoe.pilot_metrics import pilot_cell_metrics
 from workdoe.project_readiness import project_brief_readiness
+from workdoe.public_job_query import encode_public_cursor
 from workdoe.service_activation import activation_is_live
 from workdoe.service_policy import (
     EMERGENCY_DISABLED_SERVICES,
@@ -53,6 +55,21 @@ from workdoe.service_taxonomy import SERVICE_BY_SLUG
 
 ROOT = Path(__file__).resolve().parents[1]
 FUTURE_DESIRED_DATE = (datetime.now(tz=UTC).date() + timedelta(days=30)).isoformat()
+
+
+class InterleavingConnection:
+    def __init__(self, connection, prefix, before_execute):
+        self.connection = connection
+        self.prefix = prefix
+        self.before_execute = before_execute
+
+    def __getattr__(self, name):
+        return getattr(self.connection, name)
+
+    def execute(self, query, params=()):
+        if " ".join(query.split()).startswith(self.prefix):
+            self.before_execute()
+        return self.connection.execute(query, params)
 
 
 class WorkdoeFlowTests(unittest.TestCase):
@@ -487,6 +504,8 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Account &amp; security", local_account.data)
         self.assertIn(b"client@workdoe.local", local_account.data)
         self.assertIn(b"One account keeps one role", local_account.data)
+        self.assertIn(b"<dt>Role</dt><dd>Consumer</dd>", local_account.data)
+        self.assertIn(b'href="/privacy#privacy-choices">Account data requests</a>', local_account.data)
         self.assertIn(b'href="/client/profile"', local_account.data)
         self.assertNotIn(b"clerk-account.js", local_account.data)
 
@@ -501,6 +520,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"data-clerk-account", clerk_account.data)
         self.assertIn(b"/__clerk/npm/@clerk/clerk-js@6.40.1/dist/clerk.browser.js", clerk_account.data)
         self.assertIn(b"clerk-account.js", clerk_account.data)
+        self.assertIn(b'href="/privacy#privacy-choices">Account data requests</a>', clerk_account.data)
         csp = clerk_account.headers["Content-Security-Policy"]
         self.assertIn("https://*.protect.clerk.com", csp)
         self.assertIn("https://img.clerk.com", csp)
@@ -763,8 +783,16 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(anonymous.status_code, 302)
 
         self.login("contractor@workdoe.local", "workdoe-contractor")
+        with patch("workdoe.get_db", side_effect=AssertionError("No DB lookup for foreign embed")):
+            denied = self.client.get(f"/media/jobs/{photo['id']}", headers={
+                "Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "image",
+            })
+            self.assertEqual(denied.status_code, 403)
+            self.assertEqual(denied.headers["Cross-Origin-Resource-Policy"], "same-origin")
+            self.assert_no_store(denied)
         allowed = self.client.get(f"/media/jobs/{photo['id']}")
         self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(allowed.headers["Cross-Origin-Resource-Policy"], "same-origin")
         self.assert_no_store(allowed)
         allowed.close()
 
@@ -1080,6 +1108,20 @@ class WorkdoeFlowTests(unittest.TestCase):
 
     def test_client_job_controls_only_show_relevant_status_action(self):
         job = self.one("SELECT id FROM jobs WHERE status = 'open' ORDER BY id LIMIT 1")
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                """
+                INSERT OR IGNORE INTO match_requests
+                    (job_id, contractor_id, scope_note, price_range, timeline, experience,
+                     availability, status, created_at, updated_at)
+                SELECT ?, id, 'Fixture', '$100', 'A day', 'Fixture', 'Soon',
+                       'pending', '2000-01-01', '2000-01-01'
+                FROM users WHERE email = 'contractor@workdoe.local'
+                """,
+                (job["id"],),
+            )
+            db.commit()
 
         self.login("client@workdoe.local", "workdoe-client")
         detail = self.client.get(f"/client/jobs/{job['id']}")
@@ -1150,6 +1192,136 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(blocked_reopen.status_code, 403)
         still_hidden = self.one("SELECT status FROM jobs WHERE id = ?", (job["id"],))
         self.assertEqual(still_hidden["status"], "hidden")
+
+    def test_client_status_cannot_overwrite_concurrent_moderation(self):
+        self.login("client@workdoe.local", "workdoe-client")
+        job = self.one("SELECT id FROM jobs WHERE status = 'open' ORDER BY id LIMIT 1")
+        original_get_db = workdoe.get_db
+
+        for action in ("close", "reopen"):
+            with self.subTest(action=action):
+                with closing(sqlite3.connect(self.app.config["DATABASE"])) as db, db:
+                    db.execute(
+                        "UPDATE jobs SET status = ? WHERE id = ?",
+                        ("open" if action == "close" else "closed", job["id"]),
+                    )
+                events_before = self.one(
+                    "SELECT COUNT(*) AS total FROM automation_events WHERE target_type = 'job' AND target_id = ?",
+                    (job["id"],),
+                )["total"]
+                interleaved = []
+
+                def hide(interleaved=interleaved):
+                    with (
+                        closing(sqlite3.connect(self.app.config["DATABASE"])) as other,
+                        other,
+                    ):
+                        other.execute(
+                            "UPDATE jobs SET status = 'hidden' WHERE id = ?",
+                            (job["id"],),
+                        )
+                    interleaved.append(True)
+
+                def intercepted_db(hide=hide):
+                    return InterleavingConnection(
+                        original_get_db(), "UPDATE jobs SET status =", hide
+                    )
+
+                with patch.object(workdoe, "get_db", side_effect=intercepted_db):
+                    response = self.client.post(
+                        f"/client/jobs/{job['id']}/{action}",
+                        data={"reason_code": "plans-changed"}
+                        if action == "close"
+                        else {},
+                    )
+                self.assertEqual(interleaved, [True])
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(
+                    self.one("SELECT status FROM jobs WHERE id = ?", (job["id"],))[
+                        "status"
+                    ],
+                    "hidden",
+                )
+                self.assertEqual(
+                    self.one(
+                        "SELECT COUNT(*) AS total FROM automation_events WHERE target_type = 'job' AND target_id = ?",
+                        (job["id"],),
+                    )["total"],
+                    events_before,
+                )
+
+    def test_completion_cannot_follow_concurrent_reopen_or_moderation(self):
+        job = self.one("SELECT id FROM jobs WHERE status = 'open' ORDER BY id LIMIT 1")
+        contractor = self.one(
+            "SELECT id FROM users WHERE role = 'contractor' ORDER BY id LIMIT 1"
+        )
+        with self.app.app_context():
+            db = get_db()
+            inserted = db.execute(
+                """
+                INSERT INTO match_requests
+                    (job_id, contractor_id, scope_note, price_range, timeline, experience,
+                     questions, availability, status, created_at, updated_at)
+                VALUES (?, ?, 'Synthetic work scope', '$100', 'One day', 'Synthetic experience',
+                        '', 'Next week', 'approved', 'before', 'before')
+                """,
+                (job["id"], contractor["id"]),
+            )
+            request_id = inserted.lastrowid
+            db.commit()
+        original_get_db = workdoe.get_db
+
+        for role, changed_status in (
+            ("client", "open"),
+            ("contractor", "open"),
+            ("client", "hidden"),
+            ("contractor", "hidden"),
+        ):
+            with self.subTest(role=role, changed_status=changed_status):
+                self.login(f"{role}@workdoe.local", f"workdoe-{role}")
+                with closing(sqlite3.connect(self.app.config["DATABASE"])) as db, db:
+                    db.execute(
+                        "UPDATE jobs SET status = 'closed', close_reason = 'workdoe-match' WHERE id = ?",
+                        (job["id"],),
+                    )
+                interleaved = []
+
+                def change(interleaved=interleaved, changed_status=changed_status):
+                    with (
+                        closing(sqlite3.connect(self.app.config["DATABASE"])) as other,
+                        other,
+                    ):
+                        other.execute(
+                            "UPDATE jobs SET status = ? WHERE id = ?",
+                            (changed_status, job["id"]),
+                        )
+                    interleaved.append(True)
+
+                def intercepted_db(change=change):
+                    return InterleavingConnection(
+                        original_get_db(),
+                        "INSERT OR IGNORE INTO match_completions",
+                        change,
+                    )
+
+                with patch.object(workdoe, "get_db", side_effect=intercepted_db):
+                    response = self.client.post(f"/matches/{request_id}/complete")
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(interleaved, [True])
+                self.assertIsNone(
+                    self.one(
+                        "SELECT * FROM match_completions WHERE match_request_id = ?",
+                        (request_id,),
+                    )
+                )
+                self.assertEqual(
+                    self.one(
+                        "SELECT COUNT(*) AS total FROM automation_events WHERE event_type = 'match-completion-confirmed' AND target_id = ?",
+                        (request_id,),
+                    )["total"],
+                    0,
+                )
+                self.logout()
 
     def test_project_close_outcome_is_required_and_workdoe_match_needs_approval(self):
         job = self.one("SELECT id FROM jobs WHERE status = 'open' ORDER BY id LIMIT 1")
@@ -1310,7 +1482,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertNotIn('<details class="lead-tools" open>', board_html)
         self.assertIn("Filters &amp; alerts", board_html)
         self.assertIn("All work / Newest", board_html)
-        self.assertIn("Alerts off", board_html)
+        self.assertIn("Email paused", board_html)
         self.assertLess(
             board_html.index('class="project-results-heading"'),
             board_html.index('class="lead-tools"'),
@@ -1606,8 +1778,9 @@ class WorkdoeFlowTests(unittest.TestCase):
             contractor_dashboard_with_unread_html.count(
                 'aria-label="Messages, 1 unread"'
             ),
-            2,
+            1,
         )
+        self.assertIn('aria-label="Inbox, 1 unread"', contractor_dashboard_with_unread_html)
         self.assertNotIn(
             "Thanks, can you start next week?",
             contractor_dashboard_with_unread_html,
@@ -2029,6 +2202,29 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertNotIn(b"PRIVATE-THREAD-LICENSE", contractor_detail.data)
         self.assertNotIn(b"client@workdoe.local", contractor_detail.data)
 
+        retained_body = "Prior reply with contact: legacy-reply@example.test."
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                "UPDATE messages SET body = ? WHERE thread_id = ?",
+                (retained_body, thread["id"]),
+            )
+            db.commit()
+        for path in ("/messages", f"/messages/{thread['id']}"):
+            with self.subTest(path=path):
+                participant = self.client.get(path)
+                self.assertEqual(participant.status_code, 200)
+                self.assertIn(b"Message withheld", participant.data)
+                self.assertNotIn(b"legacy-reply@example.test", participant.data)
+        self.assertEqual(self.one("SELECT body FROM messages WHERE thread_id = ?", (thread["id"],))["body"],
+                         retained_body)
+        self.logout()
+        self.login("admin@workdoe.local", "workdoe-admin")
+        moderation = self.client.get(f"/messages/{thread['id']}")
+        self.assertEqual(moderation.status_code, 200)
+        self.assertIn(retained_body.encode("ascii"), moderation.data)
+        self.assertNotIn(b'aria-label="New message"', moderation.data)
+
     def test_mini_bid_constraints_and_error_value_preservation(self):
         job = self.one("SELECT id FROM jobs WHERE status = 'open' ORDER BY id LIMIT 1")
         contractor = self.one("SELECT id FROM users WHERE email = ?", ("contractor@workdoe.local",))
@@ -2136,7 +2332,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Your profile", profile_page.data)
         self.assertIn(b"Home or household", profile_page.data)
         self.assertIn(b"Saved project areas", profile_page.data)
-        self.assertIn(b"Choosing email and saving this profile records your consent", profile_page.data)
+        self.assertIn(b"Email reminders are paused. Check Workdoe for bids.", profile_page.data)
         self.assertNotIn(b'name="phone"', profile_page.data)
         initial_profile = self.one(
             "SELECT * FROM client_profiles WHERE user_id = ?",
@@ -2528,6 +2724,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.logout()
         anonymous_profile = self.client.get(f"/contractors/{contractor['id']}")
         self.assertNotIn(b"Visit better.example", anonymous_profile.data)
+        self.assertNotIn(f"/media/contractors/{photo['id']}".encode(), anonymous_profile.data)
+        anonymous_photo = self.client.get(f"/media/contractors/{photo['id']}")
+        self.assertEqual(anonymous_photo.status_code, 302)
+        self.assertIn("/login", anonymous_photo.headers["Location"])
         self.login("client@workdoe.local", "workdoe-client")
         unrelated_profile = self.client.get(f"/contractors/{contractor['id']}")
         self.assertNotIn(b"Visit better.example", unrelated_profile.data)
@@ -2618,7 +2818,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Lead view saved.", saved.data)
         self.assertIn(b"Use saved view", saved.data)
         self.assertIn(b'<details class="lead-tools" open>', saved.data)
-        self.assertIn(b"Email on", saved.data)
+        self.assertIn(b"Email paused", saved.data)
         preference = self.one(
             "SELECT * FROM contractor_lead_preferences WHERE contractor_id = ?",
             (contractor["id"],),
@@ -2631,7 +2831,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIsNotNone(preference["saved_at"])
         self.assertEqual(preference["lead_alert_preference"], "email")
         self.assertIsNotNone(preference["lead_alert_consent_at"])
-        self.assertIn(b"Email alerts on", saved.data)
+        self.assertIn(b"Email paused", saved.data)
         self.assertIn(b"Interior painting", saved.data)
 
         invalid = self.client.post(
@@ -2683,7 +2883,7 @@ class WorkdoeFlowTests(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertEqual(alert_preference.status_code, 200)
-        self.assertIn(b"Email alerts on", alert_preference.data)
+        self.assertIn(b"Email paused", alert_preference.data)
 
         self.logout()
         self.login("client@workdoe.local", "workdoe-client")
@@ -3478,6 +3678,34 @@ class WorkdoeFlowTests(unittest.TestCase):
             [4, 2],
         )
 
+    def test_flask_public_map_suppresses_unreviewed_stored_pins_before_paging(self):
+        with self.app.app_context():
+            db = get_db()
+            client = db.execute("SELECT id FROM users WHERE role = 'client' LIMIT 1").fetchone()["id"]
+            db.executemany(
+                """
+                INSERT INTO jobs (client_id, title, category, city, state, zip_code,
+                                  description, status, approx_lat, approx_lng, created_at, updated_at)
+                VALUES (?, ?, 'Landscaping', 'Arlington', 'VA', '22201', 'Synthetic fixture scope',
+                        'open', ?, ?, '2026-10-01', '2026-10-01')
+                """,
+                [(client, "Pin fixture legacy", 38.881234, -77.101234),
+                 (client, "Pin fixture approved", 38.8871, -77.0932)],
+            )
+            db.commit()
+        path = "/api/jobs/open?q=Pin+fixture"
+        all_jobs = self.client.get(path).get_json()
+        self.assertEqual(
+            {job["title"]: (job["lat"], job["lng"]) for job in all_jobs["jobs"]},
+            {"Pin fixture legacy": (None, None), "Pin fixture approved": (38.8871, -77.0932)},
+        )
+        self.assertEqual(all_jobs["mapped_count"], 1)
+        self.assertTrue(all("zip_code" not in row for row in all_jobs["jobs"]))
+        bounded = self.client.get(path + "&north=38.95&south=38.85&east=-77.02&west=-77.2&limit=1").get_json()
+        self.assertEqual([row["title"] for row in bounded["jobs"]], ["Pin fixture approved"])
+        self.assertFalse(bounded["truncated"])
+        self.assertEqual(bounded["next_cursor"], "")
+
     def test_security_headers_support_map_without_inline_scripts(self):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
@@ -3496,6 +3724,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(response.headers["X-Frame-Options"], "DENY")
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(response.headers["Referrer-Policy"], "strict-origin-when-cross-origin")
+
         self.assertIn(b'class="skip-link" href="#main-content">Skip to content</a>', response.data)
         self.assertIn(b'<main id="main-content" tabindex="-1">', response.data)
         self.assertIn(
@@ -3631,9 +3860,9 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(leads.status_code, 200)
         self.assertIn(b'href="/leads" aria-current="page">Explore</a>', leads.data)
         self.assertIn(b'<nav class="mobile-task-nav" aria-label="Primary tasks">', leads.data)
-        self.assertIn(b'<span>Explore</span>', leads.data)
+        self.assertIn(b'<span>Find</span>', leads.data)
         self.assertIn(b'<span>Bids</span>', leads.data)
-        self.assertIn(b'<span>Messages</span>', leads.data)
+        self.assertIn(b'<span>Inbox</span>', leads.data)
         self.assertIn(b'<span>Profile</span>', leads.data)
         self.assertIn(b'<details class="account-menu">', leads.data)
         self.assertIn(b'href="/account" >Account settings</a>', leads.data)
@@ -3683,6 +3912,19 @@ class WorkdoeFlowTests(unittest.TestCase):
             styles,
             r"\.leaflet-container a\.map-popup-action,[^}]*color: #fff;",
         )
+        self.assertRegex(styles, r"\.market-nav a\s*\{[^}]*min-height: 44px;")
+        self.assertRegex(styles, r"\.market-mobile-tabs button\s*\{[^}]*min-height: 44px;")
+        self.assertRegex(
+            styles,
+            r"\.market-filter-form input,\s*\.market-filter-form select\s*\{[^}]*min-height: 44px;[^}]*font-size: 1rem;",
+        )
+        self.assertNotRegex(styles, r"\.map-stage-toolbar > span\s*\{[^}]*display: none;")
+        self.assertRegex(styles, r"\.public-trust-body \.mobile-task-nav\s*\{[^}]*position: static;")
+        self.assertRegex(
+            styles,
+            r"(?s)@media \(max-width: 374px\) \{.*?\.market-header \.brand \{[^}]*min-width: 44px;.*?"
+            r"\.market-header \.brand > span:last-child \{[^}]*display: none;",
+        )
 
     def test_mobile_css_keeps_entry_header_visible_and_auth_first(self):
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
@@ -3723,8 +3965,16 @@ class WorkdoeFlowTests(unittest.TestCase):
         )
         self.assertRegex(
             body,
-            r"body:not\(\.dialog-fragment-body\)\s*\{[^}]*padding-bottom: calc\(68px \+ env\(safe-area-inset-bottom\)\);",
+            r"body:not\(\.dialog-fragment-body\):not\(\.market-entry-body\):not\(\.public-trust-body\)"
+            r"\s*\{[^}]*padding-bottom: calc\(68px \+ env\(safe-area-inset-bottom\)\);",
         )
+        self.assertRegex(styles, r"\.app-market-body\s*\{[^}]*display: flex;[^}]*height: 100dvh;")
+        self.assertRegex(styles, r"\.app-market-main\s*\{[^}]*flex: 1;[^}]*min-height: 0;")
+        self.assertRegex(
+            styles,
+            r"\.app-market-body \.market-workspace\s*\{[^}]*flex: 1;[^}]*min-height: 0;[^}]*height: auto;",
+        )
+        self.assertNotRegex(styles, r"\.app-market-body \.market-workspace[^}]*height: calc\(")
 
     def test_compact_home_map_hides_decorative_badge_behind_map_controls(self):
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
@@ -4015,6 +4265,7 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         login = client.get("/login?next=/jobs/new")
         self.assertEqual(login.status_code, 200)
+        self.assertEqual(login.headers["Referrer-Policy"], "strict-origin")
         self.assertIn(b'data-clerk-entry', login.data)
         self.assertIn(b'Loading secure email sign-in...', login.data)
         self.assertNotIn(b'data-clerk-email-code-form', login.data)
@@ -4025,6 +4276,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"No password needed. Your one-time code arrives by email.", login.data)
         self.assertIn(b"New to Workdoe?", login.data)
         self.assertIn(b">Create account</a>", login.data)
+        self.assertIn(b'href="/privacy#privacy-choices">Account data requests</a>', login.data)
+        embedded_login = client.get("/login?embed=1")
+        self.assertIn(b'href="/privacy#privacy-choices">Account data requests</a>', embedded_login.data)
+        self.assertIn(b'id="privacy-choices"', client.get("/privacy").data)
         self.assertEqual(
             client.post(
                 "/login",
@@ -4073,6 +4328,7 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         create_account = client.get("/create-account?intent=find-work")
         self.assertEqual(create_account.status_code, 200)
+        self.assertEqual(create_account.headers["Referrer-Policy"], "strict-origin")
         self.assertIn(b"<title>Create Account - Workdoe</title>", create_account.data)
         self.assertIn(b"Create your Workdoe account", create_account.data)
         self.assertIn(b"Already have an account?", create_account.data)
@@ -4220,10 +4476,10 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         active = client.get("/api/auth/session")
         self.assertEqual(active.status_code, 200)
-        active_payload = active.get_json()
-        self.assertTrue(active_payload["authenticated"])
-        self.assertFalse(active_payload["onboarding_required"])
-        self.assertEqual(active_payload["workdoe_user"]["role"], "contractor")
+        self.assertEqual(active.headers["Cache-Control"], "no-store")
+        self.assertEqual(active.get_json(), {
+            "authenticated": True, "onboarding_required": False, "workdoe_user": {"role": "contractor"},
+        })
 
         existing = client.post(
             "/api/auth/onboard",
@@ -4494,6 +4750,39 @@ class WorkdoeFlowTests(unittest.TestCase):
                 (job["id"],),
             )
         )
+    def test_signed_in_marketplace_keeps_status_messages_before_flexible_main(self):
+        self.login("contractor@workdoe.local", "workdoe-contractor")
+        with self.client.session_transaction() as session:
+            session["_flashes"] = [
+                ("success", "Signed in."),
+                ("error", "Please review the project before bidding."),
+            ]
+        board = self.client.get("/leads")
+        self.assertEqual(board.status_code, 200)
+        self.assertIn(b'aria-label="Status messages" role="status" aria-live="polite"', board.data)
+        self.assertIn(b"Signed in.", board.data)
+        self.assertIn(b"Please review the project before bidding.", board.data)
+        self.assertLess(board.data.index(b'class="flash-stack"'), board.data.index(b'class="app-market-main"'))
+        styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
+        self.assertRegex(
+            styles,
+            r"\.app-market-body \.site-header,\s*\.app-market-body \.flash-stack,\s*"
+            r"\.app-market-main > \.market-mobile-tabs\s*\{[^}]*flex: none;",
+        )
+        self.assertNotIn(b'class="flash-stack"', self.client.get("/leads").data)
+
+    def test_contractor_family_selection_keeps_mobile_task_filter_visible(self):
+        self.login("contractor@workdoe.local", "workdoe-contractor")
+        board = self.client.get("/leads?family=outdoor-yard")
+        self.assertEqual(board.status_code, 200)
+        self.assertIn(b'data-mobile-panel="filters"', board.data)
+        self.assertIn(
+            b'data-mobile-panel-target="filters" aria-controls="market-projects-panel" aria-selected="true"',
+            board.data,
+        )
+        self.assertIn(b'value="lawn-mowing"', board.data)
+        self.assertNotIn(b'value="house-cleaning"', board.data)
+
     def test_contractor_lead_filters_have_clear_empty_state(self):
         self.login("contractor@workdoe.local", "workdoe-contractor")
         board = self.client.get("/leads")
@@ -4530,7 +4819,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'data-project-detail-content data-job-id="', board.data)
         self.assertIn(b"Review and bid", board.data)
         self.assertIn(b'data-dialog-title="Review and bid"', board.data)
-        self.assertIn(b"Location stays approximate until a match is approved.", board.data)
+        self.assertIn(b"Locations stay approximate after approval. Do not include a street address.", board.data)
         self.assertIn(b'data-jobs-api="/api/jobs/open?limit=50"', board.data)
         self.assertIn(b'id="lead-search" name="q" type="search" enterkeyhint="search"', board.data)
         self.assertIn(b'maxlength="80"', board.data)
@@ -4550,10 +4839,12 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn("data-reset-map-view", map_script)
         self.assertIn("Workdoe does not access your device location.", map_script)
         self.assertIn('window.addEventListener("resize"', map_script)
+        self.assertIn("trackResize: false", map_script)
         self.assertIn(
-            "map.invalidateSize({ pan: false, debounceMoveend: true })",
+            "map.invalidateSize({ animate: false, pan: true })",
             map_script,
         )
+        self.assertNotIn("invalidateSize({ pan: false", map_script)
 
         styles = (ROOT / "workdoe" / "static" / "styles.css").read_text(encoding="utf-8")
         self.assertRegex(
@@ -4653,7 +4944,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertNotIn(requested["zip_code"].encode(), selected.data)
         self.assertNotIn(requested["client_email"].encode(), selected.data)
         self.assertNotIn(b'"zip_code"', selected.data)
-        self.assertIn(b"Location stays approximate until a match is approved.", selected.data)
+        self.assertIn(b"Locations stay approximate after approval. Do not include a street address.", selected.data)
 
         baseline = self.client.get("/leads")
         invalid = self.client.get("/leads?job_id=999999")
@@ -4810,6 +5101,64 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(new_account.request.args.get("service"), "pressure-washing")
         self.assertIn(b"Power wash townhouse front steps", new_account.data)
 
+    def test_legacy_contact_text_is_filtered_from_public_and_contractor_views(self):
+        title = "Contact privacy fixture jos\u00e9@fixture.invalid"
+        brief = "Write to crew@\u4f8b\u3048.\u30c6\u30b9\u30c8."
+        client_id = self.one("SELECT id FROM users WHERE email = 'client@workdoe.local'")["id"]
+        contractor_id = self.one("SELECT id FROM users WHERE email = 'contractor@workdoe.local'")["id"]
+        with self.app.app_context():
+            db = get_db()
+            for project_id, label, description in (
+                (9108, "Contact privacy fixture caf\u00e9", "Synthetic yard work."),
+                (9109, title, brief),
+                (9110, "Contact privacy fixture clean", "Synthetic yard work."),
+            ):
+                db.execute(
+                    """
+                    INSERT INTO jobs (id, client_id, title, category, city, state, zip_code,
+                                      description, status, created_at, updated_at)
+                    VALUES (?, ?, ?, 'Landscaping', 'Arlington', 'VA', '22201', ?, 'open',
+                            '2000-01-01', '2000-01-01')
+                    """,
+                    (project_id, client_id, label, description),
+                )
+            db.execute(
+                "UPDATE contractor_profiles SET business_name = ?, intro = ? WHERE user_id = ?",
+                (title, brief, contractor_id),
+            )
+            db.commit()
+        params = {"q": "Contact privacy fixture", "limit": "1"}
+        page = self.client.get("/api/jobs/open", query_string=params).get_json()
+        self.assertEqual([item["id"] for item in page["jobs"]], [9110])
+        self.assertEqual(page["next_cursor"], encode_public_cursor(2))
+        page = self.client.get("/api/jobs/open", query_string=params | {"cursor": page["next_cursor"]}).get_json()
+        self.assertEqual([item["id"] for item in page["jobs"]], [9108])
+        self.assertFalse(page["truncated"])
+        for path in ("/?job_id=9109", "/login?next=/jobs/9109&embed=1", "/start?intent=find-work&job_id=9109&embed=1"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertNotIn(b"@fixture.invalid", response.data)
+        profile = self.client.get(f"/contractors/{contractor_id}")
+        self.assertEqual(profile.status_code, 200)
+        self.assertIn(b"Workdoe contractor", profile.data)
+        self.assertNotIn(b"@fixture.invalid", profile.data)
+        self.assertNotIn(brief.encode(), profile.data)
+        with self.client.session_transaction() as session:
+            session["user_id"] = contractor_id
+        detail = self.client.get("/jobs/9109")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn(b"Brief withheld.", detail.data)
+        self.assertNotIn(b"@fixture.invalid", detail.data)
+        with self.client.session_transaction() as session:
+            session["user_id"] = client_id
+        owner = self.client.get("/client/jobs/9109")
+        self.assertEqual(owner.status_code, 200)
+        self.assertIn(title.encode(), owner.data)
+        self.assertEqual(self.one("SELECT description FROM jobs WHERE id = 9109")["description"], brief)
+        self.assertTrue(contains_disallowed_personal_data((title, brief)))
+        self.assertFalse(contains_disallowed_personal_data(("Caf\u00e9 window cleaning", "ZIP 22201")))
+
     def test_login_and_start_show_live_jobs_map(self):
         home = self.client.get("/")
         self.assertEqual(home.status_code, 200)
@@ -4865,9 +5214,15 @@ class WorkdoeFlowTests(unittest.TestCase):
             r"\.home-family-picker \.service-family-filter-link\s*\{[^}]*"
             r"min-height: 68px;",
         )
-        self.assertIn(".thread-message-shell {", styles)
-        self.assertIn("grid-template-rows: auto minmax(180px, 1fr) auto;", styles)
-        self.assertIn("overscroll-behavior: contain;", styles)
+        self.assertRegex(
+            styles,
+            r"\.thread-message-shell\s*\{[^}]*grid-template-rows: auto minmax\(0, 1fr\) auto;",
+        )
+        self.assertRegex(
+            styles,
+            r"\.thread-message-list\s*\{[^}]*max-height:[^;]+;[^}]*"
+            r"overflow-y: auto;[^}]*overscroll-behavior: contain;",
+        )
         self.assertIn(".dashboard-metrics .metric-supporting {", styles)
 
         selected_lane = self.client.get("/?family=outdoor-yard")
@@ -5190,6 +5545,24 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(f'name="job_id" value="{selected_job["id"]}"'.encode("ascii"), selected_start.data)
         self.assertIn(selected_job["title"].encode("utf-8"), selected_start.data)
 
+    def test_expired_project_is_not_advertised_but_remains_in_consumer_dashboard(self):
+        job = self.one("SELECT id, title FROM jobs WHERE status = 'open' ORDER BY id LIMIT 1")
+        with self.app.app_context():
+            db = get_db()
+            db.execute("UPDATE jobs SET bidding_closes_at = '2000-01-01T00:00:00Z' WHERE id = ?", (job["id"],))
+            db.commit()
+
+        payload = self.client.get("/api/jobs/open").get_json()
+        self.assertNotIn(job["id"], [result["id"] for result in payload["jobs"]])
+        for path in ("/", "/login", f"/start?intent=find-work&job_id={job['id']}"):
+            with self.subTest(path=path):
+                self.assertNotIn(job["title"], self.client.get(path).get_data(as_text=True))
+
+        self.login("client@workdoe.local", "workdoe-client")
+        dashboard = self.client.get("/client/dashboard").get_data(as_text=True)
+        self.assertIn(job["title"], dashboard)
+        self.assertIn("Bidding closed", dashboard)
+
     def test_open_jobs_api_feeds_public_map_without_exact_addresses(self):
         response = self.client.get("/api/jobs/open")
         self.assertEqual(response.status_code, 200)
@@ -5329,7 +5702,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn("Project details are open.", script)
         self.assertIn("map.getBounds()", script)
         self.assertIn("window.history.replaceState", script)
-        self.assertIn('setOptionalParam(url, "job_id", activeJobId)', script)
+        self.assertIn('setOptionalParam(url, "job_id", activeJobId || sharedJobId)', script)
         self.assertIn("mergeJobPayload", script)
         self.assertIn('class="project-result-item" role="listitem"', script)
         self.assertIn('class="project-result-action"', script)
@@ -5807,6 +6180,92 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertEqual(verified.request.path, f"/jobs/{selected_job['id']}")
         self.assertIn(selected_job["title"].encode("utf-8"), verified.data)
 
+    def test_only_project_participants_keep_restricted_project_links(self):
+        self.login("contractor@workdoe.local", "workdoe-contractor")
+        with self.app.app_context():
+            db = get_db()
+            job = db.execute(
+                """
+                SELECT id, client_id FROM jobs WHERE status = 'open' AND NOT EXISTS (
+                    SELECT 1 FROM match_requests WHERE job_id = jobs.id
+                ) ORDER BY id LIMIT 1
+                """
+            ).fetchone()
+            project_id = job["id"]
+            other_contractor_id = db.execute(
+                """
+                INSERT INTO users
+                    (email, password_hash, role, display_name, status, email_verified, created_at)
+                VALUES ('approved-fixture@example.invalid', 'not-a-password', 'contractor', 'Fixture',
+                        'active', 1, '2000-01-01')
+                """
+            ).lastrowid
+            photo_path = f"jobs/{project_id}/access-fixture.png"
+            file = Path(self.app.config["UPLOAD_ROOT"]) / photo_path
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_bytes(b"\x89PNG\r\n\x1a\nfixture")
+            photo_id = db.execute(
+                """
+                INSERT INTO job_photos
+                    (job_id, uploaded_by, original_filename, stored_path, content_type, size_bytes, created_at)
+                VALUES (?, ?, 'fixture.png', ?, 'image/png', 15, '2000-01-01')
+                """,
+                (project_id, job["client_id"], photo_path),
+            ).lastrowid
+            db.commit()
+
+        detail_url = f"/jobs/{project_id}"
+        photo_url = f"/media/jobs/{photo_id}"
+        self.assertEqual(self.client.get(detail_url).status_code, 200)
+        with closing(self.client.get(photo_url)) as photo:
+            self.assertEqual(photo.status_code, 200)
+
+        with self.app.app_context():
+            db = get_db()
+            approved_id = db.execute(
+                """
+                INSERT INTO match_requests
+                    (job_id, contractor_id, scope_note, price_range, timeline, experience,
+                     availability, status, created_at, updated_at)
+                VALUES (?, ?, 'Fixture', '$100', 'A day', 'Fixture', 'Soon',
+                        'approved', '2000-01-01', '2000-01-01')
+                """,
+                (project_id, other_contractor_id),
+            ).lastrowid
+            db.commit()
+
+        self.assertEqual(self.client.get(detail_url).status_code, 404)
+        self.assertEqual(self.client.post(f"{detail_url}/request", data={}).status_code, 302)
+        self.assertEqual(self.client.get(photo_url).status_code, 403)
+        response = self.client.post(
+            "/report",
+            data={"target_type": "job", "target_id": project_id, "reason": "Synthetic restricted lead."},
+            follow_redirects=True,
+        )
+        self.assertIn(b"That item is no longer available to report.", response.data)
+        self.assertIsNone(self.one("SELECT id FROM reports WHERE reason = ?", ("Synthetic restricted lead.",)))
+
+        viewer_id = self.one("SELECT id FROM users WHERE email = 'contractor@workdoe.local'")["id"]
+        with self.app.app_context():
+            db = get_db()
+            db.execute("UPDATE match_requests SET contractor_id = ?, status = 'rejected' WHERE id = ?",
+                       (viewer_id, approved_id))
+            db.execute("UPDATE jobs SET status = 'closed' WHERE id = ?", (project_id,))
+            db.commit()
+        history = self.client.get(detail_url)
+        self.assertEqual(history.status_code, 200)
+        self.assertIn(b"Mini bid sent", history.data)
+        self.assertNotIn(photo_url.encode("ascii"), history.data)
+        self.assertEqual(self.client.get(photo_url).status_code, 403)
+
+        with self.app.app_context():
+            db = get_db()
+            db.execute("UPDATE match_requests SET status = 'approved' WHERE id = ?", (approved_id,))
+            db.commit()
+        with closing(self.client.get(photo_url)) as photo:
+            self.assertEqual(photo.status_code, 200)
+            self.assert_no_store(photo)
+
     def test_report_redirects_stay_internal(self):
         job = self.one("SELECT id FROM jobs WHERE status = 'open' ORDER BY id LIMIT 1")
 
@@ -5972,6 +6431,32 @@ class WorkdoeFlowTests(unittest.TestCase):
             headers={"Referer": f"http://localhost/messages/{thread['id']}"},
         )
 
+        with self.app.app_context():
+            db = get_db()
+            db.executemany(
+                """INSERT INTO messages (thread_id, sender_id, body, is_hidden, created_at)
+                   VALUES (?, ?, ?, 0, ?)""",
+                [(thread["id"], thread["contractor_id"], f"History fixture reply {i:03d}", thread["created_at"])
+                 for i in range(105)],
+            )
+            db.commit()
+        thread_url = f"/messages/{thread['id']}"
+        older_url = f"{thread_url}?through={message['id']}"
+        before = self.one("SELECT * FROM thread_reads WHERE thread_id = ? AND user_id = ?",
+                          (thread["id"], thread["client_id"]))
+        older = self.client.get(older_url)
+        self.assertIn(message["body"].encode("utf-8"), older.data)
+        self.assertIn(b">Latest messages</a>", older.data)
+        self.assertNotIn(b'aria-label="New message"', older.data)
+        self.assertEqual(self.one("SELECT * FROM thread_reads WHERE thread_id = ? AND user_id = ?",
+                                  (thread["id"], thread["client_id"])), before)
+        latest = self.client.get(thread_url)
+        self.assertEqual(latest.data.count(b'<article id="message-'), 50)
+        self.assertIn(b">Older messages</a>", latest.data)
+        self.assertIn(b"History fixture reply 104", latest.data)
+        self.assertNotIn(b"History fixture reply 000", latest.data)
+        self.assertEqual(self.client.get(f"{thread_url}?through=1&through=2").status_code, 400)
+
         self.logout()
         self.login("admin@workdoe.local", "workdoe-admin")
         hide_message = self.client.post(
@@ -5989,12 +6474,14 @@ class WorkdoeFlowTests(unittest.TestCase):
         admin = self.client.get("/admin")
         self.assertEqual(admin.status_code, 200)
         self.assertIn(b"Message:", admin.data)
-        self.assertIn(f'href="/messages/{thread["id"]}"'.encode("ascii"), admin.data)
+        review_path = f'/messages/{thread["id"]}?through={message["id"]}#message-{message["id"]}'
+        self.assertIn(f'href="{review_path}"'.encode("ascii"), admin.data)
         self.assertIn(b">Review</a>", admin.data)
 
-        review = self.client.get(f"/messages/{thread['id']}")
+        review = self.client.get(review_path.split("#", 1)[0])
         self.assertEqual(review.status_code, 200)
         self.assertIn(message["body"].encode("utf-8"), review.data)
+        self.assertIn(f'id="message-{message["id"]}"'.encode("ascii"), review.data)
         self.assertIn(b'class="status hidden">hidden</span>', review.data)
         self.assertIn(b'href="/admin">Admin</a>', review.data)
         self.assertNotIn(b"New message", review.data)
@@ -6002,7 +6489,7 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         self.logout()
         self.login("client@workdoe.local", "workdoe-client")
-        client_thread = self.client.get(f"/messages/{thread['id']}")
+        client_thread = self.client.get(older_url)
         self.assertEqual(client_thread.status_code, 200)
         self.assertNotIn(message["body"].encode("utf-8"), client_thread.data)
         self.assertNotIn(b'class="status hidden">hidden</span>', client_thread.data)
@@ -6020,7 +6507,7 @@ class WorkdoeFlowTests(unittest.TestCase):
 
         self.logout()
         self.login("client@workdoe.local", "workdoe-client")
-        restored_thread = self.client.get(f"/messages/{thread['id']}")
+        restored_thread = self.client.get(older_url)
         self.assertIn(message["body"].encode("utf-8"), restored_thread.data)
 
         self.logout()
@@ -6043,7 +6530,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b'data-site-dialog-content', home.data)
         self.assertNotIn(b'data-site-dialog-frame', home.data)
         self.assertNotIn(b'<iframe class="site-dialog-frame"', home.data)
-        self.assertIn(b'src="/static/site-dialogs.js?v=workdoe-bid-dialog"', home.data)
+        self.assertIn(b'src="/static/site-dialogs.js?v=asset-', home.data)
         self.assertIn(
             b'href="/post-project" data-dialog-title="Post a project"', home.data
         )
@@ -6110,10 +6597,10 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn('dialog.dataset.dialogKind = kindFor(url)', script)
         self.assertIn('delete dialog.dataset.dialogKind', script)
         self.assertIn('widget.dataset.turnstileWidgetId = String(widgetId)', script)
-        self.assertIn('content.querySelectorAll("[data-workdoe-turnstile]")', script)
+        self.assertIn('(root || content).querySelectorAll("[data-workdoe-turnstile]")', script)
         self.assertIn('function removeTurnstileWidgets(root)', script)
         self.assertIn('window.turnstile.remove(widgetId)', script)
-        self.assertIn('removeTurnstileWidgets(content);\n      content.replaceChildren(document.importNode(fragment, true));', script)
+        self.assertIn('disposeDialogContent();\n      content.replaceChildren(document.importNode(fragment, true));', script)
         self.assertIn('document.querySelectorAll("script[src]")', script)
         worker_actions = (
             ROOT / "workdoe" / "static" / "worker-actions.js"
@@ -6127,7 +6614,7 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(".dialog-project-snapshot", styles)
         self.assertRegex(
             styles,
-            r'\.site-dialog\[data-dialog-kind="auth"\] \.site-dialog-surface\s*\{[^}]*height: min\(520px, calc\(100dvh - 36px\)\);',
+            r'\.site-dialog\[data-dialog-kind="auth"\] \.site-dialog-surface\s*\{[^}]*height: min\(520px, var\(--dialog-content-height\)\);',
         )
         self.assertRegex(
             styles,
@@ -6135,27 +6622,27 @@ class WorkdoeFlowTests(unittest.TestCase):
         )
         self.assertRegex(
             styles,
-            r"body:not\(\.dialog-fragment-body\) \.form-grid\[data-project-composer\] \.project-step-actions\s*\{[^}]*position: fixed;[^}]*bottom: 16px;",
+            r"body:not\(\.dialog-fragment-body\):not\(\.has-site-dialog\) \.form-grid\[data-project-composer\] \.project-step-actions\s*\{[^}]*position: fixed;[^}]*bottom: calc\(16px \+ var\(--viewport-inset-bottom\)\);",
         )
         self.assertRegex(
             styles,
-            r"(?s)@media \(max-height: 760px\) and \(min-width: 1121px\) \{.*?body:not\(\.dialog-fragment-body\) \.form-grid\[data-project-composer\] \.project-step-actions\s*\{[^}]*position: fixed;[^}]*bottom: 16px;",
+            r"(?s)@media \(max-height: 760px\) and \(min-width: 1121px\) \{.*?body:not\(\.dialog-fragment-body\):not\(\.has-site-dialog\) \.form-grid\[data-project-composer\] \.project-step-actions\s*\{[^}]*position: fixed;[^}]*bottom: calc\(16px \+ var\(--viewport-inset-bottom\)\);",
         )
         self.assertRegex(
             styles,
-            r"(?s)@media \(max-width: 720px\) \{.*?body:not\(\.dialog-fragment-body\) \.form-grid\[data-project-composer\] \.project-step-actions\s*\{[^}]*bottom: calc\(68px \+ env\(safe-area-inset-bottom\)\);",
+            r"(?s)@media \(max-width: 720px\) \{.*?body:not\(\.dialog-fragment-body\):not\(\.has-site-dialog\) \.form-grid\[data-project-composer\] \.project-step-actions\s*\{[^}]*bottom: calc\(68px \+ env\(safe-area-inset-bottom\)\);",
         )
         self.assertIn(
             '.site-dialog[data-dialog-kind="project"] .project-step-actions',
             styles,
         )
         self.assertIn(
-            'bottom: max(18px, calc((100dvh - 820px) / 2));',
+            'bottom: calc(var(--viewport-inset-bottom) + max(var(--dialog-gutter), (var(--dialog-safe-height) - 820px) / 2));',
             styles,
         )
         self.assertRegex(
             styles,
-            r'(?s)@media \(max-width: 520px\) \{.*?\.site-dialog\[data-dialog-kind="project"\] \.project-step-actions\s*\{[^}]*position: sticky;[^}]*safe-area-inset-bottom[^}]*transform: none;',
+            r'(?s)@media \(max-width: 520px\) \{.*?\.site-dialog\[data-dialog-kind="project"\] \.project-step-actions\s*\{[^}]*position: sticky;[^}]*bottom: 0;[^}]*transform: none;',
         )
         self.assertIn(
             '.project-composer-step[hidden] .project-step-actions',
@@ -6905,25 +7392,29 @@ class WorkdoeFlowTests(unittest.TestCase):
         )
         with self.app.app_context():
             db = get_db()
+            db.execute("UPDATE jobs SET status = 'hidden' WHERE id = ?", (source_job_id,))
             db.execute(
                 "UPDATE match_requests SET status = 'approved' WHERE id = ?",
                 (repeat_match["id"],),
             )
-            db.execute(
+            independent_match = db.execute(
+                """
+                INSERT INTO match_requests
+                    (job_id, contractor_id, scope_note, price_range, timeline,
+                     experience, questions, availability, status, created_at, updated_at)
+                VALUES (?, ?, 'Independent bid after declining', '$350', 'One day',
+                        'Exterior cleaning experience.', '', 'Morning', 'approved', ?, ?)
+                """,
+                (decline_invitation["job_id"], contractor["id"], timestamp, timestamp),
+            ).lastrowid
+            db.executemany(
                 """
                 INSERT INTO match_completions
                     (match_request_id, client_confirmed_at, contractor_confirmed_at,
                      verified_at, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    repeat_match["id"],
-                    timestamp,
-                    timestamp,
-                    timestamp,
-                    timestamp,
-                    timestamp,
-                ),
+                [(match_id, *([timestamp] * 5)) for match_id in (repeat_match["id"], independent_match)],
             )
             db.commit()
 
@@ -6936,8 +7427,17 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"<span>Invited</span><strong>3</strong>", repeat_funnel.data)
         self.assertIn(b"<span>Fresh bids</span><strong>1</strong>", repeat_funnel.data)
         self.assertIn(b"33% of invitations", repeat_funnel.data)
-        self.assertIn(b"<span>Verified repeats</span><strong>1</strong>", repeat_funnel.data)
-        self.assertIn(b"100% of fresh bids", repeat_funnel.data)
+        self.assertIn(b"<span>Bid approval</span><strong>2 of 2</strong>", repeat_funnel.data)
+        with self.subTest(metric="verified completions exclude hidden projects"):
+            self.assertIn(
+                b"<span>Verified complete</span><strong>2</strong><small>100% of approved matches",
+                repeat_funnel.data,
+            )
+        with self.subTest(metric="declined invitations do not earn verified conversion"):
+            self.assertIn(
+                b"<span>Verified repeats</span><strong>1</strong><small>100% of fresh bids",
+                repeat_funnel.data,
+            )
         self.assertIn(b"Recent repeat invitations", repeat_funnel.data)
         self.assertIn(b"Fresh patio wash invitation", repeat_funnel.data)
         self.assertNotIn(
@@ -6967,6 +7467,8 @@ class WorkdoeFlowTests(unittest.TestCase):
         form = self.client.get("/jobs/new")
         self.assertEqual(form.status_code, 200)
         self.assertEqual(form.data.count(b'data-project-step="'), 6)
+        self.assertEqual(form.data.count(b"data-project-choice-error hidden"), 2)
+        self.assertIn(b'<select id="job-service-slug" name="service_slug" required', form.data)
         self.assertEqual(form.data.count(b'class="service-family-option"'), 6)
         self.assertEqual(form.data.count(b'class="service-option"'), 53)
         self.assertEqual(form.data.count(b'class="service-option-more"'), 6)
@@ -7322,6 +7824,48 @@ class WorkdoeFlowTests(unittest.TestCase):
         self.assertIn(b"Open project reports", admin.data)
         self.assertIn(b"No tracked service-zone cells", admin.data)
 
+    def test_pilot_cell_ignores_demo_contractor_responses(self):
+        created_at = datetime.now(UTC) - timedelta(hours=1)
+        with self.app.app_context():
+            db = get_db()
+            user_sql = """
+                INSERT INTO users (email, password_hash, role, display_name, created_at)
+                VALUES (?, '', ?, 'Synthetic participant', ?)
+            """
+            client_id = db.execute(
+                user_sql, ("pilot-client@example.invalid", "client", created_at.isoformat()),
+            ).lastrowid
+            contractor_id = db.execute(
+                user_sql, ("pilot-contractor@example.invalid", "contractor", created_at.isoformat()),
+            ).lastrowid
+            demo_id = db.execute(
+                "SELECT id FROM users WHERE email = 'contractor@workdoe.local'",
+            ).fetchone()["id"]
+            job_id = db.execute("SELECT MIN(id) FROM jobs").fetchone()[0]
+            db.execute(
+                "UPDATE jobs SET client_id = ?, created_at = ?, status = 'open' WHERE id = ?",
+                (client_id, created_at.isoformat(), job_id),
+            )
+            for bidder, status, delay in ((demo_id, "approved", 7), (contractor_id, "pending", 45)):
+                bid_at = (created_at + timedelta(minutes=delay)).isoformat()
+                db.execute(
+                    """
+                    INSERT INTO match_requests
+                        (job_id, contractor_id, scope_note, price_range, timeline,
+                         experience, questions, availability, status, created_at, updated_at)
+                    VALUES (?, ?, 'Synthetic scope', '$100', 'One day', 'Experience',
+                            '', 'Morning', ?, ?, ?)
+                    """,
+                    (job_id, bidder, status, bid_at, bid_at),
+                )
+            db.commit()
+
+        self.login("admin@workdoe.local", "workdoe-admin")
+        admin = self.client.get("/admin")
+        self.assertEqual(admin.status_code, 200)
+        self.assertIn(b"<span>Median first bid</span><strong>45 min</strong>", admin.data)
+        self.assertIn(b"<small>0 of 1 published</small>", admin.data)
+
     def test_contractor_proposal_templates_reuse_words_but_never_price(self):
         contractor = self.one(
             "SELECT id FROM users WHERE email = ?",
@@ -7438,6 +7982,44 @@ class WorkdoeFlowTests(unittest.TestCase):
                 (template["id"],),
             )
         )
+
+    def test_retained_bid_terms_are_withheld_from_consumer_pages_and_thread(self):
+        contractor = self.one("SELECT id FROM users WHERE email = 'contractor@workdoe.local'")
+        self.login("client@workdoe.local", "workdoe-client")
+        job = self.one("SELECT id FROM jobs WHERE status = 'open' ORDER BY id LIMIT 1")
+        scope = "Ask legacy-bid-fixture@example.invalid about the screens."
+        availability = "Meet at 123 Bid Fixture Street."
+        with self.app.app_context():
+            db = get_db()
+            request_id = db.execute(
+                """
+                INSERT INTO match_requests
+                    (job_id, contractor_id, scope_note, price_range, timeline,
+                     experience, availability, created_at, updated_at)
+                VALUES (?, ?, ?, '$120-$180', 'One morning',
+                        'Synthetic experience', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (job["id"], contractor["id"], scope, availability),
+            ).lastrowid
+            db.commit()
+
+        def assert_safe(path):
+            page = self.client.get(path)
+            self.assertEqual(page.status_code, 200)
+            self.assertIn(b"Withheld for privacy.", page.data)
+            self.assertIn(b"$120-$180", page.data)
+            self.assertNotIn(scope.encode(), page.data)
+            self.assertNotIn(availability.encode(), page.data)
+
+        job_url = f"/client/jobs/{job['id']}"
+        assert_safe(job_url)
+        assert_safe(f"/contractors/{contractor['id']}?job_id={job['id']}")
+        self.assertEqual(self.client.post(f"/client/requests/{request_id}/approve").status_code, 302)
+        thread = self.one("SELECT id FROM threads WHERE match_request_id = ?", (request_id,))
+        assert_safe(job_url)
+        assert_safe(f"/messages/{thread['id']}")
+        saved = self.one("SELECT scope_note, availability FROM match_requests WHERE id = ?", (request_id,))
+        self.assertEqual(tuple(saved), (scope, availability))
 
     def test_bid_comparison_is_received_ordered_fact_only_and_privacy_safe(self):
         rows = [

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from content_privacy import shared_project_record
 from job_posts import bid_window, budget_label, project_setting_label
+from project_access import contractor_can_view_project
 from project_readiness import project_brief_readiness
+from request_security import parse_url_record_id
 
 JOB_DETAIL_PRIVACY_NOTICE = (
-    "Contractors see city/state and ZIP prefix only until a client approves a match."
+    "Contractors see city/state and ZIP prefix only, including after approval."
 )
 
 
@@ -23,9 +26,10 @@ def parse_job_detail_id(path: str) -> int:
     if not path.startswith(prefix):
         raise JobDetailError("Unsupported job detail route.")
     raw_id = path[len(prefix) :].strip("/")
-    if not raw_id.isdigit() or int(raw_id) < 1:
+    record_id = parse_url_record_id(raw_id)
+    if not record_id:
         raise JobDetailError("Unsupported job detail route.")
-    return int(raw_id)
+    return record_id
 
 
 def zip_prefix(zip_code: str | None) -> str:
@@ -44,9 +48,10 @@ def can_view_job_detail(user, job) -> bool:
     if role == "client":
         return row_value(job, "client_id") == row_value(user, "id")
     if role == "contractor":
-        return (
-            row_value(job, "client_status") == "active"
-            and row_value(job, "status") != "hidden"
+        return contractor_can_view_project(
+            row_value(job, "status"), row_value(job, "client_status"),
+            has_approved_match=bool(row_value(job, "has_approved_match")),
+            participates=bool(row_value(job, "has_viewer_request")),
         )
     return False
 
@@ -70,6 +75,8 @@ def job_detail_payload(
 ) -> dict:
     viewer = viewer_kind(user, job)
     owner_view = viewer in {"owner", "admin"}
+    if not owner_view:
+        job = shared_project_record(job)
     bidding = bid_window(job)
     payload = {
         "ok": True,
@@ -128,7 +135,6 @@ def job_photo_payload(photo, owner_view: bool = False) -> dict:
     payload = {
         "id": row_value(photo, "id"),
         "url": f"/media/jobs/{row_value(photo, 'id')}",
-        "original_filename": row_value(photo, "original_filename", ""),
     }
     if owner_view:
         payload["is_hidden"] = row_value(photo, "is_hidden", 0)

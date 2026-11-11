@@ -32,9 +32,12 @@
     {% if turnstile_enabled() %}
       <script src="https://challenges.cloudflare.com/turnstile/v0/api.js{% if embedded_dialog_mode() %}?render=explicit{% endif %}" async defer></script>
     {% endif %}
+    {% if project_map_enabled() %}
+      <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+    {% endif %}
     {% block head %}{% endblock %}
   </head>
-  <body{% if request.endpoint == 'leads' %} class="app-market-body"{% elif embedded_dialog_mode() %} class="dialog-fragment-body"{% endif %}>
+  <body{% if request.endpoint == 'leads' %} class="app-market-body{% if not project_map_enabled() %} market-list-only{% endif %}"{% elif embedded_dialog_mode() %} class="dialog-fragment-body"{% elif request.endpoint in ['safety', 'privacy', 'terms'] %} class="public-trust-body"{% endif %}>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <header class="site-header">
       <a class="brand" href="{{ url_for('home') }}" aria-label="Workdoe home" title="Workdoe home">
@@ -103,13 +106,16 @@
         <a href="{{ url_for('safety') }}" {% if request.endpoint == 'safety' %}aria-current="page"{% endif %}>Safety</a>
         <a href="{{ url_for('privacy') }}" {% if request.endpoint == 'privacy' %}aria-current="page"{% endif %}>Privacy</a>
         <a href="{{ url_for('terms') }}" {% if request.endpoint == 'terms' %}aria-current="page"{% endif %}>Terms</a>
+        {% if request.endpoint == 'terms' %}
+          <a href="{{ url_for('static', filename='vendor/clerk-notices-v2/notices-1.html') }}">Software notices</a>
+        {% endif %}
       </nav>
       <span>Serving DC, Maryland &amp; Virginia</span>
     </footer>
     {% if not embedded_dialog_mode() %}
       {% include "_mobile_nav.html" %}
       {% include "_site_dialog.html" %}
-      <script defer src="{{ url_for('static', filename='site-dialogs.js') }}?v=workdoe-bid-dialog"></script>
+      <script defer src="{{ url_for('static', filename='site-dialogs.js') }}?v={{ asset_release_token }}"></script>
     {% endif %}
     {% block scripts %}{% endblock %}
   </body>

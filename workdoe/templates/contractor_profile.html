@@ -113,7 +113,7 @@
   </fieldset>
   <fieldset class="wide profile-zone-selector" id="profile-service-area" {% if field_errors.service_area %}aria-invalid="true" aria-describedby="profile-service-area-error"{% endif %}>
     <legend>Where you work</legend>
-    <p class="help-text">Pick practical DMV coverage areas. Exact project addresses stay private until a match is approved.</p>
+    <p class="help-text">Pick DMV coverage areas. Workdoe does not show project street addresses.</p>
     <div class="profile-zone-options">
       {% for zone in service_zones %}
         <label for="profile-zone-{{ loop.index }}">

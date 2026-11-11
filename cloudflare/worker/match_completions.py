@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from request_security import parse_url_record_id
+
 
 class MatchCompletionError(ValueError):
     def __init__(self, message: str, status: int = 400):
@@ -104,6 +106,7 @@ def parse_match_completion_path(path: str) -> int:
     if not path.startswith(prefix) or not path.endswith(suffix):
         raise MatchCompletionError("Completion route is invalid.", 404)
     raw = path[len(prefix) : -len(suffix)].strip("/")
-    if not raw.isdigit() or int(raw) <= 0:
+    record_id = parse_url_record_id(raw)
+    if not record_id:
         raise MatchCompletionError("Completion route is invalid.", 404)
-    return int(raw)
+    return record_id

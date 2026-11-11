@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from .content_privacy import shared_project_record
+
 INVITATION_STATUSES = {"pending", "bid_sent", "declined", "withdrawn"}
 INVITATION_STATUS_LABELS = {
     "pending": "Waiting for contractor",
@@ -114,7 +116,7 @@ def repeat_invitation_response(row) -> dict:
     status = str(row_value(row, "status", "pending") or "pending")
     if status not in INVITATION_STATUSES:
         status = "pending"
-    return {
+    return shared_project_record({
         "id": invitation_id,
         "job_id": job_id,
         "source_job_id": positive_int(row_value(row, "source_job_id")),
@@ -141,7 +143,7 @@ def repeat_invitation_response(row) -> dict:
         "client_detail_url": f"/client/jobs/{job_id}",
         "decline_url": f"/api/repeat-invitations/{invitation_id}/decline",
         "withdraw_url": f"/api/repeat-invitations/{invitation_id}/withdraw",
-    }
+    })
 
 
 def validate_invitation_action(user, invitation, action: str) -> None:

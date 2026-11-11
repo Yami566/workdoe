@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
+import re
 from datetime import datetime, timedelta, timezone
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlsplit
 
 from admin_moderation import (
     AdminModerationError,
@@ -24,6 +27,7 @@ from app_shell import (
     contractor_dashboard_html,
     contractor_job_detail_html,
     contractor_profile_html,
+    dashboard_access_html,
     dashboard_path_for_user,
     is_app_shell_route,
     is_public_contractor_profile_route,
@@ -42,24 +46,32 @@ from app_shell import (
     public_robots_txt,
     public_security_txt,
     public_sitemap_xml,
+    recovery_workspace_html,
     safety_page_html,
     terms_page_html,
+    unavailable_form_html,
 )
+from clerk_identity import CLERK_RESTRICTION_FLAGS
 from clerk_onboarding import (
     MAX_ONBOARDING_BODY_BYTES,
     OnboardingError,
     claims_with_verified_clerk_email,
     onboarding_payload,
+    onboarding_profile,
 )
 from clerk_proxy import (
     ClerkProxyError,
+    clerk_proxy_origin_allowed,
     clerk_proxy_request_plan,
     is_clerk_proxy_path,
+    verified_clerk_package,
 )
 from clerk_sessions import (
     SessionVerificationError,
     authorized_parties_from_env,
+    cached_clerk_jwks,
     extract_clerk_session_token,
+    fetch_clerk_jwks,
     verify_clerk_session_token,
 )
 from clerk_webhooks import (
@@ -102,7 +114,11 @@ from client_requests import (
     normalize_client_request_view,
     parse_client_job_requests_path,
 )
-from content_privacy import contains_disallowed_personal_data
+from content_privacy import (
+    PUBLIC_PROJECT_PRIVACY_LOOKAHEAD,
+    contains_disallowed_personal_data,
+    public_project_page,
+)
 from contractor_bids import (
     CONTRACTOR_BID_LIMIT,
     can_view_contractor_bids,
@@ -189,6 +205,7 @@ from email_code_auth import (
 from email_code_auth import (
     normalize_intent as normalize_auth_intent,
 )
+from email_delivery import lead_alert_candidates_query, marketplace_email_delivery_query
 from email_payloads import (
     EmailPayloadError,
     build_email_message,
@@ -199,10 +216,14 @@ from entry_shell import (
     ENTRY_JOB_LIMIT,
     ENTRY_ROUTES,
     build_entry_shell_html,
+    clerk_development_frontend_api_url,
     entry_job_filters,
     is_production_clerk_publishable_key,
-    map_tile_configuration,
+    missing_page_html,
+    selected_job_id,
     shell_headers,
+    unavailable_entry_html,
+    unavailable_job_draft_html,
 )
 from idempotency import (
     IdempotencyError,
@@ -221,6 +242,7 @@ from job_details import (
 )
 from job_drafts import (
     JOB_DRAFT_TTL_SECONDS,
+    JobDraftReadError,
     clear_job_draft_cookie,
     generate_job_draft_token,
     job_draft_cookie,
@@ -254,6 +276,14 @@ from job_status import (
     validate_lead_quality_payload,
     validate_project_close_payload,
 )
+from json_values import (
+    JsonDataError,
+    normalize_json_value,
+    parse_json_value,
+    read_json_response_bytes,
+    read_json_stream_bytes,
+)
+from map_tiles import AREA_MAP_ASSET, map_tile_configuration
 from market_fit import (
     infer_service_slugs_from_trades,
     infer_zone_slugs_from_area,
@@ -303,6 +333,7 @@ from media_access import (
     safe_media_key,
 )
 from media_uploads import (
+    ALLOWED_IMAGE_MIME,
     MAX_UPLOAD_BYTES,
     SANITIZED_IMAGE_EXTENSION,
     MediaUploadError,
@@ -320,6 +351,11 @@ from media_uploads import (
     uploaded_file_details,
     validate_uploaded_file_signature,
     validated_media_review_payload,
+)
+from message_history import (
+    message_history_page,
+    message_window_query,
+    parse_message_through,
 )
 from message_threads import (
     MAX_MESSAGE_BODY_BYTES,
@@ -339,13 +375,25 @@ from moderation_reports import (
     report_response,
     report_target_query,
 )
-from pilot_metrics import pilot_cell_metrics
+from pilot_metrics import (
+    MARKETPLACE_OUTCOMES_SQL,
+    REPEAT_INVITATION_OUTCOMES_SQL,
+    pilot_cell_metrics,
+)
+from project_access import (
+    PRIVATE_MEDIA_EMBEDDING_HEADERS,
+    contractor_can_view_project,
+    private_media_embedding_blocked,
+)
 from public_job_query import (
+    PUBLIC_DISCOVERY_API_METHODS,
     PublicJobQueryError,
     build_public_open_jobs_query,
-    encode_public_cursor,
+    literal_project_search,
+    next_public_cursor,
     parse_public_cursor,
     parse_public_viewport,
+    public_query_envelope_rejection,
     public_query_telemetry,
 )
 from public_jobs import (
@@ -369,7 +417,9 @@ from request_security import (
     WORKDOE_REQUEST_HEADER,
     authenticated_write_rate_limit_key,
     authenticated_write_rate_limit_required,
+    parse_url_record_id,
     same_origin_api_write_allowed,
+    same_origin_form_write_allowed,
 )
 from service_activation import (
     ACTIVATION_NOT_OPEN_MESSAGE,
@@ -388,6 +438,11 @@ from service_taxonomy import (
     service_label,
     service_selection,
 )
+from staging_origin import (
+    is_staging_environment,
+    staging_hostname,
+    staging_request_allowed,
+)
 from turnstile import (
     TURNSTILE_VERIFY_URL,
     TurnstileError,
@@ -399,10 +454,12 @@ from turnstile import (
 from workers import Response, WorkerEntrypoint, fetch
 
 try:
+    from js import JSON as JS_JSON
     from js import Object as JS_OBJECT
     from pyodide.ffi import jsnull as JS_NULL
     from pyodide.ffi import to_js as PYODIDE_TO_JS
 except ImportError:  # pragma: no cover - available inside the Workers runtime
+    JS_JSON = None
     JS_OBJECT = None
     JS_NULL = None
     PYODIDE_TO_JS = None
@@ -412,13 +469,44 @@ EXPIRE_CODES_CRON = "*/15 * * * *"
 STALE_MATCH_REMINDERS_CRON = "0 14 * * *"
 MODERATION_DIGEST_CRON = "0 13 * * 1-5"
 MAX_AUTH_BODY_BYTES = 8 * 1024
+MAX_REQUEST_JSON_BODY_CHUNKS = 128
+REQUEST_JSON_BODY_TIMEOUT_SECONDS = 10
 MAX_CLERK_WEBHOOK_BODY_BYTES = 256 * 1024
+MAX_CLERK_WEBHOOK_BODY_CHUNKS = 128
+CLERK_WEBHOOK_BODY_TIMEOUT_SECONDS = 5
+CLERK_LOGOUT_TIMEOUT_SECONDS = 5
+MAX_DRAFT_FORM_FIELDS = 128
+MAX_DRAFT_FORM_CHUNKS = 128
+DRAFT_FORM_TIMEOUT_SECONDS = 10
+MAX_PROVIDER_JSON_BODY_BYTES = 256 * 1024
+MAX_PROVIDER_JSON_BODY_CHUNKS = 128
+TURNSTILE_VERIFY_TIMEOUT_SECONDS = 5
+MAX_CLERK_USER_BODY_BYTES = 256 * 1024
+MAX_CLERK_USER_BODY_CHUNKS = 128
+CLERK_USER_LOOKUP_TIMEOUT_SECONDS = 5
+CLERK_PROXY_RESPONSE_TIMEOUT_SECONDS = 8
 AUTH_REQUEST_WINDOW_MINUTES = 15
 AUTH_REQUESTS_PER_EMAIL = 5
 AUTH_REQUESTS_PER_IP = 20
 PUBLIC_HTTPS_HOSTS = {"workdoe.com", "www.workdoe.com"}
 HSTS_HEADER = "max-age=31536000; includeSubDomains"
+RECOVERY_RETRY_SECONDS = 900
+RECOVERY_SAFE_ROUTES = frozenset({
+    "/health", "/healthz", "/safety", "/privacy", "/terms",
+    "/robots.txt", "/sitemap.xml", "/.well-known/security.txt",
+})
+WRITE_PAUSE_PUBLIC_ROUTES = RECOVERY_SAFE_ROUTES | {"/", "/api/jobs/open"}
+PUBLIC_DISCOVERY_ROUTES = (ENTRY_ROUTES - {"/post-project"}) | {"/api/jobs/open"}
+PUBLIC_DISCOVERY_RETRY_SECONDS = "60"
+MAX_QUEUE_JSON_BODY_BYTES = 32 * 1024
+OPTIONAL_MARKETPLACE_EMAIL_EVENTS = frozenset({
+    "stale-match-reminder",
+    "repeat-provider-invitation",
+    "contractor-lead-alert-fanout",
+    "contractor-new-lead",
+})
 STATIC_ASSET_PATHS = {
+    AREA_MAP_ASSET,
     "/clerk-account.js",
     "/clerk-entry.js",
     "/deer.svg",
@@ -438,7 +526,9 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def json_response(payload: dict, status: int = 200, headers: dict | None = None) -> Response:
+def json_response(
+    payload: dict, status: int = 200, headers: dict | None = None, *, set_cookies: tuple[str, ...] = (),
+) -> Response:
     response_headers = {
         "Content-Type": "application/json; charset=utf-8",
         "Strict-Transport-Security": HSTS_HEADER,
@@ -447,57 +537,41 @@ def json_response(payload: dict, status: int = 200, headers: dict | None = None)
     return Response(
         json.dumps(payload),
         status=status,
-        headers=response_headers,
+        headers=[*response_headers.items(), *(("Set-Cookie", cookie) for cookie in set_cookies)]
+        if set_cookies else response_headers,
     )
 
 
 def rows_from(result) -> list[dict]:
     if isinstance(result, dict):
-        return result.get("results") or result.get("result", {}).get("results") or []
-    return getattr(result, "results", None) or []
+        rows = result.get("results") or result.get("result", {}).get("results") or []
+    else:
+        rows = getattr(result, "results", None) or []
+    converter = getattr(rows, "to_py", None)
+    if callable(converter):
+        # D1 records are flat; shared Python presenters must not receive FFI nulls.
+        return [
+            {key: None if value is JS_NULL else value for key, value in row.items()}
+            for row in converter(depth=2)
+        ]
+    return rows
 
 
-async def db_run(env, sql: str, *params):
+def db_statement(env, sql: str, params):
     statement = env.DB.prepare(sql)
     if params:
         d1_params = tuple(JS_NULL if value is None else value for value in params)
         statement = statement.bind(*d1_params)
-    return await statement.run()
+    return statement
 
 
-async def record_service_policy_acknowledgement(
-    env,
-    *,
-    user_id: int,
-    actor_role: str,
-    context: str,
-    service_slug: str,
-    acknowledgement_version: str,
-    job_id: int,
-    match_request_id: int | None = None,
-) -> None:
-    policy = service_policy(service_slug)
-    if not policy["acknowledgement_required"]:
-        return
-    if acknowledgement_version != policy["version"]:
-        raise ValueError("The service policy acknowledgement is not current.")
-    await db_run(
-        env,
-        """
-        INSERT INTO service_policy_acknowledgements
-            (user_id, actor_role, context, service_slug, policy_version,
-             job_id, match_request_id, acknowledged_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        user_id,
-        actor_role,
-        context,
-        service_slug,
-        policy["version"],
-        job_id,
-        match_request_id,
-        utc_now(),
-    )
+async def db_run(env, sql: str, *params):
+    return await db_statement(env, sql, params).run()
+
+
+async def db_batch(env, commands):
+    statements = [db_statement(env, sql, params) for sql, params in commands]
+    return await env.DB.batch(statements)
 
 
 async def begin_idempotent_request(
@@ -640,83 +714,94 @@ async def load_job_scope_answers(env, job_id: int) -> dict[str, str]:
     }
 
 
-async def load_job_draft_scope_answers(env, draft_id: int) -> dict[str, str]:
-    result = await db_run(
-        env,
-        "SELECT question_key, answer_code FROM job_draft_scope_answers WHERE draft_id = ?",
-        draft_id,
-    )
-    return {
-        str(row_value(row, "question_key", "")): str(
-            row_value(row, "answer_code", "")
-        )
-        for row in rows_from(result)
-        if row_value(row, "question_key", "")
+async def commit_job_edit(env, job_id: int, actor_id: int, job: dict, service_zone_slug: str) -> bool:
+    timestamp = utc_now()
+    policy = service_policy(job["service_slug"])
+    if policy["acknowledgement_required"] and job["service_policy_acknowledgement"] != policy["version"]:
+        raise ValueError("The service policy acknowledgement is not current.")
+    answers = {
+        answer["question_key"]: answer["answer_code"]
+        for answer in scope_answer_projection(job["service_slug"], job.get("scope_answers", {}))
     }
-
-
-async def replace_job_scope_answers(
-    env,
-    job_id: int,
-    service_slug: str,
-    answers: dict[str, str],
-) -> None:
-    statements = [
-        env.DB.prepare("DELETE FROM job_scope_answers WHERE job_id = ?").bind(job_id)
+    # All dependent writes repeat the same access gate inside one D1 transaction.
+    access_key = (job_id, actor_id)
+    commands = [
+        (
+            """
+            UPDATE jobs
+            SET title = ?, category = ?, service_group_slug = ?, service_slug = ?,
+                service_zone_slug = ?, project_setting = ?, license_preference = ?,
+                city = ?, state = ?, zip_code = ?, description = ?, desired_date = ?,
+                budget_min = ?, budget_max = ?, approx_lat = ?, approx_lng = ?, updated_at = ?
+            WHERE id = ? AND client_id = ? AND status != 'hidden'
+              AND EXISTS (
+                  SELECT 1 FROM users
+                  WHERE users.id = jobs.client_id AND users.role = 'client' AND users.status = 'active'
+              )
+            """,
+            (
+                job["title"], job["category"], job["service_group_slug"], job["service_slug"],
+                service_zone_slug, job["project_setting"], int(job["license_preference"] == "1"),
+                job["city"], job["state"], job["zip_code"], job["description"], job["desired_date"],
+                budget_database_value(job["budget_min"]), budget_database_value(job["budget_max"]),
+                job["approx_lat"], job["approx_lng"], timestamp, *access_key,
+            ),
+        ),
+        (
+            """
+            DELETE FROM job_scope_answers
+            WHERE job_id IN (
+                SELECT jobs.id FROM jobs JOIN users ON users.id = jobs.client_id
+                WHERE jobs.id = ? AND jobs.client_id = ? AND jobs.status != 'hidden'
+                  AND users.role = 'client' AND users.status = 'active'
+            )
+            """,
+            access_key,
+        ),
     ]
-    timestamp = utc_now()
-    insert = env.DB.prepare(
+    if answers:
+        commands.append((
+            """
+            INSERT INTO job_scope_answers
+                (job_id, schema_version, question_key, answer_code, created_at, updated_at)
+            SELECT jobs.id, ?, answer.key, answer.value, ?, ?
+            FROM jobs JOIN users ON users.id = jobs.client_id CROSS JOIN json_each(?) AS answer
+            WHERE jobs.id = ? AND jobs.client_id = ? AND jobs.status != 'hidden'
+              AND users.role = 'client' AND users.status = 'active'
+            """,
+            (SCOPE_SCHEMA_VERSION, timestamp, timestamp, json.dumps(answers), *access_key),
+        ))
+    if policy["acknowledgement_required"]:
+        commands.append((
+            """
+            INSERT INTO service_policy_acknowledgements
+                (user_id, actor_role, context, service_slug, policy_version, job_id, acknowledged_at)
+            SELECT users.id, 'client', 'project-post', ?, ?, jobs.id, ?
+            FROM jobs JOIN users ON users.id = jobs.client_id
+            WHERE jobs.id = ? AND jobs.client_id = ? AND jobs.status != 'hidden'
+              AND users.role = 'client' AND users.status = 'active'
+            """,
+            (job["service_slug"], policy["version"], timestamp, *access_key),
+        ))
+    commands.append((
         """
-        INSERT INTO job_scope_answers
-            (job_id, schema_version, question_key, answer_code, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """
-    )
-    statements.extend(
-        insert.bind(
-            job_id,
-            SCOPE_SCHEMA_VERSION,
-            answer["question_key"],
-            answer["answer_code"],
-            timestamp,
-            timestamp,
-        )
-        for answer in scope_answer_projection(service_slug, answers)
-    )
-    await env.DB.batch(statements)
-
-
-async def replace_job_draft_scope_answers(
-    env,
-    draft_id: int,
-    service_slug: str,
-    answers: dict[str, str],
-) -> None:
-    statements = [
-        env.DB.prepare(
-            "DELETE FROM job_draft_scope_answers WHERE draft_id = ?"
-        ).bind(draft_id)
-    ]
-    timestamp = utc_now()
-    insert = env.DB.prepare(
-        """
-        INSERT INTO job_draft_scope_answers
-            (draft_id, schema_version, question_key, answer_code, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """
-    )
-    statements.extend(
-        insert.bind(
-            draft_id,
-            SCOPE_SCHEMA_VERSION,
-            answer["question_key"],
-            answer["answer_code"],
-            timestamp,
-            timestamp,
-        )
-        for answer in scope_answer_projection(service_slug, answers)
-    )
-    await env.DB.batch(statements)
+        INSERT INTO automation_events (event_type, target_type, target_id, payload_json, status, created_at)
+        SELECT 'job-updated', 'job', jobs.id,
+               json_object('client_id', users.id, 'category', ?), 'processed', ?
+        FROM jobs JOIN users ON users.id = jobs.client_id
+        WHERE jobs.id = ? AND jobs.client_id = ? AND jobs.status != 'hidden'
+          AND users.role = 'client' AND users.status = 'active'
+        """,
+        (job["category"], timestamp, *access_key),
+    ))
+    results = await db_batch(env, commands)
+    if (
+        len(results) != len(commands) or any(row_value(result, "success") is not True for result in results)
+        or d1_change_count(results[0]) not in {0, 1}
+        or d1_change_count(results[-1]) != d1_change_count(results[0])
+    ):
+        raise ValueError("Unexpected D1 project edit batch result.")
+    return d1_change_count(results[0]) == 1
 
 
 def embedded_dialog_request(request) -> bool:
@@ -737,6 +822,12 @@ def enforce_service_activation(env) -> bool:
 def media_uploads_enabled(env) -> bool:
     """Keep public uploads off unless the reviewed sanitizer is explicitly enabled."""
     return enabled_flag(getattr(env, "WORKDOE_MEDIA_UPLOADS_ENABLED", ""))
+
+
+def marketplace_email_enabled(env) -> bool:
+    return not is_staging_environment(env) and enabled_flag(
+        getattr(env, "WORKDOE_MARKETPLACE_EMAIL_ENABLED", ""),
+    )
 
 
 async def service_activation_record(env, service_slug: str, zone_slug: str):
@@ -841,7 +932,72 @@ def javascript_object(value: dict):
     return PYODIDE_TO_JS(value, dict_converter=JS_OBJECT.fromEntries)
 
 
+async def public_discovery_limit_status(env) -> int | None:
+    limiter = getattr(env, "PUBLIC_DISCOVERY_RATE_LIMITER", None)
+    if limiter is None:
+        limiter = getattr(env, "WRITE_RATE_LIMITER", None)
+    if limiter is None:
+        environment = str(getattr(env, "WORKDOE_ENV", "production") or "production").strip().lower()
+        return None if environment in {"local", "development", "test"} else 503
+    try:
+        # Keep public reads separate from write/JWKS keys without identifying visitors.
+        result = await limiter.limit(javascript_object({"key": "public-discovery"}))
+        allowed = row_value(result, "success")
+    except Exception:  # noqa: BLE001 - Cloudflare binding errors may be JS-backed.
+        return 503
+    if allowed is True:
+        return None
+    return 429 if allowed is False else 503
+
+
+def public_discovery_unavailable(method: str, status: int, *, api: bool = False, sign_in: bool = False) -> Response:
+    headers = shell_headers("", map_tile_url="")
+    headers["Retry-After"] = PUBLIC_DISCOVERY_RETRY_SECONDS
+    if api:
+        headers["Content-Type"] = "application/json; charset=utf-8"
+        message = (
+            "Too many project requests. Please try again shortly."
+            if status == 429 else "Public jobs are temporarily unavailable."
+        )
+        body = "" if method == "HEAD" else json.dumps({"ok": False, "error": message})
+    else:
+        body = "" if method == "HEAD" else unavailable_entry_html(sign_in=sign_in, busy=status == 429)
+    return Response(body, status=status, headers=headers)
+
+
 async def authenticated_write_rate_limit_response(env, user):
+    return await worker_write_rate_limit_response(env, authenticated_write_rate_limit_key(row_value(user, "id")))
+
+
+async def budgeted_clerk_jwks(env, secret_key: str) -> dict:
+    limiter = getattr(env, "WRITE_RATE_LIMITER", None)
+    if limiter is not None:
+        try:
+            # Never derive a limiter key from an unverified token or visitor identifier.
+            result = await limiter.limit(javascript_object({"key": "clerk-jwks-lookup"}))
+            allowed = row_value(result, "success")
+        except Exception as exc:
+            raise SessionVerificationError("Clerk signing key lookup is temporarily unavailable.") from exc
+        if allowed is not True:
+            raise SessionVerificationError("Clerk signing key lookup is temporarily unavailable.")
+    elif str(getattr(env, "WORKDOE_ENV", "production") or "production").lower() == "production":
+        raise SessionVerificationError("Clerk signing key lookup is temporarily unavailable.")
+    return await fetch_clerk_jwks(secret_key)
+
+
+def job_draft_unavailable_response(method: str, *, signed_in: bool = False) -> Response:
+    return Response(
+        "" if method == "HEAD" else unavailable_job_draft_html(signed_in=signed_in),
+        status=503,
+        headers={
+            **shell_headers("", map_tile_url=""),
+            "Referrer-Policy": "no-referrer",
+            "Retry-After": "5",
+        },
+    )
+
+
+async def worker_write_rate_limit_response(env, key: str):
     limiter = getattr(env, "WRITE_RATE_LIMITER", None)
     environment = str(
         getattr(env, "WORKDOE_ENV", "production") or "production"
@@ -856,9 +1012,7 @@ async def authenticated_write_rate_limit_response(env, user):
         )
     try:
         result = await limiter.limit(
-            javascript_object(
-                {"key": authenticated_write_rate_limit_key(row_value(user, "id"))}
-            )
+            javascript_object({"key": key})
         )
     except Exception as exc:  # noqa: BLE001 - Worker bindings may raise JS-backed errors.
         print(
@@ -912,20 +1066,73 @@ async def request_json_object(request, max_bytes: int = MAX_ONBOARDING_BODY_BYTE
         raise OnboardingError("Request body must include Content-Length.")
     if content_length > max_bytes:
         raise OnboardingError("Request body is too large.")
-    raw_body = await request.text()
-    if len(raw_body.encode("utf-8")) > max_bytes:
-        raise OnboardingError("Request body is too large.")
     try:
-        data = json.loads(raw_body or "{}")
-    except json.JSONDecodeError as exc:
+        raw_body = await asyncio.wait_for(
+            read_json_stream_bytes(
+                request.body, max_bytes=content_length, max_chunks=MAX_REQUEST_JSON_BODY_CHUNKS,
+                label="Request body",
+            ),
+            timeout=REQUEST_JSON_BODY_TIMEOUT_SECONDS,
+        )
+        if len(raw_body) != content_length:
+            raise JsonDataError("Request body length does not match Content-Length.")
+        data = parse_json_value(raw_body)
+    except TimeoutError as exc:
+        raise OnboardingError("Request body timed out. Please try again.") from exc
+    except JsonDataError as exc:
         raise OnboardingError("Request body must be valid JSON.") from exc
     if not isinstance(data, dict):
         raise OnboardingError("Request body must be a JSON object.")
     return data
 
 
+async def response_json_object(response, max_bytes: int = MAX_PROVIDER_JSON_BODY_BYTES) -> dict:
+    content_length = request_header(response, "Content-Length")
+    if content_length:
+        try:
+            declared = int(content_length)
+        except ValueError as exc:
+            raise JsonDataError("Provider response length is invalid.") from exc
+        if declared < 0 or declared > max_bytes:
+            raise JsonDataError("Provider response is too large.")
+    raw_body = await read_json_response_bytes(
+        response, max_bytes=max_bytes, max_chunks=MAX_PROVIDER_JSON_BODY_CHUNKS,
+    )
+    value = parse_json_value(raw_body, max_depth=16)
+    if not isinstance(value, dict):
+        raise JsonDataError("Provider response must be a JSON object.")
+    return value
+
+
+async def fetch_clerk_user(subject: str, secret_key: str, *, transport=None) -> dict:
+    options = {}
+    try:
+        from js import AbortSignal
+    except ImportError:  # pragma: no cover - the JS API is only available inside Workers.
+        pass
+    else:
+        options["signal"] = AbortSignal.timeout(int(CLERK_USER_LOOKUP_TIMEOUT_SECONDS * 1000))
+
+    async def exchange():
+        response = await (transport or fetch)(
+            f"https://api.clerk.com/v1/users/{subject}", method="GET", redirect="manual",
+            headers={"Accept": "application/json", "Authorization": f"Bearer {secret_key}"},
+            **options,
+        )
+        raw = await read_json_response_bytes(
+            response, max_bytes=MAX_CLERK_USER_BODY_BYTES, max_chunks=MAX_CLERK_USER_BODY_CHUNKS,
+        )
+        user = parse_json_value(raw, max_depth=16)
+        if not isinstance(user, dict):
+            raise JsonDataError("Clerk response must be a JSON object.")
+        return user
+
+    return await asyncio.wait_for(exchange(), timeout=CLERK_USER_LOOKUP_TIMEOUT_SECONDS)
+
+
 async def request_form_data(request, max_bytes: int):
-    content_type = request_header(request, "Content-Type").split(";", 1)[0].strip().lower()
+    content_type_header = request_header(request, "Content-Type")
+    content_type = content_type_header.split(";", 1)[0].strip().lower()
     if content_type not in {
         "application/x-www-form-urlencoded",
         "multipart/form-data",
@@ -936,7 +1143,32 @@ async def request_form_data(request, max_bytes: int):
         raise OnboardingError("Request body must include Content-Length.")
     if content_length > max_bytes:
         raise OnboardingError("Request body is too large.")
-    return await request.formData()
+    try:
+        raw_body = await asyncio.wait_for(
+            read_json_stream_bytes(
+                request.body, max_bytes=content_length, max_chunks=MAX_DRAFT_FORM_CHUNKS, label="Request body",
+            ),
+            timeout=DRAFT_FORM_TIMEOUT_SECONDS,
+        )
+        if len(raw_body) != content_length:
+            raise ValueError("Request body length does not match Content-Length.")
+        text = raw_body.decode("utf-8", errors="strict")
+        if content_type == "multipart/form-data":
+            return await parse_draft_multipart(text, content_type_header)
+        form: dict[str, str] = {}
+        for key, value in parse_qsl(text, keep_blank_values=True, errors="strict", max_num_fields=MAX_DRAFT_FORM_FIELDS):
+            form.setdefault(key, value)
+        return form
+    except Exception as exc:
+        raise OnboardingError("Request form could not be read.") from exc
+
+
+async def parse_draft_multipart(text: str, content_type: str):
+    from js import Response as JSResponse
+
+    # Reuse the runtime parser on the already bounded, UTF-8-validated text.
+    response = JSResponse.new(text, javascript_object({"headers": {"Content-Type": content_type}}))
+    return await response.formData()
 
 
 async def record_event(
@@ -1012,10 +1244,28 @@ async def linked_workdoe_user(env, clerk_subject: str):
 
 
 def native_email_code_enabled(env) -> bool:
-    return getattr(env, "WORKDOE_AUTH_PROVIDER", "") == EMAIL_CODE_AUTH_PROVIDER
+    return (
+        getattr(env, "WORKDOE_AUTH_PROVIDER", "") == EMAIL_CODE_AUTH_PROVIDER
+        and not is_staging_environment(env)
+    )
+
+
+def staging_clerk_origin(env) -> str:
+    if (
+        getattr(env, "WORKDOE_AUTH_PROVIDER", "") != "clerk"
+        or not str(getattr(env, "CLERK_SECRET_KEY", "") or "").startswith("sk_test_")
+        or getattr(env, "CLERK_JWT_KEY", "")
+    ):
+        return ""
+    try:
+        return clerk_development_frontend_api_url(getattr(env, "CLERK_PUBLISHABLE_KEY", ""))
+    except ValueError:
+        return ""
 
 
 def clerk_production_configuration_ready(env) -> bool:
+    if is_staging_environment(env):
+        return bool(staging_clerk_origin(env))
     if native_email_code_enabled(env):
         return True
     environment = str(getattr(env, "WORKDOE_ENV", "production") or "production").lower()
@@ -1087,6 +1337,67 @@ async def ensure_role_profile(env, user, created_at: str) -> None:
         )
 
 
+async def provision_clerk_account(env, subject: str, payload: dict, created_at: str):
+    results = await db_batch(env, (
+        (
+            """
+            INSERT INTO users
+                (email, password_hash, role, display_name, company_name,
+                 status, email_verified, auth_provider, external_subject, created_at)
+            VALUES (?, 'clerk-managed', ?, ?, ?, 'active', 1, 'clerk', ?, ?)
+            ON CONFLICT DO NOTHING
+            """,
+            (payload["email"], payload["role"], payload["display_name"], payload["company_name"], subject, created_at),
+        ),
+        # Audit the new identity once; changes() refers to the immediately preceding insert.
+        (
+            """
+            INSERT INTO automation_events
+                (event_type, target_type, target_id, payload_json, status, created_at)
+            SELECT 'clerk-onboarding-linked', 'user', id, ?, 'processed', ?
+            FROM users
+            WHERE auth_provider = 'clerk' AND external_subject = ? AND changes() = 1
+            """,
+            (json.dumps({"role": payload["role"], "created": True}, sort_keys=True), created_at, subject),
+        ),
+        (
+            """
+            INSERT INTO client_profiles (user_id, organization_name, phone)
+            SELECT id, COALESCE(NULLIF(company_name, ''), NULLIF(display_name, ''), 'Workdoe user'), ''
+            FROM users
+            WHERE auth_provider = 'clerk' AND external_subject = ? AND status = 'active' AND role = 'client'
+            ON CONFLICT(user_id) DO NOTHING
+            """,
+            (subject,),
+        ),
+        (
+            """
+            INSERT INTO contractor_profiles
+                (user_id, business_name, trades, service_area, intro,
+                 insurance_status, license_number, years_in_business, website, phone, updated_at)
+            SELECT id, COALESCE(NULLIF(company_name, ''), NULLIF(display_name, ''), 'Workdoe user'),
+                   '', 'DMV area', '', '', '', NULL, '', '', ?
+            FROM users
+            WHERE auth_provider = 'clerk' AND external_subject = ? AND status = 'active' AND role = 'contractor'
+            ON CONFLICT(user_id) DO NOTHING
+            """,
+            (created_at, subject),
+        ),
+        (
+            """
+            SELECT id, role, display_name, company_name, status
+            FROM users
+            WHERE auth_provider = 'clerk' AND external_subject = ?
+            LIMIT 1
+            """,
+            (subject,),
+        ),
+    ))
+    if len(results) != 5 or any(row_value(result, "success") is not True for result in results):
+        raise ValueError("Unsuccessful D1 Clerk provisioning batch.")
+    return first_row(results[4]), d1_change_count(results[0]) == 1
+
+
 def workdoe_user_json(user) -> dict:
     return {
         "id": row_value(user, "id"),
@@ -1134,8 +1445,114 @@ def is_static_asset_path(path: str) -> bool:
     return path in STATIC_ASSET_PATHS or path.startswith("/vendor/")
 
 
+def workspace_mode(env) -> str:
+    # A staging rehearsal starts sealed unless an operator explicitly opens it.
+    default_mode = "sealed" if is_staging_environment(env) else "normal"
+    value = getattr(env, "WORKDOE_WRITE_MODE", default_mode)
+    return value if value in ("normal", "paused") else "sealed"
+
+
+def workspace_tile_configuration(env) -> tuple[str, str]:
+    mode = getattr(env, "WORKDOE_MAP_MODE", None)
+    if is_staging_environment(env):
+        # Staging can qualify the local area asset, never a third-party tile provider.
+        return map_tile_configuration(map_mode="area" if mode == "area" else "list")
+    demo_default = None if getattr(env, "WORKDOE_ENV", "production") == "local" else ""
+    return map_tile_configuration(
+        getattr(env, "WORKDOE_MAP_TILE_URL", demo_default),
+        getattr(env, "WORKDOE_MAP_TILE_ATTRIBUTION", demo_default),
+        map_mode=mode,
+    )
+
+
+def recovery_request_allowed(mode: str, method: str, path: str) -> bool:
+    if mode == "paused" and method == "POST" and path in {"/logout", "/api/auth/logout"}:
+        return True
+    safe_routes = RECOVERY_SAFE_ROUTES if mode == "sealed" else WRITE_PAUSE_PUBLIC_ROUTES
+    return method in {"GET", "HEAD"} and (path in safe_routes or is_static_asset_path(path))
+
+
+def recovery_mode_header(mode: str) -> dict[str, str]:
+    return {} if mode == "normal" else {"X-Workdoe-Mode": "sealed" if mode == "sealed" else "read-only"}
+
+
+def recovery_response(mode: str, method: str, path: str) -> Response:
+    headers = {
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+        "Retry-After": str(RECOVERY_RETRY_SECONDS),
+        **recovery_mode_header(mode),
+    }
+    sealed = mode == "sealed"
+    if method != "HEAD" and (path.startswith("/api/") or path == "/clerk/webhook" or is_clerk_proxy_path(path)):
+        error = "Workdoe is temporarily unavailable." if sealed else "Workdoe is temporarily read-only."
+        return json_response({"ok": False, "error": error}, status=503, headers=headers)
+    return Response(
+        "" if method == "HEAD" else recovery_workspace_html(sealed=sealed),
+        status=503,
+        headers={**app_shell_headers(include_dialog_forms=False), **headers},
+    )
+
+
+def reject_public_discovery_request(method: str, path: str, query: str) -> Response | None:
+    api = path == "/api/jobs/open"
+    read_request = method in {"GET", "HEAD"}
+    rejection = public_query_envelope_rejection(query) if read_request else None
+    if rejection is None and (read_request or not api):
+        return None
+    headers = {
+        "Content-Type": "application/json; charset=utf-8" if api else "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+        "Strict-Transport-Security": HSTS_HEADER,
+        "X-Content-Type-Options": "nosniff",
+    }
+    if rejection is None:
+        headers["Allow"] = ", ".join(PUBLIC_DISCOVERY_API_METHODS)
+        if method == "OPTIONS":
+            return Response("", status=200, headers=headers)
+        return json_response({"ok": False, "error": "Method not allowed."}, status=405, headers=headers)
+    status, message = rejection
+    if method == "HEAD":
+        body = ""
+    else:
+        body = json.dumps({"ok": False, "error": message}) if api else message
+    return Response(body, status=status, headers=headers)
+
+
+def requests_missing_page_document(request, path: str) -> bool:
+    segments = path.strip("/").split("/")
+    if segments[0] in {"api", "media", "static", "vendor", "clerk", "__clerk", ".well-known"} or "." in segments[-1]:
+        return False
+    return (
+        request.method in {"GET", "HEAD"}
+        and request_header(request, "Sec-Fetch-Mode") in {"", "navigate"}
+        and request_header(request, "Sec-Fetch-Dest") in {"", "document"}
+        and "text/html" in {value.strip().lower() for value in request_header(request, "Accept").split(",")}
+    )
+
+
+def private_media_response(body, *, status: int, headers: dict[str, str] | None = None) -> Response:
+    return Response(
+        body,
+        status=status,
+        headers={"Cache-Control": "no-store", **PRIVATE_MEDIA_EMBEDDING_HEADERS, **(headers or {})},
+    )
+
+
 class Default(WorkerEntrypoint):
     async def fetch(self, request):
+        staging = is_staging_environment(self.env)
+        if staging and not staging_request_allowed(
+            request.url,
+            getattr(self.env, "WORKDOE_PUBLIC_URL", None),
+            getattr(self.env, "WORKDOE_DOMAIN", None),
+        ):
+            return Response(
+                "" if request.method == "HEAD" else "Not found.",
+                status=404,
+                headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+            )
         redirect_url = public_https_redirect_url(request.url)
         if redirect_url:
             return Response(
@@ -1143,12 +1560,52 @@ class Default(WorkerEntrypoint):
                 status=308,
                 headers={
                     "Location": redirect_url,
-                    "Cache-Control": "public, max-age=3600",
+                    "Cache-Control": "no-store",
+                    "Referrer-Policy": "no-referrer",
                 },
             )
 
         parsed_request = urlparse(request.url)
         path = parsed_request.path
+        raw_path = urlsplit(request.url).path
+        mode = workspace_mode(self.env)
+        if mode != "normal" and (
+            path != raw_path or not recovery_request_allowed(mode, request.method, path)
+        ):
+            return recovery_response(mode, request.method, path)
+
+        if staging and (is_clerk_proxy_path(path) or path in {
+            "/clerk/webhook", "/api/auth/code/request", "/api/auth/code/verify",
+        }):
+            return Response(
+                "" if request.method == "HEAD" else '{"ok": false, "error": "Not found."}',
+                status=404,
+                headers={
+                    "Cache-Control": "no-store",
+                    "Content-Type": "application/json; charset=utf-8",
+                    "Strict-Transport-Security": HSTS_HEADER,
+                    "X-Content-Type-Options": "nosniff",
+                },
+            )
+
+        # urlparse strips final-segment parameters that an exact-path edge rule still sees.
+        if path in PUBLIC_DISCOVERY_ROUTES and path != raw_path:
+            return Response(
+                "" if request.method == "HEAD" else json.dumps({"ok": False, "error": "Not found."}),
+                status=404,
+                headers={
+                    "Content-Type": "application/json; charset=utf-8",
+                    "Cache-Control": "no-store",
+                    "Referrer-Policy": "no-referrer",
+                    "Strict-Transport-Security": HSTS_HEADER,
+                    "X-Content-Type-Options": "nosniff",
+                },
+            )
+
+        if path in {"/", "/api/jobs/open"}:
+            rejected = reject_public_discovery_request(request.method, path, parsed_request.query)
+            if rejected is not None:
+                return rejected
 
         if not same_origin_api_write_allowed(
             request.method,
@@ -1176,12 +1633,18 @@ class Default(WorkerEntrypoint):
 
         if path.startswith("/static/"):
             asset_path = path.removeprefix("/static")
+            cacheable = (
+                request.method in {"GET", "HEAD"}
+                and is_static_asset_path(asset_path)
+                and not (parsed_request.query or parsed_request.params)
+            )
             return Response(
                 "",
                 status=308,
                 headers={
                     "Location": parsed_request._replace(path=asset_path).geturl(),
-                    "Cache-Control": "public, max-age=86400",
+                    "Cache-Control": "public, max-age=86400" if cacheable else "no-store",
+                    "Referrer-Policy": "no-referrer",
                     "Strict-Transport-Security": HSTS_HEADER,
                 },
             )
@@ -1210,7 +1673,8 @@ class Default(WorkerEntrypoint):
                         "r2_media": hasattr(self.env, "MEDIA"),
                         "write_rate_limiter": hasattr(self.env, "WRITE_RATE_LIMITER"),
                     },
-                }
+                },
+                headers={"Cache-Control": "no-store", **recovery_mode_header(mode)},
             )
 
         if path == "/post-project":
@@ -1367,6 +1831,13 @@ class Default(WorkerEntrypoint):
         if is_static_asset_path(path) and hasattr(self.env, "ASSETS"):
             return await self.env.ASSETS.fetch(request)
 
+        if requests_missing_page_document(request, path):
+            return Response(
+                "" if request.method == "HEAD" else missing_page_html(),
+                status=404,
+                headers={**app_shell_headers(include_dialog_forms=False), "Referrer-Policy": "no-referrer"},
+            )
+
         return json_response(
             {"ok": False, "error": "Not found."},
             status=404,
@@ -1374,6 +1845,16 @@ class Default(WorkerEntrypoint):
         )
 
     async def clerk_frontend_api_proxy(self, request):
+        origin = request.headers.get("Origin")
+        if not clerk_proxy_origin_allowed(
+            request.url,
+            None if origin is None else str(origin),
+            allow_loopback=getattr(self.env, "WORKDOE_ENV", "production") == "local",
+        ):
+            headers = {"Cache-Control": "no-store"}
+            if request.method == "HEAD":
+                return Response("", status=403, headers={**headers, "Strict-Transport-Security": HSTS_HEADER})
+            return json_response({"ok": False, "error": "Sign-in request origin is not allowed."}, 403, headers)
         if not clerk_production_configuration_ready(self.env):
             return json_response(
                 {"ok": False, "error": "Sign-in is temporarily unavailable."},
@@ -1385,6 +1866,7 @@ class Default(WorkerEntrypoint):
                 request.url,
                 request.headers,
                 secret_key=getattr(self.env, "CLERK_SECRET_KEY", ""),
+                method=request.method,
                 proxy_url=getattr(
                     self.env,
                     "CLERK_PROXY_URL",
@@ -1407,7 +1889,44 @@ class Default(WorkerEntrypoint):
         }
         if request.method not in {"GET", "HEAD"}:
             fetch_options["body"] = request.body
-        return await fetch(plan["url"], **fetch_options)
+        try:
+            from js import AbortController
+        except ImportError:
+            controller = None
+        else:
+            controller = AbortController.new()
+            fetch_options["signal"] = controller.signal
+        async def exchange():
+            upstream = await fetch(plan["url"], **fetch_options)
+            if not plan["package_path"]:
+                return upstream
+            body, headers = await verified_clerk_package(plan["package_path"], upstream, method=request.method)
+            return Response(body, headers={**headers, "Strict-Transport-Security": HSTS_HEADER})
+
+        try:
+            # Auth bodies remain streamed; public package bodies must verify within the same deadline.
+            return await asyncio.wait_for(exchange(), CLERK_PROXY_RESPONSE_TIMEOUT_SECONDS)
+        except TimeoutError:
+            if controller is not None:
+                controller.abort()
+            reason, status = "timeout", 504
+        except asyncio.CancelledError:
+            if controller is not None:
+                controller.abort()
+            raise
+        except ClerkProxyError as exc:
+            if controller is not None:
+                controller.abort()
+            reason, status = "package-response", exc.status
+        except Exception:  # noqa: BLE001 - Worker fetch may raise JS-backed transport errors.
+            if controller is not None:
+                controller.abort()
+            reason, status = "transport", 502
+        print(json.dumps({"event": "clerk-proxy-upstream-failed", "reason": reason}))
+        headers = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff"}
+        if request.method == "HEAD":
+            return Response("", status=status, headers={**headers, "Strict-Transport-Security": HSTS_HEADER})
+        return json_response({"ok": False, "error": "Sign-in is temporarily unavailable."}, status, headers)
 
     async def entry_shell(self, request, path: str):
         if request.method not in {"GET", "HEAD"}:
@@ -1418,16 +1937,41 @@ class Default(WorkerEntrypoint):
             )
 
         params = parse_qs(urlparse(request.url).query)
-        rows = []
+        account_entry = path != "/"
+        if account_entry and not clerk_production_configuration_ready(self.env):
+            return public_discovery_unavailable(request.method, 503, sign_in=True)
+        embedded = account_entry and first_query_value(params, "embed") == "1"
+        project_id = selected_job_id(params) if embedded and request.method == "GET" else ""
         filters = entry_job_filters(params)
-        if hasattr(self.env, "DB"):
-            rows = await entry_shell_jobs(self.env, params)
-        rows = guest_project_rows(rows, filters, limit=ENTRY_JOB_LIMIT)
+        try:
+            viewport = None if embedded else parse_public_viewport(params)
+        except PublicJobQueryError:
+            viewport = None
+        rows = []
+        page_snapshot = None
+        discovery_status = None
+        if hasattr(self.env, "DB") and (not embedded or project_id.isdecimal()):
+            discovery_status = await public_discovery_limit_status(self.env)
+            if discovery_status is None:
+                try:
+                    rows, _, truncated = await read_public_project_page(
+                        self.env, filters, viewport, limit=ENTRY_JOB_LIMIT, source="page",
+                    )
+                    page_snapshot = {"viewport": viewport, "truncated": truncated}
+                except Exception:  # noqa: BLE001 - D1 failures cross the Worker binding boundary.
+                    discovery_status = 503
+        if discovery_status and not account_entry:
+            return public_discovery_unavailable(request.method, discovery_status)
+        if not discovery_status and page_snapshot is None:
+            rows = guest_project_rows(rows, filters, limit=ENTRY_JOB_LIMIT, viewport=viewport)
         auth_provider = getattr(
             self.env,
             "WORKDOE_AUTH_PROVIDER",
             EMAIL_CODE_AUTH_PROVIDER,
         )
+        staging = is_staging_environment(self.env)
+        if staging:
+            auth_provider = "clerk"
         native_auth = auth_provider == EMAIL_CODE_AUTH_PROVIDER
         clerk_frontend_api_url = (
             ""
@@ -1439,21 +1983,11 @@ class Default(WorkerEntrypoint):
             )
         )
         clerk_publishable_key = getattr(self.env, "CLERK_PUBLISHABLE_KEY", "")
-        map_tile_url, map_tile_attribution = map_tile_configuration(
-            getattr(self.env, "WORKDOE_MAP_TILE_URL", ""),
-            getattr(self.env, "WORKDOE_MAP_TILE_ATTRIBUTION", ""),
-        )
-        if (
-            path in {"/login", "/start", "/create-account"}
-            and not clerk_production_configuration_ready(self.env)
-        ):
-            unavailable_headers = shell_headers("")
-            unavailable_headers["Content-Type"] = "text/plain; charset=utf-8"
-            return Response(
-                "Sign-in is temporarily unavailable.",
-                status=503,
-                headers=unavailable_headers,
-            )
+        if staging:
+            clerk_frontend_api_url = "/__clerk"
+            if not staging_clerk_origin(self.env):
+                clerk_publishable_key = ""
+        map_tile_url, map_tile_attribution = ("", "") if discovery_status else workspace_tile_configuration(self.env)
         html = build_entry_shell_html(
             path,
             params,
@@ -1464,6 +1998,10 @@ class Default(WorkerEntrypoint):
             turnstile_site_key=getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", ""),
             map_tile_url=map_tile_url,
             map_tile_attribution=map_tile_attribution,
+            map_mode="area" if map_tile_url == AREA_MAP_ASSET else None,
+            marketplace_unavailable=bool(discovery_status),
+            page_snapshot=page_snapshot,
+            access_protected_map=staging,
         )
         body = "" if request.method == "HEAD" else html
         return Response(
@@ -1475,6 +2013,7 @@ class Default(WorkerEntrypoint):
                 and path in {"/start", "/create-account", "/post-project", "/login"}
                 and bool(getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", "")),
                 clerk_publishable_key=clerk_publishable_key,
+                map_tile_url=map_tile_url if first_query_value(params, "embed") != "1" else "",
             ),
         )
 
@@ -1484,6 +2023,15 @@ class Default(WorkerEntrypoint):
                 "Method not allowed",
                 status=405,
                 headers={"Allow": "GET, HEAD, POST", "Cache-Control": "no-store"},
+            )
+        if request.method == "POST" and not same_origin_form_write_allowed(
+            request.url,
+            origin=request_header(request, "Origin"),
+            referer=request_header(request, "Referer"),
+            fetch_site=request_header(request, "Sec-Fetch-Site"),
+        ):
+            return Response(
+                unavailable_form_html(), status=403, headers=app_shell_headers(include_dialog_forms=False),
             )
         if not hasattr(self.env, "DB"):
             return Response(
@@ -1526,13 +2074,18 @@ class Default(WorkerEntrypoint):
                 headers={"Location": location, "Cache-Control": "no-store"},
             )
 
-        draft = await job_draft_for_request(self.env, request)
+        try:
+            draft = None if request.method == "POST" else await job_draft_for_request(self.env, request)
+        except JobDraftReadError:
+            return job_draft_unavailable_response(request.method)
         form = job_draft_form(draft)
         if not draft and requested_family:
             form["service_group_slug"] = requested_family
         if not draft and requested_service:
             form.update(service_selection(requested_service, requested_family))
         errors: list[str] = []
+        save_failure_status = None
+        retry_after = None
         if request.method == "POST":
             try:
                 form_data = await request_form_data(
@@ -1550,6 +2103,8 @@ class Default(WorkerEntrypoint):
                         "service_group_slug",
                         "service_slug",
                         "project_setting",
+                        "license_preference",
+                        "service_policy_acknowledgement",
                         "desired_date",
                         "city",
                         "state",
@@ -1562,15 +2117,31 @@ class Default(WorkerEntrypoint):
                 }
                 form = cleaned_job_payload(payload)
                 errors = validate_job_payload(form)
-                try:
-                    await verify_turnstile_for_request(
-                        self.env,
-                        request,
-                        payload,
-                        action="job-draft",
+                if not errors:
+                    try:
+                        await verify_turnstile_for_request(
+                            self.env,
+                            request,
+                            payload,
+                            action="job-draft",
+                        )
+                    except TurnstileError as exc:
+                        errors.append(str(exc))
+                if not errors:
+                    # Guests share a per-location draft budget without an IP-based key.
+                    limit_key = (
+                        authenticated_write_rate_limit_key(row_value(user, "id"))
+                        if user else "workdoe-guest-project-draft"
                     )
-                except TurnstileError as exc:
-                    errors.append(str(exc))
+                    limit_response = await worker_write_rate_limit_response(self.env, limit_key)
+                    if limit_response is not None:
+                        save_failure_status = limit_response.status
+                        if save_failure_status == 429:
+                            retry_after = "60"
+                            errors.append("Too many draft saves. Wait a minute and try again.")
+                        else:
+                            retry_after = "5"
+                            errors.append("Draft saving is temporarily unavailable. Please try again.")
                 if not errors and enforce_service_activation(self.env):
                     zone_slug = job_zone_slug(form["city"], form["state"], form["zip_code"])
                     activation = await service_activation_record(
@@ -1579,20 +2150,26 @@ class Default(WorkerEntrypoint):
                     if not activation_is_live(activation):
                         errors.append(ACTIVATION_NOT_OPEN_MESSAGE)
                 if not errors:
-                    token = await save_job_draft_record(self.env, request, form)
-                    return Response(
-                        "",
-                        status=303,
-                        headers={
-                            "Location": (
-                                "/jobs/new"
-                                if user
-                                else "/create-account?intent=post-job&draft=saved"
-                            ),
-                            "Set-Cookie": job_draft_cookie(token),
-                            "Cache-Control": "no-store",
-                        },
-                    )
+                    try:
+                        token = await save_job_draft_record(self.env, request, form)
+                    except Exception:  # noqa: BLE001 - D1 failures cross the Worker binding boundary.
+                        save_failure_status = 503
+                        retry_after = "5"
+                        errors.append("We could not confirm your draft was saved. Please try again.")
+                    else:
+                        return Response(
+                            "",
+                            status=303,
+                            headers={
+                                "Location": (
+                                    "/jobs/new"
+                                    if user
+                                    else "/create-account?intent=post-job&draft=saved"
+                                ),
+                                "Set-Cookie": job_draft_cookie(token),
+                                "Cache-Control": "no-store",
+                            },
+                        )
 
         embedded = embedded_dialog_request(request)
         html = public_job_draft_html(
@@ -1600,15 +2177,17 @@ class Default(WorkerEntrypoint):
             errors,
             getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", ""),
             embedded=embedded,
+            save_unavailable=save_failure_status is not None,
         )
+        headers = app_shell_headers(
+            include_turnstile=bool(getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", "")),
+        )
+        if retry_after:
+            headers["Retry-After"] = retry_after
         return Response(
             "" if request.method == "HEAD" else html,
-            status=400 if errors else 200,
-            headers=app_shell_headers(
-                include_turnstile=bool(
-                    getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", "")
-                ),
-            ),
+            status=save_failure_status or (400 if errors else 200),
+            headers=headers,
         )
 
     async def safety_page(self, request):
@@ -1702,13 +2281,25 @@ class Default(WorkerEntrypoint):
                 },
             )
 
+        role = row_value(user, "role")
+        expected_role = {
+            "/client/dashboard": "client",
+            "/contractor/dashboard": "contractor",
+        }.get(path)
+        if expected_role and role != expected_role:
+            return Response(
+                "" if request.method == "HEAD" else dashboard_access_html(user, expected_role),
+                status=403,
+                headers=app_shell_headers(),
+            )
+
         params = parse_qs(urlparse(request.url).query)
         embedded = embedded_dialog_request(request)
         html = ""
         include_map = False
+        map_tile_url = ""
         include_turnstile = False
         include_clerk = False
-        role = row_value(user, "role")
         if (
             role in {"client", "contractor"}
             and not path.startswith("/messages/")
@@ -1765,9 +2356,8 @@ class Default(WorkerEntrypoint):
                 [saved_location_response(location) for location in locations],
                 [project_template_response(item) for item in templates],
                 source_jobs,
-                int(first_query_value(params, "source_job") or 0)
-                if first_query_value(params, "source_job").isdigit()
-                else 0,
+                parse_url_record_id(first_query_value(params, "source_job")),
+                email_available=marketplace_email_enabled(self.env),
             )
         elif path == "/client/requests" and role == "client":
             rows = await client_jobs_for_user(self.env, row_value(user, "id"))
@@ -1833,42 +2423,40 @@ class Default(WorkerEntrypoint):
             )
             lead_payload["preferences"] = contractor_preferences_response(preferences_row)
             lead_payload["saved_lead_view_url"] = saved_lead_view_url(preferences_row)
-            map_tile_url, map_tile_attribution = map_tile_configuration(
-                getattr(self.env, "WORKDOE_MAP_TILE_URL", ""),
-                getattr(self.env, "WORKDOE_MAP_TILE_ATTRIBUTION", ""),
-            )
+            map_tile_url, map_tile_attribution = workspace_tile_configuration(self.env)
             html = lead_board_html(
                 user,
                 lead_payload,
                 map_tile_url=map_tile_url,
                 map_tile_attribution=map_tile_attribution,
+                map_mode="area" if map_tile_url == AREA_MAP_ASSET else None,
+                email_available=marketplace_email_enabled(self.env),
+                access_protected_map=is_staging_environment(self.env),
             )
-            include_map = True
+            include_map = bool(map_tile_url)
         elif path == "/jobs/new" and role == "client":
             include_turnstile = bool(getattr(self.env, "WORKDOE_TURNSTILE_SITE_KEY", ""))
-            draft = await job_draft_for_request(self.env, request)
+            try:
+                draft = await job_draft_for_request(self.env, request)
+            except JobDraftReadError:
+                return job_draft_unavailable_response(request.method, signed_in=True)
             repeat_job = None
             repeat_invitation = None
             project_template = None
             saved_location = None
-            repeat_value = first_query_value(params, "repeat")
-            if not draft and repeat_value.isdigit() and int(repeat_value) > 0:
-                candidate = await job_for_detail(self.env, int(repeat_value))
+            repeat_id = parse_url_record_id(first_query_value(params, "repeat"))
+            if not draft and repeat_id:
+                candidate = await job_for_detail(self.env, repeat_id)
                 if can_update_job(user, candidate):
                     repeat_job = dict(candidate)
                     repeat_job["desired_date"] = ""
-            invite_value = first_query_value(params, "invite")
-            if (
-                not draft
-                and repeat_job
-                and invite_value.isdigit()
-                and int(invite_value) > 0
-            ):
+            invite_id = parse_url_record_id(first_query_value(params, "invite"))
+            if not draft and repeat_job and invite_id:
                 source = await repeat_invitation_source_record(
                     self.env,
                     row_value(user, "id"),
-                    int(repeat_value),
-                    int(invite_value),
+                    repeat_id,
+                    invite_id,
                 )
                 try:
                     repeat_invitation = validate_repeat_invitation_source(user, source)
@@ -1878,17 +2466,12 @@ class Default(WorkerEntrypoint):
                         status=exc.status,
                         headers={"Cache-Control": "no-store"},
                     )
-            template_value = first_query_value(params, "template")
-            if (
-                not draft
-                and not repeat_job
-                and template_value.isdigit()
-                and int(template_value) > 0
-            ):
+            template_id = parse_url_record_id(first_query_value(params, "template"))
+            if not draft and not repeat_job and template_id:
                 project_template = await client_project_template_for_user(
                     self.env,
                     row_value(user, "id"),
-                    int(template_value),
+                    template_id,
                 )
                 if not project_template:
                     return Response(
@@ -1896,17 +2479,12 @@ class Default(WorkerEntrypoint):
                         status=404,
                         headers={"Cache-Control": "no-store"},
                     )
-            location_value = first_query_value(params, "location")
-            if (
-                not draft
-                and not repeat_job
-                and location_value.isdigit()
-                and int(location_value) > 0
-            ):
+            location_id = parse_url_record_id(first_query_value(params, "location"))
+            if not draft and not repeat_job and location_id:
                 saved_location = await client_saved_location_for_user(
                     self.env,
                     row_value(user, "id"),
-                    int(location_value),
+                    location_id,
                 )
             saved_locations = await client_saved_locations_for_user(
                 self.env,
@@ -2024,11 +2602,11 @@ class Default(WorkerEntrypoint):
             )
         elif path.startswith("/jobs/") and role in {"contractor", "admin"}:
             job_id = parse_app_job_id(path)
-            job = await job_for_detail(self.env, job_id)
+            job = await job_for_detail(
+                self.env, job_id, contractor_id=row_value(user, "id") if role == "contractor" else None,
+            )
             if not can_view_job_detail(user, job):
                 return Response("Lead not found", status=404, headers={"Cache-Control": "no-store"})
-            include_hidden = row_value(user, "role") == "admin"
-            photos = await job_photos_for_detail(self.env, job_id, include_hidden=include_hidden)
             existing_request = None
             lead_feedback = None
             if row_value(user, "role") == "contractor":
@@ -2054,6 +2632,7 @@ class Default(WorkerEntrypoint):
                     job_id,
                     row_value(user, "id"),
                 )
+            photos = await detail_photos_for_viewer(self.env, user, job, existing_request)
             scope_answers = scope_answer_projection(
                 row_value(job, "service_slug", ""),
                 await load_job_scope_answers(self.env, job_id),
@@ -2090,7 +2669,8 @@ class Default(WorkerEntrypoint):
                     params, "proposal_template"
                 )
                 if selected_template_raw and not existing_request:
-                    if not selected_template_raw.isdigit():
+                    selected_template_id = parse_url_record_id(selected_template_raw)
+                    if not selected_template_id:
                         return Response(
                             "Proposal template not found",
                             status=404,
@@ -2099,7 +2679,7 @@ class Default(WorkerEntrypoint):
                     selected_template = await contractor_proposal_template_for_user(
                         self.env,
                         row_value(user, "id"),
-                        int(selected_template_raw),
+                        selected_template_id,
                     )
                     if not selected_template:
                         return Response(
@@ -2181,12 +2761,18 @@ class Default(WorkerEntrypoint):
                     status=404,
                     headers={"Cache-Control": "no-store"},
                 )
-            messages = await messages_for_thread(
+            try:
+                history_params = parse_qs(urlparse(request.url).query, keep_blank_values=True)
+                through = parse_message_through(history_params.get("through", []))
+            except ValueError as exc:
+                return Response(str(exc), status=400, headers={"Cache-Control": "no-store"})
+            messages, next_through = await messages_for_thread(
                 self.env,
                 thread_id,
+                through,
                 include_hidden=row_value(user, "role") == "admin",
             )
-            if request.method != "HEAD" and row_value(user, "role") != "admin":
+            if request.method != "HEAD" and row_value(user, "role") != "admin" and through is None:
                 await mark_message_thread_read(
                     self.env,
                     thread_id,
@@ -2196,7 +2782,8 @@ class Default(WorkerEntrypoint):
                     if messages
                     else row_value(thread, "created_at"),
                 )
-            thread_payload = thread_detail_payload(thread, messages)
+            thread_payload = thread_detail_payload(thread, messages, include_moderation_evidence=role == "admin")
+            thread_payload["history"] = {"through": through, "next_through": next_through}
             message_site_key = ""
             if role in {"client", "contractor"}:
                 inbox_payload = message_threads_listing_payload(
@@ -2234,6 +2821,7 @@ class Default(WorkerEntrypoint):
             status=200,
             headers=app_shell_headers(
                 include_map=include_map,
+                map_tile_url=map_tile_url,
                 include_turnstile=include_turnstile,
                 include_clerk=include_clerk,
                 clerk_publishable_key=getattr(
@@ -2265,7 +2853,7 @@ class Default(WorkerEntrypoint):
         contractor_id = parse_app_contractor_id(path)
         user = await self.optional_workdoe_user(request)
         params = parse_qs(urlparse(request.url).query)
-        requested_job_id = positive_int(first_query_value(params, "job_id"))
+        requested_job_id = parse_url_record_id(first_query_value(params, "job_id"))
         contractor = await public_contractor_for_profile(self.env, contractor_id)
         if not can_view_public_contractor_profile(user, contractor):
             return Response(
@@ -2273,7 +2861,11 @@ class Default(WorkerEntrypoint):
                 status=404,
                 headers={"Cache-Control": "no-store"},
             )
-        photos = await visible_contractor_profile_photos(self.env, contractor_id)
+        photos = (
+            await visible_contractor_profile_photos(self.env, contractor_id)
+            if user and row_value(user, "status") == "active"
+            else []
+        )
         credentials = await contractor_credentials_for_user(self.env, contractor_id)
         market_fit = await contractor_market_fit_for_user(
             self.env,
@@ -2328,14 +2920,7 @@ class Default(WorkerEntrypoint):
 
     async def public_open_jobs(self, request):
         if not hasattr(self.env, "DB"):
-            return json_response(
-                {
-                    "ok": False,
-                    "error": "D1 binding is required before public jobs can load.",
-                },
-                status=503,
-                headers={"Cache-Control": "no-store"},
-            )
+            return public_discovery_unavailable(request.method, 503, api=True)
 
         params = parse_qs(urlparse(request.url).query)
         limit = parse_public_limit(first_query_value(params, "limit"))
@@ -2350,51 +2935,16 @@ class Default(WorkerEntrypoint):
                 status=400,
                 headers={"Cache-Control": "no-store"},
             )
-        query, bindings = build_public_open_jobs_query(
-            filters,
-            viewport,
-            order_clause=public_job_order_clause(filters["sort"]),
-            limit=limit,
-            cursor_offset=cursor_offset,
-        )
-
+        limited = await public_discovery_limit_status(self.env)
+        if limited is not None:
+            return public_discovery_unavailable(request.method, limited, api=True)
         try:
-            result = await db_run(self.env, query, *bindings)
+            rows, next_cursor, truncated = await read_public_project_page(
+                self.env, filters, viewport, limit=limit, cursor_offset=cursor_offset, source="api",
+            )
         except Exception:  # noqa: BLE001 - D1 failures cross the Worker binding boundary.
-            return json_response(
-                {
-                    "ok": False,
-                    "error": "Public jobs are temporarily unavailable.",
-                },
-                status=503,
-                headers={"Cache-Control": "no-store"},
-            )
+            return public_discovery_unavailable(request.method, 503, api=True)
 
-        live_rows = rows_from(result)
-        print(
-            json.dumps(
-                public_query_telemetry(
-                    result,
-                    returned_rows=min(len(live_rows), limit),
-                    filters=filters,
-                    viewport_applied=viewport is not None,
-                    cursor_offset=cursor_offset,
-                ),
-                sort_keys=True,
-            )
-        )
-        has_more = len(live_rows) > limit
-        live_rows = live_rows[:limit]
-        rows = guest_project_rows(
-            live_rows,
-            filters,
-            limit=limit,
-            viewport=viewport,
-            include_demo=cursor_offset == 0,
-        )
-        next_cursor = (
-            encode_public_cursor(cursor_offset + len(live_rows)) if has_more else ""
-        )
         return json_response(
             public_jobs_payload(
                 rows,
@@ -2403,7 +2953,7 @@ class Default(WorkerEntrypoint):
                 view="all",
                 viewport=viewport,
                 next_cursor=next_cursor,
-                truncated=has_more,
+                truncated=truncated,
             ),
             headers={"Cache-Control": "no-store"},
         )
@@ -2804,130 +3354,43 @@ class Default(WorkerEntrypoint):
                 headers={"Cache-Control": "no-store"},
             )
 
-        created_at = utc_now()
-        result = await db_run(
-            self.env,
-            """
-            INSERT INTO jobs
-                (client_id, title, category, service_group_slug, service_slug,
-                 service_zone_slug, project_setting, license_preference,
-                 city, state, zip_code, description,
-                 desired_date, budget_min, budget_max, status, approx_lat, approx_lng,
-                 bid_limit, bidding_closes_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
-            """,
-            row_value(user, "id"),
-            job["title"],
-            job["category"],
-            job["service_group_slug"],
-            job["service_slug"],
-            service_zone_slug,
-            job["project_setting"],
-            int(job["license_preference"] == "1"),
-            job["city"],
-            job["state"],
-            job["zip_code"],
-            job["description"],
-            job["desired_date"],
-            budget_database_value(job["budget_min"]),
-            budget_database_value(job["budget_max"]),
-            job["approx_lat"],
-            job["approx_lng"],
-            DEFAULT_BID_LIMIT,
-            default_bidding_closes_at(created_at),
-            created_at,
-            created_at,
+        actor_id = row_value(user, "id")
+        draft_token = job_draft_token_from_cookie(request.headers.get("Cookie"))
+        draft_hash = (
+            job_draft_token_hash(draft_token, getattr(self.env, "WORKDOE_SECRET_KEY", ""))
+            if draft_token else ""
         )
-        job_id = last_insert_id(result)
-        if not job_id:
-            await cancel_idempotent_request(
-                self.env, row_value(user, "id"), request_state
+        try:
+            job_id = await publish_job(
+                self.env, actor_id, request_state, job, service_zone_slug, repeat_source, draft_hash
             )
+        except Exception:  # noqa: BLE001 - D1 binding failures can be JS-backed.
+            print(json.dumps({"event": "d1-project-publication-failed"}))
+            job_id = None
+        if not job_id:
+            try:
+                await cancel_idempotent_request(self.env, actor_id, request_state)
+            except Exception:  # noqa: BLE001 - D1 may be unavailable for cleanup.
+                print(json.dumps({"event": "d1-project-reservation-cleanup-failed"}))
             return json_response(
-                {"ok": False, "error": "The project could not be created."},
+                {"ok": False, "error": "Could not confirm your project was posted. Check Projects before retrying."},
                 status=503,
                 headers={"Cache-Control": "no-store"},
             )
-        await record_service_policy_acknowledgement(
-            self.env,
-            user_id=row_value(user, "id"),
-            actor_role="client",
-            context="project-post",
-            service_slug=job["service_slug"],
-            acknowledgement_version=job["service_policy_acknowledgement"],
-            job_id=job_id,
-        )
-        await replace_job_scope_answers(
-            self.env,
-            job_id,
-            job["service_slug"],
-            job.get("scope_answers", {}),
-        )
-        await complete_idempotent_request(
-            self.env,
-            row_value(user, "id"),
-            request_state,
-            job_id,
-        )
         if repeat_source:
-            await db_run(
-                self.env,
-                """
-                INSERT INTO repeat_provider_invitations
-                    (job_id, source_job_id, source_match_request_id,
-                     client_id, contractor_id, service_slug, status,
-                     created_at, responded_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, NULL, ?)
-                """,
-                job_id,
-                repeat_source["source_job_id"],
-                repeat_source["source_match_request_id"],
-                row_value(user, "id"),
-                repeat_source["contractor_id"],
-                repeat_source["service_slug"],
-                created_at,
-                created_at,
-            )
-            await record_event(
-                self.env,
-                "repeat-provider-invited",
-                target_type="job",
-                target_id=job_id,
-                payload={
-                    "source_job_id": repeat_source["source_job_id"],
-                    "source_match_request_id": repeat_source[
-                        "source_match_request_id"
-                    ],
-                    "contractor_id": repeat_source["contractor_id"],
-                },
-                status="processed",
-            )
-            await queue_repeat_provider_invitation_email(
-                self.env,
-                repeat_source["contractor_id"],
-                job_id,
-                job["title"],
-                job["city"],
-                job["state"],
-            )
-        await consume_job_draft_record(self.env, request)
-        await record_event(
-            self.env,
-            "job-created",
-            target_type="job",
-            target_id=job_id,
-            payload={
-                "client_id": row_value(user, "id"),
-                "category": job["category"],
-            },
-            status="processed",
-        )
+            try:
+                await queue_repeat_provider_invitation_email(
+                    self.env, repeat_source["contractor_id"], job_id,
+                    job["title"], job["city"], job["state"],
+                )
+            except Exception:  # noqa: BLE001 - Optional notification cannot undo publication.
+                print(json.dumps({"event": "repeat-provider-notification-failed"}))
         await queue_contractor_lead_alert_fanout(self.env, job_id)
         return json_response(
             {
                 "ok": True,
                 "job_id": job_id,
-                "url": f"/client/jobs/{job_id}" if job_id else "/client/dashboard",
+                "url": f"/client/jobs/{job_id}",
                 "location_privacy": JOB_LOCATION_PRIVACY_NOTICE,
                 "repeat_provider_invited": bool(repeat_source),
                 "replayed": False,
@@ -2985,7 +3448,7 @@ class Default(WorkerEntrypoint):
             body["category"] = existing_selection["category"]
             body["service_group_slug"] = existing_selection["service_group_slug"]
             body["service_slug"] = existing_selection["service_slug"]
-            job = job_post_payload(body)
+            job = job_post_payload(body, preserved_desired_date=row_value(existing_job, "desired_date"))
         except (OnboardingError, TurnstileError) as exc:
             return json_response(
                 {"ok": False, "error": str(exc)},
@@ -3011,78 +3474,21 @@ class Default(WorkerEntrypoint):
                     headers={"Cache-Control": "no-store"},
                 )
 
-        updated_at = utc_now()
-        await db_run(
-            self.env,
-            """
-            UPDATE jobs
-            SET title = ?,
-                category = ?,
-                service_group_slug = ?,
-                service_slug = ?,
-                service_zone_slug = ?,
-                project_setting = ?,
-                license_preference = ?,
-                city = ?,
-                state = ?,
-                zip_code = ?,
-                description = ?,
-                desired_date = ?,
-                budget_min = ?,
-                budget_max = ?,
-                approx_lat = ?,
-                approx_lng = ?,
-                updated_at = ?
-            WHERE id = ?
-            """,
-            job["title"],
-            job["category"],
-            job["service_group_slug"],
-            job["service_slug"],
-            service_zone_slug,
-            job["project_setting"],
-            int(job["license_preference"] == "1"),
-            job["city"],
-            job["state"],
-            job["zip_code"],
-            job["description"],
-            job["desired_date"],
-            budget_database_value(job["budget_min"]),
-            budget_database_value(job["budget_max"]),
-            job["approx_lat"],
-            job["approx_lng"],
-            updated_at,
-            job_id,
-        )
-        await replace_job_scope_answers(
-            self.env,
-            job_id,
-            job["service_slug"],
-            job.get("scope_answers", {}),
-        )
-        if row_value(user, "role") == "client":
-            await record_service_policy_acknowledgement(
-                self.env,
-                user_id=row_value(user, "id"),
-                actor_role="client",
-                context="project-post",
-                service_slug=job["service_slug"],
-                acknowledgement_version=job[
-                    "service_policy_acknowledgement"
-                ],
-                job_id=job_id,
+        try:
+            saved = await commit_job_edit(self.env, job_id, row_value(user, "id"), job, service_zone_slug)
+        except Exception:  # noqa: BLE001 - D1 can fail through the native SDK boundary.
+            print(json.dumps({"event": "d1-project-edit-failed"}))
+            return json_response(
+                {"ok": False, "error": "Could not confirm your changes were saved. Keep this form open and check Projects before retrying."},
+                status=503,
+                headers={"Cache-Control": "no-store", "Retry-After": "5"},
             )
-        await record_event(
-            self.env,
-            "job-updated",
-            target_type="job",
-            target_id=job_id,
-            payload={
-                "client_id": row_value(user, "id"),
-                "category": job["category"],
-            },
-            status="processed",
-        )
+        if not saved:
+            return json_response(
+                {"ok": False, "error": "Project access changed. Review Projects before trying again."},
+                status=409,
+                headers={"Cache-Control": "no-store"},
+            )
         return json_response(
             {"ok": True, "job_id": job_id, "url": f"/client/jobs/{job_id}"},
             headers={"Cache-Control": "no-store"},
@@ -3204,48 +3610,18 @@ class Default(WorkerEntrypoint):
             )
 
         created_at = utc_now()
-        result = await db_run(
-            self.env,
-            """
-            INSERT OR IGNORE INTO match_requests
-                (job_id, contractor_id, scope_note, price_range, timeline,
-                 experience, questions, availability, status, created_at, updated_at)
-            SELECT jobs.id, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?
-            FROM jobs
-            WHERE jobs.id = ?
-              AND jobs.status = 'open'
-              AND EXISTS (
-                  SELECT 1
-                  FROM users AS clients
-                  WHERE clients.id = jobs.client_id
-                    AND clients.status = 'active'
-              )
-              AND datetime(jobs.bidding_closes_at) > datetime(?)
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM match_requests AS approved_request
-                  WHERE approved_request.job_id = jobs.id
-                    AND approved_request.status = 'approved'
-              )
-              AND (
-                SELECT COUNT(*)
-                FROM match_requests
-                WHERE match_requests.job_id = jobs.id
-              ) < jobs.bid_limit
-            """,
-            row_value(user, "id"),
-            bid["scope_note"],
-            bid["price_range"],
-            bid["timeline"],
-            bid["experience"],
-            bid["questions"],
-            bid["availability"],
-            created_at,
-            created_at,
-            job_id,
-            created_at,
-        )
-        if d1_change_count(result) != 1:
+        try:
+            request_id = await save_match_request(
+                self.env, job, row_value(user, "id"), bid, created_at
+            )
+        except Exception:  # noqa: BLE001 - D1 binding failures can be JS-backed.
+            print(json.dumps({"event": "d1-bid-save-failed"}))
+            return json_response(
+                {"ok": False, "error": "Could not confirm your mini bid was sent. Check Your bids before retrying."},
+                status=503,
+                headers={"Cache-Control": "no-store"},
+            )
+        if not request_id:
             duplicate = await db_run(
                 self.env,
                 """
@@ -3289,55 +3665,6 @@ class Default(WorkerEntrypoint):
                 {"ok": False, "error": "This lead is not available."},
                 status=404,
                 headers={"Cache-Control": "no-store"},
-            )
-        request_id = last_insert_id(result)
-        await record_service_policy_acknowledgement(
-            self.env,
-            user_id=row_value(user, "id"),
-            actor_role="contractor",
-            context="mini-bid",
-            service_slug=row_value(job, "service_slug", ""),
-            acknowledgement_version=bid["service_policy_acknowledgement"],
-            job_id=job_id,
-            match_request_id=request_id,
-        )
-        await record_event(
-            self.env,
-            "match-request-created",
-            target_type="match_request",
-            target_id=request_id,
-            payload={
-                "job_id": job_id,
-                "contractor_id": row_value(user, "id"),
-                "status": "pending",
-            },
-            status="processed",
-        )
-        invitation_update = await db_run(
-            self.env,
-            """
-            UPDATE repeat_provider_invitations
-            SET status = 'bid_sent', responded_at = ?, updated_at = ?
-            WHERE job_id = ?
-              AND contractor_id = ?
-              AND status = 'pending'
-            """,
-            created_at,
-            created_at,
-            job_id,
-            row_value(user, "id"),
-        )
-        if d1_change_count(invitation_update) == 1:
-            await record_event(
-                self.env,
-                "repeat-provider-invitation-bid-sent",
-                target_type="job",
-                target_id=job_id,
-                payload={
-                    "contractor_id": row_value(user, "id"),
-                    "match_request_id": request_id,
-                },
-                status="processed",
             )
         return json_response(
             {
@@ -3458,13 +3785,13 @@ class Default(WorkerEntrypoint):
                 headers={"Cache-Control": "no-store"},
             )
         parts = [part for part in path.removeprefix("/api/jobs/").split("/") if part]
-        if len(parts) != 2 or not parts[0].isdigit() or parts[1] != "extend-bids":
+        job_id = parse_url_record_id(parts[0]) if len(parts) == 2 else 0
+        if not job_id or parts[1] != "extend-bids":
             return json_response(
                 {"ok": False, "error": "Unsupported bid extension route."},
                 status=404,
                 headers={"Cache-Control": "no-store"},
             )
-        job_id = int(parts[0])
         user = await self.optional_workdoe_user(request)
         if not user:
             return json_response(
@@ -4427,7 +4754,7 @@ class Default(WorkerEntrypoint):
 
         user = await self.optional_workdoe_user(request)
         params = parse_qs(urlparse(request.url).query)
-        requested_job_id = positive_int(first_query_value(params, "job_id"))
+        requested_job_id = parse_url_record_id(first_query_value(params, "job_id"))
         contractor = await public_contractor_for_profile(self.env, contractor_id)
         if not can_view_public_contractor_profile(user, contractor):
             return json_response(
@@ -4435,7 +4762,11 @@ class Default(WorkerEntrypoint):
                 status=404,
                 headers={"Cache-Control": "no-store"},
             )
-        photos = await visible_contractor_profile_photos(self.env, contractor_id)
+        photos = (
+            await visible_contractor_profile_photos(self.env, contractor_id)
+            if user and row_value(user, "status") == "active"
+            else []
+        )
         credentials = await contractor_credentials_for_user(self.env, contractor_id)
         market_fit = await contractor_market_fit_for_user(
             self.env,
@@ -4530,23 +4861,21 @@ class Default(WorkerEntrypoint):
                 headers={"Cache-Control": "no-store"},
             )
 
+        target_type, target_id = report["target_type"], report["target_id"]
+        actor_id = row_value(user, "id")
         if not await report_target_visible_to_user(
             self.env,
             user,
-            report["target_type"],
-            report["target_id"],
+            target_type,
+            target_id,
         ):
-            return json_response(
-                {"ok": False, "error": "That item is no longer available to report."},
-                status=404,
-                headers={"Cache-Control": "no-store"},
-            )
+            return report_unavailable_response()
 
-        action = idempotency_action(f"report-{report['target_type']}", report["target_id"])
+        action = idempotency_action(f"report-{target_type}", target_id)
         try:
             request_state = await begin_idempotent_request(
                 self.env,
-                row_value(user, "id"),
+                actor_id,
                 action,
                 "report",
                 request_idempotency_value(request, body),
@@ -4557,6 +4886,10 @@ class Default(WorkerEntrypoint):
                 status=400,
                 headers={"Cache-Control": "no-store"},
             )
+        if target_type == "job" and request_state["state"] != "reserved" and not await report_target_visible_to_user(
+            self.env, user, target_type, target_id,
+        ):
+            return report_unavailable_response()
         conflict = idempotency_conflict_response(request_state)
         if conflict:
             return conflict
@@ -4576,19 +4909,20 @@ class Default(WorkerEntrypoint):
             )
 
         created_at = utc_now()
-        result = await db_run(
-            self.env,
-            """
+        insert_sql = """
             INSERT INTO reports
                 (reporter_id, target_type, target_id, reason, status, created_at, resolved_at)
-            VALUES (?, ?, ?, ?, 'open', ?, NULL)
-            """,
-            row_value(user, "id"),
-            report["target_type"],
-            report["target_id"],
-            report["reason"],
-            created_at,
-        )
+            SELECT ?, ?, ?, ?, 'open', ?, NULL
+        """
+        bindings = (actor_id, target_type, target_id, report["reason"], created_at)
+        if target_type == "job":
+            # The authorization and insert must observe the same project state.
+            insert_sql += " WHERE EXISTS (" + JOB_REPORT_ACCESS_SQL + ")"
+            bindings += (actor_id, target_id)
+        result = await db_run(self.env, insert_sql, *bindings)
+        if target_type == "job" and d1_change_count(result) == 0:
+            await cancel_idempotent_request(self.env, actor_id, request_state)
+            return report_unavailable_response()
         report_id = last_insert_id(result)
         if not report_id:
             await cancel_idempotent_request(
@@ -4673,8 +5007,13 @@ class Default(WorkerEntrypoint):
                 headers={"Cache-Control": "no-store"},
             )
         if action["target_type"] == "user":
-            target_user = await workdoe_user_by_id(self.env, action["target_id"])
-            if target_user and row_value(target_user, "role") == "admin":
+            target_user = await moderation_user_snapshot(self.env, action["target_id"])
+            if not target_user:
+                return json_response(
+                    {"ok": False, "error": "That moderation target is no longer available."},
+                    status=404, headers={"Cache-Control": "no-store"},
+                )
+            if row_value(target_user, "role") == "admin":
                 return json_response(
                     {
                         "ok": False,
@@ -4683,6 +5022,13 @@ class Default(WorkerEntrypoint):
                     status=400,
                     headers={"Cache-Control": "no-store"},
                 )
+            if action["action"] == "activate" and row_value(target_user, "auth_provider") == "clerk":
+                failure = await clerk_reactivation_failure(self.env, row_value(target_user, "external_subject"))
+                if failure:
+                    status, message = failure
+                    return json_response(
+                        {"ok": False, "error": message}, status=status, headers={"Cache-Control": "no-store"},
+                    )
 
         if action["target_type"] == "credential":
             credential_result = await db_run(
@@ -4763,7 +5109,15 @@ class Default(WorkerEntrypoint):
 
         acted_at = utc_now()
         sql, params, notes, state = admin_update_statement(action, acted_at)
-        await db_run(self.env, sql, *params)
+        if action["target_type"] == "user":
+            changed = await update_moderated_user(self.env, target_user, state, row_value(user, "id"))
+            if not changed:
+                return json_response(
+                    {"ok": False, "error": "The account changed during review. Reload and try again."},
+                    status=409, headers={"Cache-Control": "no-store"},
+                )
+        else:
+            await db_run(self.env, sql, *params)
         await insert_moderation_action(
             self.env,
             admin_id=row_value(user, "id"),
@@ -4907,7 +5261,7 @@ class Default(WorkerEntrypoint):
                     bidding_closes_at,
                     updated_at,
                 )
-        await db_run(
+        changed = await db_run(
             self.env,
             """
             UPDATE jobs
@@ -4918,6 +5272,22 @@ class Default(WorkerEntrypoint):
                 closed_at = ?,
                 updated_at = ?
             WHERE id = ?
+              AND client_id = ?
+              AND status = ?
+              AND updated_at IS ?
+              AND EXISTS (
+                SELECT 1 FROM users
+                WHERE users.id = jobs.client_id
+                  AND users.role = 'client' AND users.status = 'active'
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM match_completions
+                JOIN match_requests
+                  ON match_requests.id = match_completions.match_request_id
+                WHERE match_requests.job_id = jobs.id
+                  AND (match_completions.client_confirmed_at IS NOT NULL
+                    OR match_completions.contractor_confirmed_at IS NOT NULL)
+              )
             """,
             status,
             bidding_closes_at,
@@ -4926,7 +5296,16 @@ class Default(WorkerEntrypoint):
             updated_at if close_outcome else None,
             updated_at,
             job_id,
+            row_value(user, "id"),
+            row_value(job, "status"),
+            row_value(job, "updated_at"),
         )
+        if d1_change_count(changed) != 1:
+            return json_response(
+                {"ok": False, "error": "This project changed. Refresh before trying again."},
+                status=409,
+                headers={"Cache-Control": "no-store"},
+            )
         if status == "closed":
             await db_run(
                 self.env,
@@ -5079,26 +5458,24 @@ class Default(WorkerEntrypoint):
                 status=401,
                 headers={"Cache-Control": "no-store"},
             )
-        job = await job_for_detail(self.env, job_id)
-        if not job:
+        role = row_value(user, "role")
+        job = await job_for_detail(
+            self.env, job_id, contractor_id=row_value(user, "id") if role == "contractor" else None,
+        )
+        allowed = can_view_job_detail(user, job)
+        if not job or (role == "contractor" and not allowed):
             return json_response(
                 {"ok": False, "error": "Job not found."},
                 status=404,
                 headers={"Cache-Control": "no-store"},
             )
-        if not can_view_job_detail(user, job):
+        if not allowed:
             return json_response(
                 {"ok": False, "error": "You cannot view this job."},
                 status=403,
                 headers={"Cache-Control": "no-store"},
             )
         viewer = viewer_kind(user, job)
-        include_hidden_photos = viewer in {"owner", "admin"}
-        photos = await job_photos_for_detail(
-            self.env,
-            job_id,
-            include_hidden=include_hidden_photos,
-        )
         existing_request = None
         if viewer == "contractor":
             existing_request = await contractor_request_for_job(
@@ -5118,6 +5495,7 @@ class Default(WorkerEntrypoint):
                         status=404,
                         headers={"Cache-Control": "no-store"},
                     )
+        photos = await detail_photos_for_viewer(self.env, user, job, existing_request)
         scope_answers = scope_answer_projection(
             row_value(job, "service_slug", ""),
             await load_job_scope_answers(self.env, job_id),
@@ -5187,32 +5565,47 @@ class Default(WorkerEntrypoint):
             timestamp,
             timestamp,
         )
-        if participant == "client":
-            confirmation_result = await db_run(
-                self.env,
-                """
-                UPDATE match_completions
-                SET client_confirmed_at = ?, updated_at = ?
-                WHERE match_request_id = ? AND client_confirmed_at IS NULL
-                """,
-                timestamp,
-                timestamp,
-                request_id,
-            )
-        else:
-            confirmation_result = await db_run(
-                self.env,
-                """
-                UPDATE match_completions
-                SET contractor_confirmed_at = ?, updated_at = ?
-                WHERE match_request_id = ? AND contractor_confirmed_at IS NULL
-                """,
-                timestamp,
-                timestamp,
-                request_id,
-            )
+        confirmation_result = await db_run(
+            self.env,
+            """
+            UPDATE match_completions
+            SET client_confirmed_at = CASE WHEN ? = 'client' THEN ? ELSE client_confirmed_at END,
+                contractor_confirmed_at = CASE WHEN ? = 'contractor' THEN ? ELSE contractor_confirmed_at END,
+                updated_at = ?
+            WHERE match_request_id = ?
+              AND ((? = 'client' AND client_confirmed_at IS NULL)
+                OR (? = 'contractor' AND contractor_confirmed_at IS NULL))
+              AND EXISTS (
+                SELECT 1 FROM match_requests
+                JOIN jobs ON jobs.id = match_requests.job_id
+                JOIN users AS actor ON actor.id = ?
+                WHERE match_requests.id = match_completions.match_request_id
+                  AND match_requests.status = 'approved'
+                  AND jobs.status = 'closed' AND jobs.close_reason = 'workdoe-match'
+                  AND actor.status = 'active' AND actor.role = ?
+                  AND ((actor.role = 'client' AND actor.id = jobs.client_id)
+                    OR (actor.role = 'contractor' AND actor.id = match_requests.contractor_id))
+              )
+            """,
+            participant,
+            timestamp,
+            participant,
+            timestamp,
+            timestamp,
+            request_id,
+            participant,
+            participant,
+            row_value(user, "id"),
+            participant,
+        )
 
         completion = await match_for_completion(self.env, request_id)
+        if not row_value(completion, f"{participant}_confirmed_at"):
+            return json_response(
+                {"ok": False, "error": "This project changed. Refresh before trying again."},
+                status=409,
+                headers={"Cache-Control": "no-store"},
+            )
         verified_now = bool(
             row_value(completion, "client_confirmed_at")
             and row_value(completion, "contractor_confirmed_at")
@@ -5479,7 +5872,7 @@ class Default(WorkerEntrypoint):
                 headers={"Cache-Control": "no-store"},
             )
         try:
-            request_id, action, status = parse_match_decision_path(path)
+            request_id, _, status = parse_match_decision_path(path)
         except MatchDecisionError as exc:
             return json_response(
                 {"ok": False, "error": str(exc)},
@@ -5513,42 +5906,29 @@ class Default(WorkerEntrypoint):
                 match,
                 request_id,
                 requested_status=status,
+                actor_id=row_value(user, "id"),
             )
 
         updated_at = utc_now()
-        if status == "approved":
-            update_result = await db_run(
-                self.env,
-                """
-                UPDATE match_requests
-                SET status = 'approved',
-                    updated_at = ?
-                WHERE id = ?
-                  AND status = 'pending'
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM match_requests AS approved_request
-                      WHERE approved_request.job_id = match_requests.job_id
-                        AND approved_request.status = 'approved'
-                  )
-                """,
-                updated_at,
-                request_id,
+        thread_id = None
+        actor_id = row_value(user, "id")
+        try:
+            if status == "approved":
+                thread_id = await approve_pending_match(
+                    self.env, match, updated_at, actor_id=actor_id,
+                )
+                changed = thread_id is not None
+            else:
+                changed = await reject_pending_match(self.env, match, updated_at, actor_id=actor_id)
+        except Exception:  # noqa: BLE001 - D1 failures cross the Worker binding boundary.
+            event = "d1-match-approval-failed" if status == "approved" else "d1-match-rejection-failed"
+            print(json.dumps({"event": event}))
+            return json_response(
+                {"ok": False, "error": "Could not confirm your choice. Refresh the project before retrying."},
+                status=503,
+                headers={"Cache-Control": "no-store"},
             )
-        else:
-            update_result = await db_run(
-                self.env,
-                """
-                UPDATE match_requests
-                SET status = 'rejected',
-                    updated_at = ?
-                WHERE id = ?
-                  AND status = 'pending'
-                """,
-                updated_at,
-                request_id,
-            )
-        if d1_change_count(update_result) != 1:
+        if not changed:
             refreshed = await match_request_for_decision(self.env, request_id)
             if not refreshed:
                 return json_response(
@@ -5556,11 +5936,17 @@ class Default(WorkerEntrypoint):
                     status=404,
                     headers={"Cache-Control": "no-store"},
                 )
-            if status == "approved" and row_value(refreshed, "status") == "pending":
+            if not can_decide_match_request(user, refreshed):
+                return json_response(
+                    {"ok": False, "error": "You cannot review this mini bid."},
+                    status=403,
+                    headers={"Cache-Control": "no-store"},
+                )
+            if row_value(refreshed, "status") == "pending":
                 return json_response(
                     {
                         "ok": False,
-                        "error": "A contractor has already been chosen for this project.",
+                        "error": "This project or account changed. Refresh before reviewing the mini bid.",
                     },
                     status=409,
                     headers={"Cache-Control": "no-store"},
@@ -5569,42 +5955,8 @@ class Default(WorkerEntrypoint):
                 refreshed,
                 request_id,
                 requested_status=status,
+                actor_id=actor_id,
             )
-        thread_id = None
-        closed_offer_count = 0
-        if status == "approved":
-            closed_offers = await db_run(
-                self.env,
-                """
-                UPDATE match_requests
-                SET status = 'rejected',
-                    updated_at = ?
-                WHERE job_id = ?
-                  AND id != ?
-                  AND status = 'pending'
-                """,
-                updated_at,
-                row_value(match, "job_id"),
-                request_id,
-            )
-            closed_offer_count = d1_change_count(closed_offers)
-            thread_id = await ensure_thread_for_match(self.env, match, updated_at)
-        event_type = "match-request-approved" if status == "approved" else "match-request-rejected"
-        await record_event(
-            self.env,
-            event_type,
-            target_type="match_request",
-            target_id=request_id,
-            payload={
-                "action": action,
-                "job_id": row_value(match, "job_id"),
-                "client_id": row_value(match, "client_id"),
-                "contractor_id": row_value(match, "contractor_id"),
-                "thread_id": thread_id,
-                "closed_offer_count": closed_offer_count,
-            },
-            status="processed",
-        )
         return json_response(
             match_decision_response(
                 request_id,
@@ -5621,12 +5973,28 @@ class Default(WorkerEntrypoint):
         match,
         request_id: int,
         requested_status: str,
+        *,
+        actor_id: int,
     ):
         current_status = row_value(match, "status")
-        thread_id = await existing_thread_id_for_match(self.env, request_id)
+        thread_id = await existing_thread_id_for_match(self.env, request_id) if current_status == "approved" else None
         if current_status == requested_status:
             if current_status == "approved" and not thread_id:
-                thread_id = await ensure_thread_for_match(self.env, match, utc_now())
+                try:
+                    thread_id = await ensure_thread_for_match(self.env, match, utc_now(), actor_id=actor_id)
+                except Exception:  # noqa: BLE001 - D1 failures cross the Worker binding boundary.
+                    print(json.dumps({"event": "d1-match-thread-repair-failed"}))
+                    return json_response(
+                        {"ok": False, "error": "Could not confirm the conversation. Refresh the project before retrying."},
+                        status=503,
+                        headers={"Cache-Control": "no-store"},
+                    )
+                if not thread_id:
+                    return json_response(
+                        {"ok": False, "error": "Messaging is unavailable for this project."},
+                        status=409,
+                        headers={"Cache-Control": "no-store"},
+                    )
             return json_response(
                 match_decision_response(
                     request_id,
@@ -5778,49 +6146,29 @@ class Default(WorkerEntrypoint):
                     },
                     headers={"Cache-Control": "no-store"},
                 )
-            created_at = utc_now()
-            result = await db_run(
-                self.env,
-                """
-                INSERT INTO messages (thread_id, sender_id, body, is_hidden, created_at)
-                VALUES (?, ?, ?, 0, ?)
-                """,
-                thread_id,
-                row_value(user, "id"),
-                message_body,
-                created_at,
-            )
-            message_id = last_insert_id(result)
+            actor_id = row_value(user, "id")
+            failure_status = 409
+            try:
+                message_id = await save_thread_message(self.env, actor_id, thread_id, request_state, message_body)
+            except Exception:  # noqa: BLE001 - D1 binding failures can be JS-backed.
+                print(json.dumps({"event": "d1-message-save-failed"}))
+                message_id = None
+                failure_status = 503
             if not message_id:
-                await cancel_idempotent_request(
-                    self.env, row_value(user, "id"), request_state
-                )
+                try:
+                    await cancel_idempotent_request(self.env, actor_id, request_state)
+                except Exception:  # noqa: BLE001 - D1 may be unavailable for cleanup.
+                    print(json.dumps({"event": "d1-message-reservation-cleanup-failed"}))
+                    failure_status = 503
                 return json_response(
-                    {"ok": False, "error": "The message could not be created."},
-                    status=503,
+                    {"ok": False, "error": (
+                        "Could not confirm your message. Check the thread before retrying."
+                        if failure_status == 503
+                        else "You can no longer reply in this message thread. Refresh to continue."
+                    )},
+                    status=failure_status,
                     headers={"Cache-Control": "no-store"},
                 )
-            await complete_idempotent_request(
-                self.env,
-                row_value(user, "id"),
-                request_state,
-                message_id,
-            )
-            await mark_message_thread_read(
-                self.env,
-                thread_id,
-                row_value(user, "id"),
-                message_id,
-                created_at,
-            )
-            await record_event(
-                self.env,
-                "message-created",
-                target_type="thread",
-                target_id=thread_id,
-                payload={"message_id": message_id, "sender_id": row_value(user, "id")},
-                status="processed",
-            )
             return json_response(
                 {
                     "ok": True,
@@ -5833,12 +6181,18 @@ class Default(WorkerEntrypoint):
                 headers={"Cache-Control": "no-store"},
             )
 
-        messages = await messages_for_thread(
+        try:
+            params = parse_qs(urlparse(request.url).query, keep_blank_values=True)
+            through = parse_message_through(params.get("through", []))
+        except ValueError as exc:
+            return json_response({"ok": False, "error": str(exc)}, status=400, headers={"Cache-Control": "no-store"})
+        messages, next_through = await messages_for_thread(
             self.env,
             thread_id,
+            through,
             include_hidden=row_value(user, "role") == "admin",
         )
-        if row_value(user, "role") != "admin":
+        if row_value(user, "role") != "admin" and through is None:
             await mark_message_thread_read(
                 self.env,
                 thread_id,
@@ -5848,10 +6202,9 @@ class Default(WorkerEntrypoint):
                 if messages
                 else row_value(thread, "created_at"),
             )
-        return json_response(
-            thread_detail_payload(thread, messages),
-            headers={"Cache-Control": "no-store"},
-        )
+        payload = thread_detail_payload(thread, messages, include_moderation_evidence=row_value(user, "role") == "admin")
+        payload["history"] = {"through": through, "next_through": next_through}
+        return json_response(payload, headers={"Cache-Control": "no-store"})
 
     async def verified_clerk_claims(self, request):
         if not clerk_production_configuration_ready(self.env):
@@ -5859,12 +6212,30 @@ class Default(WorkerEntrypoint):
         token = extract_clerk_session_token(request.headers)
         if not token:
             raise SessionVerificationError("Session token not found.")
-        return await verify_clerk_session_token(
+        staging = is_staging_environment(self.env)
+        stage_url = getattr(self.env, "WORKDOE_PUBLIC_URL", "")
+        jwt_key = getattr(self.env, "CLERK_JWT_KEY", "")
+
+        async def jwks_fetcher(secret_key):
+            async def lookup():
+                return await budgeted_clerk_jwks(self.env, secret_key)
+
+            # Access-protected staging does not support the Workers Cache API.
+            if staging:
+                return await lookup()
+            scope = hashlib.sha256(f"{jwt_key}\0{secret_key}".encode()).hexdigest()
+            return await cached_clerk_jwks(scope, lookup)
+
+        claims = await verify_clerk_session_token(
             token=token,
-            jwt_key=getattr(self.env, "CLERK_JWT_KEY", ""),
+            jwt_key=jwt_key,
             secret_key=getattr(self.env, "CLERK_SECRET_KEY", ""),
-            authorized_parties=authorized_parties_from_env(self.env, request.url),
+            authorized_parties=[stage_url] if staging else authorized_parties_from_env(self.env, request.url),
+            jwks_fetcher=jwks_fetcher,
         )
+        if staging and (claims.get("iss") != staging_clerk_origin(self.env) or claims.get("azp") != stage_url):
+            raise SessionVerificationError("Session token does not belong to the staging site.")
+        return claims
 
     async def optional_workdoe_user(self, request):
         if native_email_code_enabled(self.env):
@@ -5885,21 +6256,23 @@ class Default(WorkerEntrypoint):
 
     async def private_media(self, request, path: str):
         if request.method not in {"GET", "HEAD"}:
-            return Response(
+            return private_media_response(
                 "Method not allowed",
                 status=405,
-                headers={"Allow": "GET, HEAD", "Cache-Control": "no-store"},
+                headers={"Allow": "GET, HEAD"},
             )
+        if private_media_embedding_blocked(
+            request_header(request, "Sec-Fetch-Site"),
+            request_header(request, "Sec-Fetch-Mode"),
+            request_header(request, "Sec-Fetch-Dest"),
+        ):
+            return private_media_response("Forbidden", status=403)
         if not hasattr(self.env, "DB") or not hasattr(self.env, "MEDIA"):
-            return Response(
-                "Media storage is not configured.",
-                status=503,
-                headers={"Cache-Control": "no-store"},
-            )
+            return private_media_response("Media storage is not configured.", status=503)
         try:
             scope, photo_id = media_scope_from_path(path)
         except MediaAccessError:
-            return Response("Media not found", status=404, headers={"Cache-Control": "no-store"})
+            return private_media_response("Media not found", status=404)
 
         if scope == "job":
             return await self.private_job_photo(request, photo_id)
@@ -5908,7 +6281,7 @@ class Default(WorkerEntrypoint):
     async def private_job_photo(self, request, photo_id: int):
         user = await self.optional_workdoe_user(request)
         if not user:
-            return Response("Sign in required", status=401, headers={"Cache-Control": "no-store"})
+            return private_media_response("Sign in required", status=401)
 
         result = await db_run(
             self.env,
@@ -5916,13 +6289,17 @@ class Default(WorkerEntrypoint):
             SELECT
                 job_photos.id,
                 job_photos.job_id,
-                job_photos.original_filename,
                 job_photos.stored_path,
                 job_photos.content_type,
                 job_photos.is_hidden,
                 jobs.client_id,
                 jobs.status,
                 clients.status AS client_status,
+                EXISTS (
+                    SELECT 1
+                    FROM match_requests
+                    WHERE match_requests.job_id = jobs.id AND match_requests.status = 'approved'
+                ) AS has_any_approved_match,
                 CASE WHEN EXISTS (
                     SELECT 1
                     FROM match_requests
@@ -5941,32 +6318,31 @@ class Default(WorkerEntrypoint):
         )
         rows = rows_from(result)
         if not rows:
-            return Response("Media not found", status=404, headers={"Cache-Control": "no-store"})
+            return private_media_response("Media not found", status=404)
         photo = rows[0]
         if not can_view_job_photo(user, photo):
-            if row_value(photo, "is_hidden"):
-                return Response(
-                    "Media not found",
-                    status=404,
-                    headers={"Cache-Control": "no-store"},
-                )
-            return Response("Forbidden", status=403, headers={"Cache-Control": "no-store"})
+            if row_value(photo, "is_hidden") or row_value(photo, "status") == "hidden":
+                return private_media_response("Media not found", status=404)
+            return private_media_response("Forbidden", status=403)
 
         try:
             key = safe_media_key(row_value(photo, "stored_path"), f"jobs/{row_value(photo, 'job_id')}")
         except MediaAccessError:
-            return Response("Media not found", status=404, headers={"Cache-Control": "no-store"})
+            return private_media_response("Media not found", status=404)
         return await self.r2_media_response(request, key, photo)
 
     async def private_contractor_photo(self, request, photo_id: int):
         user = await self.optional_workdoe_user(request)
+        if not user:
+            return private_media_response("Sign in required", status=401)
+        if row_value(user, "status") != "active":
+            return private_media_response("Active account required", status=403)
         result = await db_run(
             self.env,
             """
             SELECT
                 contractor_photos.id,
                 contractor_photos.contractor_id,
-                contractor_photos.original_filename,
                 contractor_photos.stored_path,
                 contractor_photos.content_type,
                 contractor_photos.is_hidden,
@@ -5980,10 +6356,10 @@ class Default(WorkerEntrypoint):
         )
         rows = rows_from(result)
         if not rows:
-            return Response("Media not found", status=404, headers={"Cache-Control": "no-store"})
+            return private_media_response("Media not found", status=404)
         photo = rows[0]
         if not can_view_contractor_photo(user, photo):
-            return Response("Media not found", status=404, headers={"Cache-Control": "no-store"})
+            return private_media_response("Media not found", status=404)
 
         try:
             key = safe_media_key(
@@ -5991,27 +6367,31 @@ class Default(WorkerEntrypoint):
                 f"contractors/{row_value(photo, 'contractor_id')}",
             )
         except MediaAccessError:
-            return Response("Media not found", status=404, headers={"Cache-Control": "no-store"})
+            return private_media_response("Media not found", status=404)
         return await self.r2_media_response(request, key, photo)
 
     async def r2_media_response(self, request, key: str, photo):
+        content_type = str(row_value(photo, "content_type") or "").strip().lower()
+        if content_type not in ALLOWED_IMAGE_MIME.values():
+            return private_media_response("Media not found", status=404)
+
         try:
-            media_object = await self.env.MEDIA.get(key)
-        except Exception:  # noqa: BLE001 - R2 failures cross the Worker binding boundary.
-            return Response(
-                "Media is temporarily unavailable.",
-                status=503,
-                headers={"Cache-Control": "no-store"},
+            media_object = (
+                await self.env.MEDIA.head(key)
+                if request.method == "HEAD"
+                else await self.env.MEDIA.get(key)
             )
-        if media_object is None:
-            return Response("Media not found", status=404, headers={"Cache-Control": "no-store"})
+        except Exception:  # noqa: BLE001 - R2 failures cross the Worker binding boundary.
+            return private_media_response("Media is temporarily unavailable.", status=503)
+        if media_object is None or media_object is JS_NULL:
+            return private_media_response("Media not found", status=404)
 
         headers = {
             "Cache-Control": "private, no-store",
             "Content-Disposition": inline_content_disposition(
                 f"workdoe-photo-{row_value(photo, 'id', 'image')}"
             ),
-            "Content-Type": row_value(photo, "content_type") or "application/octet-stream",
+            "Content-Type": content_type,
             "X-Content-Type-Options": "nosniff",
             "X-Workdoe-Media-Policy": PRIVATE_MEDIA_NOTICE,
         }
@@ -6019,7 +6399,7 @@ class Default(WorkerEntrypoint):
         if http_etag:
             headers["ETag"] = http_etag
         body = None if request.method == "HEAD" else getattr(media_object, "body", None)
-        return Response(body, status=200, headers=headers)
+        return private_media_response(body, status=200, headers=headers)
 
     async def upload_private_media(self, request, path: str):
         if request.method != "POST":
@@ -6183,7 +6563,7 @@ class Default(WorkerEntrypoint):
                 key,
                 details,
             )
-            await self.env.MEDIA_QUEUE.send(payload)
+            await send_queue_json(self.env.MEDIA_QUEUE, payload)
             upload_stage = "review-queued"
             await complete_idempotent_request(
                 self.env,
@@ -6574,7 +6954,8 @@ class Default(WorkerEntrypoint):
             if not code_id:
                 raise EmailCodeAuthError("Workdoe could not create a sign-in code.", 500)
             try:
-                await self.env.EMAIL_QUEUE.send(
+                await send_queue_json(
+                    self.env.EMAIL_QUEUE,
                     {
                         "type": "login-code",
                         "to": email,
@@ -6832,43 +7213,49 @@ class Default(WorkerEntrypoint):
                 status=405,
                 headers={"Allow": "POST", "Cache-Control": "no-store"},
             )
-        if not native_email_code_enabled(self.env):
+        native_auth = native_email_code_enabled(self.env)
+        if not native_auth:
             try:
-                claims = await self.verified_clerk_claims(request)
-                secret_key = str(
-                    getattr(self.env, "CLERK_SECRET_KEY", "") or ""
-                ).strip()
+                secret_key = str(getattr(self.env, "CLERK_SECRET_KEY", "") or "").strip()
                 if secret_key:
-                    response = await fetch(
-                        f"https://api.clerk.com/v1/sessions/{claims['sid']}/revoke",
-                        method="POST",
-                        headers={
-                            "Accept": "application/json",
-                            "Authorization": f"Bearer {secret_key}",
-                        },
+                    await asyncio.wait_for(
+                        self.revoke_clerk_logout_session(request, secret_key),
+                        timeout=CLERK_LOGOUT_TIMEOUT_SECONDS,
                     )
-                    if not response.ok:
-                        raise SessionVerificationError(
-                            "Clerk session revocation was not accepted."
-                        )
-            except Exception as exc:  # noqa: BLE001 - Clerk fetch errors cross the JS boundary.
-                print(
-                    json.dumps(
-                        {
-                            "event": "clerk-session-revoke-failed",
-                            "reason": str(exc),
-                        }
-                    )
-                )
-        headers = {
-            "Cache-Control": "no-store",
-            "Set-Cookie": (
-                clear_session_cookie()
-                if native_email_code_enabled(self.env)
-                else "__session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
-            ),
-        }
-        return json_response({"ok": True}, headers=headers)
+            except Exception:  # noqa: BLE001 - Clerk fetch errors cross the JS boundary.
+                print(json.dumps({"event": "clerk-session-revoke-failed"}))
+        cleared_session = (
+            clear_session_cookie()
+            if native_auth else "__session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
+        )
+        return json_response(
+            {"ok": True}, headers={"Cache-Control": "no-store"},
+            set_cookies=(cleared_session, clear_job_draft_cookie()),
+        )
+
+    async def revoke_clerk_logout_session(self, request, secret_key: str) -> None:
+        claims = await self.verified_clerk_claims(request)
+        options = {}
+        try:
+            from js import AbortController
+        except ImportError:  # pragma: no cover - the JS API is only available inside Workers.
+            controller = None
+        else:
+            controller = AbortController.new()
+            options["signal"] = controller.signal
+        try:
+            response = await fetch(
+                f"https://api.clerk.com/v1/sessions/{claims['sid']}/revoke",
+                method="POST", redirect="manual",
+                headers={"Accept": "application/json", "Authorization": f"Bearer {secret_key}"},
+                **options,
+            )
+            if not response.ok:
+                raise SessionVerificationError("Clerk session revocation was not accepted.")
+        except asyncio.CancelledError:
+            if controller is not None:
+                controller.abort()
+            raise
 
     async def auth_session(self, request):
         if request.method != "GET":
@@ -6903,7 +7290,7 @@ class Default(WorkerEntrypoint):
                 {
                     "authenticated": True,
                     "onboarding_required": False,
-                    "workdoe_user": workdoe_user_json(user),
+                    "workdoe_user": {"role": row_value(user, "role")},
                 },
                 headers={"Cache-Control": "no-store"},
             )
@@ -6928,7 +7315,7 @@ class Default(WorkerEntrypoint):
         lookup = await db_run(
             self.env,
             """
-            SELECT id, role, display_name, company_name, status
+            SELECT role, status
             FROM users
             WHERE auth_provider = 'clerk'
               AND external_subject = ?
@@ -6941,8 +7328,6 @@ class Default(WorkerEntrypoint):
             return json_response(
                 {
                     "authenticated": True,
-                    "clerk_user_id": claims["sub"],
-                    "session_id": claims["sid"],
                     "onboarding_required": True,
                     "workdoe_user": None,
                 },
@@ -6963,16 +7348,8 @@ class Default(WorkerEntrypoint):
         return json_response(
             {
                 "authenticated": True,
-                "clerk_user_id": claims["sub"],
-                "session_id": claims["sid"],
                 "onboarding_required": False,
-                "workdoe_user": {
-                    "id": row_value(user, "id"),
-                    "role": row_value(user, "role"),
-                    "display_name": row_value(user, "display_name"),
-                    "company_name": row_value(user, "company_name"),
-                    "status": row_value(user, "status"),
-                },
+                "workdoe_user": {"role": row_value(user, "role")},
             },
             headers={"Cache-Control": "no-store"},
         )
@@ -6996,128 +7373,72 @@ class Default(WorkerEntrypoint):
 
         try:
             claims = await self.verified_clerk_claims(request)
-            secret_key = str(getattr(self.env, "CLERK_SECRET_KEY", "") or "").strip()
-            if not secret_key:
-                raise OnboardingError("Clerk user lookup is not configured.")
-            try:
-                clerk_user_response = await fetch(
-                    f"https://api.clerk.com/v1/users/{claims['sub']}",
-                    method="GET",
-                    headers={
-                        "Accept": "application/json",
-                        "Authorization": f"Bearer {secret_key}",
-                    },
-                )
-            except Exception as exc:
-                raise OnboardingError("Clerk user lookup failed.") from exc
-            if not clerk_user_response.ok:
-                raise OnboardingError("Clerk user lookup was not accepted.")
-            clerk_user = await clerk_user_response.json()
-            claims = claims_with_verified_clerk_email(claims, clerk_user)
-            body = await request_json_object(request)
-            payload = onboarding_payload(claims, body)
-        except (SessionVerificationError, OnboardingError):
+        except SessionVerificationError:
+            return json_response(
+                {"ok": False, "error": "Session token not verified."},
+                status=401,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        try:
+            profile = onboarding_profile(await request_json_object(request))
+        except OnboardingError:
             return json_response(
                 {"ok": False, "error": "Onboarding request was not accepted."},
                 status=400,
                 headers={"Cache-Control": "no-store"},
             )
 
-        existing_link = await db_run(
-            self.env,
-            """
-            SELECT id, role, display_name, company_name, status
-            FROM users
-            WHERE auth_provider = 'clerk'
-              AND external_subject = ?
-            LIMIT 1
-            """,
-            claims["sub"],
-        )
-        linked_rows = rows_from(existing_link)
-        if linked_rows:
-            user = linked_rows[0]
-            if row_value(user, "status") != "active":
-                return json_response(
-                    {"ok": False, "error": "Workdoe account is not active."},
-                    status=403,
-                    headers={"Cache-Control": "no-store"},
-                )
-            await ensure_role_profile(self.env, user, utc_now())
+        subject = claims["sub"]
+        key = f"clerk-onboard:{hashlib.sha256(subject.encode('utf-8')).hexdigest()}"
+        limited = await worker_write_rate_limit_response(self.env, key)
+        if limited is not None:
+            return limited
+
+        try:
+            secret_key = str(getattr(self.env, "CLERK_SECRET_KEY", "") or "").strip()
+            if not secret_key:
+                raise RuntimeError("Clerk user lookup is not configured.")
+            clerk_user = await fetch_clerk_user(subject, secret_key)
+        except Exception:  # noqa: BLE001 - sanitize JS transport/stream failures without logging provider data.
             return json_response(
-                {
-                    "ok": True,
-                    "created": False,
-                    "workdoe_user": {
-                        "id": row_value(user, "id"),
-                        "role": row_value(user, "role"),
-                        "display_name": row_value(user, "display_name"),
-                        "company_name": row_value(user, "company_name"),
-                        "status": row_value(user, "status"),
-                    },
-                },
+                {"ok": False, "error": "Could not check your verified email. Please try again."},
+                status=503,
                 headers={"Cache-Control": "no-store"},
             )
 
-        created_at = utc_now()
-        create_result = await db_run(
-            self.env,
-            """
-            INSERT OR IGNORE INTO users
-                (email, password_hash, role, display_name, company_name,
-                 status, email_verified, auth_provider, external_subject, created_at)
-            VALUES (?, 'clerk-managed', ?, ?, ?, 'active', 1, 'clerk', ?, ?)
-            """,
-            payload["email"],
-            payload["role"],
-            payload["display_name"],
-            payload["company_name"],
-            claims["sub"],
-            created_at,
-        )
-        created_lookup = await db_run(
-            self.env,
-            """
-            SELECT id, role, display_name, company_name, status
-            FROM users
-            WHERE auth_provider = 'clerk'
-              AND external_subject = ?
-            LIMIT 1
-            """,
-            claims["sub"],
-        )
-        created_rows = rows_from(created_lookup)
-        if not created_rows:
+        try:
+            claims = claims_with_verified_clerk_email(claims, clerk_user)
+            payload = onboarding_payload(claims, profile)
+        except OnboardingError:
+            return json_response(
+                {"ok": False, "error": "Onboarding request was not accepted."},
+                status=400,
+                headers={"Cache-Control": "no-store"},
+            )
+
+        try:
+            user, created = await provision_clerk_account(self.env, subject, payload, utc_now())
+        except Exception:  # noqa: BLE001 - D1 failures cross the Worker binding boundary.
+            return json_response(
+                {"ok": False, "error": "Could not finish creating your workspace. Please try again."},
+                status=503,
+                headers={"Cache-Control": "no-store"},
+            )
+        if not user:
             return json_response(
                 {"ok": False, "error": "A Workdoe account already uses this email."},
                 status=409,
                 headers={"Cache-Control": "no-store"},
             )
-        user = created_rows[0]
-        user_id = row_value(user, "id")
-        await ensure_role_profile(self.env, user, created_at)
-        created = d1_change_count(create_result) == 1
-
-        await record_event(
-            self.env,
-            "clerk-onboarding-linked",
-            target_type="user",
-            target_id=user_id,
-            payload={"role": row_value(user, "role"), "created": created},
-            status="processed",
-        )
+        if row_value(user, "status") != "active":
+            return json_response(
+                {"ok": False, "error": "Workdoe account is not active."},
+                status=403,
+                headers={"Cache-Control": "no-store"},
+            )
         return json_response(
-            {
-                "ok": True,
-                "created": created,
-                "workdoe_user": {
-                    "id": user_id,
-                    "role": row_value(user, "role"),
-                    "display_name": row_value(user, "display_name"),
-                    "company_name": row_value(user, "company_name"),
-                    "status": row_value(user, "status"),
-                },
-            },
+            {"ok": True, "created": created, "workdoe_user": workdoe_user_json(user)},
             status=201 if created else 200,
             headers={"Cache-Control": "no-store"},
         )
@@ -7157,11 +7478,26 @@ class Default(WorkerEntrypoint):
                 status=413,
                 headers={"Cache-Control": "no-store"},
             )
-        raw_body = await request.text()
-        if len(raw_body.encode("utf-8")) > MAX_CLERK_WEBHOOK_BODY_BYTES:
+        try:
+            raw_body = await asyncio.wait_for(
+                read_json_stream_bytes(
+                    request.body, max_bytes=content_length, max_chunks=MAX_CLERK_WEBHOOK_BODY_CHUNKS,
+                    label="Webhook request",
+                ),
+                timeout=CLERK_WEBHOOK_BODY_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
             return json_response(
-                {"ok": False, "error": "Webhook request body is too large."},
-                status=413,
+                {"ok": False, "error": "Webhook request body timed out."},
+                status=408,
+                headers={"Cache-Control": "no-store"},
+            )
+        except JsonDataError:
+            raw_body = b""
+        if len(raw_body) != content_length:
+            return json_response(
+                {"ok": False, "error": "Webhook request body is invalid."},
+                status=400,
                 headers={"Cache-Control": "no-store"},
             )
         try:
@@ -7170,30 +7506,22 @@ class Default(WorkerEntrypoint):
                 headers=request.headers,
                 raw_body=raw_body,
             )
-        except SvixVerificationError as exc:
-            await record_event(
-                self.env,
-                "clerk-webhook-rejected",
-                payload={"error_type": type(exc).__name__},
-                status="failed",
-            )
+        except SvixVerificationError:
             return json_response(
                 {"ok": False, "error": "Webhook verification failed."},
                 status=400,
+                headers={"Cache-Control": "no-store"},
             )
 
-        await record_event(
-            self.env,
-            "clerk-webhook-verified",
-            target_type=event.get("type", ""),
-            payload={
-                "event_id": event.get("id"),
-                "event_type": event.get("type"),
-                "subject_id": event.get("data", {}).get("id"),
-                "sync": await sync_linked_clerk_user(self.env, event),
-            },
-            status="processed",
-        )
+        sync = await sync_linked_clerk_user(self.env, event)
+        if sync["action"] != "ignored":
+            await record_event(
+                self.env,
+                "clerk-webhook-verified",
+                target_type=event["type"],
+                payload={"sync": sync},
+                status="processed",
+            )
         return json_response(
             {
                 "ok": True,
@@ -7204,6 +7532,10 @@ class Default(WorkerEntrypoint):
         )
 
     async def scheduled(self, controller, env, ctx):
+        # Class entrypoints receive their bindings on self, even if the event env is null.
+        env = self.env
+        if is_staging_environment(env) or workspace_mode(env) != "normal":
+            return
         cron = getattr(controller, "cron", "")
         if cron == EXPIRE_CODES_CRON:
             await expire_local_auth_tokens(env)
@@ -7216,27 +7548,40 @@ class Default(WorkerEntrypoint):
             return
         await record_event(env, "unknown-cron", payload={"cron": cron}, status="failed")
 
-    async def queue(self, batch):
+    async def queue(self, batch, env=None, ctx=None):
+        if workspace_mode(self.env) != "normal":
+            for message in batch.messages:
+                retry_message(message, delay_seconds=RECOVERY_RETRY_SECONDS)
+            return
+        queue_name = getattr(batch, "queue", "unknown")
+        staging = is_staging_environment(self.env)
+        media_queue = "workdoe-staging-media-review" if staging else "workdoe-media-review"
+        if staging and queue_name != media_queue:
+            for message in batch.messages:
+                if queue_name == "workdoe-staging-email":
+                    ack_message(message)
+                else:
+                    retry_message(message, delay_seconds=RECOVERY_RETRY_SECONDS)
+            return
+        if queue_name not in {"workdoe-email", media_queue}:
+            for message in batch.messages:
+                retry_message(message, delay_seconds=RECOVERY_RETRY_SECONDS)
+            return
+        email = queue_name == "workdoe-email"
         for message in batch.messages:
-            body = getattr(message, "body", {})
-            queue_name = getattr(batch, "queue", "unknown")
-            if queue_name == "workdoe-email":
-                await process_email_queue_message(self.env, message, body, queue_name)
-                continue
-            if queue_name == "workdoe-media-review":
-                await process_media_review_queue_message(self.env, message, body, queue_name)
-                continue
-            await record_event(
-                self.env,
-                "queue-message-consumed",
-                target_type=queue_name,
-                payload={
-                    **queue_payload_shape(body),
+            try:
+                body = getattr(message, "body", {})
+                if email:
+                    await dispatch_queue_json(self.env, message, body, queue_name, process_email_queue_message)
+                else:
+                    await dispatch_media_review_message(self.env, message, body, queue_name)
+            except Exception:  # noqa: BLE001 - isolate JS-backed binding failures to their broker receipt.
+                retry_message(message)
+                print(json.dumps({
+                    "event": "queue-message-processing-failed",
+                    "binding": "EMAIL_QUEUE" if email else "MEDIA_QUEUE",
                     "attempts": getattr(message, "attempts", 0),
-                },
-                status="processed",
-            )
-            ack_message(message)
+                }, sort_keys=True))
 
 
 async def expire_local_auth_tokens(env) -> None:
@@ -7285,6 +7630,28 @@ async def sync_linked_clerk_user(env, event: dict) -> dict:
         return {"action": "skipped", "reason": "no-linked-workdoe-user"}
 
     user_id = rows[0]["id"]
+    # Profile events cannot lift local moderation or an earlier provider disable.
+    status_sql = """
+        UPDATE users
+        SET status = CASE WHEN ? = 'suspended' THEN 'suspended' ELSE status END
+        WHERE id = ? AND auth_provider = 'clerk' AND external_subject = ?
+        """
+    status_params = (sync["status"], user_id, clerk_user_id)
+    if sync["status"] == "suspended":
+        # The receipt advances in the same D1 transaction as the restriction.
+        status_result, _ = await db_batch(env, (
+            (status_sql, status_params),
+            ("""
+            INSERT INTO automation_events (event_type, target_type, target_id, payload_json, status, created_at)
+            SELECT 'clerk-provider-restriction', 'user', ?, '{}', 'processed', ?
+            WHERE changes() = 1
+            """, (user_id, utc_now())),
+        ))
+    else:
+        status_result = await db_run(env, status_sql, *status_params)
+    if d1_change_count(status_result) != 1:
+        return {"action": "skipped", "reason": "identity-link-changed"}
+
     email = sync.get("email", "")
     if email:
         conflict = await db_run(
@@ -7301,36 +7668,29 @@ async def sync_linked_clerk_user(env, event: dict) -> dict:
         )
         if rows_from(conflict):
             return {"action": "blocked", "reason": "email-conflict", "user_id": user_id}
-        await db_run(
+        email_result = await db_run(
             env,
             """
             UPDATE users
             SET email = ?,
-                email_verified = ?,
-                status = ?
-            WHERE id = ?
+                email_verified = ?
+            WHERE id = ? AND auth_provider = 'clerk' AND external_subject = ?
             """,
             email,
             sync["email_verified"],
-            sync["status"],
             user_id,
+            clerk_user_id,
         )
+        if d1_change_count(email_result) != 1:
+            return {"action": "skipped", "reason": "identity-link-changed"}
         return {"action": "updated", "user_id": user_id}
 
-    await db_run(
-        env,
-        """
-        UPDATE users
-        SET status = ?
-        WHERE id = ?
-        """,
-        sync["status"],
-        user_id,
-    )
     return {"action": "status-updated", "user_id": user_id}
 
 
 async def queue_stale_match_reminders(env) -> None:
+    if not marketplace_email_enabled(env):
+        return
     result = await db_run(
         env,
         """
@@ -7372,7 +7732,7 @@ async def queue_stale_match_reminders(env) -> None:
             "contractor_name": row["contractor_name"],
             "preferences_url": "https://workdoe.com/client/profile#bid-reminders",
         }
-        await env.EMAIL_QUEUE.send(payload)
+        await send_queue_json(env.EMAIL_QUEUE, payload)
         await record_event(
             env,
             "stale-match-reminder",
@@ -7393,6 +7753,8 @@ async def queue_repeat_provider_invitation_email(
     city: str,
     state: str,
 ) -> bool:
+    if not marketplace_email_enabled(env):
+        return False
     recipient = first_row(
         await db_run(
             env,
@@ -7407,13 +7769,15 @@ async def queue_repeat_provider_invitation_email(
     )
     payload = {
         "type": "repeat-provider-invitation",
+        "contractor_id": contractor_id,
+        "job_id": job_id,
         "to": row_value(recipient, "email", ""),
         "job_title": job_title,
         "location": f"{city}, {state}",
         "job_url": f"https://workdoe.com/jobs/{job_id}",
     }
     try:
-        await env.EMAIL_QUEUE.send(payload)
+        await send_queue_json(env.EMAIL_QUEUE, payload)
     except Exception as exc:  # noqa: BLE001 - Queue binding errors are JS-backed.
         await record_event_best_effort(
             env,
@@ -7446,6 +7810,8 @@ async def queue_operator_report_alert(
     target_id: int,
 ) -> bool:
     """Queue a generic operator alert without report content or account details."""
+    if is_staging_environment(env):
+        return False
     payload = {
         "type": "operator-report-alert",
         "to": getattr(env, "WORKDOE_ADMIN_EMAIL", ""),
@@ -7455,7 +7821,7 @@ async def queue_operator_report_alert(
         "moderation_url": "https://workdoe.com/admin",
     }
     try:
-        await env.EMAIL_QUEUE.send(payload)
+        await send_queue_json(env.EMAIL_QUEUE, payload)
     except Exception as exc:  # noqa: BLE001 - Queue binding errors are JS-backed.
         await record_event_best_effort(
             env,
@@ -7481,9 +7847,11 @@ async def queue_operator_report_alert(
 
 
 async def queue_contractor_lead_alert_fanout(env, job_id: int) -> bool:
+    if not marketplace_email_enabled(env):
+        return False
     payload = {"type": "contractor-lead-alert-fanout", "job_id": job_id}
     try:
-        await env.EMAIL_QUEUE.send(payload)
+        await send_queue_json(env.EMAIL_QUEUE, payload)
     except Exception as exc:  # noqa: BLE001 - Queue binding errors are JS-backed.
         await record_event_best_effort(
             env,
@@ -7506,85 +7874,12 @@ async def queue_contractor_lead_alert_fanout(env, job_id: int) -> bool:
 
 
 async def process_contractor_lead_alert_fanout(env, job_id: int) -> int:
+    if not marketplace_email_enabled(env):
+        return 0
     candidates = rows_from(
         await db_run(
             env,
-            """
-            SELECT jobs.id AS job_id,
-                   jobs.title AS job_title,
-                   jobs.category,
-                   jobs.service_slug,
-                   jobs.city,
-                   jobs.state,
-                   users.id AS contractor_id,
-                   users.email AS contractor_email,
-                   contractor_lead_alert_deliveries.id AS delivery_id,
-                   contractor_lead_alert_deliveries.status AS delivery_status
-            FROM jobs
-            JOIN users
-              ON users.role = 'contractor' AND users.status = 'active'
-            JOIN contractor_lead_preferences
-              ON contractor_lead_preferences.contractor_id = users.id
-            LEFT JOIN contractor_lead_alert_deliveries
-              ON contractor_lead_alert_deliveries.contractor_id = users.id
-             AND contractor_lead_alert_deliveries.job_id = jobs.id
-            WHERE jobs.id = ?
-              AND jobs.status = 'open'
-              AND datetime(jobs.bidding_closes_at) > datetime('now')
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM match_requests AS approved_request
-                  WHERE approved_request.job_id = jobs.id
-                    AND approved_request.status = 'approved'
-              )
-              AND contractor_lead_preferences.saved_at IS NOT NULL
-              AND contractor_lead_preferences.lead_alert_preference = 'email'
-              AND contractor_lead_preferences.lead_alert_consent_at IS NOT NULL
-              AND contractor_lead_preferences.availability_status != 'unavailable'
-              AND (
-                  contractor_lead_preferences.saved_category = ''
-                  OR contractor_lead_preferences.saved_category = jobs.category
-              )
-              AND (
-                  contractor_lead_preferences.saved_service_group_slug = ''
-                  OR contractor_lead_preferences.saved_service_group_slug = jobs.service_group_slug
-              )
-              AND (
-                  contractor_lead_preferences.saved_service_slug = ''
-                  OR contractor_lead_preferences.saved_service_slug = jobs.service_slug
-              )
-              AND (
-                  contractor_lead_preferences.saved_query = ''
-                  OR instr(
-                      lower(
-                          jobs.title || ' ' || jobs.category || ' ' ||
-                          jobs.city || ' ' || jobs.state
-                      ),
-                      lower(contractor_lead_preferences.saved_query)
-                  ) > 0
-              )
-              AND EXISTS (
-                  SELECT 1 FROM contractor_service_capabilities
-                  WHERE contractor_service_capabilities.contractor_id = users.id
-                    AND contractor_service_capabilities.service_slug = jobs.service_slug
-              )
-              AND EXISTS (
-                  SELECT 1 FROM contractor_service_zones
-                  WHERE contractor_service_zones.contractor_id = users.id
-                    AND contractor_service_zones.zone_slug = jobs.service_zone_slug
-              )
-              AND NOT EXISTS (
-                  SELECT 1 FROM match_requests
-                  WHERE match_requests.job_id = jobs.id
-                    AND match_requests.contractor_id = users.id
-              )
-              AND (
-                  contractor_lead_alert_deliveries.id IS NULL
-                  OR contractor_lead_alert_deliveries.status IN ('pending', 'failed')
-              )
-            ORDER BY users.id
-            LIMIT 50
-            """,
+            lead_alert_candidates_query(),
             job_id,
         )
     )
@@ -7642,7 +7937,7 @@ async def process_contractor_lead_alert_fanout(env, job_id: int) -> int:
             "lead_alert_delivery_id": delivery_id,
         }
         try:
-            await env.EMAIL_QUEUE.send(email_payload)
+            await send_queue_json(env.EMAIL_QUEUE, email_payload)
         except Exception:
             await db_run(
                 env,
@@ -7717,7 +8012,7 @@ async def queue_moderation_digest(env) -> None:
         "to": getattr(env, "WORKDOE_ADMIN_EMAIL", ""),
         "summary": summary,
     }
-    await env.EMAIL_QUEUE.send(payload)
+    await send_queue_json(env.EMAIL_QUEUE, payload)
     await record_event(
         env,
         "moderation-digest",
@@ -7737,17 +8032,23 @@ def ack_message(message) -> None:
         ack()
 
 
-def retry_message(message) -> None:
+def retry_message(message, *, delay_seconds: int | None = None) -> None:
+    if delay_seconds is not None and (
+        type(delay_seconds) is not int or not 1 <= delay_seconds <= 86400
+    ):
+        raise ValueError("Queue retry delay must be between 1 and 86400 seconds.")
     retry = getattr(message, "retry", None)
     if callable(retry):
-        retry()
+        if delay_seconds is None:
+            retry()
+        else:
+            retry(javascript_object({"delaySeconds": delay_seconds}))
 
 
 def queue_payload_shape(body) -> dict:
     if not isinstance(body, dict):
         return {"payload_type": type(body).__name__}
-    keys = sorted({str(key)[:64] for key in body})[:30]
-    return {"payload_keys": keys, "payload_key_count": len(body)}
+    return {"payload_type": "dict", "payload_key_count": len(body)}
 
 
 def last_insert_id(result) -> int | None:
@@ -7765,15 +8066,43 @@ def last_insert_id(result) -> int | None:
     return None
 
 
+JOB_REPORT_ACCESS_SQL = """
+    SELECT 1
+    FROM jobs
+    JOIN users AS owner ON owner.id = jobs.client_id
+    JOIN users AS reporter ON reporter.id = ?
+    WHERE jobs.id = ? AND reporter.status = 'active' AND (
+        reporter.role = 'admin' OR (
+            reporter.role = 'contractor' AND owner.status = 'active'
+            AND jobs.status IN ('open', 'closed') AND (
+                EXISTS (
+                    SELECT 1 FROM match_requests AS own_request
+                    WHERE own_request.job_id = jobs.id AND own_request.contractor_id = reporter.id
+                ) OR (jobs.status = 'open' AND NOT EXISTS (
+                    SELECT 1 FROM match_requests AS approved_request
+                    WHERE approved_request.job_id = jobs.id AND approved_request.status = 'approved'
+                ))
+            )
+        )
+    )
+"""
+
+
+def report_unavailable_response() -> Response:
+    return json_response(
+        {"ok": False, "error": "That item is no longer available to report."},
+        status=404, headers={"Cache-Control": "no-store"},
+    )
+
+
 async def report_target_visible_to_user(env, user, target_type: str, target_id: int) -> bool:
     role = row_value(user, "role")
     user_id = row_value(user, "id")
+    if target_type == "job":
+        return first_row(await db_run(env, JOB_REPORT_ACCESS_SQL, user_id, target_id)) is not None
     if role == "admin":
         result = await db_run(env, report_target_query(target_type), target_id)
         return first_row(result) is not None
-    if target_type == "job":
-        job = await job_for_detail(env, target_id)
-        return role == "contractor" and can_view_job_detail(user, job)
     if target_type == "profile":
         contractor = await public_contractor_for_profile(env, target_id)
         return (
@@ -7805,6 +8134,47 @@ async def report_target_visible_to_user(env, user, target_type: str, target_id: 
 async def admin_target_exists(env, target_type: str, target_id: int) -> bool:
     result = await db_run(env, admin_target_query(target_type), target_id)
     return first_row(result) is not None
+
+
+async def moderation_user_snapshot(env, target_id: int):
+    return first_row(await db_run(env, """
+        SELECT id, role, status, auth_provider, external_subject, created_at,
+               (SELECT COALESCE(MAX(id), 0) FROM automation_events
+                WHERE event_type = 'clerk-provider-restriction' AND target_type = 'user'
+                  AND target_id = users.id) AS restriction_revision
+        FROM users WHERE id = ? LIMIT 1
+    """, target_id))
+
+
+async def clerk_reactivation_failure(env, subject) -> tuple[int, str] | None:
+    if not isinstance(subject, str) or not re.fullmatch(r"user_[A-Za-z0-9_-]{1,128}", subject):
+        return 409, "This account does not have a valid linked sign-in."
+    try:
+        secret = str(getattr(env, "CLERK_SECRET_KEY", "") or "").strip()
+        if not secret:
+            raise ValueError("Clerk lookup is unavailable.")
+        account = await fetch_clerk_user(subject, secret)
+    except Exception:  # noqa: BLE001 - JS transport and provider errors must not be exposed.
+        return 503, "Could not verify the linked sign-in. No changes were made."
+    if (account.get("id") != subject or account.get("object") != "user"
+            or account.get("banned") is not False or account.get("locked") is not False
+            or any(account.get(flag, False) is not False for flag in CLERK_RESTRICTION_FLAGS)):
+        return 409, "The linked sign-in is restricted or could not be confirmed. No changes were made."
+    return None
+
+
+async def update_moderated_user(env, target, state: str, admin_id: int) -> bool:
+    result = await db_run(env, """
+        UPDATE users SET status = ?
+        WHERE id = ? AND role IN ('client', 'contractor') AND role = ? AND status = ?
+          AND auth_provider = ? AND external_subject IS ? AND created_at = ?
+          AND EXISTS (SELECT 1 FROM users AS actor WHERE actor.id = ? AND actor.role = 'admin'
+                        AND actor.status = 'active')
+          AND (? != 'active' OR ? = (SELECT COALESCE(MAX(id), 0) FROM automation_events
+               WHERE event_type = 'clerk-provider-restriction' AND target_type = 'user' AND target_id = users.id))
+    """, state, target["id"], target["role"], target["status"], target["auth_provider"],
+        target["external_subject"], target["created_at"], admin_id, state, target["restriction_revision"])
+    return d1_change_count(result) == 1
 
 
 async def insert_moderation_action(
@@ -8069,60 +8439,12 @@ async def admin_dashboard_payload(env) -> dict:
             "SELECT COUNT(*) AS total FROM automation_events",
         )
     )
-    marketplace_row = first_row(
-        await db_run(
-            env,
-            """
-            SELECT
-                (SELECT COUNT(*) FROM jobs WHERE status != 'hidden')
-                    AS published_projects,
-                (
-                    SELECT COUNT(DISTINCT match_requests.job_id)
-                    FROM match_requests
-                    JOIN jobs ON jobs.id = match_requests.job_id
-                    WHERE jobs.status != 'hidden'
-                ) AS projects_with_bids,
-                (
-                    SELECT COUNT(DISTINCT match_requests.job_id)
-                    FROM match_requests
-                    JOIN jobs ON jobs.id = match_requests.job_id
-                    WHERE jobs.status != 'hidden'
-                      AND match_requests.status = 'approved'
-                ) AS matched_projects,
-                (
-                    SELECT COUNT(*)
-                    FROM match_requests
-                    JOIN jobs ON jobs.id = match_requests.job_id
-                    WHERE jobs.status != 'hidden'
-                      AND match_requests.status = 'approved'
-                ) AS approved_matches,
-                (
-                    SELECT COUNT(*) FROM match_completions
-                    WHERE client_confirmed_at IS NOT NULL
-                       OR contractor_confirmed_at IS NOT NULL
-                ) AS completion_signals,
-                (
-                    SELECT COUNT(*) FROM match_completions
-                    WHERE verified_at IS NOT NULL
-                ) AS verified_completions,
-                (
-                    SELECT COUNT(*) FROM jobs
-                    WHERE status = 'closed'
-                ) AS closed_projects,
-                (
-                    SELECT COUNT(*) FROM jobs
-                    WHERE status = 'closed' AND close_reason = 'workdoe-match'
-                ) AS workdoe_match_outcomes,
-                (
-                    SELECT COUNT(*) FROM job_lead_feedback
-                ) AS lead_quality_signals
-            """,
-        )
-    )
+    marketplace_row = first_row(await db_run(env, MARKETPLACE_OUTCOMES_SQL))
     marketplace_metrics = {
         key: int(row_value(marketplace_row, key, 0) or 0)
         for key in (
             "published_projects",
+            "total_bids",
             "projects_with_bids",
             "matched_projects",
             "approved_matches",
@@ -8180,7 +8502,8 @@ async def admin_dashboard_payload(env) -> dict:
                    MIN(match_requests.created_at) AS first_bid_at,
                    SUM(CASE WHEN match_requests.status = 'approved' THEN 1 ELSE 0 END)
                        AS matched_count,
-                   SUM(CASE WHEN match_completions.verified_at IS NOT NULL THEN 1 ELSE 0 END)
+                   SUM(CASE WHEN match_requests.status = 'approved'
+                                 AND match_completions.verified_at IS NOT NULL THEN 1 ELSE 0 END)
                        AS verified_completion_count,
                    (
                        SELECT COUNT(*)
@@ -8194,6 +8517,11 @@ async def admin_dashboard_payload(env) -> dict:
             LEFT JOIN service_types ON service_types.slug = jobs.service_slug
             LEFT JOIN service_zones ON service_zones.slug = jobs.service_zone_slug
             LEFT JOIN match_requests ON match_requests.job_id = jobs.id
+              AND EXISTS (
+                  SELECT 1 FROM users AS bidder
+                  WHERE bidder.id = match_requests.contractor_id
+                    AND lower(bidder.email) NOT LIKE '%@workdoe.local'
+              )
             LEFT JOIN match_completions
               ON match_completions.match_request_id = match_requests.id
             WHERE jobs.status != 'hidden'
@@ -8229,36 +8557,7 @@ async def admin_dashboard_payload(env) -> dict:
         ],
         as_of=datetime.now(timezone.utc).date().isoformat(),
     )
-    repeat_work_row = first_row(
-        await db_run(
-            env,
-            """
-            SELECT
-                COUNT(*) AS invitations_created,
-                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END)
-                    AS invitations_pending,
-                SUM(CASE WHEN status = 'bid_sent' THEN 1 ELSE 0 END)
-                    AS invitations_bid_sent,
-                SUM(CASE WHEN status = 'declined' THEN 1 ELSE 0 END)
-                    AS invitations_declined,
-                SUM(CASE WHEN status = 'withdrawn' THEN 1 ELSE 0 END)
-                    AS invitations_withdrawn,
-                SUM(
-                    CASE WHEN EXISTS (
-                        SELECT 1
-                        FROM match_requests
-                        JOIN match_completions
-                          ON match_completions.match_request_id = match_requests.id
-                        WHERE match_requests.job_id = repeat_provider_invitations.job_id
-                          AND match_requests.contractor_id = repeat_provider_invitations.contractor_id
-                          AND match_requests.status = 'approved'
-                          AND match_completions.verified_at IS NOT NULL
-                    ) THEN 1 ELSE 0 END
-                ) AS verified_repeat_projects
-            FROM repeat_provider_invitations
-            """,
-        )
-    )
+    repeat_work_row = first_row(await db_run(env, REPEAT_INVITATION_OUTCOMES_SQL))
     repeat_work_metrics = {
         key: int(row_value(repeat_work_row, key, 0) or 0)
         for key in (
@@ -8930,13 +9229,11 @@ async def public_contractor_for_profile(env, contractor_id: int):
     result = await db_run(
         env,
         """
-        SELECT users.id, users.display_name, users.company_name, users.status,
+        SELECT users.id, users.status,
                contractor_profiles.business_name,
                contractor_profiles.trades,
                contractor_profiles.service_area,
                contractor_profiles.intro,
-               contractor_profiles.insurance_status,
-               contractor_profiles.license_number,
                contractor_profiles.years_in_business,
                contractor_profiles.website,
                contractor_profiles.updated_at,
@@ -9374,58 +9671,35 @@ async def client_requests_for_job(env, job_id: int) -> list[dict]:
     return rows_from(result)
 
 
-async def entry_shell_jobs(env, params: dict) -> list[dict]:
-    filters = entry_job_filters(params)
-    sql = [
-        """
-        SELECT jobs.id,
-               jobs.title,
-               jobs.category,
-               jobs.service_group_slug,
-               jobs.service_slug,
-               jobs.city,
-               jobs.state,
-               jobs.description,
-               jobs.desired_date,
-               jobs.approx_lat,
-               jobs.approx_lng,
-               COUNT(job_photos.id) AS photo_count
-        FROM jobs
-        JOIN users AS clients
-          ON clients.id = jobs.client_id
-         AND clients.status = 'active'
-        LEFT JOIN job_photos ON job_photos.job_id = jobs.id AND job_photos.is_hidden = 0
-        WHERE jobs.status = 'open'
-          AND NOT EXISTS (
-              SELECT 1
-              FROM match_requests AS approved_request
-              WHERE approved_request.job_id = jobs.id
-                AND approved_request.status = 'approved'
-          )
-        """
-    ]
-    bindings: list[str | int] = []
-    if enforce_service_activation(env):
-        sql.append(live_service_activation_sql())
-    if filters["category"]:
-        sql.append("AND jobs.category = ?")
-        bindings.append(filters["category"])
-    if filters.get("service"):
-        sql.append("AND jobs.service_slug = ?")
-        bindings.append(filters["service"])
-    if filters["family"]:
-        sql.append("AND jobs.service_group_slug = ?")
-        bindings.append(filters["family"])
-    if filters["q"]:
-        query = f"%{filters['q']}%"
-        sql.append(
-            "AND (jobs.city LIKE ? OR jobs.state LIKE ? OR jobs.title LIKE ?)"
-        )
-        bindings.extend([query, query, query])
-    sql.append(f"GROUP BY jobs.id ORDER BY {public_job_order_clause(filters['sort'])} LIMIT ?")
-    bindings.append(ENTRY_JOB_LIMIT)
-    result = await db_run(env, "\n".join(sql), *bindings)
-    return rows_from(result)
+async def read_public_project_page(
+    env,
+    filters: dict[str, str],
+    viewport: dict[str, float] | None,
+    *,
+    limit: int,
+    source: str,
+    cursor_offset: int = 0,
+) -> tuple[list, str, bool]:
+    query, bindings = build_public_open_jobs_query(
+        filters,
+        viewport,
+        order_clause=public_job_order_clause(filters["sort"]),
+        limit=limit + PUBLIC_PROJECT_PRIVACY_LOOKAHEAD,
+        cursor_offset=cursor_offset,
+        service_activation_clause=live_service_activation_sql() if enforce_service_activation(env) else "",
+    )
+    result = await db_run(env, query, *bindings)
+    visible, cursor_advance = public_project_page(rows_from(result), limit)
+    telemetry = public_query_telemetry(
+        result, returned_rows=min(len(visible), limit), filters=filters,
+        viewport_applied=viewport is not None, cursor_offset=cursor_offset,
+    )
+    print(json.dumps({**telemetry, "source": source}, sort_keys=True))
+    truncated = len(visible) > limit
+    rows = guest_project_rows(
+        visible, filters, limit=limit, viewport=viewport, include_demo=cursor_offset == 0,
+    )
+    return rows, next_public_cursor(cursor_offset, cursor_advance, has_more=truncated), truncated
 
 
 async def contractor_leads_for_user(
@@ -9493,12 +9767,10 @@ async def contractor_leads_for_user(
     if filters["family"]:
         sql.append("AND jobs.service_group_slug = ?")
         bindings.append(filters["family"])
-    if filters["q"]:
-        like = f"%{filters['q']}%"
-        sql.append(
-            "AND (jobs.city LIKE ? OR jobs.state LIKE ? OR jobs.zip_code LIKE ? OR jobs.title LIKE ?)"
-        )
-        bindings.extend([like, like, like, like])
+    search, search_bindings = literal_project_search(filters["q"])
+    if search:
+        sql.append(search)
+        bindings.extend(search_bindings)
     sql.append(f"GROUP BY jobs.id ORDER BY {contractor_lead_order_clause(filters['sort'])} LIMIT ?")
     bindings.append(limit)
     result = await db_run(env, "\n".join(sql), *bindings)
@@ -9636,48 +9908,69 @@ async def job_draft_for_request(env, request):
     token = job_draft_token_from_cookie(request.headers.get("Cookie"))
     if not token:
         return None
-    result = await db_run(
-        env,
-        """
-        SELECT * FROM job_drafts
-        WHERE token_hash = ? AND consumed_at IS NULL AND expires_at >= ?
-        LIMIT 1
-        """,
-        job_draft_token_hash(token, getattr(env, "WORKDOE_SECRET_KEY", "")),
-        utc_now(),
-    )
-    row = first_row(result)
-    if not row:
+    try:
+        token_hash = job_draft_token_hash(token, getattr(env, "WORKDOE_SECRET_KEY", ""))
+        result = await db_run(
+            env,
+            """
+            SELECT draft.id, draft.title, draft.category, draft.service_group_slug, draft.service_slug,
+                   draft.project_setting, draft.license_preference, draft.desired_date, draft.city,
+                   draft.state, draft.zip_code, draft.budget_min, draft.budget_max, draft.description,
+                   (SELECT json_group_object(question_key, answer_code)
+                    FROM job_draft_scope_answers WHERE draft_id = draft.id) AS scope_answers_json
+            FROM job_drafts AS draft
+            WHERE draft.token_hash = ? AND draft.consumed_at IS NULL AND draft.expires_at >= ?
+            LIMIT 1
+            """,
+            token_hash, utc_now(),
+        )
+    except Exception as exc:
+        raise JobDraftReadError from exc
+    if row_value(result, "success") is not True or row_value(result, "results") is None:
+        raise JobDraftReadError
+    rows = rows_from(result)
+    if not isinstance(rows, list) or len(rows) > 1:
+        raise JobDraftReadError
+    if not rows:
         return None
-    form = job_draft_form(row)
-    draft_id = int(row_value(row, "id", 0) or 0)
+    row = rows[0]
+    try:
+        draft_id = int(row_value(row, "id", 0) or 0)
+        scope_answers = json.loads(row_value(row, "scope_answers_json"))
+        form = job_draft_form(row)
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise JobDraftReadError from exc
+    if draft_id <= 0 or not isinstance(scope_answers, dict) or not all(
+        isinstance(answer, str) for answer in scope_answers.values()
+    ):
+        raise JobDraftReadError
     form["id"] = draft_id
-    form["scope_answers"] = await load_job_draft_scope_answers(env, draft_id)
+    form["scope_answers"] = scope_answers
     return form
 
 
 async def save_job_draft_record(env, request, form: dict) -> str:
     secret = getattr(env, "WORKDOE_SECRET_KEY", "")
     old_token = job_draft_token_from_cookie(request.headers.get("Cookie"))
-    if old_token:
-        await db_run(
-            env,
-            "DELETE FROM job_drafts WHERE token_hash = ?",
-            job_draft_token_hash(old_token, secret),
-        )
     now = datetime.now(timezone.utc)
     created_at = now.isoformat(timespec="seconds")
     expires_at = (now + timedelta(seconds=JOB_DRAFT_TTL_SECONDS)).isoformat(
         timespec="seconds"
     )
-    await db_run(
-        env,
-        "DELETE FROM job_drafts WHERE consumed_at IS NOT NULL OR expires_at < ?",
-        created_at,
-    )
     token = generate_job_draft_token()
-    result = await db_run(
-        env,
+    token_hash = job_draft_token_hash(token, secret)
+    commands = []
+    if old_token:
+        commands.append((
+            "DELETE FROM job_drafts WHERE token_hash = ?",
+            (job_draft_token_hash(old_token, secret),),
+        ))
+    commands.append((
+        "DELETE FROM job_drafts WHERE consumed_at IS NOT NULL OR expires_at < ?",
+        (created_at,),
+    ))
+    insert_index = len(commands)
+    commands.append((
         """
         INSERT INTO job_drafts
             (token_hash, title, category, service_group_slug, service_slug,
@@ -9686,50 +9979,280 @@ async def save_job_draft_record(env, request, form: dict) -> str:
              created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
         """,
-        job_draft_token_hash(token, secret),
-        form["title"],
-        form["category"],
-        form["service_group_slug"],
-        form["service_slug"],
-        form["project_setting"],
-        int(form["license_preference"] == "1"),
-        form["city"],
-        form["state"],
-        form["zip_code"],
-        form["description"],
-        form["desired_date"],
-        budget_database_value(form["budget_min"]),
-        budget_database_value(form["budget_max"]),
-        expires_at,
-        created_at,
-        created_at,
-    )
-    draft_id = last_insert_id(result)
-    if draft_id:
-        await replace_job_draft_scope_answers(
-            env,
-            draft_id,
-            form["service_slug"],
-            form.get("scope_answers", {}),
-        )
+        (
+            token_hash, form["title"], form["category"], form["service_group_slug"],
+            form["service_slug"], form["project_setting"], int(form["license_preference"] == "1"),
+            form["city"], form["state"], form["zip_code"], form["description"],
+            form["desired_date"], budget_database_value(form["budget_min"]),
+            budget_database_value(form["budget_max"]), expires_at, created_at, created_at,
+        ),
+    ))
+    # Resolve the new parent inside the same D1 transaction as its scope answers.
+    commands.extend((
+        """
+        INSERT INTO job_draft_scope_answers
+            (draft_id, schema_version, question_key, answer_code, created_at, updated_at)
+        VALUES ((SELECT id FROM job_drafts WHERE token_hash = ?), ?, ?, ?, ?, ?)
+        """,
+        (token_hash, SCOPE_SCHEMA_VERSION, answer["question_key"], answer["answer_code"], created_at, created_at),
+    ) for answer in scope_answer_projection(form["service_slug"], form.get("scope_answers", {})))
+    results = await db_batch(env, commands)
+    if (
+        any(row_value(result, "success") is not True for result in results)
+        or d1_change_count(results[insert_index]) != 1
+    ):
+        raise ValueError("Unsuccessful D1 project draft batch.")
     return token
 
 
-async def consume_job_draft_record(env, request) -> None:
-    token = job_draft_token_from_cookie(request.headers.get("Cookie"))
-    if not token:
-        return
-    now = utc_now()
-    await db_run(
-        env,
-        "UPDATE job_drafts SET consumed_at = ?, updated_at = ? WHERE token_hash = ?",
-        now,
-        now,
-        job_draft_token_hash(token, getattr(env, "WORKDOE_SECRET_KEY", "")),
-    )
+async def publish_job(
+    env,
+    actor_id: int,
+    request_state: dict,
+    job: dict,
+    service_zone_slug: str,
+    repeat_source: dict | None,
+    draft_hash: str,
+) -> int | None:
+    timestamp = utc_now()
+    receipt_key = (actor_id, request_state["action"], request_state["key_hash"])
+    policy = service_policy(job["service_slug"])
+    if policy["acknowledgement_required"] and job["service_policy_acknowledgement"] != policy["version"]:
+        raise ValueError("The service policy acknowledgement is not current.")
+    answers = {
+        answer["question_key"]: answer["answer_code"]
+        for answer in scope_answer_projection(job["service_slug"], job.get("scope_answers", {}))
+    }
+    # Bind the new row to this request before other inserts can change last_insert_rowid().
+    commands = [
+        (
+            """
+            INSERT INTO jobs
+                (client_id, title, category, service_group_slug, service_slug,
+                 service_zone_slug, project_setting, license_preference,
+                 city, state, zip_code, description, desired_date, budget_min, budget_max,
+                 status, approx_lat, approx_lng, bid_limit, bidding_closes_at, created_at, updated_at)
+            SELECT actor.id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                   'open', ?, ?, ?, ?, ?, ?
+            FROM users AS actor
+            JOIN idempotency_requests AS receipt ON receipt.actor_id = actor.id
+            WHERE actor.id = ? AND actor.status = 'active' AND actor.role IN ('client', 'admin')
+              AND receipt.action = ? AND receipt.key_hash = ? AND receipt.resource_type = 'job'
+              AND receipt.status = 'processing' AND receipt.resource_id IS NULL AND receipt.expires_at >= ?
+            """,
+            (
+                job["title"], job["category"], job["service_group_slug"], job["service_slug"],
+                service_zone_slug, job["project_setting"], int(job["license_preference"] == "1"),
+                job["city"], job["state"], job["zip_code"], job["description"], job["desired_date"],
+                budget_database_value(job["budget_min"]), budget_database_value(job["budget_max"]),
+                job["approx_lat"], job["approx_lng"], DEFAULT_BID_LIMIT,
+                default_bidding_closes_at(timestamp), timestamp, timestamp, *receipt_key, timestamp,
+            ),
+        ),
+        (
+            """
+            UPDATE idempotency_requests SET resource_id = last_insert_rowid()
+            WHERE actor_id = ? AND action = ? AND key_hash = ? AND resource_type = 'job'
+              AND status = 'processing' AND resource_id IS NULL AND changes() = 1
+            """,
+            receipt_key,
+        ),
+    ]
+    if policy["acknowledgement_required"]:
+        commands.append((
+            """
+            INSERT INTO service_policy_acknowledgements
+                (user_id, actor_role, context, service_slug, policy_version, job_id, acknowledged_at)
+            SELECT actor_id, 'client', 'project-post', ?, ?, resource_id, ?
+            FROM idempotency_requests
+            WHERE actor_id = ? AND action = ? AND key_hash = ? AND resource_type = 'job'
+              AND status = 'processing' AND resource_id IS NOT NULL
+            """,
+            (job["service_slug"], policy["version"], timestamp, *receipt_key),
+        ))
+    if answers:
+        commands.append((
+            """
+            INSERT INTO job_scope_answers
+                (job_id, schema_version, question_key, answer_code, created_at, updated_at)
+            SELECT receipt.resource_id, ?, answer.key, answer.value, ?, ?
+            FROM idempotency_requests AS receipt CROSS JOIN json_each(?) AS answer
+            WHERE receipt.actor_id = ? AND receipt.action = ? AND receipt.key_hash = ?
+              AND receipt.resource_type = 'job' AND receipt.status = 'processing'
+              AND receipt.resource_id IS NOT NULL
+            """,
+            (SCOPE_SCHEMA_VERSION, timestamp, timestamp, json.dumps(answers), *receipt_key),
+        ))
+    if repeat_source:
+        source_job_id = repeat_source["source_job_id"]
+        source_match_id = repeat_source["source_match_request_id"]
+        contractor_id = repeat_source["contractor_id"]
+        commands.extend([
+            (
+                """
+                INSERT INTO repeat_provider_invitations
+                    (job_id, source_job_id, source_match_request_id, client_id,
+                     contractor_id, service_slug, status, created_at, updated_at)
+                SELECT resource_id, ?, ?, actor_id, ?, ?, 'pending', ?, ?
+                FROM idempotency_requests
+                WHERE actor_id = ? AND action = ? AND key_hash = ? AND resource_type = 'job'
+                  AND status = 'processing' AND resource_id IS NOT NULL
+                """,
+                (source_job_id, source_match_id, contractor_id, repeat_source["service_slug"],
+                 timestamp, timestamp, *receipt_key),
+            ),
+            (
+                """
+                INSERT INTO automation_events (event_type, target_type, target_id, payload_json, status, created_at)
+                SELECT 'repeat-provider-invited', 'job', resource_id,
+                       json_object('source_job_id', ?, 'source_match_request_id', ?, 'contractor_id', ?),
+                       'processed', ?
+                FROM idempotency_requests
+                WHERE actor_id = ? AND action = ? AND key_hash = ? AND resource_type = 'job'
+                  AND status = 'processing' AND resource_id IS NOT NULL
+                """,
+                (source_job_id, source_match_id, contractor_id, timestamp, *receipt_key),
+            ),
+        ])
+    if draft_hash:
+        commands.append((
+            """
+            UPDATE job_drafts SET consumed_at = ?, updated_at = ?
+            WHERE token_hash = ? AND consumed_at IS NULL AND EXISTS (
+                SELECT 1 FROM idempotency_requests
+                WHERE actor_id = ? AND action = ? AND key_hash = ? AND resource_type = 'job'
+                  AND status = 'processing' AND resource_id IS NOT NULL
+            )
+            """,
+            (timestamp, timestamp, draft_hash, *receipt_key),
+        ))
+    commands.extend([
+        (
+            """
+            INSERT INTO automation_events (event_type, target_type, target_id, payload_json, status, created_at)
+            SELECT 'job-created', 'job', resource_id,
+                   json_object('client_id', actor_id, 'category', ?), 'processed', ?
+            FROM idempotency_requests
+            WHERE actor_id = ? AND action = ? AND key_hash = ? AND resource_type = 'job'
+              AND status = 'processing' AND resource_id IS NOT NULL
+            """,
+            (job["category"], timestamp, *receipt_key),
+        ),
+        (
+            """
+            UPDATE idempotency_requests SET status = 'completed', completed_at = ?
+            WHERE actor_id = ? AND action = ? AND key_hash = ? AND resource_type = 'job'
+              AND status = 'processing' AND resource_id IS NOT NULL
+            """,
+            (timestamp, *receipt_key),
+        ),
+    ])
+    results = await db_batch(env, commands)
+    if d1_change_count(results[0]) == 0:
+        return None
+    job_id = last_insert_id(results[0])
+    if not job_id or d1_change_count(results[-1]) != 1:
+        raise ValueError("Unexpected D1 project publication batch result.")
+    return job_id
 
 
-async def job_for_detail(env, job_id: int):
+async def save_match_request(env, job, contractor_id: int, bid: dict, timestamp: str) -> int | None:
+    job_id = row_value(job, "id")
+    service_slug = row_value(job, "service_slug")
+    zone_slug = row_value(job, "service_zone_slug")
+    policy = service_policy(service_slug)
+    acknowledgement_required = policy["acknowledgement_required"]
+    if acknowledgement_required and bid["service_policy_acknowledgement"] != policy["version"]:
+        raise ValueError("The service policy acknowledgement is not current.")
+    # The activation clause is fixed SQL; all record values are bound separately.
+    activation_gate = live_service_activation_sql() if enforce_service_activation(env) else ""
+    bid_key = (job_id, contractor_id)
+    # Each dependent statement only writes if the prior statement changed one row.
+    commands = [
+        (
+            f"""
+            INSERT INTO match_requests
+                (job_id, contractor_id, scope_note, price_range, timeline,
+                 experience, questions, availability, status, created_at, updated_at)
+            SELECT jobs.id, contractor.id, ?, ?, ?, ?, ?, ?, 'pending', ?, ?
+            FROM jobs
+            JOIN users AS clients ON clients.id = jobs.client_id AND clients.status = 'active'
+            JOIN users AS contractor ON contractor.id = ?
+              AND contractor.role = 'contractor' AND contractor.status = 'active'
+            WHERE jobs.id = ? AND jobs.status = 'open'
+              AND jobs.service_slug IS ? AND jobs.service_zone_slug IS ?
+              AND datetime(jobs.bidding_closes_at) > datetime(?)
+              AND NOT EXISTS (
+                  SELECT 1 FROM match_requests AS approved_request
+                  WHERE approved_request.job_id = jobs.id AND approved_request.status = 'approved'
+              )
+              AND (SELECT COUNT(*) FROM match_requests WHERE match_requests.job_id = jobs.id) < jobs.bid_limit
+              {activation_gate}
+            ON CONFLICT(job_id, contractor_id) DO NOTHING
+            """,  # nosec B608
+            (
+                bid["scope_note"], bid["price_range"], bid["timeline"], bid["experience"],
+                bid["questions"], bid["availability"], timestamp, timestamp,
+                contractor_id, job_id, service_slug, zone_slug, timestamp,
+            ),
+        ),
+    ]
+    if acknowledgement_required:
+        commands.append((
+            """
+            INSERT INTO service_policy_acknowledgements
+                (user_id, actor_role, context, service_slug, policy_version, job_id, match_request_id, acknowledged_at)
+            SELECT contractor_id, 'contractor', 'mini-bid', ?, ?, job_id, id, ?
+            FROM match_requests
+            WHERE job_id = ? AND contractor_id = ? AND changes() = 1
+            """,
+            (service_slug, policy["version"], timestamp, *bid_key),
+        ))
+    commands.extend([
+        (
+            """
+            INSERT INTO automation_events (event_type, target_type, target_id, payload_json, status, created_at)
+            SELECT 'match-request-created', 'match_request', id,
+                   json_object('job_id', job_id, 'contractor_id', contractor_id, 'status', 'pending'),
+                   'processed', ?
+            FROM match_requests
+            WHERE job_id = ? AND contractor_id = ? AND changes() = 1
+            """,
+            (timestamp, *bid_key),
+        ),
+        (
+            """
+            UPDATE repeat_provider_invitations
+            SET status = 'bid_sent', responded_at = ?, updated_at = ?
+            WHERE job_id = ? AND contractor_id = ? AND status = 'pending' AND changes() = 1
+            """,
+            (timestamp, timestamp, *bid_key),
+        ),
+        (
+            """
+            INSERT INTO automation_events (event_type, target_type, target_id, payload_json, status, created_at)
+            SELECT 'repeat-provider-invitation-bid-sent', 'job', job_id,
+                   json_object('contractor_id', contractor_id, 'match_request_id', id),
+                   'processed', ?
+            FROM match_requests
+            WHERE job_id = ? AND contractor_id = ? AND changes() = 1
+            """,
+            (timestamp, *bid_key),
+        ),
+    ])
+    results = await db_batch(env, commands)
+    if d1_change_count(results[0]) == 0:
+        return None
+    request_id = last_insert_id(results[0])
+    if (
+        not request_id or any(d1_change_count(result) != 1 for result in results[:-2])
+        or d1_change_count(results[-2]) != d1_change_count(results[-1])
+    ):
+        raise ValueError("Unexpected D1 bid save batch result.")
+    return request_id
+
+
+async def job_for_detail(env, job_id: int, *, contractor_id: int | None = None):
     result = await db_run(
         env,
         """
@@ -9742,21 +10265,36 @@ async def job_for_detail(env, job_id: int):
                    FROM match_requests AS approved_request
                    WHERE approved_request.job_id = jobs.id
                      AND approved_request.status = 'approved'
-               ) AS has_approved_match
+               ) AS has_approved_match,
+               EXISTS (
+                   SELECT 1 FROM match_requests AS own_request
+                   WHERE own_request.job_id = jobs.id AND own_request.contractor_id = ?
+               ) AS has_viewer_request
         FROM jobs
         JOIN users ON users.id = jobs.client_id
         WHERE jobs.id = ?
         LIMIT 1
         """,
-        job_id,
+        contractor_id, job_id,
     )
     return first_row(result)
+
+
+async def detail_photos_for_viewer(env, user, job, existing_request) -> list[dict]:
+    owner_view = viewer_kind(user, job) in {"owner", "admin"}
+    if not owner_view and not contractor_can_view_project(
+        row_value(job, "status"), row_value(job, "client_status"),
+        has_approved_match=bool(row_value(job, "has_approved_match")),
+        participates=row_value(existing_request, "status") == "approved",
+    ):
+        return []
+    return await job_photos_for_detail(env, row_value(job, "id"), include_hidden=owner_view)
 
 
 async def job_photos_for_detail(env, job_id: int, include_hidden: bool = False) -> list[dict]:
     query = (
         """
-        SELECT id, original_filename, is_hidden
+        SELECT id, is_hidden
         FROM job_photos
         WHERE job_id = ?
         ORDER BY created_at
@@ -9764,7 +10302,7 @@ async def job_photos_for_detail(env, job_id: int, include_hidden: bool = False) 
         """
         if include_hidden
         else """
-        SELECT id, original_filename, is_hidden
+        SELECT id, is_hidden
         FROM job_photos
         WHERE job_id = ? AND is_hidden = 0
         ORDER BY created_at
@@ -9829,6 +10367,138 @@ async def match_request_for_decision(env, request_id: int):
         request_id,
     )
     return first_row(result)
+
+
+async def reject_pending_match(env, match, timestamp: str, *, actor_id: int) -> bool:
+    request_id = row_value(match, "id")
+    job_id = row_value(match, "job_id")
+    client_id = row_value(match, "client_id")
+    contractor_id = row_value(match, "contractor_id")
+    payload = json.dumps({
+        "action": "reject", "job_id": job_id, "client_id": client_id, "contractor_id": contractor_id,
+        "thread_id": None, "closed_offer_count": 0,
+    }, sort_keys=True)
+    updated, audit = await db_batch(env, (
+        (
+            """
+            UPDATE match_requests
+            SET status = 'rejected', updated_at = ?
+            WHERE id = ? AND status = 'pending'
+              AND job_id = ? AND contractor_id = ?
+              AND EXISTS (
+                  SELECT 1 FROM jobs
+                  JOIN users AS actor ON actor.id = ? AND actor.status = 'active'
+                  WHERE jobs.id = match_requests.job_id
+                    AND jobs.client_id = ?
+                    AND (actor.role = 'admin' OR
+                         (actor.role = 'client' AND actor.id = jobs.client_id))
+              )
+            """,
+            (timestamp, request_id, job_id, contractor_id, actor_id, client_id),
+        ),
+        (
+            """
+            INSERT INTO automation_events (event_type, target_type, target_id, payload_json, status, created_at)
+            SELECT 'match-request-rejected', 'match_request', ?, ?, 'processed', ?
+            WHERE changes() = 1
+            """,
+            (request_id, payload, timestamp),
+        ),
+    ))
+    write_count = d1_change_count(updated)
+    if write_count not in (0, 1) or d1_change_count(audit) != write_count:
+        raise ValueError("Unexpected D1 rejection batch result.")
+    return write_count == 1
+
+
+async def approve_pending_match(env, match, timestamp: str, *, actor_id: int) -> int | None:
+    request_id = row_value(match, "id")
+    job_id = row_value(match, "job_id")
+    client_id = row_value(match, "client_id")
+    contractor_id = row_value(match, "contractor_id")
+    # In this batch each later write requires exactly one row from the preceding
+    # write. A stale approval changes nothing; a SQL error rolls back the batch.
+    results = await db_batch(
+        env,
+        (
+            (
+                """
+                UPDATE match_requests
+                SET status = 'approved', updated_at = ?
+                WHERE id = ? AND status = 'pending'
+                  AND job_id = ? AND contractor_id = ?
+                  AND EXISTS (
+                      SELECT 1 FROM jobs
+                      JOIN users AS clients ON clients.id = jobs.client_id
+                        AND clients.role = 'client' AND clients.status = 'active'
+                      JOIN users AS contractors ON contractors.id = match_requests.contractor_id
+                        AND contractors.role = 'contractor' AND contractors.status = 'active'
+                      JOIN users AS actor ON actor.id = ? AND actor.status = 'active'
+                      WHERE jobs.id = match_requests.job_id
+                        AND jobs.client_id = ?
+                        AND jobs.status IN ('open', 'closed')
+                        AND (actor.role = 'admin' OR
+                             (actor.role = 'client' AND actor.id = jobs.client_id))
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM match_requests AS approved_request
+                      WHERE approved_request.job_id = match_requests.job_id
+                        AND approved_request.status = 'approved'
+                  )
+                """,
+                (timestamp, request_id, job_id, contractor_id, actor_id, client_id),
+            ),
+            (
+                """
+                INSERT INTO threads
+                    (job_id, match_request_id, client_id, contractor_id, created_at)
+                SELECT ?, ?, ?, ?, ? WHERE changes() = 1
+                """,
+                (job_id, request_id, client_id, contractor_id, timestamp),
+            ),
+            (
+                """
+                INSERT INTO messages (thread_id, sender_id, body, is_hidden, created_at)
+                SELECT id, contractor_id, ?, 0, ?
+                FROM threads WHERE match_request_id = ? AND changes() = 1
+                """,
+                (APPROVAL_THREAD_MESSAGE, timestamp, request_id),
+            ),
+            (
+                """
+                INSERT INTO automation_events
+                    (event_type, target_type, target_id, payload_json, status, created_at)
+                SELECT 'match-request-approved', 'match_request', threads.match_request_id,
+                    json_object(
+                        'action', 'approve', 'job_id', threads.job_id,
+                        'client_id', threads.client_id, 'contractor_id', threads.contractor_id,
+                        'thread_id', threads.id, 'closed_offer_count', (
+                            SELECT COUNT(*) FROM match_requests AS offers
+                            WHERE offers.job_id = threads.job_id
+                              AND offers.id != threads.match_request_id
+                              AND offers.status = 'pending'
+                        )
+                    ), 'processed', ?
+                FROM threads WHERE match_request_id = ? AND changes() = 1
+                """,
+                (timestamp, request_id),
+            ),
+            (
+                """
+                UPDATE match_requests
+                SET status = 'rejected', updated_at = ?
+                WHERE job_id = ? AND id != ? AND status = 'pending' AND changes() = 1
+                """,
+                (timestamp, job_id, request_id),
+            ),
+        ),
+    )
+    if d1_change_count(results[0]) == 0:
+        return None
+    thread_id = last_insert_id(results[1])
+    if not thread_id or any(d1_change_count(results[index]) != 1 for index in range(4)):
+        raise ValueError("Unexpected D1 approval batch result.")
+    return thread_id
 
 
 async def match_for_completion(env, request_id: int):
@@ -10008,41 +10678,45 @@ async def existing_thread_id_for_match(env, request_id: int) -> int | None:
         return None
 
 
-async def ensure_thread_for_match(env, match, created_at: str) -> int | None:
-    existing = await existing_thread_id_for_match(env, row_value(match, "id"))
-    if existing:
-        return existing
-    result = await db_run(
-        env,
-        """
-        INSERT OR IGNORE INTO threads
-            (job_id, match_request_id, client_id, contractor_id, created_at)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        row_value(match, "job_id"),
-        row_value(match, "id"),
-        row_value(match, "client_id"),
-        row_value(match, "contractor_id"),
-        created_at,
-    )
-    created_thread_id = last_insert_id(result) if d1_change_count(result) == 1 else None
-    thread_id = created_thread_id or await existing_thread_id_for_match(
-        env,
-        row_value(match, "id"),
-    )
-    if created_thread_id:
-        await db_run(
-            env,
+async def ensure_thread_for_match(env, match, created_at: str, *, actor_id: int) -> int | None:
+    request_id = row_value(match, "id")
+    thread, starter = await db_batch(env, (
+        (
             """
-            INSERT INTO messages
-                (thread_id, sender_id, body, is_hidden, created_at)
-            VALUES (?, ?, ?, 0, ?)
+            INSERT INTO threads (job_id, match_request_id, client_id, contractor_id, created_at)
+            SELECT jobs.id, match_requests.id, jobs.client_id, match_requests.contractor_id, ?
+            FROM match_requests
+            JOIN jobs ON jobs.id = match_requests.job_id AND jobs.status IN ('open', 'closed')
+            JOIN users AS clients ON clients.id = jobs.client_id
+              AND clients.role = 'client' AND clients.status = 'active'
+            JOIN users AS contractors ON contractors.id = match_requests.contractor_id
+              AND contractors.role = 'contractor' AND contractors.status = 'active'
+            JOIN users AS actor ON actor.id = ? AND actor.status = 'active'
+            WHERE match_requests.id = ? AND match_requests.status = 'approved'
+              AND jobs.id = ? AND jobs.client_id = ? AND match_requests.contractor_id = ?
+              AND (actor.role = 'admin' OR (actor.role = 'client' AND actor.id = jobs.client_id))
+            ON CONFLICT(match_request_id) DO NOTHING
             """,
-            thread_id,
-            row_value(match, "contractor_id"),
-            APPROVAL_THREAD_MESSAGE,
-            created_at,
-        )
+            (
+                created_at, actor_id, request_id, row_value(match, "job_id"),
+                row_value(match, "client_id"), row_value(match, "contractor_id"),
+            ),
+        ),
+        (
+            """
+            INSERT INTO messages (thread_id, sender_id, body, is_hidden, created_at)
+            SELECT id, contractor_id, ?, 0, ?
+            FROM threads WHERE match_request_id = ? AND changes() = 1
+            """,
+            (APPROVAL_THREAD_MESSAGE, created_at, request_id),
+        ),
+    ))
+    thread_count = d1_change_count(thread)
+    if thread_count == 0 and d1_change_count(starter) == 0:
+        return await existing_thread_id_for_match(env, request_id)
+    thread_id = last_insert_id(thread)
+    if not thread_id or thread_count != 1 or d1_change_count(starter) != 1:
+        raise ValueError("Unexpected D1 thread repair batch result.")
     return thread_id
 
 
@@ -10159,6 +10833,73 @@ def user_with_unread_message_count(user, unread_count: int) -> dict:
     return presentation_user
 
 
+async def save_thread_message(env, actor_id: int, thread_id: int, request_state: dict, body: str) -> int | None:
+    timestamp = utc_now()
+    receipt_key = (actor_id, request_state["action"], request_state["key_hash"])
+    # Each dependent write follows a successful statement in the same D1 batch.
+    results = await db_batch(env, [
+        (
+            """
+            INSERT INTO messages (thread_id, sender_id, body, is_hidden, created_at)
+            SELECT threads.id, sender.id, ?, 0, ?
+            FROM threads
+            JOIN users AS sender ON sender.id = ? AND sender.status = 'active'
+              AND ((sender.role = 'client' AND sender.id = threads.client_id)
+                OR (sender.role = 'contractor' AND sender.id = threads.contractor_id))
+            JOIN match_requests ON match_requests.id = threads.match_request_id
+              AND match_requests.status = 'approved'
+              AND match_requests.job_id = threads.job_id
+              AND match_requests.contractor_id = threads.contractor_id
+            JOIN jobs ON jobs.id = threads.job_id AND jobs.client_id = threads.client_id
+            JOIN idempotency_requests AS receipt ON receipt.actor_id = sender.id
+              AND receipt.action = ? AND receipt.key_hash = ? AND receipt.resource_type = 'message'
+              AND receipt.status = 'processing' AND receipt.resource_id IS NULL AND receipt.expires_at >= ?
+            WHERE threads.id = ?
+            """,
+            (body, timestamp, *receipt_key, timestamp, thread_id),
+        ),
+        (
+            """
+            UPDATE idempotency_requests
+            SET resource_id = last_insert_rowid(), status = 'completed', completed_at = ?
+            WHERE actor_id = ? AND action = ? AND key_hash = ? AND resource_type = 'message'
+              AND status = 'processing' AND resource_id IS NULL AND changes() = 1
+            """,
+            (timestamp, *receipt_key),
+        ),
+        (
+            """
+            INSERT INTO thread_reads (thread_id, user_id, last_read_message_id, last_read_at)
+            SELECT ?, actor_id, resource_id, ? FROM idempotency_requests
+            WHERE actor_id = ? AND action = ? AND key_hash = ? AND resource_type = 'message'
+              AND status = 'completed' AND resource_id IS NOT NULL AND changes() = 1
+            ON CONFLICT(thread_id, user_id) DO UPDATE SET
+                last_read_message_id = MAX(thread_reads.last_read_message_id, excluded.last_read_message_id),
+                last_read_at = CASE
+                    WHEN excluded.last_read_message_id >= thread_reads.last_read_message_id
+                    THEN excluded.last_read_at ELSE thread_reads.last_read_at END
+            """,
+            (thread_id, timestamp, *receipt_key),
+        ),
+        (
+            """
+            INSERT INTO automation_events (event_type, target_type, target_id, payload_json, status, created_at)
+            SELECT 'message-created', 'thread', ?, json_object('message_id', resource_id, 'sender_id', actor_id),
+                'processed', ? FROM idempotency_requests
+            WHERE actor_id = ? AND action = ? AND key_hash = ? AND resource_type = 'message'
+              AND status = 'completed' AND resource_id IS NOT NULL AND changes() = 1
+            """,
+            (thread_id, timestamp, *receipt_key),
+        ),
+    ])
+    if d1_change_count(results[0]) == 0:
+        return None
+    message_id = last_insert_id(results[0])
+    if not message_id or any(d1_change_count(result) != 1 for result in results):
+        raise ValueError("Unexpected D1 message save batch result.")
+    return message_id
+
+
 async def mark_message_thread_read(
     env,
     thread_id: int,
@@ -10249,38 +10990,11 @@ async def thread_for_messages(env, thread_id: int):
     return first_row(result)
 
 
-async def messages_for_thread(env, thread_id: int, include_hidden: bool = False) -> list[dict]:
-    query = (
-        """
-        SELECT visible_messages.*, users.display_name
-        FROM (
-            SELECT * FROM messages
-            WHERE messages.thread_id = ?
-            ORDER BY messages.id DESC
-            LIMIT 100
-        ) AS visible_messages
-        JOIN users ON users.id = visible_messages.sender_id
-        ORDER BY visible_messages.id
-        """
-        if include_hidden
-        else """
-        SELECT visible_messages.*, users.display_name
-        FROM (
-            SELECT * FROM messages
-            WHERE messages.thread_id = ? AND messages.is_hidden = 0
-            ORDER BY messages.id DESC
-            LIMIT 100
-        ) AS visible_messages
-        JOIN users ON users.id = visible_messages.sender_id
-        ORDER BY visible_messages.id
-        """
-    )
-    result = await db_run(
-        env,
-        query,
-        thread_id,
-    )
-    return rows_from(result)
+async def messages_for_thread(
+    env, thread_id: int, through: int | None, *, include_hidden: bool = False,
+) -> tuple[list[dict], int | None]:
+    query, params = message_window_query(thread_id, through, include_hidden=include_hidden)
+    return message_history_page(rows_from(await db_run(env, query, *params)))
 
 
 async def verify_turnstile_for_request(env, request, body: dict, action: str) -> dict:
@@ -10291,40 +11005,119 @@ async def verify_turnstile_for_request(env, request, body: dict, action: str) ->
         remoteip=remote_ip_from_headers(request.headers),
         idempotency_key=body.get("turnstile_idempotency_key", ""),
     )
-    try:
+    async def exchange():
+        options = {}
+        try:
+            from js import AbortSignal
+        except ImportError:  # pragma: no cover - the JS API is only available inside Workers.
+            pass
+        else:
+            options["signal"] = AbortSignal.timeout(int(TURNSTILE_VERIFY_TIMEOUT_SECONDS * 1000))
         response = await fetch(
             TURNSTILE_VERIFY_URL,
             method="POST",
+            redirect="error",
             headers={"Content-Type": "application/json"},
             body=json.dumps(verification_payload),
+            **options,
         )
-        result = await response.json()
+        return await response_json_object(response)
+
+    try:
+        result = await asyncio.wait_for(exchange(), timeout=TURNSTILE_VERIFY_TIMEOUT_SECONDS)
     except Exception as exc:
         raise TurnstileError("Turnstile verification failed.") from exc
 
     environment = str(getattr(env, "WORKDOE_ENV", "production") or "production").lower()
     metadata = row_value(result, "metadata", {}) or {}
-    is_testing_result = environment != "production" and bool(
-        row_value(metadata, "result_with_testing_key", False)
-    )
-    if is_testing_result and bool(row_value(result, "success", False)):
+    staging = is_staging_environment(env)
+    is_testing_result = bool(row_value(metadata, "result_with_testing_key", False))
+    if environment != "production" and not staging and is_testing_result and result.get("success") is True:
         return result
     allowed_hosts = {"workdoe.com", "www.workdoe.com"}
-    if environment != "production":
+    if staging:
+        hostname = staging_hostname(getattr(env, "WORKDOE_PUBLIC_URL", None))
+        allowed_hosts = {hostname} if hostname and hostname == getattr(env, "WORKDOE_DOMAIN", None) else set()
+    elif environment != "production":
         # These are Turnstile response hostnames for local preview, not bind addresses.
         allowed_hosts.update({"localhost", "127.0.0.1", "0.0.0.0"})  # nosec B104
     result_action = row_value(result, "action", "")
     action_allowed = result_action == action or (
-        environment != "production" and result_action == "test"
+        environment != "production" and not staging and result_action == "test"
     )
-    if not turnstile_result_allowed(result, allowed_hosts) or not action_allowed:
+    if (staging and is_testing_result) or not turnstile_result_allowed(result, allowed_hosts) or not action_allowed:
+        error_codes = result.get("error-codes", [])
+        known_codes = {
+            "missing-input-secret", "invalid-input-secret", "missing-input-response",
+            "invalid-input-response", "bad-request", "timeout-or-duplicate", "internal-error",
+        }
+        print(json.dumps({
+            "event": "workdoe-turnstile-verification-rejected",
+            "codes": [code for code in error_codes if isinstance(code, str) and code in known_codes]
+            if isinstance(error_codes, list) else [],
+            "hostname_allowed": row_value(result, "hostname", "") in allowed_hosts,
+            "action_allowed": action_allowed,
+        }))
         raise TurnstileError("Turnstile verification failed.")
     return result
 
 
+async def current_marketplace_email_body(env, body: dict) -> dict | None:
+    query = marketplace_email_delivery_query(body)
+    if query is None:
+        return None
+    sql, bindings = query
+    current = first_row(await db_run(env, sql, *bindings))
+    if current is None or contains_disallowed_personal_data(
+        row_value(current, field, "") for field in ("job_title", "city", "state", "contractor_name")
+    ):
+        return None
+    queued_email = body.get("to")
+    current_email = row_value(current, "recipient_email", "")
+    if (not isinstance(queued_email, str) or not isinstance(current_email, str)
+            or not current_email or normalize_email(queued_email) != normalize_email(current_email)):
+        return None
+    kind = body["type"]
+    payload = {
+        "type": kind, "to": current_email,
+        "job_title": row_value(current, "job_title", ""),
+        "location": f"{row_value(current, 'city', '')}, {row_value(current, 'state', '')}",
+    }
+    if kind == "stale-match-reminder":
+        payload.update({
+            "match_request_id": body["match_request_id"],
+            "contractor_name": row_value(current, "contractor_name", ""),
+            "preferences_url": "https://workdoe.com/client/profile#bid-reminders",
+        })
+    else:
+        payload["job_url"] = f"https://workdoe.com/jobs/{row_value(current, 'job_id')}"
+        if kind == "contractor-new-lead":
+            payload.update({
+                "lead_alert_delivery_id": body["lead_alert_delivery_id"],
+                "service_name": service_label(row_value(current, "service_slug", ""), row_value(current, "category", "")),
+                "settings_url": "https://workdoe.com/leads#saved-lead-alerts",
+            })
+    return payload
+
+
 async def process_email_queue_message(env, message, body: dict, queue_name: str) -> None:
     attempts = getattr(message, "attempts", 0)
-    if isinstance(body, dict) and body.get("type") == "contractor-lead-alert-fanout":
+    event_type = body.get("type") if isinstance(body, dict) else None
+    if (
+        isinstance(event_type, str) and event_type in OPTIONAL_MARKETPLACE_EMAIL_EVENTS
+        and not marketplace_email_enabled(env)
+    ):
+        # A stale optional notice must not be replayed after delivery resumes.
+        await record_event(
+            env,
+            "email-message-suppressed",
+            target_type=queue_name,
+            payload={"type": event_type, "reason": "marketplace-email-paused", "attempts": attempts},
+            status="processed",
+        )
+        ack_message(message)
+        return
+    if event_type == "contractor-lead-alert-fanout":
         job_id = positive_int(body.get("job_id"))
         if not job_id:
             await record_event(
@@ -10359,6 +11152,26 @@ async def process_email_queue_message(env, message, body: dict, queue_name: str)
         )
         ack_message(message)
         return
+    if isinstance(event_type, str) and event_type in OPTIONAL_MARKETPLACE_EMAIL_EVENTS:
+        try:
+            current_body = await current_marketplace_email_body(env, body)
+        except Exception as exc:  # noqa: BLE001 - D1 availability must fail closed before delivery.
+            await record_event_best_effort(
+                env, "email-message-eligibility-unavailable", target_type=queue_name,
+                payload={"type": event_type, "error_type": type(exc).__name__, "attempts": attempts},
+                status="failed",
+            )
+            retry_message(message)
+            return
+        if current_body is None:
+            await record_event(
+                env, "email-message-suppressed", target_type=queue_name,
+                payload={"type": event_type, "reason": "notice-no-longer-eligible", "attempts": attempts},
+                status="processed",
+            )
+            ack_message(message)
+            return
+        body = current_body
     audit_metadata = email_audit_metadata(
         body,
         getattr(env, "WORKDOE_SECRET_KEY", ""),
@@ -10468,14 +11281,14 @@ async def process_media_review_queue_message(env, message, body: dict, queue_nam
     attempts = getattr(message, "attempts", 0)
     try:
         payload = validated_media_review_payload(body)
-    except (MediaUploadError, ValueError) as exc:
+    except MediaUploadError:
         await record_event(
             env,
             "media-review-message-invalid",
             target_type=queue_name,
             payload={
                 **queue_payload_shape(body),
-                "reason": str(exc),
+                "reason": "invalid-media-review",
                 "attempts": attempts,
             },
             status="failed",
@@ -10490,7 +11303,6 @@ async def process_media_review_queue_message(env, message, body: dict, queue_nam
         target_id=payload["photo_id"],
         payload={
             "queue": queue_name,
-            "stored_path": payload["stored_path"],
             "content_type": payload["content_type"],
             "size_bytes": payload["size_bytes"],
             "checks": payload["checks"],
@@ -10499,3 +11311,34 @@ async def process_media_review_queue_message(env, message, body: dict, queue_nam
         status="processed",
     )
     ack_message(message)
+
+
+async def send_queue_json(binding, payload: dict):
+    value = normalize_json_value(payload)
+    if not isinstance(value, dict):
+        raise JsonDataError("Queue JSON payload must be an object.")
+    encoded = json.dumps(value, allow_nan=False, separators=(",", ":"))
+    if len(encoded.encode("utf-8")) > MAX_QUEUE_JSON_BODY_BYTES:
+        raise JsonDataError("Queue JSON payload exceeds its byte limit.")
+    if JS_JSON is not None:
+        # Plain JSON avoids RPC Map encoding and preserves null.
+        value = JS_JSON.parse(encoded)
+    return await binding.send(value)
+
+
+async def dispatch_queue_json(env, message, body, queue_name: str, handler) -> None:
+    try:
+        normalized = normalize_json_value(body)
+    except JsonDataError:
+        await record_event(
+            env, "queue-message-invalid-json", target_type=queue_name,
+            payload={**queue_payload_shape(body), "attempts": getattr(message, "attempts", 0)},
+            status="failed",
+        )
+        ack_message(message)
+        return
+    await handler(env, message, normalized, queue_name)
+
+
+async def dispatch_media_review_message(env, message, body, queue_name: str) -> None:
+    await dispatch_queue_json(env, message, body, queue_name, process_media_review_queue_message)

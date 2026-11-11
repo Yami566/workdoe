@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import py_compile
+import re
 import sqlite3
 import tempfile
 from dataclasses import dataclass
@@ -82,6 +83,11 @@ REQUIRED_RATE_LIMIT_BINDINGS = [
 ]
 REQUIRED_WORKER_SECRETS = REQUIRED_DEV_ENV
 IMMUTABLE_BROWSER_CACHE = "public, max-age=31556952, immutable"
+PUBLIC_SOURCE_MAP_FILE = re.compile(r"\.map(?:\.(?:gz|br))?$", re.IGNORECASE)
+INLINE_SOURCE_MAP = re.compile(
+    rb"(?://|/\*)[ \t]*[#@][ \t]*sourceMappingURL[ \t]*=[ \t]*data:",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -181,6 +187,36 @@ def require(condition: bool, errors: list[str], message: str, checks: list[str],
         add_ok(checks, ok_name)
     else:
         errors.append(message)
+
+
+def validate_public_source_maps(static_path: Path, errors: list[str], checks: list[str]) -> None:
+    if not static_path.is_dir():
+        errors.append("Could not inspect the public asset tree for source maps.")
+        return
+
+    root = static_path.resolve()
+    blocked = []
+    unreadable = []
+    for asset in sorted(static_path.rglob("*")):
+        if not asset.is_file():
+            continue
+        name = asset.relative_to(static_path).as_posix()
+        if PUBLIC_SOURCE_MAP_FILE.search(asset.name):
+            blocked.append(name)
+        elif asset.suffix.lower() in {".js", ".mjs", ".cjs", ".css"}:
+            try:
+                if asset.is_symlink() or not asset.resolve().is_relative_to(root):
+                    unreadable.append(name)
+                elif INLINE_SOURCE_MAP.search(asset.read_bytes()):
+                    blocked.append(name)
+            except OSError:
+                unreadable.append(name)
+    if blocked:
+        errors.append("Public assets must not include source maps or inline source maps: " + ", ".join(blocked))
+    if unreadable:
+        errors.append("Could not inspect public scripts or stylesheets for source maps: " + ", ".join(unreadable))
+    if not (blocked or unreadable):
+        add_ok(checks, "Public assets do not ship source maps")
 
 
 def compile_python(path: Path, errors: list[str], checks: list[str], ok_name: str) -> None:
@@ -363,6 +399,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     flask_asset_release_path = repo_root / "workdoe" / "asset_release.py"
     clerk_onboarding_path = repo_root / "cloudflare" / "worker" / "clerk_onboarding.py"
     clerk_sessions_path = repo_root / "cloudflare" / "worker" / "clerk_sessions.py"
+    json_values_path = repo_root / "cloudflare" / "worker" / "json_values.py"
     email_code_auth_path = repo_root / "cloudflare" / "worker" / "email_code_auth.py"
     email_payloads_path = repo_root / "cloudflare" / "worker" / "email_payloads.py"
     admin_moderation_path = repo_root / "cloudflare" / "worker" / "admin_moderation.py"
@@ -429,6 +466,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     workdoe_dns_diagnostic_path = repo_root / "scripts" / "workdoe_dns_diagnostic.py"
     workdoe_production_smoke_path = repo_root / "scripts" / "workdoe_production_smoke.py"
     static_path = repo_root / "workdoe" / "static"
+    validate_public_source_maps(static_path, errors, checks)
     static_headers_path = static_path / "_headers"
     static_headers = read_text(static_headers_path, errors)
     worker_actions_path = static_path / "worker-actions.js"
@@ -440,10 +478,9 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
         repo_root / "workdoe" / "templates" / filename
         for filename in (
             "base.html",
-            "home.html",
+            "_lead_map_scripts.html",
             "job_draft.html",
             "job_form.html",
-            "leads.html",
             "login.html",
             "start.html",
         )
@@ -541,10 +578,13 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     if wrangler:
         existing_d1_ids = release_module.existing_d1_ids(wrangler_path)
         if existing_d1_ids:
-            generated_wrangler = release_module.build_wrangler_config(
-                generated_manifest,
-                d1_ids=existing_d1_ids,
-            )
+            try:
+                generated_wrangler = release_module.build_wrangler_config(
+                    generated_manifest,
+                    d1_ids=existing_d1_ids,
+                )
+            except ValueError as error:
+                errors.append(str(error))
 
     if migration_sql:
         require(
@@ -1221,12 +1261,20 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             "Wrangler D1 binding is configured",
         )
         for id_field in ("database_id", "preview_database_id"):
+            if id_field == "preview_database_id" and d1_binding.get(id_field) == ZERO_UUID:
+                checks.append("Wrangler production remote D1 preview is explicitly disabled")
+                continue
             if d1_binding.get(id_field) == ZERO_UUID:
                 message = f"Wrangler D1 {id_field} is still the placeholder UUID."
                 if strict_production:
                     errors.append(message)
                 else:
                     warnings.append(message)
+        if d1_binding.get("database_id") != ZERO_UUID:
+            try:
+                release_module.production_d1_ids(wrangler)
+            except ValueError as error:
+                errors.append(str(error))
         r2_binding = (wrangler.get("r2_buckets") or [{}])[0]
         require(
             r2_binding.get("binding") == "MEDIA" and r2_binding.get("bucket_name") == "workdoe-media",
@@ -1289,18 +1337,16 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             checks,
             "Wrangler keeps all curated beta services available",
         )
-        tile_url = str(wrangler.get("vars", {}).get("WORKDOE_MAP_TILE_URL", ""))
-        tile_attribution = str(
-            wrangler.get("vars", {}).get("WORKDOE_MAP_TILE_ATTRIBUTION", "")
-        )
+        map_variables = wrangler.get("vars", {})
         require(
-            tile_url.startswith("https://")
-            and all(token in tile_url for token in ("{z}", "{x}", "{y}"))
-            and bool(tile_attribution.strip()),
+            map_variables.get("WORKDOE_MAP_MODE") == release_module.PRODUCTION_MAP_MODE
+            and manifest.get("cloudflare_targets", {}).get("worker", {}).get("public_map_mode")
+            == release_module.PRODUCTION_MAP_MODE
+            and not {"WORKDOE_MAP_TILE_URL", "WORKDOE_MAP_TILE_ATTRIBUTION"} & map_variables.keys(),
             errors,
-            "Wrangler must configure an HTTPS map tile URL, attribution, and Leaflet placeholders.",
+            "The release must select the reviewed same-origin map without street tile settings.",
             checks,
-            "Wrangler configures the reviewed map tile provider",
+            "Wrangler selects the reviewed same-origin area map",
         )
         require(
             wrangler.get("vars", {}).get("WORKDOE_EMAIL_FROM") == "no-reply@workdoe.com"
@@ -1454,6 +1500,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     )
     compile_python(clerk_onboarding_path, errors, checks, "Clerk onboarding helper compiles")
     compile_python(clerk_sessions_path, errors, checks, "Clerk session verification helper compiles")
+    compile_python(json_values_path, errors, checks, "Cloudflare bounded JSON decoder compiles")
     compile_python(email_code_auth_path, errors, checks, "Cloudflare email-code auth helper compiles")
     compile_python(clerk_proxy_path, errors, checks, "Clerk Frontend API proxy helper compiles")
     compile_python(email_payloads_path, errors, checks, "Cloudflare email payload helper compiles")
@@ -1576,6 +1623,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
     client_jobs_source = read_text(client_jobs_path, errors)
     client_requests_source = read_text(client_requests_path, errors)
     entry_shell_source = read_text(entry_shell_path, errors)
+    map_tile_source = read_text(entry_shell_path.with_name("map_tiles.py"), errors)
     public_jobs_source = read_text(public_jobs_path, errors)
     public_job_query_source = read_text(public_job_query_path, errors)
     job_details_source = read_text(job_details_path, errors)
@@ -1646,7 +1694,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             and "?v={ASSET_RELEASE_TOKEN}" in source
             for source in (app_shell_source, entry_shell_source)
         )
-        and 'map_scripts_html = "" if embedded else f"""' in entry_shell_source
+        and '<script defer src="/map.js?v={ASSET_RELEASE_TOKEN}"></script>""" if include_map else ""' in entry_shell_source
     )
     require(
         centralized_asset_renderers and not stale_asset_renderers,
@@ -1655,6 +1703,15 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
         + ", ".join(stale_asset_renderers),
         checks,
         "Static asset renderers use centralized release tokens",
+    )
+    worker_map_configuration = read_text(repo_root / "cloudflare/worker/map_tiles.py", errors)
+    flask_map_configuration = read_text(repo_root / "workdoe/map_tiles.py", errors)
+    require(
+        bool(worker_map_configuration) and worker_map_configuration == flask_map_configuration,
+        errors,
+        "Flask and Worker map configuration must remain identical.",
+        checks,
+        "Flask and Worker share the reviewed map configuration rules",
     )
     if contractor_reputation_source and local_contractor_reputation_source:
         require(
@@ -2198,7 +2255,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "request_status",
                 "new_jobs",
                 "sent_bids",
-                "Approximate city or ZIP-level pins only until a client approves a match.",
+                "Approximate city or ZIP-level pins only, including after approval.",
             )
             if marker not in combined_contractor_leads_source
         ]
@@ -2440,7 +2497,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
             "Cloudflare Worker redacts transactional email audit metadata",
         )
         combined_entry_shell_source = (
-            worker_source + "\n" + entry_shell_source + "\n" + clerk_entry_source + "\n" + clerk_proxy_source
+            worker_source + "\n" + entry_shell_source + "\n" + clerk_entry_source + "\n" + clerk_proxy_source + "\n" + map_tile_source
         )
         missing_entry_shell_markers = [
             marker
@@ -2458,7 +2515,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "CF-Connecting-IP",
                 "entry_shell",
                 "build_entry_shell_html",
-                "entry_shell_jobs",
+                "read_public_project_page",
                 "data-clerk-entry",
                 "data-clerk-proxy-url",
                 "CLERK_SIGNIN_MODE",
@@ -2592,7 +2649,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "clerk-account.js",
                 "mountUserProfile",
                 'routing: "hash"',
-                "CLERK_UI_VERSION",
+                "clerk_browser_script_tags(",
                 "window.__internal_ClerkUICtor",
                 "https://*.protect.clerk.com",
                 "https://img.clerk.com",
@@ -2674,7 +2731,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "public_query_telemetry(",
                 "next_cursor=next_cursor",
                 "jobs.status = 'open'",
-                "jobs.zip_code LIKE ?",
+                "instr(jobs.zip_code, ?)",
                 "Approximate city or ZIP-level pins only.",
                 "Cache-Control",
             )
@@ -2778,7 +2835,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "public_job_draft",
                 "job_draft_for_request",
                 "save_job_draft_record",
-                "consume_job_draft_record",
+                "UPDATE job_drafts SET consumed_at",
                 "job_draft_token_hash",
                 "HttpOnly; Secure; SameSite=Lax",
                 'action="/post-project"',
@@ -2804,7 +2861,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "match_request_payload",
                 "Only contractor accounts can send mini bids.",
                 "You already requested a match for this job.",
-                "INSERT OR IGNORE INTO match_requests",
+                "ON CONFLICT(job_id, contractor_id) DO NOTHING",
                 "AND jobs.status = 'open'",
                 "d1_change_count",
                 "match-request-created",
@@ -2830,8 +2887,10 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "can_decide_match_request",
                 "This mini bid has already been reviewed.",
                 "UPDATE match_requests",
+                "approve_pending_match",
+                "reject_pending_match",
                 "ensure_thread_for_match",
-                "INSERT OR IGNORE INTO threads",
+                "ON CONFLICT(match_request_id) DO NOTHING",
                 "INSERT INTO messages",
                 "APPROVAL_THREAD_MESSAGE",
                 "match-request-approved",
@@ -2960,7 +3019,7 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "self.env.MEDIA.get",
                 "self.env.MEDIA.put",
                 "self.env.MEDIA.delete",
-                "MEDIA_QUEUE.send",
+                "send_queue_json(self.env.MEDIA_QUEUE",
                 "rollback_media_upload",
                 "media_metadata_delete_statement",
                 "metadata_cleanup",
@@ -3047,13 +3106,20 @@ def run_preflight(repo_root: Path = REPO_ROOT, strict_production: bool = False) 
                 "clerk_proxy_proof_json",
                 "wrangler_command",
                 "\"d1\", \"migrations\", \"apply\", \"workdoe\", \"--remote",
-                "\"deploy",
+                "\"versions\", \"upload\"",
+                "\"versions\", \"deploy\"",
+                "--expected-commit",
+                "--expected-worker-version",
+                "--migrations",
+                "--asset-commit",
                 "workdoe_production_smoke.py",
                 "--fail-when-not-ready",
                 "Strict production readiness failed; deploy was not run.",
                 "executes_commands",
                 "output_excerpt",
-                "SMOKE_OUTPUT_MAX",
+                "SMOKE_JSON_MAX",
+                "RELEASE_SMOKE_SCOPE",
+                "release_smoke_result",
             )
             if marker not in production_deploy_source
         ]

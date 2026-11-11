@@ -7,8 +7,8 @@
   };
   var PROFILE_STATE_MAX_AGE_MS = 30 * 60 * 1000;
   var CLERK_LOAD_TIMEOUT_MS = 15000;
-  var CLERK_LOAD_TIMEOUT_MESSAGE = "Secure email sign-in is taking longer than expected. Close this window and try again.";
-  var CLERK_UNAVAILABLE_MESSAGE = "Secure email sign-in could not load. Refresh the page and try again.";
+  var CLERK_LOAD_TIMEOUT_MESSAGE = "Secure email sign-in is taking longer than expected. Try again.";
+  var CLERK_UNAVAILABLE_MESSAGE = "Secure email sign-in could not load. Try again.";
   var SESSION_REFRESH_MESSAGE = "We could not confirm the previous sign-in. Use a new email code to continue.";
 
   function selectedIntent(scope) {
@@ -26,7 +26,30 @@
   }
 
   function entryScope(node) {
-    return node.closest(".clerk-entry-panel") || document;
+    return node.closest(".clerk-entry-panel, .market-auth-rail") || document;
+  }
+
+  function entryIsActive(node) {
+    return node.dataset.clerkDisposed !== "true" && document.contains(node);
+  }
+
+  function navigateAfterAuth(node, destination) {
+    if (!entryIsActive(node)) {
+      return;
+    }
+    var url = new URL(destination, window.location.origin);
+    if (url.origin !== window.location.origin) {
+      url = new URL("/dashboard", window.location.origin);
+    }
+    url.searchParams.delete("embed");
+    var canonical = url.pathname + url.search + url.hash;
+    if (node.closest("[data-site-dialog-content]")) {
+      document.dispatchEvent(new CustomEvent("workdoe:dialog-navigate", {
+        detail: { url: canonical }
+      }));
+      return;
+    }
+    window.location.assign(canonical);
   }
 
   function setMessage(node, text) {
@@ -37,10 +60,14 @@
   }
 
   function setEntryFailure(node, message) {
+    var fallback = entryScope(node).querySelector("[data-clerk-load-fallback]");
     var loading = typeof node.querySelector === "function"
       ? node.querySelector(".clerk-entry-loading")
       : null;
-    if (loading) {
+    if (fallback) {
+      node.hidden = true;
+      fallback.hidden = false;
+    } else if (loading) {
       loading.textContent = message;
     }
     setMessage(node, message);
@@ -260,14 +287,17 @@
     try {
       setMessage(node, "Checking Workdoe access...");
       var session = await fetchJson(node.dataset.sessionUrl || "/api/auth/session");
+      if (!entryIsActive(node)) {
+        return false;
+      }
       if (session.workdoe_user) {
         clearProfileState();
-        window.location.assign(destinationForStart(node, session.workdoe_user.role || role));
+        navigateAfterAuth(node, destinationForStart(node, session.workdoe_user.role || role));
         return true;
       }
       if (!session.onboarding_required) {
         clearProfileState();
-        window.location.assign(node.dataset.dashboardUrl || "/dashboard");
+        navigateAfterAuth(node, node.dataset.dashboardUrl || "/dashboard");
         return true;
       }
 
@@ -297,8 +327,11 @@
         body: JSON.stringify(onboardPayload)
       });
       var createdRole = onboard.workdoe_user ? onboard.workdoe_user.role : role;
+      if (!entryIsActive(node)) {
+        return false;
+      }
       clearProfileState();
-      window.location.assign(destinationForStart(node, createdRole));
+      navigateAfterAuth(node, destinationForStart(node, createdRole));
       return true;
     } catch (error) {
       delete node.dataset.clerkOnboarding;
@@ -313,7 +346,7 @@
 
   async function finishSignIn(node) {
     if (!node.dataset.sessionUrl) {
-      window.location.assign(node.dataset.redirectUrl || "/dashboard");
+      navigateAfterAuth(node, node.dataset.redirectUrl || "/dashboard");
       return true;
     }
     if (node.dataset.clerkOnboarding === "running") {
@@ -325,14 +358,14 @@
       setMessage(node, "Checking Workdoe access...");
       var session = await fetchJson(node.dataset.sessionUrl);
       if (session.workdoe_user) {
-        window.location.assign(node.dataset.redirectUrl || "/dashboard");
+        navigateAfterAuth(node, node.dataset.redirectUrl || "/dashboard");
         return true;
       }
       if (session.onboarding_required) {
-        window.location.assign(node.dataset.signUpUrl || "/create-account");
+        navigateAfterAuth(node, node.dataset.signUpUrl || "/create-account");
         return true;
       }
-      window.location.assign(node.dataset.dashboardUrl || "/dashboard");
+      navigateAfterAuth(node, node.dataset.dashboardUrl || "/dashboard");
       return true;
     } catch (error) {
       delete node.dataset.clerkOnboarding;
@@ -345,9 +378,46 @@
     }
   }
 
+  function routeClerkNavigation(destination, metadata, replace) {
+    var url;
+    try {
+      url = new URL(destination, window.location.href);
+    } catch (error) {
+      return;
+    }
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return;
+    }
+    // Clerk keeps these hooks across mounts; resolve the current dialog entry.
+    var entries = document.querySelectorAll("[data-site-dialog][open] [data-clerk-entry]");
+    var activeDialog = Array.prototype.some.call(entries, entryIsActive);
+    if (
+      activeDialog && !window.Clerk.isSignedIn &&
+      url.origin === window.location.origin &&
+      ["/login", "/create-account", "/start", "/post-project"].indexOf(url.pathname) !== -1 &&
+      url.pathname !== window.location.pathname
+    ) {
+      url.searchParams.delete("embed");
+      document.dispatchEvent(new CustomEvent("workdoe:dialog-navigate", {
+        detail: {url: url.pathname + url.search + url.hash}
+      }));
+      return;
+    }
+    if (metadata && typeof metadata.windowNavigate === "function") {
+      return metadata.windowNavigate(destination);
+    }
+    window.location[replace ? "replace" : "assign"](destination);
+  }
+
   function clerkLoadOptions(node) {
     var options = {
       telemetry: false,
+      routerPush: function (destination, metadata) {
+        return routeClerkNavigation(destination, metadata, false);
+      },
+      routerReplace: function (destination, metadata) {
+        return routeClerkNavigation(destination, metadata, true);
+      },
       ui: { ClerkUI: window.__internal_ClerkUICtor },
       appearance: {
         options: {
@@ -376,7 +446,10 @@
   }
 
   function clerkReturnUrl() {
-    return window.location.pathname + window.location.search;
+    var params = new URLSearchParams(window.location.search);
+    params.delete("embed");
+    var query = params.toString();
+    return window.location.pathname + (query ? "?" + query : "");
   }
 
   function mountClerkEntry(node) {
@@ -409,7 +482,7 @@
   }
 
   function continueWithActiveSession(node) {
-    if (node.dataset.clerkOnboarding === "running") {
+    if (!entryIsActive(node) || node.dataset.clerkOnboarding === "running") {
       return;
     }
     if (node.dataset.clerkMode === "start") {
@@ -428,7 +501,7 @@
       return;
     }
     node.dataset.clerkListenerBound = "true";
-    window.Clerk.addListener(function (emission) {
+    node._workdoeClerkUnsubscribe = window.Clerk.addListener(function (emission) {
       if (!emission || !emission.session || !emission.user) {
         return;
       }
@@ -464,7 +537,31 @@
 
     bindProfileState(node);
     bindSessionRecovery(node);
+    node.hidden = false;
+    var fallback = entryScope(node).querySelector("[data-clerk-load-fallback]");
+    if (fallback) {
+      fallback.hidden = true;
+    }
+    node._workdoeClerkDispose = function () {
+      if (node.dataset.clerkDisposed === "true") {
+        return;
+      }
+      node.dataset.clerkDisposed = "true";
+      if (typeof node._workdoeClerkUnsubscribe === "function") {
+        node._workdoeClerkUnsubscribe();
+        delete node._workdoeClerkUnsubscribe;
+      }
+      if (node.dataset.state === "ready") {
+        var unmount = node.dataset.clerkMode === "start" ? "unmountSignUp" : "unmountSignIn";
+        if (typeof window.Clerk[unmount] === "function") {
+          window.Clerk[unmount](node);
+        }
+      }
+    };
     await loadClerkWithTimeout(node);
+    if (!entryIsActive(node)) {
+      return;
+    }
     bindClerkSessionListener(node);
 
     if (window.Clerk.isSignedIn) {
@@ -482,6 +579,9 @@
       }
       node.dataset.clerkInitialized = "true";
       loadClerk(node).catch(function (error) {
+        if (!entryIsActive(node)) {
+          return;
+        }
         window.console.error("Clerk sign-in initialization failed.");
         node.dataset.state = "failed";
         setEntryFailure(
