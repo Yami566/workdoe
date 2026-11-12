@@ -1,94 +1,35 @@
-# Workdoe Documentation Index
+# Workdoe Documentation
 
-Last reviewed: 2026-10-27
+Workdoe is proprietary software using reviewed, pinned third-party dependencies.
+See the [repository license](../LICENSE) and [third-party notices](../THIRD_PARTY_NOTICES.md).
 
-This index identifies the current product and release documents. Dated studies,
-screenshots, and earlier audits remain useful evidence, but they do not override
-the current requirements, policy gates, or release status.
+## Current Launch Decision
 
-## Current authority
+The [public release status](workdoe-public-launch-gates.md) distinguishes
+local verification from hosted acceptance. A GitHub push is not a production
+deployment, policy approval, license clearance or unrestricted-launch approval.
 
-- `workdoe-launch-readiness-2026-10-24.md`: current production review,
-  verification evidence, locally prepared corrections, and remaining launch
-  gates. This is the controlling release-readiness record.
-- `workdoe-owner-live-acceptance-checklist.md`: owner-controlled sign-in,
-  marketplace, media, public-view, legal, and operating checks required before
-  an unrestricted launch claim.
-- `workdoe-stabilization-release-status-2026-08-23.md`: historical
-  implementation and stabilization evidence. Its deployment-status statements
-  are superseded by the 2026-10-24 readiness review.
-- `workdoe-product-requirements.md`: product scope, roles, user journeys,
-  launch criteria, and owner decisions.
-- `workdoe-data-inventory.md`: data classes, storage, visibility, providers,
-  and unresolved retention decisions.
-- `workdoe-security-impact-assessment.md`: security boundaries, implemented
-  controls, residual risks, and required live verification. Its historical
-  Cloudflare Images references are superseded by the current no-public-media
-  beta decision in the readiness record.
-- `workdoe-policy-review-checklist.md`: public-policy content and owner/legal
-  approval gates.
-- `workdoe-operations-runbook.md`: incident, moderation, recovery, credential,
-  and data-request operating procedures.
-- `cloudflare-migration.md` and `cloudflare-automation-auth.md`: production
-  architecture, Cloudflare automation, Clerk, and controlled release workflow.
-- `workdoe-design-provenance.md`: first-party design and reference-use record.
-- Repository root `LICENSE`, `THIRD_PARTY_NOTICES.md`, and
-  `DEPENDENCY_PROVENANCE.json`: proprietary status and dependency provenance.
+## Application Documentation
 
-## Current design evidence
+- [Product requirements](workdoe-product-requirements.md)
+- [Data inventory](workdoe-data-inventory.md)
+- [Design provenance](workdoe-design-provenance.md)
+- [Cloudflare migration](cloudflare-migration.md)
+- [Authentication and automation](cloudflare-automation-auth.md)
+- [Operations runbook](workdoe-operations-runbook.md)
+- [Owner acceptance checklist](workdoe-owner-live-acceptance-checklist.md)
+- [Policy approval checklist](workdoe-policy-review-checklist.md)
 
-- `ux-audit/2026-10-24-public-surface/`: current local release-candidate
-  desktop, tablet, and phone public-map, dialog, focus-restoration, map-control,
-  and console evidence. It records its live-acceptance limits explicitly.
-- `ux-audit/2026-08-23-task-navigation/`: accepted desktop, tablet, and mobile
-  navigation/dashboard captures plus the editable Figma reference board.
-- `ux-audit/2026-08-22-service-policy/`: advisory acknowledgement evidence.
-- `ux-audit/2026-08-22-stabilization/`: map, dialog, and stabilization evidence.
-- `ux-audit/2026-08-23-current-journeys/`: current consumer, contractor,
-  messaging, and accepted contractor map-first workspace evidence.
-- `ux-audit/2026-08-24-current-workflow-followup/`: current public, role
-  dashboard, messaging, and unified contractor-offer review evidence.
-- `ux-audit/2026-08-24-contractor-bid-action-queue/`: current contractor
-  approved-first bid triage, submitted-term, and responsive evidence.
-- `ux-audit/2026-08-24-contractor-opportunity-flow/`: current contractor
-  map-selection and synchronized project-detail evidence.
-- `ux-audit/2026-08-24-next-workflow-pass/`: consumer project-name and
-  ZIP-assisted location-entry before/after evidence plus contractor baseline.
-- `ux-audit/2026-08-24-consumer-offer-choice-followthrough/`: consumer
-  contractor-card hierarchy, early Choose action, and confirmation-dialog
-  evidence across mobile and desktop.
-- `ux-audit/2026-08-23-project-lifecycle/`: current completed-project and
-  approved-match message hierarchy, responsive correction, and same-state
-  before/after evidence.
-- `release-evidence/2026-08-23-d1-worker-verification.md`: indexed D1 query
-  plan, local Worker runtime, and rows-read telemetry evidence.
-- `release-evidence/2026-08-23-local-browser-acceptance.md`: repeated mobile
-  dialog, focus, map/list, URL-state, keyboard, overflow, and touch-target
-  evidence with explicit live-test limits.
-- `release-evidence/2026-08-24-static-asset-cache.md`: Cloudflare-native
-  immutable cache policy, deterministic byte-derived release token,
-  narrow-path guardrails, local Worker response evidence, and the
-  post-deployment smoke requirement.
-- `release-evidence/2026-08-24-account-lifecycle-visibility.md`: fail-closed
-  visibility, media, detail, and bid behavior for suspended/deleted consumers.
+## Latest Release Evidence
 
-Screenshots are point-in-time evidence. A capture is not proof that the current
-code still matches it unless the current release-status record cites a repeated
-browser check.
+The reviewed local candidate passed 739 Python tests, 190 strict preflight
+checks, lint, security/provenance checks and both configuration dry builds.
+The exported release tree is rechecked before publication. Those local
+results do not establish production traffic, real-device usability or legal
+approval.
 
-## Research and historical records
-
-- The dated DMV competition, commercial-launch, marketplace-expansion, and
-  gamified-marketplace studies are research inputs. The latest product decision
-  record is `workdoe-dmv-gamified-marketplace-commercial-launch-study-2026-08-21.md`.
-- `workdoe-launch-completion-matrix-2026-08-21.md` is superseded by the current
-  stabilization release-status record.
-- `launch-readiness-2026-08-16/` and `live-acceptance-review-2026-08-16/` are
-  historical audits. Findings may have been closed or reclassified later.
-- Earlier `ux-audit/` folders and top-level smoke screenshots are historical
-  visual evidence, not the current target specification.
-- `workdoe-launch-handoff*.local.md` files are generated operator snapshots and
-  are not source-of-truth documentation.
-
-When documents conflict, use the current authority list above, then confirm the
-behavior in source, tests, and current release evidence.
+New internal audit records, signed-in QA captures and provider readbacks remain
+in the private local review workspace. Previously published archives are
+retained as historical records, not current acceptance. References to withheld
+records point to the [public status summary](workdoe-public-launch-gates.md#internal-records),
+not to raw operator evidence. They are not part of the website runtime.

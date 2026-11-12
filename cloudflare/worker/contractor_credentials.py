@@ -5,6 +5,8 @@ import re
 from datetime import date, datetime, timezone
 from urllib.parse import urlparse, urlunparse
 
+from request_security import parse_url_record_id
+
 CREDENTIAL_TYPES = (
     ("trade_license", "Trade license"),
     ("business_registration", "Business registration"),
@@ -52,9 +54,10 @@ class ContractorCredentialError(ValueError):
 
 def parse_contractor_credential_remove_path(path: str) -> int:
     match = CONTRACTOR_CREDENTIAL_REMOVE_RE.match(path or "")
-    if not match:
+    record_id = parse_url_record_id(match.group(1)) if match else 0
+    if not record_id:
         raise ContractorCredentialError(["Unsupported credential claim route."])
-    return int(match.group(1))
+    return record_id
 
 
 def compact_spaces(value: str | None) -> str:

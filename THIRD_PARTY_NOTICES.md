@@ -6,6 +6,12 @@ Machine-readable versions, source locations, licenses, and integrity values are
 maintained in `DEPENDENCY_PROVENANCE.json` and checked by
 `scripts/verify_dependency_provenance.py`.
 
+## Optional DMV Area Map Data
+
+- County boundaries: [U.S. Census Bureau TIGERweb, Generalized ACS 2025, county layer 11](https://tigerweb.geo.census.gov/arcgis/rest/services/Generalized_ACS2025/State_County/MapServer/11), vintage 2025-01-01.
+- U.S. government public-domain boundary data. Workdoe's subset is simplified and is not an authoritative survey or navigation map. The U.S. Census Bureau does not endorse Workdoe.
+- Retained bytes and integrity hash: `workdoe/static/dmv-area-50fe6cd3.geojson`, recorded in `DEPENDENCY_PROVENANCE.json`.
+
 ## Browser-distributed code and assets
 
 ### Leaflet 1.9.4
@@ -75,12 +81,26 @@ artifacts on 2026-08-16. The test suite enforces the same values locally.
 - Purpose: maintained same-domain authentication and account components in the production shell.
 - Reviewed packages: `@clerk/ui` 1.41.2 and `@clerk/clerk-js` 6.40.1.
 - License: MIT for both open-source browser packages.
+- Retained upstream notices: [Clerk UI](licenses/clerk-ui.MIT) and
+  [ClerkJS](licenses/clerk-js.MIT). The release check verifies the reviewed
+  copies and their same-domain proxy responses.
+- The [sign-in software notices](workdoe/static/vendor/clerk-notices-v2/notices-1.html)
+  cover selected reviewed components, including the two Stripe wrappers,
+  zxcvbn-ts Core and Language Common, and the full Apache-2.0 text for the
+  recorded wallet SDK notices. They are not a complete inventory of the
+  compiled Clerk bundles and do not enable payments or another sign-in method.
+- The [repeatable notice-source check](docs/release-evidence/2026-11-09-clerk-ui-license-evidence.md#repeatable-upstream-notice-verification)
+  matches the retained notices to pinned public npm archives or exact source
+  commits. It does not clear unknown compiled dependencies.
 - Sources: https://www.npmjs.com/package/@clerk/ui/v/1.41.2 and
   https://www.npmjs.com/package/@clerk/clerk-js/v/6.40.1.
 - Delivery: pinned script paths are loaded through Workdoe's same-domain Clerk
   Frontend API proxy. Their npm package integrity values are recorded in the
   dependency provenance ledger and verified against the version constants in
   both Flask and Cloudflare renderers.
+- [Signed package verification](docs/release-evidence/2026-11-09-clerk-signed-package-provenance.md)
+  ties both exact archives to the reviewed upstream source and build workflow.
+  It does not replace the compiled bundle's third-party license inventory.
 - The Clerk hosted service is a third-party SaaS dependency governed by the
   account's service agreement and privacy/data-processing terms, not by the
   SDK's MIT license.
@@ -100,12 +120,18 @@ artifacts on 2026-08-16. The test suite enforces the same values locally.
 - The packages use BSD 3-Clause licenses except blinker, which uses MIT.
   Source-archive SHA-256 values and official PyPI pages are recorded in the
   dependency provenance ledger.
+- The separate CPython 3.13 verification wheel locks in `.github/python/`
+  bind platform-specific wheels for the application, lint and audit tools
+  to reviewed SHA-256 hashes. These wheels are verification dependencies,
+  not browser assets or part of the published Worker.
 
 ### Wrangler 4.152.0
 
 - Purpose: Cloudflare Worker validation and deployment tooling.
 - License: MIT OR Apache-2.0.
 - Source: https://github.com/cloudflare/workers-sdk
+- The complete transitive npm tooling inventory is checked against the
+  reviewed lockfile, including its declared licenses and integrity fields.
 - Wrangler is a development dependency. `node_modules` is ignored and is not
   served to Workdoe visitors. Package-specific license and integrity metadata
   is retained in `package-lock.json` and the dependency provenance ledger.

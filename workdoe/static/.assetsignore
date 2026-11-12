@@ -1,0 +1,4 @@
+# Source maps belong outside the public asset upload.
+*.[mM][aA][pP]
+*.[mM][aA][pP].[gG][zZ]
+*.[mM][aA][pP].[bB][rR]

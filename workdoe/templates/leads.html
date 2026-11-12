@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Find Work - Workdoe{% endblock %}
-{% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
-{% endblock %}
 {% block content %}
+{% set mobile_panel = "filters" if selected_family or not project_map_enabled() else "map" %}
+{% if project_map_enabled() %}
 <div class="market-mobile-tabs" role="tablist" aria-label="Marketplace view" aria-orientation="horizontal">
-  <button type="button" role="tab" data-mobile-panel-target="filters" aria-controls="market-projects-panel" aria-selected="false" tabindex="-1">Projects</button>
-  <button type="button" role="tab" data-mobile-panel-target="map" aria-controls="market-map-panel" aria-selected="true">Map</button>
-  <button type="button" role="tab" data-mobile-panel-target="details" aria-controls="market-details-panel" aria-selected="false" tabindex="-1">Details</button>
+  <button id="market-projects-tab" type="button" role="tab" data-mobile-panel-target="filters" aria-controls="market-projects-panel" aria-selected="{{ 'true' if mobile_panel == 'filters' else 'false' }}"{% if mobile_panel != 'filters' %} tabindex="-1"{% endif %}>Projects</button>
+  <button id="market-map-tab" type="button" role="tab" data-mobile-panel-target="map" aria-controls="market-map-panel" aria-selected="{{ 'true' if mobile_panel == 'map' else 'false' }}"{% if mobile_panel != 'map' %} tabindex="-1"{% endif %}>Map</button>
+  <button id="market-details-tab" type="button" role="tab" data-mobile-panel-target="details" aria-controls="market-details-panel" aria-selected="false" tabindex="-1">Details</button>
 </div>
+{% endif %}
 
 <section class="signed-in-market-heading">
   <div>
@@ -17,11 +17,11 @@
   </div>
 </section>
 
-<section class="market-workspace signed-in-market-workspace" data-market-workspace data-mobile-panel="map">
+<section class="market-workspace signed-in-market-workspace" tabindex="-1" data-market-workspace data-mobile-panel="{{ mobile_panel }}">
   <aside id="market-projects-panel" class="market-filter-rail" data-market-panel="filters" aria-label="Project search and filters">
     <div class="market-rail-heading">
       <h2>Available projects</h2>
-      <p>Approximate locations until a client approves your bid.</p>
+      <p>Locations stay approximate, even after approval.</p>
     </div>
 
     <nav class="lead-view-tabs" aria-label="Lead status">
@@ -44,18 +44,18 @@
       <summary aria-label="Filter projects and manage matching project alerts">
         <span class="lead-tools-summary-layout">
           <span class="lead-tools-summary-copy"><strong>Filters &amp; alerts</strong><small>{{ active_filter_label }} / {{ filters.sort|capitalize }}</small></span>
-          <span class="lead-tools-alert-state{% if preferences.lead_alert_enabled %} is-on{% endif %}">{{ "Email on" if preferences.lead_alert_enabled else "Alerts off" }}</span>
+          <span class="lead-tools-alert-state">Email paused</span>
         </span>
       </summary>
       <div class="lead-tools-body">
         {% set family_filter_label = "Filter contractor leads by work family" %}
         {% include "_service_family_filter.html" %}
 
-        <form class="market-filter-form" method="get" action="{{ url_for('leads') }}" role="search" aria-label="Filter contractor leads" aria-controls="lead-results lead-map" data-market-filters>
+        <form class="market-filter-form" method="get" action="{{ url_for('leads') }}" role="search" aria-label="Filter contractor leads" aria-controls="lead-results{% if project_map_enabled() %} lead-map{% endif %}" data-market-filters>
           {% if lead_view != "all" %}<input type="hidden" name="view" value="{{ lead_view }}">{% endif %}
           {% if filters.family %}<input type="hidden" name="family" value="{{ filters.family }}">{% endif %}
           <label for="lead-search">Search projects</label>
-          <input id="lead-search" name="q" type="search" enterkeyhint="search" value="{{ filters.q }}" placeholder="Try painting or Arlington" maxlength="{{ filter_query_max }}" autocomplete="off" data-market-search>
+          <input id="lead-search" name="q" type="search" enterkeyhint="search" value="{{ filters.q }}" placeholder="Try painting or Arlington" maxlength="{{ filter_query_max }}" autocomplete="off" pattern="{{ project_search_input_pattern }}" title="{{ project_search_input_hint }}" data-market-search>
           {% if selected_family %}
             <label for="lead-service">Task</label>
             <select id="lead-service" name="service" data-market-service>
@@ -91,17 +91,17 @@
                 {% for value, label in lead_alert_options %}
                   <label>
                     <input type="radio" name="lead_alert_preference" value="{{ value }}" {% if preferences.lead_alert_preference == value %}checked{% endif %} required>
-                    <span>{{ label }}</span>
+                    <span>{{ "Email when available" if value == "email" else label }}</span>
                   </label>
                 {% endfor %}
               </div>
-              <small>Email uses this view plus your services and DMV zones.</small>
+              <small>Email alerts are paused. Saved views still work.</small>
             </fieldset>
             <button class="button secondary compact" type="submit">Save view</button>
           </form>
           {% if preferences.has_saved_lead_view %}
             <a class="button secondary compact" href="{{ saved_lead_view_url }}">Use saved view</a>
-            <span>{{ preferences.saved_service_label or preferences.saved_family_label or preferences.saved_category or "All work" }}{% if preferences.saved_query %} near “{{ preferences.saved_query }}”{% endif %}{% if preferences.lead_alert_enabled %} · Email alerts on{% endif %}</span>
+            <span>{{ preferences.saved_service_label or preferences.saved_family_label or preferences.saved_category or "All work" }}{% if preferences.saved_query %} near “{{ preferences.saved_query }}”{% endif %}</span>
           {% else %}
             <span>Save a useful task or area for next time.</span>
           {% endif %}
@@ -140,9 +140,11 @@
     </div>
   </aside>
 
+  {% if project_map_enabled() %}
   <section id="market-map-panel" class="market-map-stage" data-market-panel="map" aria-label="Project map workspace">
     <div class="map-stage-toolbar">
-      <div><span class="map-live-indicator" aria-hidden="true"></span><strong data-map-result-count>{{ map_jobs|length }} project{{ "" if map_jobs|length == 1 else "s" }} mapped</strong></div>
+      {% set mapped_count = map_jobs|rejectattr('lat', 'none')|rejectattr('lng', 'none')|list|length %}
+      <div><span class="map-live-indicator" aria-hidden="true"></span><strong data-map-result-count>{{ mapped_count }} project{{ "" if mapped_count == 1 else "s" }} mapped</strong></div>
       <span>Approximate pins</span>
     </div>
     <div class="market-map-frame">
@@ -151,13 +153,14 @@
       {% endwith %}
     </div>
   </section>
+  {% endif %}
 
   <aside id="market-details-panel" class="market-detail-rail" data-market-panel="details" aria-label="Selected project">
     {% if selected_job %}
       <article class="market-project-detail" data-project-detail-content data-job-id="{{ selected_job.id }}">
         <div class="project-detail-heading"><span class="live-badge">Open project</span><span>{{ selected_job.service_slug|service_name(selected_job.category) }}</span></div>
         <h2>{{ selected_job.title }}</h2>
-        <p class="project-detail-location">{{ selected_job.city }}, {{ selected_job.state }}</p>
+        <p class="project-detail-location">{{ selected_job.city }}, {{ selected_job.state }}{% if selected_job.approx_lat is none %} <span class="help-text">(no map pin)</span>{% endif %}</p>
         <dl class="project-facts">
           <div><dt>Estimated budget</dt><dd>{{ selected_job|budget_label }}</dd></div>
           <div><dt>Desired date</dt><dd>{% if selected_job.desired_date %}{{ selected_job.desired_date|date_label }}{% else %}Flexible{% endif %}</dd></div>
@@ -167,7 +170,7 @@
           <p class="license-preference-note"><img src="{{ url_for('static', filename='vendor/tabler-icons/home-check.svg') }}" alt=""><span><strong>Current license record preferred</strong><small>Preference only. Confirm whether your license covers this work and jurisdiction.</small></span></p>
         {% endif %}
         <div class="project-description"><h3>Field brief</h3><p>{{ selected_job.description }}</p></div>
-        <p class="project-privacy-note">Location stays approximate until a match is approved.</p>
+        <p class="project-privacy-note">Locations stay approximate after approval. Do not include a street address.</p>
         <div class="project-detail-actions"><a class="button" href="{{ url_for('contractor_job_detail', job_id=selected_job.id) }}" data-dialog-title="Review and bid">Review and bid</a></div>
       </article>
     {% else %}
@@ -180,7 +183,5 @@
   </aside>
 </section>
 
-<script id="map-jobs-data" type="application/json">{{ map_jobs|tojson }}</script>
-<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
-<script src="{{ url_for('static', filename='map.js') }}?v={{ asset_release_token }}"></script>
+{% include "_lead_map_scripts.html" %}
 {% endblock %}

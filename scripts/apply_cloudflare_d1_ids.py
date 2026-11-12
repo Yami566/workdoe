@@ -5,6 +5,8 @@ import json
 import re
 from pathlib import Path
 
+from prepare_cloudflare_release import production_d1_ids
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_WRANGLER_PATH = REPO_ROOT / "cloudflare" / "wrangler.jsonc"
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
@@ -89,8 +91,11 @@ def apply_d1_ids(
     from_file: Path | None = None,
     preview_from_file: Path | None = None,
     use_database_for_preview: bool = False,
+    disable_preview: bool = False,
     dry_run: bool = False,
 ) -> dict:
+    if disable_preview and (preview_database_id is not None or preview_from_file is not None or use_database_for_preview):
+        raise D1IdError("Disabled preview cannot be combined with another preview target.")
     if from_file and not database_id:
         database_id = first_d1_id_from_capture(from_file)
     if preview_from_file and not preview_database_id:
@@ -99,16 +104,23 @@ def apply_d1_ids(
         preview_database_id = database_id
 
     normalized_database_id = normalized_uuid(database_id)
-    normalized_preview_database_id = normalized_uuid(preview_database_id)
+    normalized_preview_database_id = ZERO_UUID if disable_preview else normalized_uuid(preview_database_id)
     wrangler = load_json(wrangler_path)
     d1_databases = wrangler.get("d1_databases")
-    if not isinstance(d1_databases, list) or not d1_databases:
+    if not isinstance(d1_databases, list) or len(d1_databases) != 1:
         raise D1IdError("wrangler.jsonc must contain a d1_databases binding.")
     d1 = d1_databases[0]
     if not isinstance(d1, dict):
         raise D1IdError("wrangler.jsonc d1_databases[0] must be an object.")
     if d1.get("binding") != "DB":
         raise D1IdError("Workdoe expects the first D1 binding to be DB.")
+    try:
+        production_d1_ids({"d1_databases": [{
+            **d1, "database_id": normalized_database_id,
+            "preview_database_id": normalized_preview_database_id,
+        }]})
+    except ValueError as error:
+        raise D1IdError(str(error)) from error
 
     before = {
         "database_id": d1.get("database_id", ""),
@@ -152,8 +164,9 @@ def main() -> int:
     parser.add_argument(
         "--use-database-for-preview",
         action="store_true",
-        help="Use the production D1 id as preview_database_id when a separate preview id is not supplied.",
+        help="Deprecated: shared production/preview identities are rejected; use --disable-preview instead.",
     )
+    parser.add_argument("--disable-preview", action="store_true", help="Retain the explicit disabled remote-development sentinel.")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     try:
@@ -164,6 +177,7 @@ def main() -> int:
             from_file=args.from_file,
             preview_from_file=args.preview_from_file,
             use_database_for_preview=args.use_database_for_preview,
+            disable_preview=args.disable_preview,
             dry_run=args.dry_run,
         )
     except D1IdError as exc:

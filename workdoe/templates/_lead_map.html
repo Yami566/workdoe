@@ -5,6 +5,7 @@
   data-asset-root="{{ url_for('static', filename='') }}"
   data-tile-url="{{ config.MAP_TILE_URL }}"
   data-tile-attribution='{{ config.MAP_TILE_ATTRIBUTION }}'
+  {% if config.MAP_AREA_BOUNDS %}data-area-map-bounds='{{ config.MAP_AREA_BOUNDS | tojson }}'{% endif %}
   role="region"
   tabindex="0"
   aria-label="{{ map_label }}"

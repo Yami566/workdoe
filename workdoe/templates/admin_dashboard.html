@@ -14,6 +14,7 @@
   <div class="dashboard-metrics compact-metrics" aria-label="Marketplace outcomes">
     <div class="metric-card"><span>Published</span><strong>{{ marketplace_metrics.published_projects }}</strong></div>
     <div class="metric-card"><span>With bids</span><strong>{{ marketplace_metrics.projects_with_bids }}</strong></div>
+    <div class="metric-card"><span>Bid approval</span><strong>{{ marketplace_metrics.approved_matches }} of {{ marketplace_metrics.total_bids }}</strong><small>Approved bids</small></div>
     <div class="metric-card"><span>Matched</span><strong>{{ marketplace_metrics.matched_projects }}</strong><small>{{ marketplace_metrics.qualified_match_rate }}% of published</small></div>
     <div class="metric-card"><span>Completion signals</span><strong>{{ marketplace_metrics.completion_signals }}</strong></div>
     <div class="metric-card"><span>Verified complete</span><strong>{{ marketplace_metrics.verified_completions }}</strong><small>{{ marketplace_metrics.verified_completion_rate }}% of approved matches</small></div>
@@ -251,7 +252,7 @@
           {% set review_url = url_for("contractor_job_detail", job_id=report.target_id) %}
           {% set target_label = "Job: " ~ report.job_title %}
         {% elif report.target_type == "message" and report.message_thread_id %}
-          {% set review_url = url_for("thread_detail", thread_id=report.message_thread_id) %}
+          {% set review_url = url_for("thread_detail", thread_id=report.message_thread_id, through=report.target_id, _anchor="message-" ~ report.target_id) %}
           {% set target_label = "Message: " ~ report.message_job_title %}
         {% elif report.target_type == "profile" and report.profile_business_name %}
           {% set review_url = url_for("contractor_public_profile", contractor_id=report.target_id) %}

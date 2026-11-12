@@ -15,7 +15,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from cloudflare_readiness import (
     DEFAULT_CLERK_PROXY_PROOF_PATH,
     REQUIRED_SECRETS,
-    clerk_proxy_proof_error,
+    clerk_release_proof_error,
     read_json,
     secret_names_from_json,
 )
@@ -51,7 +51,7 @@ def run_release_evidence(
     else:
         checks.append("Sanitized Cloudflare secret-name evidence is valid")
 
-    proxy_error = clerk_proxy_proof_error(clerk_proxy_proof_json)
+    proxy_error = clerk_release_proof_error(clerk_proxy_proof_json)
     if proxy_error:
         blockers.append(proxy_error)
     else:

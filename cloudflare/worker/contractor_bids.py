@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from content_privacy import shared_project_record
 from contractor_reputation import contractor_reputation
 from match_completions import completion_label, completion_state
 
@@ -72,7 +73,7 @@ def contractor_bid_card(row) -> dict:
         and card["close_reason"] == "workdoe-match"
         and not card["contractor_confirmed_at"]
     )
-    return card
+    return shared_project_record(card)
 
 
 def filter_contractor_bid_cards(cards: list[dict], view: str) -> list[dict]:

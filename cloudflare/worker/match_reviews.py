@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from request_security import parse_url_record_id
+
 REVIEW_DIMENSIONS = (
     ("communication", "Communication"),
     ("scope_accuracy", "Scope accuracy"),
@@ -41,16 +43,18 @@ class MatchReviewError(ValueError):
 
 def parse_match_review_create_path(path: str) -> int:
     match = MATCH_REVIEW_CREATE_RE.match(path or "")
-    if not match:
+    record_id = parse_url_record_id(match.group(1)) if match else 0
+    if not record_id:
         raise MatchReviewError("Unsupported completed-work feedback route.", 404)
-    return int(match.group(1))
+    return record_id
 
 
 def parse_match_review_action_path(path: str) -> tuple[int, str]:
     match = MATCH_REVIEW_ACTION_RE.match(path or "")
-    if not match:
+    record_id = parse_url_record_id(match.group(1)) if match else 0
+    if not record_id:
         raise MatchReviewError("Unsupported completed-work feedback route.", 404)
-    return int(match.group(1)), match.group(2)
+    return record_id, match.group(2)
 
 
 def row_value(row, key: str, default=None):

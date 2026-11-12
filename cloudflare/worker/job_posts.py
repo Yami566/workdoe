@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 
 from content_privacy import contains_disallowed_personal_data, personal_data_error
+from location_pins import CITY_COORDS, DMV_ZIPS
+from request_security import parse_url_record_id
 from service_policy import service_policy_error
 from service_scope import clean_scope_answers, validate_scope_answers
 from service_taxonomy import GROUP_BY_SLUG, SERVICE_BY_SLUG, service_selection
@@ -156,42 +158,6 @@ def bid_window(job, bid_count=None, now=None) -> dict:
         "deadline_label": deadline.strftime("%b %d at %I:%M %p UTC").replace(" 0", " "),
     }
 
-DMV_ZIPS = {
-    "20001": ("Washington", "DC", 38.9101, -77.0171),
-    "20002": ("Washington", "DC", 38.9047, -76.9786),
-    "20003": ("Washington", "DC", 38.8876, -76.9901),
-    "20007": ("Washington", "DC", 38.9146, -77.0730),
-    "20910": ("Silver Spring", "MD", 38.9981, -77.0318),
-    "20814": ("Bethesda", "MD", 38.9897, -77.1003),
-    "20850": ("Rockville", "MD", 39.0918, -77.1812),
-    "20742": ("College Park", "MD", 38.9869, -76.9426),
-    "20770": ("Greenbelt", "MD", 39.0046, -76.8755),
-    "21401": ("Annapolis", "MD", 38.9784, -76.4922),
-    "22201": ("Arlington", "VA", 38.8871, -77.0932),
-    "22314": ("Alexandria", "VA", 38.8048, -77.0469),
-    "22102": ("McLean", "VA", 38.9339, -77.1773),
-    "22030": ("Fairfax", "VA", 38.8462, -77.3064),
-    "20190": ("Reston", "VA", 38.9586, -77.3570),
-    "20170": ("Herndon", "VA", 38.9695, -77.3861),
-}
-
-CITY_COORDS = {
-    "washington dc": (38.9072, -77.0369),
-    "silver spring md": (38.9907, -77.0261),
-    "bethesda md": (38.9847, -77.0947),
-    "rockville md": (39.0840, -77.1528),
-    "college park md": (38.9897, -76.9378),
-    "greenbelt md": (39.0046, -76.8755),
-    "annapolis md": (38.9784, -76.4922),
-    "arlington va": (38.8797, -77.1068),
-    "alexandria va": (38.8048, -77.0469),
-    "mclean va": (38.9339, -77.1773),
-    "fairfax va": (38.8462, -77.3064),
-    "reston va": (38.9586, -77.3570),
-    "herndon va": (38.9695, -77.3861),
-}
-
-
 class JobPostError(ValueError):
     def __init__(self, errors: list[str]):
         self.errors = errors
@@ -211,9 +177,10 @@ def parse_job_update_id(path: str) -> int:
     if not path.startswith(prefix) or not path.endswith(suffix):
         raise JobPostError(["Unsupported job update route."])
     raw_id = path[len(prefix) : -len(suffix)].strip("/")
-    if not raw_id.isdigit() or int(raw_id) < 1:
+    record_id = parse_url_record_id(raw_id)
+    if not record_id:
         raise JobPostError(["Unsupported job update route."])
-    return int(raw_id)
+    return record_id
 
 
 def can_update_job(user, job) -> bool:
@@ -281,7 +248,9 @@ def today_utc() -> date:
     return datetime.now(timezone.utc).date()
 
 
-def validate_job_payload(form: dict, today: date | None = None) -> list[str]:
+def validate_job_payload(
+    form: dict, today: date | None = None, *, preserved_desired_date: str | None = None,
+) -> list[str]:
     today = today or today_utc()
     errors: list[str] = []
     if not form["title"]:
@@ -319,7 +288,7 @@ def validate_job_payload(form: dict, today: date | None = None) -> list[str]:
         except ValueError:
             errors.append("Use a valid desired date.")
         else:
-            if parsed_date < today:
+            if parsed_date < today and form["desired_date"] != preserved_desired_date:
                 errors.append("Choose today or a future desired date.")
     budget_min = validate_budget_value(form["budget_min"], "minimum", errors)
     budget_max = validate_budget_value(form["budget_max"], "maximum", errors)
@@ -415,11 +384,13 @@ def approximate_location(city: str, state: str, zip_code: str) -> tuple[float, f
     return 38.9072, -77.0369
 
 
-def job_post_payload(payload: dict, today: date | None = None) -> dict:
+def job_post_payload(
+    payload: dict, today: date | None = None, *, preserved_desired_date: str | None = None,
+) -> dict:
     if not isinstance(payload, dict):
         raise JobPostError(["Job payload must be a JSON object."])
     form = cleaned_job_payload(payload)
-    errors = validate_job_payload(form, today=today)
+    errors = validate_job_payload(form, today=today, preserved_desired_date=preserved_desired_date)
     if errors:
         raise JobPostError(errors)
     lat, lng = approximate_location(form["city"], form["state"], form["zip_code"])

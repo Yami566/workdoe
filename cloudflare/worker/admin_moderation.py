@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from request_security import parse_url_record_id
+
 ADMIN_ACTION_RE = re.compile(
     r"^/api/admin/(?:(users)/([1-9][0-9]*)/(suspend|activate)"
     r"|(jobs)/([1-9][0-9]*)/(hide|restore)"
@@ -33,30 +35,33 @@ def parse_admin_moderation_path(path: str) -> dict:
     match = ADMIN_ACTION_RE.match(path or "")
     if not match:
         raise AdminModerationError("Unsupported admin moderation route.")
+    record_id = parse_url_record_id(path.rstrip("/").rsplit("/", 2)[1])
+    if not record_id:
+        raise AdminModerationError("Unsupported admin moderation route.")
     groups = match.groups()
     if groups[0]:
-        return {"target_type": "user", "target_id": int(groups[1]), "action": groups[2]}
+        return {"target_type": "user", "target_id": record_id, "action": groups[2]}
     if groups[3]:
-        return {"target_type": "job", "target_id": int(groups[4]), "action": groups[5]}
+        return {"target_type": "job", "target_id": record_id, "action": groups[5]}
     if groups[6] and groups[7] == "job":
-        return {"target_type": "job_photo", "target_id": int(groups[8]), "action": groups[9]}
+        return {"target_type": "job_photo", "target_id": record_id, "action": groups[9]}
     if groups[10] and groups[11] == "contractor":
         return {
             "target_type": "contractor_photo",
-            "target_id": int(groups[12]),
+            "target_id": record_id,
             "action": groups[13],
         }
     if groups[14]:
-        return {"target_type": "message", "target_id": int(groups[15]), "action": groups[16]}
+        return {"target_type": "message", "target_id": record_id, "action": groups[16]}
     if groups[17]:
-        return {"target_type": "report", "target_id": int(groups[18]), "action": groups[19]}
+        return {"target_type": "report", "target_id": record_id, "action": groups[19]}
     if groups[20]:
-        return {"target_type": "credential", "target_id": int(groups[21]), "action": groups[22]}
+        return {"target_type": "credential", "target_id": record_id, "action": groups[22]}
     if groups[23]:
-        return {"target_type": "match_review", "target_id": int(groups[24]), "action": groups[25]}
+        return {"target_type": "match_review", "target_id": record_id, "action": groups[25]}
     return {
         "target_type": "match_review_report",
-        "target_id": int(groups[27]),
+        "target_id": record_id,
         "action": groups[28],
     }
 

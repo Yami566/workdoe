@@ -67,9 +67,15 @@
       </dl>
       {% if provider %}<p class="thread-trust-limit">Public-source status only. Confirm project eligibility directly.</p>{% endif %}
     </aside>
-    <div class="message-list thread-message-list" aria-label="{{ messages|length|message_count_label }}">
+    <div class="message-list thread-message-list" role="region" tabindex="0" aria-label="{{ messages|length|message_count_label }}">
+      {% if through or next_through %}
+        <nav class="row-actions" aria-label="Message history">
+          {% if next_through %}<a class="button secondary compact" href="{{ url_for('thread_detail', thread_id=thread.id, through=next_through) }}">Older messages</a>{% endif %}
+          {% if through %}<a class="button secondary compact" href="{{ url_for('thread_detail', thread_id=thread.id) }}">Latest messages</a>{% endif %}
+        </nav>
+      {% endif %}
       {% for message in messages %}
-        <article class="message {% if message.sender_id == g.user.id %}mine{% endif %}{% if message.is_hidden %} is-hidden{% endif %}">
+        <article id="message-{{ message.id }}" tabindex="-1" class="message {% if message.sender_id == g.user.id %}mine{% endif %}{% if message.is_hidden %} is-hidden{% endif %}">
           <div class="message-meta">
             <strong>{{ message.display_name }}</strong>
             <span>
@@ -97,10 +103,10 @@
           {% endif %}
         </article>
       {% else %}
-        <p class="empty">No messages yet.</p>
+        <p class="empty">{{ "No messages in this view." if through else "No messages yet." }}</p>
       {% endfor %}
     </div>
-    {% if can_reply %}
+    {% if can_reply and not through %}
       {% set message_field_errors = message_error_feedback.fields %}
       <form class="message-form thread-message-form" method="post" aria-label="New message" {% if message_error_feedback.summary %}aria-describedby="message-form-errors"{% endif %}>
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">

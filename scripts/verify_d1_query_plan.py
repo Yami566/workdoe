@@ -19,6 +19,7 @@ EXPECTED_INDEXES = {
     "idx_contractor_photos_public_contractor",
     "idx_jobs_open_geo",
     "idx_job_photos_public_job",
+    "idx_match_requests_job",
 }
 
 
@@ -179,11 +180,11 @@ def verify_query_plan() -> dict:
         detail
         for detail in plan
         if detail.startswith(
-            ("SCAN jobs", "SCAN job_photos", "SCAN contractor_photos", "SCAN automation_events")
+            ("SCAN jobs", "SCAN job_photos", "SCAN contractor_photos", "SCAN automation_events", "SCAN bid_slots")
         )
     ]
     return {
-        "ok": used_indexes == EXPECTED_INDEXES and not scans,
+        "ok": used_indexes == EXPECTED_INDEXES and not scans and not any("GROUP BY" in detail for detail in plan),
         "migration_count": len(migrations),
         "last_migration": migrations[-1],
         "expected_indexes": sorted(EXPECTED_INDEXES),

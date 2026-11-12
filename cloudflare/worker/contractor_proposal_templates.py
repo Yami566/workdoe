@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from request_security import parse_url_record_id
+
 PROPOSAL_TEMPLATE_LIMIT = 6
 PROPOSAL_TEMPLATE_NAME_MAX_LENGTH = 60
 PROPOSAL_TEMPLATE_DELETE_PATH_RE = re.compile(
@@ -98,6 +100,7 @@ def proposal_template_bid_form(row) -> dict[str, str]:
 
 def parse_proposal_template_delete_path(path: str) -> int:
     match = PROPOSAL_TEMPLATE_DELETE_PATH_RE.fullmatch(path or "")
-    if not match:
+    record_id = parse_url_record_id(match.group(1)) if match else 0
+    if not record_id:
         raise ProposalTemplateError(["Unsupported proposal template route."])
-    return int(match.group(1))
+    return record_id

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from clerk_identity import CLERK_RESTRICTION_FLAGS, primary_email_from_clerk_user
 from content_privacy import contains_disallowed_personal_data
+from email_payloads import valid_email
 
 MAX_ONBOARDING_BODY_BYTES = 8192
 ONBOARDING_ROLES = {"client", "contractor"}
@@ -15,64 +17,32 @@ def compact_spaces(value: str | None) -> str:
     return " ".join((value or "").strip().split())
 
 
-def normalize_email(value: str | None) -> str:
-    return compact_spaces(value).lower()
-
-
 def claim_email(claims: dict) -> str:
-    for key in ("email", "primary_email", "primary_email_address"):
-        email = normalize_email(claims.get(key))
-        if email and "@" in email:
-            return email
+    value = claims.get("email")
+    email = value.strip().lower() if isinstance(value, str) else ""
+    if len(email) <= 254 and valid_email(email):
+        return email
     raise OnboardingError("A verified Clerk email claim is required.")
 
 
-def email_claim_verified(claims: dict) -> bool:
-    value = claims.get("email_verified")
-    return value in {None, True, "1", "true", "verified"}
-
-
-def object_value(value, key: str, default=None):
-    if value is None:
-        return default
-    getter = getattr(value, "get", None)
-    if callable(getter):
-        result = getter(key)
-        return default if result is None else result
-    try:
-        result = value[key]
-    except (KeyError, TypeError):
-        return default
-    return default if result is None else result
-
-
-def claims_with_verified_clerk_email(claims: dict, user_data) -> dict:
-    primary_id = str(object_value(user_data, "primary_email_address_id", "") or "")
-    addresses = object_value(user_data, "email_addresses", []) or []
-    selected = None
-    for address in addresses:
-        if primary_id and str(object_value(address, "id", "")) == primary_id:
-            selected = address
-            break
-        if selected is None:
-            selected = address
-    email = normalize_email(object_value(selected, "email_address", ""))
-    verification = object_value(selected, "verification", {}) or {}
-    verified = object_value(verification, "status", "") == "verified"
-    if not email or "@" not in email or not verified:
+def claims_with_verified_clerk_email(claims: dict, user_data: dict) -> dict:
+    subject = claims.get("sub")
+    if not isinstance(subject, str) or not subject or user_data.get("id") != subject:
+        raise OnboardingError("Clerk user response did not match the verified session.")
+    if any(user_data.get(flag, False) is not False for flag in CLERK_RESTRICTION_FLAGS):
+        raise OnboardingError("Clerk account is not available for onboarding.")
+    email, verified = primary_email_from_clerk_user(user_data)
+    if not verified or len(email) > 254 or not valid_email(email):
         raise OnboardingError("A verified Clerk email is required.")
-    trusted_claims = dict(claims)
-    trusted_claims["email"] = email
-    trusted_claims["email_verified"] = True
-    return trusted_claims
+    return {**claims, "email": email, "email_verified": True}
 
 
-def onboarding_payload(claims: dict, body: dict) -> dict[str, str]:
+def onboarding_profile(body: dict) -> dict[str, str]:
     if not isinstance(body, dict):
         raise OnboardingError("Onboarding body must be a JSON object.")
-    if not email_claim_verified(claims):
-        raise OnboardingError("Clerk email claim is not verified.")
-
+    for field in ("role", "display_name", "company_name"):
+        if body.get(field) is not None and not isinstance(body[field], str):
+            raise OnboardingError("Onboarding profile fields must be text.")
     role = compact_spaces(body.get("role")).lower()
     if role not in ONBOARDING_ROLES:
         raise OnboardingError("Role must be client or contractor.")
@@ -89,8 +59,13 @@ def onboarding_payload(claims: dict, body: dict) -> dict[str, str]:
         company_name = display_name
 
     return {
-        "email": claim_email(claims),
         "role": role,
         "display_name": display_name,
         "company_name": company_name,
     }
+
+
+def onboarding_payload(claims: dict, profile: dict[str, str]) -> dict[str, str]:
+    if claims.get("email_verified") is not True:
+        raise OnboardingError("Clerk email claim is not verified.")
+    return {**profile, "email": claim_email(claims)}

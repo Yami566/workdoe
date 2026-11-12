@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from content_privacy import contains_disallowed_personal_data, personal_data_error
+from request_security import parse_url_record_id
 
 CLIENT_ACCOUNT_TYPES = (
     ("household", "Home or household"),
@@ -218,9 +219,10 @@ def parse_saved_location_delete_path(path: str) -> int:
     if not path.startswith(prefix) or not path.endswith(suffix):
         raise SavedLocationError(["Saved project area route is invalid."])
     raw = path[len(prefix) : -len(suffix)].strip("/")
-    if not raw.isdigit() or int(raw) <= 0:
+    record_id = parse_url_record_id(raw)
+    if not record_id:
         raise SavedLocationError(["Saved project area route is invalid."])
-    return int(raw)
+    return record_id
 
 
 def account_type_label(value: str | None) -> str:

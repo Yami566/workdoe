@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .content_privacy import shared_project_record
+
 
 def row_value(row, key: str, default=None):
     if isinstance(row, dict):
@@ -38,7 +40,7 @@ def contractor_choice_context(viewer, contractor_id: int, relationship) -> dict 
     ):
         return None
     status = str(row_value(relationship, "status", "") or "")
-    return {
+    return shared_project_record({
         "job_id": job_id,
         "job_title": str(
             row_value(relationship, "job_title", "Project") or "Project"
@@ -51,4 +53,4 @@ def contractor_choice_context(viewer, contractor_id: int, relationship) -> dict 
         "timeline": str(row_value(relationship, "timeline", "") or ""),
         "availability": str(row_value(relationship, "availability", "") or ""),
         "thread_url": f"/messages/{thread_id}" if status == "approved" and thread_id else "",
-    }
+    })

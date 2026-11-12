@@ -15,6 +15,7 @@ from cloudflare_readiness import (
     DEFAULT_CLERK_PROXY_PROOF_PATH,
     WORKDOE_PUBLIC_DOMAIN,
     clerk_proxy_proof_error,
+    valid_clerk_operator_label,
     valid_workdoe_clerk_proxy_url,
 )
 
@@ -77,6 +78,9 @@ def build_proof(
         raise ClerkProxyProofError("Clerk Terms URL must be https://workdoe.com/terms.")
     if normalized_privacy_url != DEFAULT_PRIVACY_URL:
         raise ClerkProxyProofError("Clerk Privacy URL must be https://workdoe.com/privacy.")
+    operator_label = str(checked_by or "").strip() or "workdoe-operator"
+    if not valid_clerk_operator_label(operator_label):
+        raise ClerkProxyProofError("Use a short, non-secret operator label without contact details.")
     return {
         "domain": normalized_domain,
         "frontend_api_proxy_url": normalized_proxy_url,
@@ -89,7 +93,7 @@ def build_proof(
         "terms_url": normalized_terms_url,
         "privacy_url": normalized_privacy_url,
         "confirmed_at_utc": confirmed_at_utc or utc_now_iso(),
-        "checked_by": str(checked_by or "workdoe-operator").strip() or "workdoe-operator",
+        "checked_by": operator_label,
     }
 
 

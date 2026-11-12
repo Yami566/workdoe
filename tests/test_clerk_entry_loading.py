@@ -33,10 +33,12 @@ class ClerkEntryLoadingTests(unittest.TestCase):
                 setAttribute(name, value) { this.attributes[name] = value; }
               };
               const node = {
+                hidden: true,
                 dataset: Object.assign({ sessionUrl: '/api/auth/session' }, clerkMode ? { clerkMode } : {}),
                 querySelector: (selector) => selector === '.clerk-entry-loading' ? loading : null,
                 closest: () => scope
               };
+              const fallback = { hidden: false };
               const retry = { disabled: false, addEventListener(type, callback) { this.callback = callback; } };
               const recovery = {
                 dataset: {},
@@ -50,6 +52,7 @@ class ClerkEntryLoadingTests(unittest.TestCase):
                 querySelector: (selector) => {
                   if (selector === '[data-clerk-onboarding-message]') return status;
                   if (selector === '[data-clerk-session-recovery]') return recovery;
+                  if (selector === '[data-clerk-load-fallback]') return fallback;
                   return null;
                 },
                 addEventListener() {}
@@ -69,9 +72,9 @@ class ClerkEntryLoadingTests(unittest.TestCase):
                 setTimeout: (callback) => { timers.push(callback); return timers.length; },
                 clearTimeout() {}
               };
-              const document = { readyState: 'complete', querySelectorAll: () => [node] };
+              const document = { readyState: 'complete', contains: () => true, querySelectorAll: () => [node] };
               vm.runInNewContext(source, { window, document, Promise, URL, URLSearchParams });
-              return { node, status, loading, recovery, retry, timers, requests };
+              return { node, status, loading, fallback, recovery, retry, timers, requests };
             }
 
             function signedOutClerk() {
@@ -89,24 +92,30 @@ class ClerkEntryLoadingTests(unittest.TestCase):
               const unavailable = fixture(undefined);
               await settle();
               assert.equal(unavailable.node.dataset.state, 'unavailable');
-              assert.match(unavailable.loading.textContent, /could not load/);
-              assert.equal(unavailable.status.textContent, unavailable.loading.textContent);
+              assert.match(unavailable.status.textContent, /could not load/);
+              assert.equal(unavailable.fallback.hidden, false);
+              assert.equal(unavailable.node.hidden, true);
 
               const stalled = fixture(Object.assign(signedOutClerk(), {
                 load: () => new Promise(() => {})
               }));
               await settle();
               assert.equal(stalled.timers.length, 1);
+              assert.equal(stalled.fallback.hidden, true);
+              assert.equal(stalled.node.hidden, false);
               stalled.timers[0]();
               await settle();
               assert.equal(stalled.node.dataset.state, 'failed');
-              assert.match(stalled.loading.textContent, /taking longer than expected/);
-              assert.equal(stalled.status.textContent, stalled.loading.textContent);
+              assert.match(stalled.status.textContent, /taking longer than expected/);
+              assert.equal(stalled.fallback.hidden, false);
+              assert.equal(stalled.node.hidden, true);
 
               const mountedClerk = signedOutClerk();
               const mounted = fixture(mountedClerk);
               await settle();
               assert.equal(mounted.node.dataset.state, 'ready');
+              assert.equal(mounted.node.hidden, false);
+              assert.equal(mounted.fallback.hidden, true);
               assert.equal(mounted.loading.hidden, true);
               assert.equal(mounted.loading.attributes['aria-hidden'], 'true');
               mountedClerk.listener({ session: {}, user: {} });

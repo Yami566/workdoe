@@ -46,10 +46,10 @@
         <legend>Bid reminders</legend>
         <div class="choice-grid compact-choice-grid two-column">
           {% for value, label in notification_options %}
-            <label><input type="radio" name="notification_preference" value="{{ value }}"{% if profile.notification_preference == value %} checked{% endif %} required><span>{{ label }}</span></label>
+            <label><input type="radio" name="notification_preference" value="{{ value }}"{% if profile.notification_preference == value %} checked{% endif %} required><span>{{ "Email when available" if value == "email" else label }}</span></label>
           {% endfor %}
         </div>
-        <span id="client-notification-preference-help" class="help-text">Email reminders are optional. Choosing email and saving this profile records your consent; switch back here at any time. Account and security emails still arrive.</span>
+        <span id="client-notification-preference-help" class="help-text">Email reminders are paused. Check Workdoe for bids. You can change this preference anytime. Sign-in emails are separate.</span>
         {% if profile_field_errors.notification_preference %}<span id="client-notification-preference-error" class="field-error">{{ profile_field_errors.notification_preference[0] }}</span>{% endif %}
       </fieldset>
       <label class="wide" for="client-profile-note">

@@ -2,7 +2,7 @@
 <div class="project-composer-head wide">
   <div>
     <p class="eyebrow" data-project-step-label>Step 1 of 6</p>
-    <h2 data-project-step-title>Choose a work family</h2>
+    <h2 data-project-step-title data-dialog-focus tabindex="-1">Choose a work family</h2>
   </div>
   <progress value="1" max="6" data-project-progress aria-label="Project posting progress">1 of 6</progress>
 </div>
@@ -10,6 +10,7 @@
 <fieldset class="project-composer-step wide" data-project-step="1" data-step-title="Choose a work family">
   <legend>What kind of work is this?</legend>
   <p class="help-text" id="service-family-help">Pick the closest fit. You can change it before posting.</p>
+  <p id="project-family-choice-error" class="field-error" data-project-choice-error hidden>Choose a work family to continue.</p>
   <div class="service-family-grid" aria-describedby="service-family-help">
     {% for group in service_groups %}
       <label class="service-family-option" for="service-family-{{ group.slug }}">
@@ -39,6 +40,7 @@
     <img data-selected-service-family-icon alt="" aria-hidden="true">
     <span><small>Selected family</small><strong data-selected-service-family-name></strong><small data-selected-service-family-description></small></span>
   </div>
+  <p id="project-service-choice-error" class="field-error" data-project-choice-error hidden>Choose a service to continue.</p>
   <div class="service-option-groups" data-service-option-groups>
     {% for group in service_groups %}
       {% set quick_count = group.quick_count|default(6) %}
@@ -137,7 +139,7 @@
 
 <fieldset class="project-composer-step wide" data-project-step="4" data-step-title="Set the area">
   <legend>Where is the project?</legend>
-  <p class="help-text">Only an approximate city or ZIP pin is shown before a match is approved.</p>
+  <p class="help-text">Only city/ZIP-level locations are shown. Do not enter a street address.</p>
   <div class="project-field-grid three">
     <label for="job-zip-code">
       ZIP
@@ -210,7 +212,7 @@
     </div>
     <div>
       <dt>Project</dt>
-      <dd class="project-review-copy"><strong data-review-title>Add a title</strong><small><span data-review-setting>Not specified</span><span aria-hidden="true"> · </span><span data-review-scope>Description only</span><span aria-hidden="true"> · </span><span data-review-brief>Brief 0 of 6</span></small></dd>
+      <dd class="project-review-copy"><strong data-review-title>Add a title</strong><span class="project-review-description" data-review-description></span><small><span data-review-setting>Not specified</span><span aria-hidden="true"> · </span><span data-review-scope>Description only</span><span aria-hidden="true"> · </span><span data-review-brief>Brief 0 of 6</span></small></dd>
       <button class="project-review-edit" type="button" data-project-jump-step="3" aria-label="Edit project details" title="Edit project details"><img src="{{ url_for('static', filename='vendor/tabler-icons/pencil.svg') }}" alt=""></button>
     </div>
     <div>

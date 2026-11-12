@@ -8,6 +8,29 @@
     }
   }
 
+  function resetFormTurnstile(form) {
+    form.querySelectorAll('input[name="cf-turnstile-response"]').forEach(function (response) {
+      response.value = "";
+    });
+    form.querySelectorAll("[data-workdoe-turnstile]").forEach(function (widget) {
+      var field = widget.closest(".turnstile-field");
+      var notice = field && field.querySelector("[data-turnstile-status]");
+      if (notice) {
+        notice.textContent = "Verify again before saving.";
+      }
+      if (!window.turnstile || typeof window.turnstile.reset !== "function" || !widget.dataset.turnstileWidgetId) {
+        return;
+      }
+      try {
+        window.turnstile.reset(widget.dataset.turnstileWidgetId);
+      } catch (error) {
+        if (notice) {
+          notice.textContent = "Verification could not restart. Use Retry verification.";
+        }
+      }
+    });
+  }
+
   function secureRequestKey() {
     if (window.crypto && typeof window.crypto.randomUUID === "function") {
       return window.crypto.randomUUID();
@@ -142,7 +165,9 @@
     });
     if (firstControl && typeof firstControl.focus === "function") {
       firstControl.focus({ preventScroll: true });
-      firstControl.scrollIntoView({ behavior: "smooth", block: "center" });
+      var reducedMotion = typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      firstControl.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "center" });
     }
     return hasErrors;
   }
@@ -312,6 +337,7 @@
       setStatus(form, "Saved.");
       navigateAfterSuccess(form, payload);
     } catch (error) {
+      resetFormTurnstile(form);
       setSubmitting(form, button, false);
       setStatus(form, error.message || "Workdoe could not save this yet.");
     }

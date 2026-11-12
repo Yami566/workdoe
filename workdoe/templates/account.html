@@ -16,10 +16,11 @@
     <aside class="panel account-summary" aria-labelledby="account-summary-title">
       <h2 id="account-summary-title">Workdoe identity</h2>
       <dl class="profile-facts compact-facts">
-        <div><dt>Email</dt><dd>{{ g.user.email }}</dd></div>
-        <div><dt>Role</dt><dd>{{ g.user.role|capitalize }}</dd></div>
+        <div><dt>Email</dt><dd class="account-email" tabindex="0">{{ g.user.email }}</dd></div>
+        <div><dt>Role</dt><dd>{{ 'Consumer' if g.user.role == 'client' else g.user.role|capitalize }}</dd></div>
       </dl>
       <p class="help-text">One account keeps one role during the DMV beta.</p>
+      {% include "_account_data_request_link.html" %}
     </aside>
 
     <section class="account-security-surface" aria-labelledby="account-security-title">
@@ -50,8 +51,7 @@
 
 {% block scripts %}
   {% if clerk_entry_enabled() %}
-    <script defer crossorigin="anonymous" src="{{ clerk_ui_script_url() }}"></script>
-    <script defer crossorigin="anonymous" data-clerk-publishable-key="{{ clerk_publishable_key() }}" {% if clerk_proxy_url() %}data-clerk-proxy-url="{{ clerk_proxy_url() }}"{% endif %} src="{{ clerk_js_script_url() }}"></script>
+    {% include "_clerk_browser_scripts.html" %}
     <script defer src="{{ url_for('static', filename='clerk-account.js') }}"></script>
   {% endif %}
 {% endblock %}

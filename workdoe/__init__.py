@@ -64,7 +64,19 @@ from .client_project_templates import (
     project_template_response,
     project_template_values,
 )
-from .content_privacy import contains_disallowed_personal_data, personal_data_error
+from .content_privacy import (
+    PROJECT_SEARCH_INPUT_HINT,
+    PROJECT_SEARCH_INPUT_PATTERN,
+    PUBLIC_PROJECT_PRIVACY_LOOKAHEAD,
+    cleaned_project_search,
+    contains_disallowed_personal_data,
+    participant_message_text,
+    personal_data_error,
+    public_contractor_profile_text,
+    public_project_page,
+    public_project_visible,
+    shared_project_record,
+)
 from .contractor_credentials import (
     CREDENTIAL_IDENTIFIER_MAX_LENGTH,
     CREDENTIAL_JURISDICTIONS,
@@ -115,6 +127,13 @@ from .job_outcomes import (
     validate_lead_quality_payload,
     validate_project_close_payload,
 )
+from .location_pins import CITY_COORDS, DMV_ZIPS, reviewed_stored_pin
+from .map_tiles import (
+    AREA_MAP_ASSET,
+    area_map_bounds,
+    map_tile_configuration,
+    map_tile_origin,
+)
 from .market_fit import (
     DMV_SERVICE_ZONES,
     ZONE_BY_SLUG,
@@ -148,7 +167,21 @@ from .match_reviews import (
     validate_review_report,
     validate_review_response,
 )
-from .pilot_metrics import pilot_cell_metrics
+from .message_history import (
+    message_history_page,
+    message_window_query,
+    parse_message_through,
+)
+from .pilot_metrics import (
+    MARKETPLACE_OUTCOMES_SQL,
+    REPEAT_INVITATION_OUTCOMES_SQL,
+    pilot_cell_metrics,
+)
+from .project_access import (
+    PRIVATE_MEDIA_EMBEDDING_HEADERS,
+    contractor_can_view_project,
+    private_media_embedding_blocked,
+)
 from .project_readiness import project_brief_readiness
 from .project_settings import (
     PROJECT_SETTING_BY_VALUE,
@@ -157,10 +190,13 @@ from .project_settings import (
     project_setting_label,
 )
 from .public_job_query import (
+    PUBLIC_BID_AVAILABILITY_SQL,
+    PUBLIC_DISCOVERY_API_METHODS,
     PublicJobQueryError,
-    encode_public_cursor,
+    next_public_cursor,
     parse_public_cursor,
     parse_public_viewport,
+    public_query_envelope_rejection,
     public_viewport_sql,
 )
 from .repeat_provider_invitations import (
@@ -224,41 +260,6 @@ JOB_CATEGORIES = [
     "Commercial maintenance",
     "Other",
 ]
-
-DMV_ZIPS = {
-    "20001": ("Washington", "DC", 38.9101, -77.0171),
-    "20002": ("Washington", "DC", 38.9047, -76.9786),
-    "20003": ("Washington", "DC", 38.8876, -76.9901),
-    "20007": ("Washington", "DC", 38.9146, -77.0730),
-    "20910": ("Silver Spring", "MD", 38.9981, -77.0318),
-    "20814": ("Bethesda", "MD", 38.9897, -77.1003),
-    "20850": ("Rockville", "MD", 39.0918, -77.1812),
-    "20742": ("College Park", "MD", 38.9869, -76.9426),
-    "20770": ("Greenbelt", "MD", 39.0046, -76.8755),
-    "21401": ("Annapolis", "MD", 38.9784, -76.4922),
-    "22201": ("Arlington", "VA", 38.8871, -77.0932),
-    "22314": ("Alexandria", "VA", 38.8048, -77.0469),
-    "22102": ("McLean", "VA", 38.9339, -77.1773),
-    "22030": ("Fairfax", "VA", 38.8462, -77.3064),
-    "20190": ("Reston", "VA", 38.9586, -77.3570),
-    "20170": ("Herndon", "VA", 38.9695, -77.3861),
-}
-
-CITY_COORDS = {
-    "washington dc": (38.9072, -77.0369),
-    "silver spring md": (38.9907, -77.0261),
-    "bethesda md": (38.9847, -77.0947),
-    "rockville md": (39.0840, -77.1528),
-    "college park md": (38.9897, -76.9378),
-    "greenbelt md": (39.0046, -76.8755),
-    "annapolis md": (38.9784, -76.4922),
-    "arlington va": (38.8797, -77.1068),
-    "alexandria va": (38.8048, -77.0469),
-    "mclean va": (38.9339, -77.1773),
-    "fairfax va": (38.8462, -77.3064),
-    "reston va": (38.9586, -77.3570),
-    "herndon va": (38.9695, -77.3861),
-}
 
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
 ALLOWED_IMAGE_MIME = {
@@ -360,6 +361,8 @@ WORKDOE_PUBLIC_DOMAIN = "workdoe.com"
 CLERK_PROXY_PATH = "/__clerk"
 CLERK_UI_VERSION = "1.41.2"
 CLERK_JS_VERSION = "6.40.1"
+CLERK_UI_INTEGRITY = "sha384-FYXAFwPN7TccH+1GBGhfSmj4kqvVseEdP5OAvO5JnZp3fArgoYkLmW0MLwnxJFUB"
+CLERK_JS_INTEGRITY = "sha384-JcUoKGgU3fVbZOepxOhFBTSImBs/0xQTLYLqy0CLEkd2sMiA4wn5VDTC6IJYRSaj"
 CLERK_CHALLENGE_ORIGIN = "https://challenges.cloudflare.com"
 CLERK_PROTECT_ORIGIN = "https://*.protect.clerk.com"
 CLERK_IMAGE_ORIGIN = "https://img.clerk.com"
@@ -377,7 +380,7 @@ CONTENT_SECURITY_POLICY_DIRECTIVES = [
     "style-src 'self'",
     "style-src-elem 'self'",
     "style-src-attr 'unsafe-inline'",
-    "img-src 'self' data: https://tile.openstreetmap.org",
+    "img-src 'self' data:",
     "connect-src 'self'",
     "font-src 'self'",
     "media-src 'self'",
@@ -393,6 +396,7 @@ AUTH_FLOW_ENDPOINTS = {
     "api_auth_session",
     "api_auth_onboard",
 }
+PROJECT_MAP_ENDPOINTS = {"home", "login", "start", "create_account", "leads"}
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -431,13 +435,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         TURNSTILE_SECRET_KEY=os.environ.get("WORKDOE_TURNSTILE_SECRET_KEY", ""),
         TURNSTILE_VERIFY_URL=os.environ.get("WORKDOE_TURNSTILE_VERIFY_URL", TURNSTILE_VERIFY_URL),
         TURNSTILE_TEST_TOKENS=(),
-        MAP_TILE_URL=os.environ.get(
-            "WORKDOE_MAP_TILE_URL",
-            "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-        ),
-        MAP_TILE_ATTRIBUTION=(
-            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        ),
+        MAP_TILE_URL=os.environ.get("WORKDOE_MAP_TILE_URL"),
+        MAP_TILE_ATTRIBUTION=os.environ.get("WORKDOE_MAP_TILE_ATTRIBUTION"),
+        MAP_MODE=os.environ.get("WORKDOE_MAP_MODE"),
         SHOW_LOCAL_LOGIN_CODE=not is_production,
         # The controlled beta keeps all curated services available with their
         # corresponding advisories. Operators can explicitly enable the
@@ -448,12 +448,18 @@ def create_app(test_config: dict | None = None) -> Flask:
     )
     if test_config:
         app.config.update(test_config)
+    app.config["MAP_TILE_URL"], app.config["MAP_TILE_ATTRIBUTION"] = map_tile_configuration(
+        app.config["MAP_TILE_URL"], app.config["MAP_TILE_ATTRIBUTION"], map_mode=app.config["MAP_MODE"],
+    )
+    app.config["MAP_AREA_BOUNDS"] = area_map_bounds() if app.config["MAP_TILE_URL"] == AREA_MAP_ASSET else None
     validate_production_config(app)
 
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     Path(app.config["UPLOAD_ROOT"]).mkdir(parents=True, exist_ok=True)
 
     app.teardown_appcontext(close_db)
+    app.before_request(reject_public_discovery_request)
+    app.before_request(reject_cross_origin_private_media)
     app.before_request(load_logged_in_user)
     app.before_request(enforce_post_safety)
     app.after_request(add_security_headers)
@@ -468,6 +474,8 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.jinja_env.globals["job_sort_options"] = JOB_SORT_OPTIONS
     app.jinja_env.globals["report_reason_max"] = REPORT_REASON_MAX_LENGTH
     app.jinja_env.globals["filter_query_max"] = FILTER_QUERY_MAX_LENGTH
+    app.jinja_env.globals["project_search_input_hint"] = PROJECT_SEARCH_INPUT_HINT
+    app.jinja_env.globals["project_search_input_pattern"] = PROJECT_SEARCH_INPUT_PATTERN
     app.jinja_env.globals["home_job_limit"] = HOME_JOB_LIMIT
     app.jinja_env.globals["entry_job_limit"] = ENTRY_JOB_LIMIT
     app.jinja_env.globals["lead_board_job_limit"] = LEAD_BOARD_JOB_LIMIT
@@ -484,7 +492,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.jinja_env.globals["clerk_proxy_url"] = clerk_proxy_url
     app.jinja_env.globals["clerk_ui_script_url"] = clerk_ui_script_url
     app.jinja_env.globals["clerk_js_script_url"] = clerk_js_script_url
+    app.jinja_env.globals["clerk_ui_integrity"] = CLERK_UI_INTEGRITY
+    app.jinja_env.globals["clerk_js_integrity"] = CLERK_JS_INTEGRITY
     app.jinja_env.globals["embedded_dialog_mode"] = embedded_dialog_mode
+    app.jinja_env.globals["project_map_enabled"] = project_map_enabled
     app.jinja_env.globals["project_settings"] = PROJECT_SETTINGS
     app.jinja_env.filters["money"] = money_filter
     app.jinja_env.filters["service_name"] = service_name_filter
@@ -1820,25 +1831,23 @@ def register_routes(app: Flask) -> None:
             response.status_code = 400
             response.headers["Cache-Control"] = "no-store"
             return response
-        jobs, map_jobs, has_more = public_open_jobs_page(
+        jobs, map_jobs, has_more, cursor_advance = public_open_jobs_page(
             limit=limit,
             filters=filters,
             target=target,
             viewport=viewport,
             offset=cursor_offset,
         )
-        page_count = len(jobs)
         if lead_view != "all" and g.user and g.user["role"] == "contractor":
             jobs = attach_contractor_request_status(jobs, g.user["id"])
             jobs = filter_jobs_by_lead_view(jobs, lead_view)
             map_jobs = filter_map_jobs_by_jobs(map_jobs, jobs)
-        next_cursor = (
-            encode_public_cursor(cursor_offset + page_count) if has_more else ""
-        )
+        next_cursor = next_public_cursor(cursor_offset, cursor_advance, has_more=has_more)
         response = jsonify(
             {
                 "count": len(map_jobs),
                 "result_count": len(map_jobs),
+                "mapped_count": sum(job["lat"] is not None for job in map_jobs),
                 "jobs": map_jobs,
                 "next_cursor": next_cursor,
                 "truncated": has_more,
@@ -1858,7 +1867,7 @@ def register_routes(app: Flask) -> None:
                 {
                     "authenticated": True,
                     "onboarding_required": False,
-                    "workdoe_user": workdoe_user_payload(g.user),
+                    "workdoe_user": {"role": g.user["role"]},
                 }
             )
         return no_store_json(
@@ -2994,7 +3003,7 @@ def register_routes(app: Flask) -> None:
             submitted["service_group_slug"] = job["service_group_slug"]
             submitted["service_slug"] = job["service_slug"]
             form = cleaned_job_form(submitted)
-            errors = validate_job_form(form)
+            errors = validate_job_form(form, preserved_desired_date=job["desired_date"])
             activation_open, service_zone_slug = service_activation_open_for_form(form)
             if not errors and service_activation_required() and not activation_open:
                 errors.append(ACTIVATION_NOT_OPEN_MESSAGE)
@@ -3156,7 +3165,7 @@ def register_routes(app: Flask) -> None:
             """,
             (job_id,),
         ).fetchall()
-        all_requests = requests
+        all_requests = [shared_project_record(item) for item in requests]
         requests = filter_bids_by_view(all_requests, bid_view)
         request_stats = {
             "visible": len(requests),
@@ -3337,7 +3346,7 @@ def register_routes(app: Flask) -> None:
             if reopened_window["is_expired"] and not reopened_window["is_full"]:
                 bidding_closes_at = extended_bidding_closes_at(bidding_closes_at)
         timestamp = now_iso()
-        db.execute(
+        changed = db.execute(
             """
             UPDATE jobs
             SET status = ?,
@@ -3347,6 +3356,22 @@ def register_routes(app: Flask) -> None:
                 closed_at = ?,
                 updated_at = ?
             WHERE id = ?
+              AND client_id = ?
+              AND status = ?
+              AND updated_at IS ?
+              AND EXISTS (
+                SELECT 1 FROM users
+                WHERE users.id = jobs.client_id
+                  AND users.role = 'client' AND users.status = 'active'
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM match_completions
+                JOIN match_requests
+                  ON match_requests.id = match_completions.match_request_id
+                WHERE match_requests.job_id = jobs.id
+                  AND (match_completions.client_confirmed_at IS NOT NULL
+                    OR match_completions.contractor_confirmed_at IS NOT NULL)
+              )
             """,
             (
                 status,
@@ -3356,8 +3381,15 @@ def register_routes(app: Flask) -> None:
                 timestamp if close_outcome else None,
                 timestamp,
                 job_id,
+                g.user["id"],
+                job["status"],
+                job["updated_at"],
             ),
         )
+        if changed.rowcount != 1:
+            db.rollback()
+            flash("This project changed. Refresh before trying again.", "error")
+            return redirect(url_for("client_job_detail", job_id=job_id))
         if status == "closed":
             db.execute(
                 """
@@ -3527,28 +3559,52 @@ def register_routes(app: Flask) -> None:
             """,
             (request_id, timestamp, timestamp),
         )
-        if role == "client":
-            confirmation = db.execute(
-                """
-                UPDATE match_completions
-                SET client_confirmed_at = ?, updated_at = ?
-                WHERE match_request_id = ? AND client_confirmed_at IS NULL
-                """,
-                (timestamp, timestamp, request_id),
-            )
-        else:
-            confirmation = db.execute(
-                """
-                UPDATE match_completions
-                SET contractor_confirmed_at = ?, updated_at = ?
-                WHERE match_request_id = ? AND contractor_confirmed_at IS NULL
-                """,
-                (timestamp, timestamp, request_id),
-            )
+        confirmation = db.execute(
+            """
+            UPDATE match_completions
+            SET client_confirmed_at = CASE WHEN ? = 'client' THEN ? ELSE client_confirmed_at END,
+                contractor_confirmed_at = CASE WHEN ? = 'contractor' THEN ? ELSE contractor_confirmed_at END,
+                updated_at = ?
+            WHERE match_request_id = ?
+              AND ((? = 'client' AND client_confirmed_at IS NULL)
+                OR (? = 'contractor' AND contractor_confirmed_at IS NULL))
+              AND EXISTS (
+                SELECT 1 FROM match_requests
+                JOIN jobs ON jobs.id = match_requests.job_id
+                JOIN users AS actor ON actor.id = ?
+                WHERE match_requests.id = match_completions.match_request_id
+                  AND match_requests.status = 'approved'
+                  AND jobs.status = 'closed' AND jobs.close_reason = 'workdoe-match'
+                  AND actor.status = 'active' AND actor.role = ?
+                  AND ((actor.role = 'client' AND actor.id = jobs.client_id)
+                    OR (actor.role = 'contractor' AND actor.id = match_requests.contractor_id))
+              )
+            """,
+            (
+                role,
+                timestamp,
+                role,
+                timestamp,
+                timestamp,
+                request_id,
+                role,
+                role,
+                g.user["id"],
+                role,
+            ),
+        )
         completion = db.execute(
             "SELECT * FROM match_completions WHERE match_request_id = ?",
             (request_id,),
         ).fetchone()
+        if not completion[f"{role}_confirmed_at"]:
+            db.rollback()
+            flash("This project changed. Refresh before trying again.", "error")
+            return redirect(
+                url_for("client_job_detail", job_id=match["job_id"])
+                if role == "client"
+                else url_for("contractor_dashboard") + "#completed-work"
+            )
         verified_now = bool(
             completion["client_confirmed_at"]
             and completion["contractor_confirmed_at"]
@@ -3749,7 +3805,7 @@ def register_routes(app: Flask) -> None:
             """,
             (g.user["id"],),
         ).fetchall()
-        all_requests = requests
+        all_requests = [shared_project_record(item) for item in requests]
         requests = filter_bids_by_view(all_requests, bid_view)
         completed_work = [
             item
@@ -4157,7 +4213,7 @@ def register_routes(app: Flask) -> None:
         db = get_db()
         contractor = db.execute(
             """
-            SELECT users.id, users.display_name, users.company_name, users.status,
+            SELECT users.id, users.status,
                    contractor_profiles.*,
                    (
                        SELECT COUNT(*)
@@ -4176,14 +4232,18 @@ def register_routes(app: Flask) -> None:
         is_admin = g.user and g.user["role"] == "admin"
         if not contractor or (contractor["status"] != "active" and not is_admin):
             abort(404)
-        photos = db.execute(
-            """
-            SELECT * FROM contractor_photos
-            WHERE contractor_id = ? AND is_hidden = 0
-            ORDER BY created_at DESC
-            """,
-            (contractor_id,),
-        ).fetchall()
+        photos = (
+            db.execute(
+                """
+                SELECT * FROM contractor_photos
+                WHERE contractor_id = ? AND is_hidden = 0
+                ORDER BY created_at DESC
+                """,
+                (contractor_id,),
+            ).fetchall()
+            if g.user and g.user["status"] == "active"
+            else []
+        )
         market_fit = contractor_market_fit(contractor_id, contractor)
         services = [SERVICE_BY_SLUG[slug] for slug in market_fit["service_slugs"]]
         zones = [ZONE_BY_SLUG[slug] for slug in market_fit["service_zone_slugs"]]
@@ -4245,7 +4305,13 @@ def register_routes(app: Flask) -> None:
         )
         return render_template(
             "contractor_public.html",
-            contractor=contractor,
+            contractor={
+                "id": contractor_id,
+                "status": contractor["status"],
+                "verified_completions": contractor["verified_completions"],
+                "years_in_business": contractor["years_in_business"],
+                **public_contractor_profile_text(dict(contractor)),
+            },
             photos=photos,
             services=services,
             service_zones=zones,
@@ -4267,7 +4333,7 @@ def register_routes(app: Flask) -> None:
         filters = public_job_filters()
         selected_family = GROUP_BY_SLUG.get(filters.get("family", ""))
         lead_view = normalize_lead_view(request.args.get("view"))
-        jobs, map_jobs = public_open_jobs(limit=LEAD_BOARD_JOB_LIMIT, filters=filters)
+        jobs, map_jobs = public_open_jobs(limit=LEAD_BOARD_JOB_LIMIT, filters=filters, public_only=False)
         jobs = attach_contractor_request_status(jobs, g.user["id"])
         market_fit = contractor_market_fit(g.user["id"])
         jobs = annotate_job_fits(
@@ -4350,22 +4416,16 @@ def register_routes(app: Flask) -> None:
     @app.route("/jobs/<int:job_id>")
     @role_required("contractor", "admin")
     def contractor_job_detail(job_id: int):
-        job = fetch_job(job_id)
+        is_contractor = g.user["role"] == "contractor"
+        job = fetch_job(job_id, contractor_id=g.user["id"] if is_contractor else None)
         if not job:
             abort(404)
-        if g.user["role"] == "contractor" and job["client_status"] != "active":
-            abort(404)
-        if job["status"] == "hidden" and g.user["role"] != "admin":
+        if is_contractor and not contractor_can_view_project(
+            job["status"], job["client_status"],
+            has_approved_match=bool(job["has_approved_match"]), participates=bool(job["has_viewer_request"]),
+        ):
             abort(404)
         db = get_db()
-        photos = db.execute(
-            """
-            SELECT * FROM job_photos
-            WHERE job_id = ? AND is_hidden = 0
-            ORDER BY created_at
-            """,
-            (job_id,),
-        ).fetchall()
         existing_request = None
         lead_feedback = None
         repeat_invitation = None
@@ -4427,6 +4487,20 @@ def register_routes(app: Flask) -> None:
                 )
                 if not activation_is_live(activation):
                     abort(404)
+        photos = []
+        if not is_contractor or contractor_can_view_project(
+            job["status"], job["client_status"],
+            has_approved_match=bool(job["has_approved_match"]),
+            participates=existing_request is not None and existing_request["status"] == "approved",
+        ):
+            photos = db.execute(
+                """
+                SELECT * FROM job_photos
+                WHERE job_id = ? AND is_hidden = 0
+                ORDER BY created_at
+                """,
+                (job_id,),
+            ).fetchall()
         request_count = db.execute(
             "SELECT COUNT(*) AS total FROM match_requests WHERE job_id = ?",
             (job_id,),
@@ -4435,6 +4509,8 @@ def register_routes(app: Flask) -> None:
         scope_answers = scope_answer_projection(
             job["service_slug"], load_job_scope_answers(job_id)
         )
+        if is_contractor:
+            job = shared_project_record(job)
         return render_template(
             "contractor_job_detail.html",
             job=job,
@@ -4595,6 +4671,9 @@ def register_routes(app: Flask) -> None:
         if existing:
             flash("You already requested a match for this job.", "error")
             return redirect(url_for("contractor_job_detail", job_id=job_id))
+        if job["has_approved_match"]:
+            flash("This project has already chosen a contractor.", "error")
+            return redirect(url_for("leads"))
 
         bid_form = cleaned_bid_form(request.form)
         errors = validate_bid_form(bid_form)
@@ -4620,6 +4699,7 @@ def register_routes(app: Flask) -> None:
             scope_answers = scope_answer_projection(
                 job["service_slug"], load_job_scope_answers(job_id)
             )
+            job = shared_project_record(job)
             return render_template(
                 "contractor_job_detail.html",
                 job=job,
@@ -4799,7 +4879,11 @@ def register_routes(app: Flask) -> None:
         is_admin = g.user["role"] == "admin"
         if not is_admin and g.user["id"] not in {thread["client_id"], thread["contractor_id"]}:
             abort(403)
-        thread = dict(thread)
+        try:
+            through = parse_message_through(request.args.getlist("through"))
+        except ValueError as exc:
+            abort(400, description=str(exc))
+        thread = shared_project_record(thread)
         thread["provider"] = contractor_match_provider(
             thread["contractor_id"],
             thread["contractor_name"],
@@ -4863,28 +4947,9 @@ def register_routes(app: Flask) -> None:
                 db.commit()
                 flash("Message sent.", "success")
                 return redirect(url_for("thread_detail", thread_id=thread_id))
-        message_query = (
-            """
-            SELECT messages.*, users.display_name
-            FROM messages
-            JOIN users ON users.id = messages.sender_id
-            WHERE messages.thread_id = ?
-            ORDER BY messages.id
-            """
-            if is_admin
-            else """
-            SELECT messages.*, users.display_name
-            FROM messages
-            JOIN users ON users.id = messages.sender_id
-            WHERE messages.thread_id = ? AND messages.is_hidden = 0
-            ORDER BY messages.id
-            """
-        )
-        messages = db.execute(
-            message_query,
-            (thread_id,),
-        ).fetchall()
-        if not is_admin and request.method != "HEAD":
+        message_query, message_params = message_window_query(thread_id, through, include_hidden=is_admin)
+        messages, next_through = message_history_page(db.execute(message_query, message_params).fetchall())
+        if not is_admin and request.method != "HEAD" and through is None:
             last_message = messages[-1] if messages else None
             mark_thread_read(
                 db,
@@ -4899,10 +4964,14 @@ def register_routes(app: Flask) -> None:
                 g.user["id"],
                 g.user["role"],
             )
+        if not is_admin:
+            messages = [{**dict(message), "body": participant_message_text(message["body"])} for message in messages]
         return render_template(
             "thread_detail.html",
             thread=thread,
             messages=messages,
+            through=through,
+            next_through=next_through,
             inbox_threads=message_threads_for_user(g.user["id"]) if not is_admin else [],
             draft_body=draft_body,
             message_max=MESSAGE_BODY_MAX_LENGTH,
@@ -4940,6 +5009,10 @@ def register_routes(app: Flask) -> None:
             "report",
             idempotency_key,
         )
+        if target_type == "job" and not report_target_visible_to_user(g.user, target_type, target_id):
+            db.rollback()
+            flash("That item is no longer available to report.", "error")
+            return redirect(return_url)
         replay_report_id = completed_idempotent_resource(replay_record, "report")
         if replay_report_id:
             db.rollback()
@@ -5181,52 +5254,7 @@ def register_routes(app: Flask) -> None:
         automation_event_count = db.execute(
             "SELECT COUNT(*) AS total FROM automation_events"
         ).fetchone()["total"]
-        marketplace_row = db.execute(
-            """
-            SELECT
-                (SELECT COUNT(*) FROM jobs WHERE status != 'hidden')
-                    AS published_projects,
-                (
-                    SELECT COUNT(DISTINCT match_requests.job_id)
-                    FROM match_requests
-                    JOIN jobs ON jobs.id = match_requests.job_id
-                    WHERE jobs.status != 'hidden'
-                ) AS projects_with_bids,
-                (
-                    SELECT COUNT(DISTINCT match_requests.job_id)
-                    FROM match_requests
-                    JOIN jobs ON jobs.id = match_requests.job_id
-                    WHERE jobs.status != 'hidden'
-                      AND match_requests.status = 'approved'
-                ) AS matched_projects,
-                (
-                    SELECT COUNT(*) FROM match_requests
-                    JOIN jobs ON jobs.id = match_requests.job_id
-                    WHERE jobs.status != 'hidden'
-                      AND match_requests.status = 'approved'
-                ) AS approved_matches,
-                (
-                    SELECT COUNT(*) FROM match_completions
-                    WHERE client_confirmed_at IS NOT NULL
-                       OR contractor_confirmed_at IS NOT NULL
-                ) AS completion_signals,
-                (
-                    SELECT COUNT(*) FROM match_completions
-                    WHERE verified_at IS NOT NULL
-                ) AS verified_completions,
-                (
-                    SELECT COUNT(*) FROM jobs
-                    WHERE status = 'closed'
-                ) AS closed_projects,
-                (
-                    SELECT COUNT(*) FROM jobs
-                    WHERE status = 'closed' AND close_reason = 'workdoe-match'
-                ) AS workdoe_match_outcomes,
-                (
-                    SELECT COUNT(*) FROM job_lead_feedback
-                ) AS lead_quality_signals
-            """
-        ).fetchone()
+        marketplace_row = db.execute(MARKETPLACE_OUTCOMES_SQL).fetchone()
         marketplace_metrics = {
             key: int(value or 0) for key, value in dict(marketplace_row).items()
         }
@@ -5275,7 +5303,8 @@ def register_routes(app: Flask) -> None:
                    MIN(match_requests.created_at) AS first_bid_at,
                    SUM(CASE WHEN match_requests.status = 'approved' THEN 1 ELSE 0 END)
                        AS matched_count,
-                   SUM(CASE WHEN match_completions.verified_at IS NOT NULL THEN 1 ELSE 0 END)
+                   SUM(CASE WHEN match_requests.status = 'approved'
+                                 AND match_completions.verified_at IS NOT NULL THEN 1 ELSE 0 END)
                        AS verified_completion_count,
                    (
                        SELECT COUNT(*)
@@ -5289,6 +5318,11 @@ def register_routes(app: Flask) -> None:
             LEFT JOIN service_types ON service_types.slug = jobs.service_slug
             LEFT JOIN service_zones ON service_zones.slug = jobs.service_zone_slug
             LEFT JOIN match_requests ON match_requests.job_id = jobs.id
+              AND EXISTS (
+                  SELECT 1 FROM users AS bidder
+                  WHERE bidder.id = match_requests.contractor_id
+                    AND lower(bidder.email) NOT LIKE '%@workdoe.local'
+              )
             LEFT JOIN match_completions
               ON match_completions.match_request_id = match_requests.id
             WHERE jobs.status != 'hidden'
@@ -5318,33 +5352,7 @@ def register_routes(app: Flask) -> None:
             ],
             as_of=datetime.now(timezone.utc).date().isoformat(),
         )
-        repeat_work_row = db.execute(
-            """
-            SELECT
-                COUNT(*) AS invitations_created,
-                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END)
-                    AS invitations_pending,
-                SUM(CASE WHEN status = 'bid_sent' THEN 1 ELSE 0 END)
-                    AS invitations_bid_sent,
-                SUM(CASE WHEN status = 'declined' THEN 1 ELSE 0 END)
-                    AS invitations_declined,
-                SUM(CASE WHEN status = 'withdrawn' THEN 1 ELSE 0 END)
-                    AS invitations_withdrawn,
-                SUM(
-                    CASE WHEN EXISTS (
-                        SELECT 1
-                        FROM match_requests
-                        JOIN match_completions
-                          ON match_completions.match_request_id = match_requests.id
-                        WHERE match_requests.job_id = repeat_provider_invitations.job_id
-                          AND match_requests.contractor_id = repeat_provider_invitations.contractor_id
-                          AND match_requests.status = 'approved'
-                          AND match_completions.verified_at IS NOT NULL
-                    ) THEN 1 ELSE 0 END
-                ) AS verified_repeat_projects
-            FROM repeat_provider_invitations
-            """
-        ).fetchone()
+        repeat_work_row = db.execute(REPEAT_INVITATION_OUTCOMES_SQL).fetchone()
         repeat_work_metrics = {
             key: int(value or 0) for key, value in dict(repeat_work_row).items()
         }
@@ -5680,13 +5688,22 @@ def register_routes(app: Flask) -> None:
         photo = db.execute(
             """
             SELECT job_photos.*, jobs.client_id, jobs.status,
-                   clients.status AS client_status
+                   clients.status AS client_status,
+                   EXISTS (
+                       SELECT 1 FROM match_requests AS approved_request
+                       WHERE approved_request.job_id = jobs.id AND approved_request.status = 'approved'
+                   ) AS has_approved_match,
+                   EXISTS (
+                       SELECT 1 FROM match_requests AS own_match
+                       WHERE own_match.job_id = jobs.id AND own_match.contractor_id = ?
+                         AND own_match.status = 'approved'
+                   ) AS has_viewer_match
             FROM job_photos
             JOIN jobs ON jobs.id = job_photos.job_id
             JOIN users AS clients ON clients.id = jobs.client_id
             WHERE job_photos.id = ?
             """,
-            (photo_id,),
+            (g.user["id"], photo_id),
         ).fetchone()
         if not photo:
             abort(404)
@@ -5697,8 +5714,11 @@ def register_routes(app: Flask) -> None:
             or photo["client_id"] == g.user["id"]
             or (
                 g.user["role"] == "contractor"
-                and photo["client_status"] == "active"
-                and photo["status"] == "open"
+                and contractor_can_view_project(
+                    photo["status"], photo["client_status"],
+                    has_approved_match=bool(photo["has_approved_match"]),
+                    participates=bool(photo["has_viewer_match"]),
+                )
             )
         )
         if not allowed:
@@ -5710,6 +5730,7 @@ def register_routes(app: Flask) -> None:
         )
 
     @app.route("/media/contractors/<int:photo_id>")
+    @login_required
     def contractor_photo(photo_id: int):
         photo = get_db().execute(
             """
@@ -5808,6 +5829,47 @@ def render_error_page(
     )
 
 
+def reject_cross_origin_private_media() -> Response | None:
+    if (
+        request.method in {"GET", "HEAD"}
+        and request.path.startswith(("/media/jobs/", "/media/contractors/"))
+        and private_media_embedding_blocked(
+            request.headers.get("Sec-Fetch-Site", ""),
+            request.headers.get("Sec-Fetch-Mode", ""),
+            request.headers.get("Sec-Fetch-Dest", ""),
+        )
+    ):
+        return Response("Forbidden", status=403, mimetype="text/plain")
+    return None
+
+
+def reject_public_discovery_request() -> Response | None:
+    api = request.path == "/api/jobs/open"
+    if not api and request.endpoint != "home":
+        return None
+    if request.method not in {"GET", "HEAD"}:
+        if not api:
+            return None
+        if request.method == "OPTIONS":
+            response = Response("", status=200, mimetype="application/json")
+            response.headers["Cache-Control"] = "no-store"
+        else:
+            response = no_store_json({"ok": False, "error": "Method not allowed."}, 405)
+        response.headers["Allow"] = ", ".join(PUBLIC_DISCOVERY_API_METHODS)
+    else:
+        rejection = public_query_envelope_rejection(request.query_string)
+        if rejection is None:
+            return None
+        status, message = rejection
+        if api:
+            response = no_store_json({"ok": False, "error": message}, status)
+        else:
+            response = Response(message, status=status, mimetype="text/plain")
+            response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 def load_logged_in_user() -> None:
     user_id = session.get("user_id")
     g.user = None
@@ -5858,12 +5920,24 @@ def add_security_headers(response):
         content_security_policy(),
     )
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    if (
+        request.endpoint == "static"
+        and (request.view_args or {}).get("filename") == AREA_MAP_ASSET.lstrip("/")
+        and response.status_code in {200, 206, 304}
+    ):
+        response.mimetype = "application/geo+json"
+        response.headers["Cache-Control"] = "public, max-age=31556952, immutable"
     response.headers.setdefault(
         "X-Frame-Options",
         "DENY",
     )
-    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    clerk_surface = request.endpoint in {"home", "start", "create_account", "login", "account"} and clerk_entry_enabled()
+    response.headers.setdefault(
+        "Referrer-Policy", "strict-origin" if clerk_surface else "strict-origin-when-cross-origin",
+    )
     response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    if request.path.startswith(("/media/jobs/", "/media/contractors/")):
+        response.headers.update(PRIVATE_MEDIA_EMBEDDING_HEADERS)
     if should_no_store_response():
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
@@ -5874,6 +5948,8 @@ def add_security_headers(response):
 
 def content_security_policy() -> str:
     directives = list(CONTENT_SECURITY_POLICY_DIRECTIVES)
+    if project_map_enabled() and (origin := map_tile_origin(current_app.config["MAP_TILE_URL"])):
+        directives = [add_csp_source(directive, "img-src", origin) for directive in directives]
     frame_sources: list[str] = []
     if turnstile_enabled():
         for source_directive in ("script-src", "connect-src"):
@@ -5927,6 +6003,14 @@ def content_security_policy() -> str:
 
 def embedded_dialog_mode() -> bool:
     return request.args.get("embed") == "1"
+
+
+def project_map_enabled() -> bool:
+    return (
+        request.endpoint in PROJECT_MAP_ENDPOINTS
+        and bool(current_app.config["MAP_TILE_URL"])
+        and not embedded_dialog_mode()
+    )
 
 
 def add_csp_source(directive: str, directive_name: str, source: str) -> str:
@@ -6396,17 +6480,24 @@ def selected_start_job(value: str | int | None, intent: str):
     job_id = parse_positive_int(value)
     if not job_id:
         return None
-    return get_db().execute(
+    # The appended clause is static; the project ID is bound below.
+    row = get_db().execute(
         """
-        SELECT jobs.id, jobs.title, jobs.category, jobs.city, jobs.state
+        SELECT jobs.id, jobs.title, jobs.category, jobs.city, jobs.state,
+               jobs.desired_date, jobs.service_slug, jobs.service_group_slug
         FROM jobs
         JOIN users AS clients
           ON clients.id = jobs.client_id
          AND clients.status = 'active'
         WHERE jobs.id = ? AND jobs.status = 'open'
-        """,
+          AND NOT EXISTS (
+              SELECT 1 FROM match_requests
+              WHERE match_requests.job_id = jobs.id AND match_requests.status = 'approved'
+          )
+        """ + PUBLIC_BID_AVAILABILITY_SQL,  # nosec B608
         (job_id,),
     ).fetchone()
+    return row if row and public_project_visible(row) else None
 
 
 def selected_next_job(value: str | None):
@@ -7267,7 +7358,7 @@ def budget_database_value(value: str) -> int | None:
     return int(value) if value else None
 
 
-def validate_job_form(form: dict) -> list[str]:
+def validate_job_form(form: dict, *, preserved_desired_date: str | None = None) -> list[str]:
     errors: list[str] = []
     if not form["title"]:
         errors.append("Add a job title.")
@@ -7304,7 +7395,7 @@ def validate_job_form(form: dict) -> list[str]:
         except ValueError:
             errors.append("Use a valid desired date.")
         else:
-            if desired_date < datetime.now(timezone.utc).date():
+            if desired_date < datetime.now(timezone.utc).date() and form["desired_date"] != preserved_desired_date:
                 errors.append("Choose today or a future desired date.")
     budget_min = validate_budget_value(form["budget_min"], "minimum", errors)
     budget_max = validate_budget_value(form["budget_max"], "maximum", errors)
@@ -7627,13 +7718,16 @@ def report_target_visible_to_user(user, target_type: str, target_id: int) -> boo
     user_id = int(user["id"])
     db = get_db()
     if target_type == "job":
-        job = db.execute(
-            "SELECT id, client_id, status FROM jobs WHERE id = ?",
-            (target_id,),
-        ).fetchone()
+        job = fetch_job(target_id, contractor_id=user_id if role == "contractor" else None)
         if not job:
             return False
-        return role == "admin" or (role == "contractor" and job["status"] != "hidden")
+        return role == "admin" or (
+            role == "contractor"
+            and contractor_can_view_project(
+                job["status"], job["client_status"],
+                has_approved_match=bool(job["has_approved_match"]), participates=bool(job["has_viewer_request"]),
+            )
+        )
     if target_type == "profile":
         contractor = db.execute(
             """
@@ -7756,7 +7850,7 @@ def role_required(*roles: str):
     return decorator
 
 
-def fetch_job(job_id: int):
+def fetch_job(job_id: int, *, contractor_id: int | None = None):
     return get_db().execute(
         """
         SELECT jobs.*, users.display_name AS client_name, users.company_name AS client_company,
@@ -7766,12 +7860,16 @@ def fetch_job(job_id: int):
                    FROM match_requests AS approved_request
                    WHERE approved_request.job_id = jobs.id
                      AND approved_request.status = 'approved'
-               ) AS has_approved_match
+               ) AS has_approved_match,
+               EXISTS (
+                   SELECT 1 FROM match_requests AS own_request
+                   WHERE own_request.job_id = jobs.id AND own_request.contractor_id = ?
+               ) AS has_viewer_request
         FROM jobs
         JOIN users ON users.id = jobs.client_id
         WHERE jobs.id = ?
         """,
-        (job_id,),
+        (contractor_id, job_id),
     ).fetchone()
 
 
@@ -7881,7 +7979,8 @@ def message_threads_for_user(user_id: int):
     ).fetchall()
     return [
         {
-            **dict(thread),
+            **shared_project_record(thread),
+            "last_message": participant_message_text(thread["last_message"] or ""),
             "needs_reply": bool(thread["last_message_id"])
             and int(thread["last_sender_id"] or 0) != user_id,
         }
@@ -7982,7 +8081,7 @@ def public_job_filters(values=None) -> dict[str, str]:
         "category": category,
         "family": family,
         "service": service,
-        "q": compact_spaces(first_filter_value(values, "q"))[:FILTER_QUERY_MAX_LENGTH],
+        "q": cleaned_project_search(first_filter_value(values, "q"), FILTER_QUERY_MAX_LENGTH),
         "sort": normalize_job_sort(first_filter_value(values, "sort")),
     }
 
@@ -8461,11 +8560,14 @@ def public_open_jobs(
     limit: int = 8,
     filters: dict[str, str] | None = None,
     target: str = "start",
+    *,
+    public_only: bool = True,
 ):
-    jobs, map_jobs, _has_more = public_open_jobs_page(
+    jobs, map_jobs, _, _ = public_open_jobs_page(
         limit=limit,
         filters=filters,
         target=target,
+        public_only=public_only,
     )
     return jobs, map_jobs
 
@@ -8476,6 +8578,8 @@ def public_open_jobs_page(
     target: str = "start",
     viewport: dict[str, float] | None = None,
     offset: int = 0,
+    *,
+    public_only: bool = True,
 ):
     active_filters = filters or {
         "category": "",
@@ -8508,6 +8612,8 @@ def public_open_jobs_page(
         """,
     ]
     params: list[str | int] = []
+    if public_only and not (g.user and g.user["role"] in {"contractor", "admin"}):
+        sql.append(PUBLIC_BID_AVAILABILITY_SQL)
     if service_activation_required():
         sql.append(live_service_activation_sql())
     if active_filters["category"]:
@@ -8541,10 +8647,19 @@ def public_open_jobs_page(
     sql.append(
         f"GROUP BY jobs.id ORDER BY {order_clauses[sort_order]} LIMIT ? OFFSET ?"
     )
-    params.extend([limit + 1, max(0, offset)])
+    scan_limit = limit + PUBLIC_PROJECT_PRIVACY_LOOKAHEAD if public_only else limit
+    params.extend([scan_limit + 1, max(0, offset)])
     page_rows = get_db().execute("\n".join(sql), params).fetchall()
+    if public_only:
+        page_rows, cursor_advance = public_project_page(page_rows, limit)
+    else:
+        cursor_advance = min(len(page_rows), limit)
     has_more = len(page_rows) > limit
-    jobs = page_rows[:limit]
+    jobs = [dict(row) if public_only else shared_project_record(row) for row in page_rows[:limit]]
+    for job in jobs:
+        job["approx_lat"], job["approx_lng"] = reviewed_stored_pin(
+            job["city"], job["state"], job["zip_code"], job["approx_lat"], job["approx_lng"],
+        )
     if g.user and g.user["role"] in {"contractor", "admin"}:
         make_url = lambda row: url_for("contractor_job_detail", job_id=row["id"])
         action_label = "View"
@@ -8581,9 +8696,8 @@ def public_open_jobs_page(
             "sample_label": "Open project",
         }
         for row in jobs
-        if row["approx_lat"] and row["approx_lng"]
     ]
-    return jobs, map_jobs, has_more
+    return jobs, map_jobs, has_more, cursor_advance
 
 
 def ensure_thread_for_match(match) -> int:

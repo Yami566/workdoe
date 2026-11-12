@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -34,6 +37,14 @@ WORKDOE_PUBLIC_DOMAIN = "workdoe.com"
 CLERK_PROXY_PATH = "/__clerk"
 DEFAULT_CLERK_FAPI = "https://frontend-api.clerk.dev"
 DEFAULT_CLERK_PROXY_PROOF_PATH = REPO_ROOT / "clerk-proxy-proof.local.json"
+CLERK_RELEASE_PROOF_MAX_BYTES = 4096
+CLERK_RELEASE_PROOF_MAX_AGE = timedelta(hours=24)
+CLERK_RELEASE_PROOF_FUTURE_TOLERANCE = timedelta(minutes=5)
+CLERK_RELEASE_PROOF_FIELDS = frozenset({
+    "domain", "frontend_api_proxy_url", "confirmed", "public_sign_up_enabled", "email_code_sign_in",
+    "password_sign_in_disabled", "custom_sign_up_url", "express_legal_consent", "terms_url", "privacy_url",
+    "confirmed_at_utc", "checked_by",
+})
 
 
 @dataclass
@@ -177,6 +188,10 @@ def clerk_proxy_proof_error(path: Path | None) -> str:
     data = read_json(path)
     if not isinstance(data, dict) or not data:
         return f"Clerk proxy proof JSON is missing or invalid: {path}"
+    return clerk_proxy_proof_data_error(data)
+
+
+def clerk_proxy_proof_data_error(data: dict) -> str:
     if data.get("confirmed") is not True:
         return "Clerk proxy proof must include confirmed=true."
     if str(data.get("domain", "")).strip().lower() != WORKDOE_PUBLIC_DOMAIN:
@@ -208,6 +223,57 @@ def clerk_proxy_proof_error(path: Path | None) -> str:
     return ""
 
 
+def valid_clerk_operator_label(value: object) -> bool:
+    return isinstance(value, str) and bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._:-]{0,63}", value))
+
+
+def clerk_release_proof_digest(path: Path | None, *, now: datetime | None = None) -> str:
+    if path is None:
+        raise ValueError(clerk_proxy_proof_error(None))
+
+    def unique_fields(pairs: list[tuple[str, object]]) -> dict:
+        values = dict(pairs)
+        if len(values) != len(pairs):
+            raise ValueError("Duplicate proof field.")
+        return values
+
+    try:
+        if not path.is_file():
+            raise ValueError
+        with path.open("rb") as source:
+            raw = source.read(CLERK_RELEASE_PROOF_MAX_BYTES + 1)
+        if not 0 < len(raw) <= CLERK_RELEASE_PROOF_MAX_BYTES:
+            raise ValueError
+        data = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_fields)
+    except (OSError, ValueError, RecursionError) as exc:
+        raise ValueError("Clerk dashboard proof is missing, malformed, ambiguous, or oversized.") from exc
+    if not isinstance(data, dict) or data.keys() != CLERK_RELEASE_PROOF_FIELDS:
+        raise ValueError("Clerk dashboard proof must use the current non-secret confirmation format.")
+    if error := clerk_proxy_proof_data_error(data):
+        raise ValueError(error)
+    if not valid_clerk_operator_label(data["checked_by"]):
+        raise ValueError("Clerk dashboard proof needs a short, non-secret operator label.")
+    timestamp = data["confirmed_at_utc"]
+    try:
+        if not isinstance(timestamp, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", timestamp):
+            raise ValueError
+        confirmed_at = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    except ValueError as exc:
+        raise ValueError("Clerk dashboard proof needs an exact UTC confirmation timestamp.") from exc
+    age = (now or datetime.now(UTC)) - confirmed_at
+    if age > CLERK_RELEASE_PROOF_MAX_AGE or age < -CLERK_RELEASE_PROOF_FUTURE_TOLERANCE:
+        raise ValueError("Clerk dashboard proof is stale or dated in the future. Recheck the production settings.")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def clerk_release_proof_error(path: Path | None) -> str:
+    try:
+        clerk_release_proof_digest(path)
+    except ValueError as exc:
+        return str(exc)
+    return ""
+
+
 def preflight_result(repo_root: Path, strict_production: bool) -> dict:
     sys.path.insert(0, str(repo_root / "scripts"))
     from cloudflare_preflight import run_preflight
@@ -232,8 +298,7 @@ def command_steps() -> list[str]:
         "python ..\\scripts\\cloudflare_release_evidence.py --json --secret-list-json ..\\cloudflare-secret-list.local.json --clerk-proxy-proof-json ..\\clerk-proxy-proof.local.json",
         "python ..\\scripts\\cloudflare_readiness.py --strict-production --secret-list-json ..\\cloudflare-secret-list.local.json --clerk-proxy-proof-json ..\\clerk-proxy-proof.local.json",
         "cd ..",
-        "python scripts\\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
-        "python scripts\\cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json",
+        "npm run cf:deploy:plan",
     ]
 
 
@@ -274,6 +339,9 @@ def run_readiness(
             "D1 binding must use database_name=workdoe and binding=DB.",
         )
         for id_field in ("database_id", "preview_database_id"):
+            if id_field == "preview_database_id" and d1.get(id_field) == ZERO_UUID:
+                add_ok(checks, "Production remote D1 preview is explicitly disabled")
+                continue
             if d1.get(id_field) and d1.get(id_field) != ZERO_UUID:
                 add_ok(checks, f"D1 {id_field} is not a placeholder")
             elif strict_production:
@@ -489,13 +557,15 @@ def run_readiness(
     else:
         warnings.append("Cloudflare secret presence was not checked; pass --secret-list-json for deploy proof.")
 
-    proxy_error = clerk_proxy_proof_error(clerk_proxy_proof_json)
+    proxy_error = (
+        clerk_release_proof_error(clerk_proxy_proof_json) if strict_production else clerk_proxy_proof_error(clerk_proxy_proof_json)
+    )
     if clerk_proxy_proof_json:
         add_requirement(
             not proxy_error,
             checks,
             blockers,
-            "Same-domain Clerk proxy proof is present",
+            "Recent Clerk dashboard confirmation is valid" if strict_production else "Same-domain Clerk proxy proof is present",
             proxy_error,
         )
     elif strict_production:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from request_security import parse_url_record_id
+
 MATCH_DECISION_ACTIONS = {"approve": "approved", "reject": "rejected"}
 APPROVAL_THREAD_MESSAGE = (
     "Thanks for reviewing my mini bid. I am ready to coordinate details here."
@@ -18,11 +20,12 @@ def parse_match_decision_path(path: str) -> tuple[int, str, str]:
     if len(parts) != 2:
         raise MatchDecisionError("Unsupported match decision route.")
     request_id_raw, action = parts
-    if not request_id_raw.isdigit() or int(request_id_raw) < 1:
+    record_id = parse_url_record_id(request_id_raw)
+    if not record_id:
         raise MatchDecisionError("Unsupported match decision route.")
     if action not in MATCH_DECISION_ACTIONS:
         raise MatchDecisionError("Unsupported match decision route.")
-    return int(request_id_raw), action, MATCH_DECISION_ACTIONS[action]
+    return record_id, action, MATCH_DECISION_ACTIONS[action]
 
 
 def can_decide_match_request(user, match) -> bool:

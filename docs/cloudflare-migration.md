@@ -208,8 +208,7 @@ python ..\scripts\cloudflare_secret_evidence.py --execute --yes --output ..\clou
 cd ..
 python scripts\cloudflare_release_evidence.py --json
 python scripts\cloudflare_readiness.py --strict-production --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
-python scripts\cloudflare_production_deploy.py --json --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
-python scripts\cloudflare_production_deploy.py --execute --yes --secret-list-json cloudflare-secret-list.local.json --clerk-proxy-proof-json clerk-proxy-proof.local.json
+npm run cf:deploy:plan
 ```
 
 `scripts\cloudflare_readiness.py` is the launch doctor. It keeps regular preflight checks, then adds production-only gates for real D1 IDs, workdoe.com custom domains, same-domain Clerk email-code mode, R2/Queue/Email bindings, required secret names, sanitized evidence from `scripts\cloudflare_secret_evidence.py` that the Cloudflare Worker has every required Clerk, Turnstile, and Workdoe secret configured, and proof that Clerk Domains is pointed at `https://workdoe.com/__clerk`. It never reads or prints secret values.
@@ -224,7 +223,15 @@ python scripts\cloudflare_production_deploy.py --execute --yes --secret-list-jso
 
 `scripts\cloudflare_resource_bootstrap.py` is the guarded resource bootstrap. It is dry-run by default; with `--execute --yes`, it creates the Workdoe D1 production/preview databases, applies the returned IDs to `cloudflare/wrangler.jsonc`, and creates the R2 bucket plus email/media queues. The R2 and Queue steps are rerunnable: if Cloudflare reports that those resources already exist, the helper records the step as `done-existing` and continues.
 
-`scripts\cloudflare_production_deploy.py` is the guarded production deploy helper. It runs strict readiness first, refuses to deploy if D1 IDs, secret-name proof, or Clerk proxy proof are missing, and only applies remote D1 migrations plus `wrangler deploy` when called with `--execute --yes`. Executable production runs cannot disable the post-deploy smoke check. Smoke checks use curl's HTTP failure mode and include capped `output_excerpt` fields in the JSON result so the operator can quickly confirm health headers and public job API output. The GitHub workflow retains that result as `production-deploy.log` beside the D1 Time Travel and Worker rollback evidence for 30 days.
+`scripts\cloudflare_production_deploy.py` plans by default. Execution
+requires the full reviewed commit, the expected serving Worker UUID,
+strict readiness evidence and an explicit migration choice. It checks
+the D1 ledger and schema, uploads an inactive version, verifies its tag
+and configuration, then activates and runs commit-bound public smoke.
+An explicit migration run requires a new private Time Travel receipt.
+The manual GitHub workflow is no-migration only; it retains sanitized
+release evidence, not a rollback command. A smoke failure reports the
+observed traffic state; it does not automatically roll back code or data.
 
 `scripts\apply_cloudflare_d1_ids.py` is the D1 cutover helper. It accepts captured `wrangler d1 create` output or explicit UUIDs, validates that both `database_id` and `preview_database_id` are real non-placeholder Cloudflare UUIDs, and updates only the D1 ID fields in `cloudflare/wrangler.jsonc`.
 

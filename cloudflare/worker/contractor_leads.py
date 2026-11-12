@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from urllib.parse import urlencode
 
+from content_privacy import cleaned_project_search, shared_project_record
 from job_posts import bid_window, budget_label
+from location_pins import reviewed_stored_pin
 from market_fit import annotate_job_fits
 from project_readiness import project_brief_readiness
 from service_taxonomy import GROUP_BY_SLUG, SERVICE_BY_SLUG
@@ -33,7 +35,7 @@ JOB_CATEGORIES = {
     "Commercial maintenance",
     "Other",
 }
-CONTRACTOR_LEAD_PRIVACY_NOTICE = "Approximate city or ZIP-level pins only until a client approves a match."
+CONTRACTOR_LEAD_PRIVACY_NOTICE = "Approximate city or ZIP-level pins only, including after approval."
 
 
 def row_value(row, key: str, default=None):
@@ -86,7 +88,7 @@ def contractor_lead_filters_from_query(params: dict) -> dict[str, str]:
         "category": category,
         "family": family,
         "service": service,
-        "q": compact_spaces(first_query_value(params, "q"))[:FILTER_QUERY_MAX_LENGTH],
+        "q": cleaned_project_search(first_query_value(params, "q"), FILTER_QUERY_MAX_LENGTH),
         "sort": normalize_contractor_lead_sort(first_query_value(params, "sort")),
     }
 
@@ -117,10 +119,6 @@ def count_value(row, key: str) -> int:
 def request_status(row) -> str:
     status = row_value(row, "request_status", "") or ""
     return status if status in {"pending", "approved", "rejected"} else ""
-
-
-def has_map_coordinates(row) -> bool:
-    return row_value(row, "approx_lat") is not None and row_value(row, "approx_lng") is not None
 
 
 def contractor_lead_card(row) -> dict:
@@ -157,6 +155,10 @@ def contractor_lead_card(row) -> dict:
 def contractor_lead_map_marker(row) -> dict:
     status = request_status(row)
     bidding = bid_window(row)
+    lat, lng = reviewed_stored_pin(
+        row_value(row, "city"), row_value(row, "state"), row_value(row, "zip_code"),
+        row_value(row, "approx_lat"), row_value(row, "approx_lng"),
+    )
     return {
         "id": row_value(row, "id"),
         "title": row_value(row, "title", "") or "",
@@ -172,8 +174,8 @@ def contractor_lead_map_marker(row) -> dict:
         ),
         "photo_count": count_value(row, "photo_count"),
         "budget": budget_label(row),
-        "lat": row_value(row, "approx_lat"),
-        "lng": row_value(row, "approx_lng"),
+        "lat": lat,
+        "lng": lng,
         "url": f"/jobs/{row_value(row, 'id')}",
         "detail_url": f"/jobs/{row_value(row, 'id')}",
         "action_label": "View bid status" if status else ("Review and bid" if bidding["accepting"] else "View bid status"),
@@ -248,18 +250,16 @@ def contractor_leads_payload(
         service_slugs or [],
         service_zone_slugs or [],
     )
-    all_jobs = [contractor_lead_card(row) for row in annotated_rows]
+    shared_rows = [shared_project_record(row) for row in annotated_rows]
+    all_jobs = [contractor_lead_card(row) for row in shared_rows]
     visible_jobs = filter_contractor_lead_cards(all_jobs, normalized_view)
-    all_markers = [
-        contractor_lead_map_marker(row)
-        for row in annotated_rows
-        if has_map_coordinates(row)
-    ]
+    all_markers = [contractor_lead_map_marker(row) for row in shared_rows]
     map_jobs = filter_map_markers(all_markers, visible_jobs)
     return {
         "ok": True,
         "view": normalized_view,
         "count": len(map_jobs),
+        "mapped_count": sum(job["lat"] is not None for job in map_jobs),
         "jobs": visible_jobs,
         "map_jobs": map_jobs,
         "filters": filters,

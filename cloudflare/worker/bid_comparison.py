@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from content_privacy import shared_project_record
 from contractor_reputation import contractor_reputation
 
 MAX_COMPARISON_OFFERS = 4
@@ -82,7 +83,7 @@ def comparison_offer(row, position: int, job_id: int = 0) -> dict:
         checked_credentials,
         checked_licenses,
     )
-    return {
+    return shared_project_record({
         "id": count_value(row, "id"),
         "contractor_id": contractor_id,
         "offer_label": f"Offer {position}",
@@ -141,7 +142,7 @@ def comparison_offer(row, position: int, job_id: int = 0) -> dict:
                 "qualifier": "Not verified by Workdoe",
             },
         ],
-    }
+    })
 
 
 def bid_comparison(

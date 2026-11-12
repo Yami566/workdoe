@@ -3,8 +3,10 @@ from __future__ import annotations
 from urllib.parse import urlencode
 
 from bid_comparison import bid_comparison, normalize_credential_filter
+from content_privacy import shared_project_record
 from job_posts import bid_window
 from match_completions import completion_label, completion_state
+from request_security import parse_url_record_id
 
 CLIENT_REQUEST_VIEWS = {"all", "pending", "approved", "rejected"}
 DEFAULT_CLIENT_REQUEST_VIEW = "all"
@@ -27,9 +29,10 @@ def parse_client_job_requests_path(path: str) -> int:
     if not path.startswith(prefix) or not path.endswith(suffix):
         raise ClientRequestError("Unsupported client request route.")
     raw_id = path[len(prefix) : -len(suffix)].strip("/")
-    if not raw_id.isdigit() or int(raw_id) < 1:
+    record_id = parse_url_record_id(raw_id)
+    if not record_id:
         raise ClientRequestError("Unsupported client request route.")
-    return int(raw_id)
+    return record_id
 
 
 def normalize_client_request_view(value: str | None) -> str:
@@ -110,7 +113,7 @@ def client_request_card(row) -> dict:
     }
     card["completion_state"] = completion_state(card)
     card["completion_label"] = completion_label(card, "client")
-    return card
+    return shared_project_record(card)
 
 
 def filter_client_request_cards(cards: list[dict], view: str) -> list[dict]:

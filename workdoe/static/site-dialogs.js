@@ -7,11 +7,14 @@
   var title = dialog && dialog.querySelector("[data-site-dialog-title]");
   var closeButton = dialog && dialog.querySelector("[data-site-dialog-close]");
   var returnFocus = null;
+  var returnPanel = null;
   var backgroundUrl = "";
   var currentCanonicalUrl = "";
   var requestSequence = 0;
   var requestController = null;
   var loadedLibraries = {};
+  var DIALOG_FRAGMENT_TIMEOUT_MS = 12000;
+  var CLERK_DIALOG_SCRIPT_TIMEOUT_MS = 15000;
   var modalPaths = [
     "/login",
     "/start",
@@ -28,6 +31,117 @@
   ];
   var singleLoadScripts = ["/worker-actions.js"];
 
+  function verificationStatus(widget, message) {
+    var field = widget.closest(".turnstile-field");
+    var notice = field && field.querySelector("[data-turnstile-status]");
+    if (notice) {
+      notice.textContent = message;
+    }
+  }
+
+  function clearVerificationNotice(widget) {
+    var form = widget.closest("form");
+    var notice = form && form.querySelector("[data-form-status]");
+    if (notice && notice.dataset.turnstileNotice === "true") {
+      notice.textContent = "";
+      delete notice.dataset.turnstileNotice;
+    }
+  }
+
+  var turnstileScript = document.querySelector('script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]');
+  if (turnstileScript) {
+    turnstileScript.addEventListener("load", function () { renderTurnstile(document); }, { once: true });
+    turnstileScript.addEventListener("error", function () {
+      document.querySelectorAll("[data-workdoe-turnstile]").forEach(function (widget) {
+        verificationStatus(widget, "Verification could not load. Retry when your connection is available.");
+      });
+    }, { once: true });
+  }
+  renderTurnstile(document);
+
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    var widget = form && form.querySelector && form.querySelector("[data-workdoe-turnstile]");
+    if (!widget) {
+      return;
+    }
+    var response = form.querySelector('input[name="cf-turnstile-response"]');
+    if (response && response.value.trim()) {
+      return;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    var notice = form.querySelector("[data-form-status]");
+    if (notice) {
+      notice.dataset.turnstileNotice = "true";
+      notice.textContent = "Complete verification before saving. Use Retry verification if the check is missing.";
+    }
+    renderTurnstile(form);
+    var field = widget.closest(".turnstile-field");
+    var retry = field && field.querySelector("[data-turnstile-retry]");
+    if (retry) {
+      retry.focus();
+    }
+  }, true);
+
+  document.addEventListener("click", function (event) {
+    var button = event.target && event.target.closest && event.target.closest("[data-turnstile-retry]");
+    if (!button || button.disabled) {
+      return;
+    }
+    var field = button.closest(".turnstile-field");
+    var widget = field && field.querySelector("[data-workdoe-turnstile]");
+    if (!widget) {
+      return;
+    }
+    var form = widget.closest("form");
+    if (form) {
+      form.querySelectorAll('input[name="cf-turnstile-response"]').forEach(function (response) {
+        response.value = "";
+      });
+    }
+    verificationStatus(widget, "Loading verification...");
+    if (window.turnstile && typeof window.turnstile.render === "function") {
+      try {
+        if (widget.dataset.turnstileWidgetId && typeof window.turnstile.reset === "function") {
+          window.turnstile.reset(widget.dataset.turnstileWidgetId);
+        } else {
+          renderTurnstile(field);
+        }
+      } catch (error) {
+        verificationStatus(widget, "Verification could not restart. Please try again.");
+      }
+      return;
+    }
+    var retryScript = document.querySelector('script[src^="https://challenges.cloudflare.com/turnstile/v0/api.js"]');
+    if (!retryScript) {
+      verificationStatus(widget, "Verification is unavailable on this page.");
+      return;
+    }
+    button.disabled = true;
+    var sourceUrl = new URL(retryScript.src, window.location.href);
+    delete loadedLibraries[sourceUrl.origin + sourceUrl.pathname + sourceUrl.search];
+    var timeout;
+    Promise.race([
+      loadScript(retryScript),
+      new Promise(function (_, reject) {
+        timeout = window.setTimeout(function () {
+          reject(new Error("Verification is taking too long. Please retry."));
+        }, 15000);
+      })
+    ]).then(function () {
+      if (!window.turnstile) {
+        throw new Error("Verification did not initialize.");
+      }
+      renderTurnstile(field);
+    }).catch(function () {
+      verificationStatus(widget, "Verification could not load. Check your connection or browser blocker, then retry.");
+    }).finally(function () {
+      window.clearTimeout(timeout);
+      button.disabled = false;
+    });
+  });
+
   if (!dialog || !content || !status || !closeButton) {
     return;
   }
@@ -36,12 +150,50 @@
     return Boolean(dialog.open || dialog.hasAttribute("open"));
   }
 
+  function wrapDialogFocus(event) {
+    if (
+      event.key !== "Tab" || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey ||
+      !dialogIsOpen() || !event.target.closest || event.target.closest("dialog[open]") !== dialog
+    ) {
+      return;
+    }
+    // Keep one modal tab order even when the browser's default skips links.
+    var controls = Array.prototype.filter.call(dialog.querySelectorAll(
+      'a[href], button, input, select, textarea, iframe, summary, [tabindex], [contenteditable="true"]'
+    ), function (node) {
+      var style = window.getComputedStyle(node);
+      return node.tabIndex >= 0 && !node.matches(":disabled") && !node.closest("[hidden], [inert]") &&
+        node.getClientRects().length > 0 && style.visibility !== "hidden" && style.visibility !== "collapse";
+    });
+    controls = controls.filter(function (node) {
+      if (node.type !== "radio" || !node.name) {
+        return true;
+      }
+      var group = controls.filter(function (peer) {
+        return peer.type === "radio" && peer.name === node.name && peer.form === node.form;
+      });
+      var checked = group.find(function (peer) { return peer.checked; });
+      return node === (checked || group[0]);
+    }).sort(function (left, right) {
+      return (left.tabIndex || Infinity) - (right.tabIndex || Infinity);
+    });
+    if (!controls.length) {
+      return;
+    }
+    var current = controls.indexOf(document.activeElement);
+    if (current === -1) {
+      return;
+    }
+    event.preventDefault();
+    controls[(current + (event.shiftKey ? -1 : 1) + controls.length) % controls.length].focus();
+  }
+
   function isModalPath(pathname) {
     return modalPaths.indexOf(pathname) !== -1 || contractorJobPath.test(pathname);
   }
 
   function dialogTarget(anchor) {
-    if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) {
+    if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download") || anchor.hasAttribute("data-dialog-bypass")) {
       return null;
     }
     if (!dialogIsOpen() && isModalPath(window.location.pathname)) {
@@ -133,7 +285,8 @@
   }
 
   function setLoading(message) {
-    removeTurnstileWidgets(content);
+    delete dialog.dataset.dialogRecovery;
+    disposeDialogContent();
     content.replaceChildren();
     status.hidden = false;
     status.textContent = message || "Loading...";
@@ -196,10 +349,14 @@
       url.origin === "https://challenges.cloudflare.com" ? url.search : ""
     );
     if (kind === "library" && loadedLibraries[key]) {
-      return Promise.resolve();
+      return loadedLibraries[key];
     }
-    var libraryAlreadyReady = (url.origin === "https://challenges.cloudflare.com" && Boolean(window.turnstile)) ||
-      (url.pathname.indexOf("/npm/@clerk/") !== -1 && Boolean(window.Clerk));
+    var clerkSdk = url.pathname.indexOf("/npm/@clerk/clerk-js@") !== -1;
+    var clerkUi = url.pathname.indexOf("/npm/@clerk/ui@") !== -1;
+    var libraryAlreadyReady = (url.origin === "https://challenges.cloudflare.com" && Boolean(window.turnstile) && typeof window.turnstile.render === "function") ||
+      (clerkSdk && Boolean(window.Clerk)) ||
+      (clerkUi && Boolean(window.__internal_ClerkUICtor)) ||
+      (url.origin === window.location.origin && scriptPathMatches(url.pathname, singleLoadScripts));
     if (kind === "library" && libraryAlreadyReady && Array.prototype.some.call(document.querySelectorAll("script[src]"), function (script) {
       try {
         var existing = new URL(script.src, window.location.href);
@@ -210,56 +367,106 @@
         return false;
       }
     })) {
-      loadedLibraries[key] = true;
-      return Promise.resolve();
+      loadedLibraries[key] = Promise.resolve();
+      return loadedLibraries[key];
     }
-    loadedLibraries[key] = true;
-    return new Promise(function (resolve, reject) {
+    var pending = new Promise(function (resolve, reject) {
       var script = document.createElement("script");
+      var timer = null;
+      var settled = false;
+      function finish(error) {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timer !== null) {
+          window.clearTimeout(timer);
+        }
+        if (error) {
+          script.remove();
+          reject(error);
+        } else {
+          resolve();
+        }
+      }
       copyScriptAttributes(source, script);
       script.src = url.href;
       script.async = false;
-      script.addEventListener("load", resolve, { once: true });
+      script.addEventListener("load", function () { finish(); }, { once: true });
       script.addEventListener("error", function () {
-        if (kind === "library") {
-          delete loadedLibraries[key];
-        }
-        reject(new Error("A required Workdoe form could not load."));
+        finish(new Error("A required Workdoe form could not load."));
       }, { once: true });
+      if (clerkSdk || clerkUi || scriptPathMatches(url.pathname, ["/clerk-entry.js"])) {
+        timer = window.setTimeout(function () {
+          finish(new Error("Sign-in took too long to load."));
+        }, CLERK_DIALOG_SCRIPT_TIMEOUT_MS);
+      }
       document.head.appendChild(script);
     });
+    if (kind === "library") {
+      loadedLibraries[key] = pending;
+      pending.catch(function () {
+        if (loadedLibraries[key] === pending) {
+          delete loadedLibraries[key];
+        }
+      });
+    }
+    return pending;
   }
 
-  function loadDialogScripts(parsed) {
+  function loadDialogScripts(parsed, sequence) {
     var scripts = Array.prototype.slice.call(parsed.querySelectorAll("script[src]"));
     return scripts.reduce(function (promise, source) {
-      return promise.then(function () { return loadScript(source); });
+      return promise.then(function () {
+        if (sequence === requestSequence) {
+          return loadScript(source);
+        }
+      });
     }, Promise.resolve());
   }
 
-  function renderTurnstile() {
+  function renderTurnstile(root) {
     if (!window.turnstile || typeof window.turnstile.render !== "function") {
       return;
     }
     var renderWidgets = function () {
-      content.querySelectorAll("[data-workdoe-turnstile]").forEach(function (widget) {
-        if (!widget.dataset.turnstileWidgetId) {
+      if (typeof window.turnstile.render !== "function") {
+        return;
+      }
+      (root || content).querySelectorAll("[data-workdoe-turnstile]").forEach(function (widget) {
+        if (widget.isConnected === false || widget.dataset.turnstileWidgetId) {
+          return;
+        }
+        try {
           var widgetId = window.turnstile.render(widget, {
             sitekey: widget.dataset.sitekey,
             action: widget.dataset.action,
-            theme: widget.dataset.theme || "light"
+            theme: widget.dataset.theme || "light",
+            callback: function () {
+              verificationStatus(widget, "Verification complete.");
+              clearVerificationNotice(widget);
+            },
+            "error-callback": function () {
+              verificationStatus(widget, "Verification could not finish. Please retry.");
+            },
+            "expired-callback": function () {
+              verificationStatus(widget, "Verification expired. Please verify again before saving.");
+            },
+            "timeout-callback": function () {
+              verificationStatus(widget, "Verification timed out. Please retry.");
+            }
           });
-          if (typeof widgetId !== "undefined" && widgetId !== null) {
-            widget.dataset.turnstileWidgetId = String(widgetId);
+          if (typeof widgetId === "undefined" || widgetId === null) {
+            throw new Error("Widget was not created.");
           }
+          widget.dataset.turnstileWidgetId = String(widgetId);
+        } catch (error) {
+          verificationStatus(widget, "Verification could not start. Please retry.");
         }
       });
     };
-    if (typeof window.turnstile.ready === "function") {
-      window.turnstile.ready(renderWidgets);
-    } else {
-      renderWidgets();
-    }
+    // The SDK rejects ready() for async/defer loads; startup uses its load event.
+    renderWidgets();
   }
 
   function removeTurnstileWidgets(root) {
@@ -280,6 +487,15 @@
     });
   }
 
+  function disposeDialogContent() {
+    removeTurnstileWidgets(content);
+    content.querySelectorAll("[data-clerk-entry]").forEach(function (entry) {
+      if (typeof entry._workdoeClerkDispose === "function") {
+        entry._workdoeClerkDispose();
+      }
+    });
+  }
+
   function focusDialogContent() {
     var target = content.querySelector('[data-dialog-focus], [aria-invalid="true"], [autofocus], input:not([type="hidden"]), select, textarea, button, a[href]');
     if (target && typeof target.focus === "function") {
@@ -290,7 +506,10 @@
     }
   }
 
-  function renderResponse(response, requestedUrl, sequence) {
+  function renderResponse(response, requestedUrl, sequence, fragmentRead) {
+    if (sequence !== requestSequence) {
+      return Promise.resolve();
+    }
     var responseUrl = new URL(response.url || requestedUrl.href, window.location.href);
     responseUrl.searchParams.delete("embed");
     if (response.redirected && !isModalPath(responseUrl.pathname)) {
@@ -298,6 +517,7 @@
       return Promise.resolve();
     }
     return response.text().then(function (html) {
+      if (fragmentRead) fragmentRead();
       if (sequence !== requestSequence) {
         return;
       }
@@ -306,12 +526,12 @@
       if (!fragment) {
         throw new Error("This page is available in full-page mode.");
       }
-      removeTurnstileWidgets(content);
+      disposeDialogContent();
       content.replaceChildren(document.importNode(fragment, true));
       title.textContent = labelFor(responseUrl, null);
       dialog.dataset.dialogKind = kindFor(responseUrl);
       updateDialogHistory(responseUrl, true);
-      return loadDialogScripts(parsed).then(function () {
+      return loadDialogScripts(parsed, sequence).then(function () {
         if (sequence !== requestSequence) {
           return;
         }
@@ -325,44 +545,76 @@
     });
   }
 
+  function showDialogRecovery(url, message) {
+    var actions = document.createElement("div");
+    actions.className = "action-row";
+    var retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "button primary";
+    retry.textContent = "Try again";
+    retry.addEventListener("click", function () { openDialog(null, url, "none"); });
+    var fullPage = document.createElement("a");
+    fullPage.className = "button secondary";
+    fullPage.href = canonicalPath(url);
+    fullPage.setAttribute("data-dialog-bypass", "");
+    fullPage.textContent = "Open full page";
+    actions.append(retry, fullPage);
+    disposeDialogContent();
+    content.replaceChildren(actions);
+    content.scrollTop = 0;
+    dialog.dataset.dialogRecovery = "true";
+    dialog.removeAttribute("aria-busy");
+    status.hidden = false;
+    status.textContent = message;
+    retry.focus();
+  }
+
   function fetchDialog(url) {
     var sequence = ++requestSequence;
     if (requestController) {
       requestController.abort();
     }
-    requestController = typeof AbortController === "function" ? new AbortController() : null;
+    var controller = typeof AbortController === "function" ? new AbortController() : null;
+    requestController = controller;
     var fetchUrl = new URL(url.href);
     fetchUrl.searchParams.set("embed", "1");
     fetchUrl.hash = "";
+    var timer = window.setTimeout(function () {
+      if (sequence !== requestSequence) return;
+      requestSequence += 1;
+      if (controller) controller.abort();
+      showDialogRecovery(url, "This form took too long to load.");
+    }, DIALOG_FRAGMENT_TIMEOUT_MS);
+    function stopFragmentTimer() {
+      window.clearTimeout(timer);
+    }
     return window.fetch(fetchUrl.href, {
       credentials: "same-origin",
       headers: {
         Accept: "text/html",
         "X-Workdoe-Dialog": "native"
       },
-      signal: requestController ? requestController.signal : undefined
+      signal: controller ? controller.signal : undefined
     }).then(function (response) {
       if (!response.ok) {
         throw new Error(response.status >= 500 ? "This form is temporarily unavailable." : "This form could not be opened.");
       }
-      return renderResponse(response, url, sequence);
+      // Wait for the full response body, but leave script loading to its own checks.
+      return renderResponse(response, url, sequence, stopFragmentTimer);
     }).catch(function (error) {
       if (error.name === "AbortError" || sequence !== requestSequence) {
         return;
       }
-      status.hidden = false;
-      status.textContent = error.message || "This form could not be opened.";
-      removeTurnstileWidgets(content);
-      content.innerHTML = '<a class="button secondary" href="' + escapeAttribute(canonicalPath(url)) + '">Open the full page</a>';
-      dialog.removeAttribute("aria-busy");
-      closeButton.focus({ preventScroll: true });
-    });
+      var message = error instanceof TypeError ? "" : error.message;
+      showDialogRecovery(url, message || "This form could not be opened.");
+    }).finally(stopFragmentTimer);
   }
 
   function openDialog(anchor, url, historyMode) {
     var wasOpen = dialogIsOpen();
     if (!wasOpen) {
       returnFocus = anchor || document.activeElement;
+      returnPanel = returnFocus && returnFocus.closest("[data-market-panel]");
       backgroundUrl = window.location.pathname + window.location.search + window.location.hash;
     }
     title.textContent = labelFor(url, anchor);
@@ -376,6 +628,31 @@
     }
     closeButton.focus({ preventScroll: true });
     fetchDialog(url);
+  }
+
+  function restoreFocus() {
+    if (returnFocus && returnFocus.isConnected && returnFocus.getClientRects().length) {
+      returnFocus.focus({ preventScroll: true });
+      return;
+    }
+    if (!returnPanel || !returnPanel.isConnected) {
+      return;
+    }
+    // A map refresh may replace the action while the dialog is open.
+    var href = returnFocus && returnFocus.href;
+    var action = href && Array.prototype.find.call(returnPanel.querySelectorAll("a[data-dialog-title]"), function (link) {
+      return link.href === href && link.getClientRects().length;
+    });
+    var target = action || returnPanel.querySelector("[data-map], [data-project-detail-content] h2");
+    if (!target || !target.getClientRects().length) {
+      target = document.querySelector("[data-mobile-panel-target][aria-selected=true]");
+    }
+    if (target && target.getClientRects().length) {
+      if (target.tabIndex < 0 && !target.hasAttribute("tabindex")) {
+        target.tabIndex = -1;
+      }
+      target.focus({ preventScroll: true });
+    }
   }
 
   function finalizeClose() {
@@ -393,17 +670,17 @@
       dialog.removeAttribute("open");
     }
     delete dialog.dataset.dialogKind;
+    delete dialog.dataset.dialogRecovery;
     dialog.removeAttribute("aria-busy");
     document.body.classList.remove("has-site-dialog");
-    removeTurnstileWidgets(content);
+    disposeDialogContent();
     content.replaceChildren();
     status.hidden = false;
     status.textContent = "Loading...";
     currentCanonicalUrl = "";
-    if (returnFocus && document.contains(returnFocus)) {
-      returnFocus.focus({ preventScroll: true });
-    }
+    restoreFocus();
     returnFocus = null;
+    returnPanel = null;
     backgroundUrl = "";
   }
 
@@ -511,6 +788,7 @@
 
   closeButton.addEventListener("click", requestClose);
   document.addEventListener("keydown", function (event) {
+    wrapDialogFocus(event);
     if (dialogIsOpen() && event.key === "Escape") {
       event.preventDefault();
       requestClose();
@@ -622,13 +900,4 @@
     });
   });
 
-  function escapeAttribute(value) {
-    return String(value == null ? "" : value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;")
-      .replace(/`/g, "&#096;");
-  }
 })();

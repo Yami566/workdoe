@@ -190,7 +190,7 @@ def build_launch_status(
         "executes_commands": False,
         "ready_to_deploy": token_ready and deploy_status == "ready" and release_evidence["ok"],
         "current_phase": current.name if current else "deploy",
-        "next_command": current.next_command if current else "python scripts\\cloudflare_production_deploy.py --json",
+        "next_command": current.next_command if current else "npm run cf:deploy:plan",
         "phases": [asdict(phase) for phase in phases],
         "blockers": sorted(set(blockers)),
         "warnings": sorted(set(preflight.warnings + launch_plan["strict_warnings"])),
