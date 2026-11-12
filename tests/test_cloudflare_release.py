@@ -14835,11 +14835,14 @@ class CloudflareReleasePrepTests(unittest.TestCase):
 
             release = module.read_reviewed_smoke_release(root, reviewed)
             self.assertEqual((release.assets, release.ledger), (assets, ledger))
+            process_sleep = sys.modules["time"].sleep
             with (
                 mock.patch.object(module, "dns_lookup") as dns,
                 mock.patch.object(module, "fetch_url") as fetch,
-                mock.patch.object(module.time, "sleep") as sleep,
+                # Git's POSIX timeout wait must keep its real process-global clock.
+                mock.patch.object(module, "time", SimpleNamespace(sleep=mock.Mock())) as clock,
             ):
+                self.assertIs(sys.modules["time"].sleep, process_sleep)
                 for bad_commit in (altered, altered_sdk_notice, "0" * len(reviewed)):
                     with self.subTest(commit=bad_commit):
                         result = module.build_smoke_payload_with_retries(
@@ -14851,7 +14854,7 @@ class CloudflareReleasePrepTests(unittest.TestCase):
                         self.assertNotIn("Unexpected notice contents", module.render_text(result))
                 dns.assert_not_called()
                 fetch.assert_not_called()
-                sleep.assert_not_called()
+                clock.sleep.assert_not_called()
 
     def test_entry_header_smoke_requires_origin_only_for_the_reviewed_release(self):
         module = load_workdoe_production_smoke_script()
